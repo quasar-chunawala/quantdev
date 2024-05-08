@@ -1,6 +1,9 @@
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import cm
+import pandas as pd
+import joypy
 
 
 class CIRProcess:
@@ -11,23 +14,21 @@ class CIRProcess:
         kappa: float,
         theta: float,
         sigma: float,
-        num_paths: int,
         step_size: float,
         total_time: float,
     ):
         self.kappa = kappa
         self.theta = theta
         self.sigma = sigma
-        self.num_paths = num_paths
         self.step_size = step_size
         self.total_time = total_time
 
-    def generate_paths(self):
+    def generate_paths(self, num_paths):
         """Generate sample paths"""
         num_steps = int(self.total_time / self.step_size)
-        dz = np.random.standard_normal((self.num_paths, num_steps))
-        r_t = np.zeros((self.num_paths, num_steps))
-        zero_vector = np.full(self.num_paths, 0.0)
+        dz = np.random.standard_normal((num_paths, num_steps))
+        r_t = np.zeros((num_paths, num_steps))
+        zero_vector = np.full(num_paths, 0.0)
         prev_r = zero_vector
         for i in range(num_steps):
             r_t[:, i] = (
@@ -45,14 +46,32 @@ class CIRProcess:
 
 
 cir_process = CIRProcess(
-    kappa=0.1, theta=0.5, sigma=0.5, num_paths=10, step_size=0.01, total_time=1.0
+    kappa=0.5, theta=0.5, sigma=1.0, step_size=0.01, total_time=1.0
 )
 
-paths = cir_process.generate_paths()
-t = np.linspace(0.01, 1.0, 100)
+num_paths = 10000
+paths = cir_process.generate_paths(num_paths)
 
-plt.grid(True)
-for path in paths:
-    plt.plot(t, path)
+# Wrap the paths 2d-array in a dataframe
+paths_tr = paths.transpose()
+samples = paths_tr[
+    4::5
+]  # Take 20 samples at times t=0.05, 0.10, 0.15, ..., 1.0 along each path
+samples_arr = samples.reshape(num_paths * 20)  # Reshape in a 1d column-vector
+samples_df = pd.DataFrame(samples_arr, columns=["values"])
+samples_df["time"] = [
+    "t=" + str((int(i / num_paths) + 1) / 20) for i in range(num_paths * 20)
+]
+
+fig, ax = joypy.joyplot(
+    samples_df,
+    by="time",
+    column="values",
+    grid="y",
+    range_style="own",
+    kind="kde",
+    tails=0.00002,
+    colormap=cm.autumn_r,
+)
 
 plt.show()
