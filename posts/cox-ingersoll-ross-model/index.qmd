@@ -53,33 +53,33 @@ The class `CIRProcess` is designed as an engine to generate sample paths of the 
 
 ```{python}
 import math
-import numpy as np
+from dataclasses import dataclass
+
+import joypy
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from matplotlib import cm
+from tqdm import tqdm
 
 
+@dataclass
 class CIRProcess:
     """An engine for generating sample paths of the Cox-Ingersoll-Ross process"""
 
-    def __init__(
-        self,
-        kappa: float,
-        theta: float,
-        sigma: float,
-        step_size: float,
-        total_time: float,
-    ):
-        self.kappa = kappa
-        self.theta = theta
-        self.sigma = sigma
-        self.step_size = step_size
-        self.total_time = total_time
+    kappa: float
+    theta: float
+    sigma: float
+    step_size: float
+    total_time: float
+    r_0: float
 
-    def generate_paths(self, num_paths):
+    def generate_paths(self, paths: int):
         """Generate sample paths"""
         num_steps = int(self.total_time / self.step_size)
-        dz = np.random.standard_normal((num_paths, num_steps))
-        r_t = np.zeros((num_paths, num_steps))
-        zero_vector = np.full(num_paths, 0.0)
+        dz = np.random.standard_normal((paths, num_steps))
+        r_t = np.zeros((paths, num_steps))
+        zero_vector = np.full(paths, self.r_0)
         prev_r = zero_vector
         for i in range(num_steps):
             r_t[:, i] = (
@@ -104,11 +104,20 @@ We generate $N=10$ paths of the CIR process.
 ```{python}
 # | code-fold: true
 # | code-summary: "Show the code"
+
 cir_process = CIRProcess(
-    kappa=0.1, theta=0.5, sigma=0.5, step_size=0.01, total_time=1.0
+    kappa=3,
+    r_0=9,
+    sigma=0.5,
+    step_size=10e-3,
+    theta=3,
+    total_time=1.0,
 )
 
-paths = cir_process.generate_paths(num_paths=10)
+num_paths = 10
+
+paths = cir_process.generate_paths(num_paths)
+
 t = np.linspace(0.01, 1.0, 100)
 
 plt.grid(True)
@@ -118,5 +127,48 @@ plt.title(r"$N=10$ paths of the Cox-Ingersoll-Ross process")
 for path in paths:
     plt.plot(t, path)
 
+plt.show()
+```
+
+### Evolution of the distribution.
+
+The evolution of the distribution with time can be visualized.
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+
+# TODO: - this is where slowness lies, generating paths is a brezze
+
+# Wrap the paths 2d-array in a dataframe
+paths_tr = paths.transpose()
+# Take 20 samples at times t=0.05, 0.10, 0.15, ..., 1.0 along each path
+samples = paths_tr[4::5]
+# Reshape in a 1d column-vector
+samples_arr = samples.reshape(num_paths * 20)
+samples_df = pd.DataFrame(samples_arr, columns=["values"])
+samples_df["time"] = [
+    "t=" + str((int(i / num_paths) + 1) / 20) for i in range(num_paths * 20)
+]
+
+# TODO: end
+
+fig, ax = joypy.joyplot(
+    samples_df,
+    by="time",
+    colormap=cm.autumn_r,
+    column="values",
+    grid="y",
+    kind="kde",
+    range_style="own",
+    tails=10e-3,
+)
+plt.vlines(
+    [cir_process.theta, cir_process.r_0],
+    -0.2,
+    1,
+    color="k",
+    linestyles="dashed",
+)
 plt.show()
 ```
