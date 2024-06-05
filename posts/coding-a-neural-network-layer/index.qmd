@@ -1,5 +1,5 @@
 ---
-title: "Coding a neuron"
+title: "Coding a neural network layer"
 author: "Quasar"
 date: "2024-05-28"
 categories: [Machine Learning]      
@@ -2044,5 +2044,85 @@ class SoftmaxActivation:
         self.output = probabilities
 ```
 
-We also included a subtraction of the largest of the inputs before we do the exponentiation. There are two main pervasive challenges with neural networks : dead neurons and very large numbers (referred to as exploding values). Dead neurons and enormous numbers can wreak havoc down the line and render a network useless over time. Let's see some examples of how:
+We also included a subtraction of the largest of the inputs before we do the exponentiation. This does not affect the output of the softmax function, since:
 
+\begin{align*}
+\frac{e^{z_{i}-||\mathbf{z}||}}{\sum_{l=1}^{L}e^{z_{l}-||\mathbf{z}||}} = \frac{e^{-||\mathbf{z}||}\cdot e^{z_{i}}}{e^{-||\mathbf{z}||}\cdot \sum_{l=1}^{L}e^{z_{l}}} = \sigma(\mathbf{z})_i
+\end{align*}
+
+There are two main pervasive challenges with neural networks : dead neurons and very large numbers (referred to as exploding values). Dead neurons and enormous numbers can wreak havoc down the line and render a network useless over time.
+
+## The output layer
+
+Now, we can add another `DenseLayer` as the output layer, setting it to contain as many inputs as the previous layer outputs and as many outputs as our data includes classes. Then, we can apply the softmax function to the output of this new layer. 
+
+### Full code upto this point
+
+```{python}
+import numpy as np
+import nnfs
+from nnfs.datasets import spiral_data
+
+class DenseLayer:
+
+    def __init__(self, n_inputs, n_neurons):
+        # Initialize all weights and biases
+        self.weights = 0.01 * np.random.randn(n_inputs,n_neurons)
+        self.biases = np.zeros((1,n_neurons))
+    
+    def forward(self, inputs):
+        self.output = np.dot(inputs,self.weights) + self.biases
+
+class ReLUActivation:
+
+    # Forward pass
+    def forward(self, inputs):
+        self.output = np.maximum(inputs, 0)
+
+class SoftmaxActivation:
+
+    # Forward pass
+    def forward(self,inputs):
+        exp_values = np.exp(inputs - np.max(inputs, axis=1, keepdims=True))
+        probabilities = exp_values / np.sum(exp_values, axis=1, keepdims=True)
+        self.output = probabilities
+
+# Create dataset
+X, y = spiral_data(samples=100, classes=3)
+
+# Create a DenseLayer with 2 input features and 3 neurons
+dense1 = DenseLayer(2, 3)
+
+# Create ReLU Activation (to be used with DenseLayer)
+activation1 = ReLUActivation()
+
+# Create a second DenseLayer with 3 input features and 3 output values
+dense2 = DenseLayer(3, 3)
+
+# Create Softmax activation to be used with the output layer
+activation2 = SoftmaxActivation()
+
+# Make a forward pass of our training data through this layer
+dense1.forward(X)
+
+# Make a forward pass through the activation function 
+# It takes the output of the first dense layer
+activation1.forward(dense1.output)
+
+# Make a forward pass through the second DenseLayer
+# It takes outputs of the activation function of the first layer
+# as inputs
+dense2.forward(activation1.output)
+
+# Make a forward pass through activation function
+# It takes outputs of the second dense layer
+activation2.forward(dense2.output)
+
+# Let's see output of the first few examples
+print(activation2.output[:5])
+
+```
+
+We've completed what we need for forward-passing data through the model. 
+
+Our example model is currently random. To remedy this, we need a way to calculate how wrong the neural network is at current predictions and begin adjusting weights and biases to decrease error over time. Thus, our next step is to quantify how wrong the model is through what's defined as a **loss function**. 
