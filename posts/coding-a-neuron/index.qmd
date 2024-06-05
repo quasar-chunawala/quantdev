@@ -680,7 +680,7 @@ Now, it just looks like the basic rectified linear function. No surprises yet!
 # | code-summary: "Show the code"
 %%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
 \begin{tikzpicture}[scale=1.5]
-\begin{axis}[grid]
+\begin{axis}[grid,ymin=-2.0,ymax=2.0,xmin=-2.0,xmax=2.0]
 \addplot[color=blue,thick]{max(x,0)};
 \end{axis}
 \end{tikzpicture}
@@ -713,7 +713,7 @@ We can see that in this case, with a single neuron, the bias offsets the overall
 # | code-summary: "Show the code"
 %%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
 \begin{tikzpicture}[scale=1.5]
-\begin{axis}[grid]
+\begin{axis}[grid,ymin=-2.0,ymax=2.0,xmin=-2.0,xmax=2.0]
 \addplot[color=blue,thick,samples=100]{max(x+0.50,0)};
 \end{axis}
 \end{tikzpicture}
@@ -745,8 +745,41 @@ With a negative weight and this single neuron, the function has become a questio
 # | code-summary: "Show the code"
 %%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
 \begin{tikzpicture}[scale=1.5]
-\begin{axis}[grid]
+\begin{axis}[grid,ymin=-2.0,ymax=2.0,xmin=-2.0,xmax=2.0]
 \addplot[color=blue,thick,samples=100]{max(-x+0.50,0)};
+\end{axis}
+\end{tikzpicture}
+```
+
+What happens if modify the weight to $-2.00$? 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+    \node[circle, 
+        minimum size = 15mm,
+        draw=blue
+        ] (Input) at (0,0) {};
+    
+    \node[] (w) at (-3,0) {};
+    \node[] (b) at (0,-2) {};
+
+    \draw[->, shorten >=1pt] (w) -- (Input) node [midway,above] {\large $-2.00$};
+    \draw[->, shorten >=1pt] (b) node [below] {\large $0.50$} -- (Input);
+\end{tikzpicture}
+```
+
+The neuron now deactivates at $0.25$. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2.0,ymax=2.0,xmin=-2.0,xmax=2.0]
+\addplot[color=blue,thick,samples=100]{max(-2*x+0.50,0)};
 \end{axis}
 \end{tikzpicture}
 ```
@@ -906,7 +939,9 @@ So, when we are below the activation of the first neuron, the output will be the
 \end{tikzpicture}
 ```
 
-Consider what happens when the input is $-1.00$. The output of the first neuron is $1.50$ which implies that the second neuron is deactivated, so the output of the second neuron is simply zero. 
+The second neuron is activated if it's input is smaller than $0.50$. 
+
+Consider what happens when the input to the first neuron is $0.00, -0.10, \ldots$. The output of the first neuron is $0.50, 0.60, \ldots$ which implies that the second neuron is deactivated, so the output of the second neuron is simply zero. 
 
 ```{python}
 # | code-fold: true
@@ -938,4 +973,995 @@ Consider what happens when the input is $-1.00$. The output of the first neuron 
 
 ## ReLU Activation in hidden layers
 
-Let's now take this concept and use it to fit to the sine way function using two hidden layers of $8$ neurons each and we can hand-tune the values to fit the curve. We'll do this by working with $1$ pair of neurons at a time, which means $1$ neuron from each layer individually. 
+Let's now take this concept and use it to fit to a sine wave-like function using two hidden layers of $8$ neurons each and we can hand-tune the values to fit the curve. We'll do this by working with $1$ pair of neurons at a time, which means $1$ neuron from each layer individually. For simplicity, we are also going to assume that the layers are not densely connected, and each neuron from the first hidden layer connects to only one neuron from the second hidden layer. That's usually not the case with the real models, but we want this simplification for the purpose of this demo. Additionally, this example model takes a single value as an input, the input to the sine function, and outputs a single value like the sine function. The output layer uses the linear activation function and the hidden layers will use the rectified linear activation function.
+
+To start, we'll set all weights to $0$ and work with the first pair of neurons:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {2,...,8}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$0.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway] {$0.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$0.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.00$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+\end{tikzpicture}
+```
+
+Next, we can set the weight for the hidden layer neurons and the output neuron to $1.00$, and we can see how this impacts the output:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {2,...,8}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$1.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway,above] {$1.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$1.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.00$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+\end{tikzpicture}
+```
+
+The output is:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2,ymax=2,ytick={-2,-1,...,2},xmin=0,xmax=1]
+\addplot[color=blue,thick,samples=1000]{max(max(x,0),0)};
+\addplot[color=green,samples=1000,domain=0:1]{sin(deg(2*3.14*x))};
+\end{axis}
+\end{tikzpicture}
+```
+
+We can increase the slope of the output by adjusting the weight of the first neuron of the first layer to $6.00$. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {2,...,8}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$6.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway,above] {$1.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$1.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.00$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+\end{tikzpicture}
+```
+
+We can now see, for example, that the initial slope of this function is what we'd like, but we have a problem. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2,ymax=2,ytick={-2,-1,...,2},xmin=0,xmax=1]
+\addplot[color=blue,thick,samples=1000]{max(max(6*x,0),0)};
+\addplot[color=green,samples=1000,domain=0:1]{sin(deg(2*3.14*x))};
+\end{axis}
+\end{tikzpicture}
+```
+
+Currently, this function never ends because this neuron pair never *deactivates*. We can visually see where we'd like the deactivation to occur. It's where the red fitment line diverges from our green sine wave. So now, while we have the correct slope, we need to set this spot as our deactivation point. To do that, we start by increasing the bias for the second neuron of the hidden layer to $0.70$. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {2,...,8}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$6.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway,above] {$1.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$1.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.70$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+\end{tikzpicture}
+```
+
+Recall, that this offsets the overall function vertically:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2,ymax=2,ytick={-2,-1,...,2},xmin=0,xmax=1]
+\addplot[color=blue,thick,samples=1000]{max(max(6*x,0)+0.70,0)};
+\addplot[color=green,samples=1000,domain=0:1]{sin(deg(2*3.14*x))};
+\end{axis}
+\end{tikzpicture}
+```
+
+Now, we can set the weight for the second neuron to $-1$, causing a deactivation point to occur, atleast horizontally, where we want it. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {2,...,8}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$6.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway,above] {$-1.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$1.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.70$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+\end{tikzpicture}
+```
+
+We get:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2,ymax=2,ytick={-2,-1,...,2},xmin=0,xmax=1]
+\addplot[color=blue,thick,samples=1000]{max(-max(6*x,0)+0.70,0)};
+\addplot[color=green,samples=1000,domain=0:1]{sin(deg(2*3.14*x))};
+\end{axis}
+\end{tikzpicture}
+```
+
+Now, we'd like to flip this slope back. How might we flip the output of these two neurons? 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {2,...,8}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {2,...,8}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$6.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway,above] {$-1.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$-1.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.70$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+\end{tikzpicture}
+```
+
+It seems like we can take the weights of the connection to the output neuron, which is currently $1.0$ and just flip it to a $-1$, and that flips the function:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2,ymax=2,ytick={-2,-1,...,2},xmin=0,xmax=1]
+\addplot[color=blue,thick,samples=1000]{-max(-max(6*x,0)+0.70,0)};
+\addplot[color=green,samples=1000,domain=0:1]{sin(deg(2*3.14*x))};
+\end{axis}
+\end{tikzpicture}
+```
+
+We're certainly getting closer to making this first section fit how we want. Now, all we need to do is offset this up a bit. For this hand-optimized example, we're going to use the first $7$ pairs of neurons in the hidden layers to create the sine wave's shape. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {2,...,7}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {2,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {2,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$6.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway,above] {$-1.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$-1.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.70$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$0.00$} (Hidden1-8); 
+\draw[->, shorten >=1pt] (3,-9) node [below] {$0.00$} --  (Hidden1-8); 
+\draw[->, shorten >=1pt] (Hidden1-8) -- node [midway,above] {$0.00$} (Hidden2-8); 
+\draw[->, shorten >=1pt] (6,-9) node [below] {$1.00$} --  (Hidden2-8); 
+\draw[->, shorten >=1pt] (Hidden2-8) -- node [midway] {$0.70$} (Output); 
+\end{tikzpicture}
+```
+
+If we set the bias of the second neuron in the bottom pair to $1.0$ and the weight to the output neuron to $0.70$, we can vertically shift the line like so:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2,ymax=2,ytick={-2,-1,...,2},xmin=0,xmax=1]
+\addplot[color=blue,thick,samples=1000]{-max(-max(6*x,0)+0.70,0))+0.70};
+\addplot[color=green,samples=1000,domain=0:1]{sin(deg(2*3.14*x))};
+\end{axis}
+\end{tikzpicture}
+```
+
+At this point, we have completed the first section with an "area of effect" being the first upward section of the sine wave. We can start on the next section that we wish to do. We can start on the next section that we wish to do. We can start by setting all weights for this second pair of neurons to $1$ including the output neuron.
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {3,...,7}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {3,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {3,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$6.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway,above] {$-1.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$-1.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.70$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$0.00$} (Hidden1-8); 
+\draw[->, shorten >=1pt] (3,-9) node [below] {$0.00$} --  (Hidden1-8); 
+\draw[->, shorten >=1pt] (Hidden1-8) -- node [midway,above] {$0.00$} (Hidden2-8); 
+\draw[->, shorten >=1pt] (6,-9) node [below] {$1.00$} --  (Hidden2-8); 
+\draw[->, shorten >=1pt] (Hidden2-8) -- node [midway] {$0.70$} (Output); 
+
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$1.00$} (Hidden1-2); 
+\draw[->, shorten >=1pt] (3,4) node [below] {$0.00$} --  (Hidden1-2); 
+\draw[->, shorten >=1pt] (Hidden1-2) -- node [midway,above] {$1.00$} (Hidden2-2); 
+\draw[->, shorten >=1pt] (6,4) node [below] {$0.00$} --  (Hidden2-2); 
+\draw[->, shorten >=1pt] (Hidden2-2) -- node [midway] {$1.00$} (Output); 
+\end{tikzpicture}
+```
+
+At this point, this second pair of neurons activation is beginning too soon, which is impacting the area of effect of the top pair we already aligned. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2,ymax=2,ytick={-2,-1,...,2},xmin=0,xmax=1]
+\addplot[color=blue,thick,samples=1000]{-max(-max(6*x,0)+0.70,0))+0.70+max(max(x,0),0)};
+\addplot[color=green,samples=1000,domain=0:1]{sin(deg(2*3.14*x))};
+\end{axis}
+\end{tikzpicture}
+```
+
+To fix this, we want this second pair to start influencing the output where the first pair deactivates, so we want to adjust the function horizontally. As you can recall from earlier, we adjust the first neuron's bias in this neuron pair to achieve this. Also, to modify the slope, we'll set the weight coming into that first neuron for the second pair, setting it to $3.50$. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {3,...,7}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {3,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {3,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$6.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway,above] {$-1.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$-1.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.70$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$0.00$} (Hidden1-8); 
+\draw[->, shorten >=1pt] (3,-9) node [below] {$0.00$} --  (Hidden1-8); 
+\draw[->, shorten >=1pt] (Hidden1-8) -- node [midway,above] {$0.00$} (Hidden2-8); 
+\draw[->, shorten >=1pt] (6,-9) node [below] {$1.00$} --  (Hidden2-8); 
+\draw[->, shorten >=1pt] (Hidden2-8) -- node [midway] {$0.70$} (Output); 
+
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$3.50$} (Hidden1-2); 
+\draw[->, shorten >=1pt] (3,4) node [below] {$-0.42$} --  (Hidden1-2); 
+\draw[->, shorten >=1pt] (Hidden1-2) -- node [midway,above] {$1.00$} (Hidden2-2); 
+\draw[->, shorten >=1pt] (6,4) node [below] {$0.00$} --  (Hidden2-2); 
+\draw[->, shorten >=1pt] (Hidden2-2) -- node [midway] {$1.00$} (Output); 
+\end{tikzpicture}
+```
+
+After these adjustments:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2,ymax=2,ytick={-2,-1,...,2},xmin=0,xmax=1]
+\addplot[color=blue,thick,samples=1000]{-max(-max(6*x,0)+0.70,0))+0.70+max(max(3.50*x - 0.42,0),0)};
+\addplot[color=green,samples=1000,domain=0:1]{sin(deg(2*3.14*x))};
+\end{axis}
+\end{tikzpicture}
+```
+
+We will now use the same methodology as we did with the first pair of neurons to set the deactivation point. We set the weight for the second neuron in the hidden layer pair to $-1.00$ and the bias to $0.27$.
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {3,...,7}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {3,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {3,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$6.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway,above] {$-1.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$-1.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.70$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$0.00$} (Hidden1-8); 
+\draw[->, shorten >=1pt] (3,-9) node [below] {$0.00$} --  (Hidden1-8); 
+\draw[->, shorten >=1pt] (Hidden1-8) -- node [midway,above] {$0.00$} (Hidden2-8); 
+\draw[->, shorten >=1pt] (6,-9) node [below] {$1.00$} --  (Hidden2-8); 
+\draw[->, shorten >=1pt] (Hidden2-8) -- node [midway] {$0.70$} (Output); 
+
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$3.50$} (Hidden1-2); 
+\draw[->, shorten >=1pt] (3,4) node [below] {$-0.42$} --  (Hidden1-2); 
+\draw[->, shorten >=1pt] (Hidden1-2) -- node [midway,above] {$-1.00$} (Hidden2-2); 
+\draw[->, shorten >=1pt] (6,4) node [below] {$0.27$} --  (Hidden2-2); 
+\draw[->, shorten >=1pt] (Hidden2-2) -- node [midway] {$1.00$} (Output); 
+\end{tikzpicture}
+```
+
+This results in:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2,ymax=2,ytick={-2,-1,...,2},xmin=0,xmax=1]
+\addplot[color=blue,thick,samples=1000]{-max(-max(6*x,0)+0.70,0))+0.70+max(-max(3.50*x - 0.42,0)+0.27,0)};
+\addplot[color=green,samples=1000,domain=0:1]{sin(deg(2*3.14*x))};
+\end{axis}
+\end{tikzpicture}
+```
+
+Then, we can flip this section's function again the same way we did with the first one, by setting the weight to the output neuron from $1.0$ to $-1.0$. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {3,...,7}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {3,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {3,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$6.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway,above] {$-1.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$-1.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.70$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$0.00$} (Hidden1-8); 
+\draw[->, shorten >=1pt] (3,-9) node [below] {$0.00$} --  (Hidden1-8); 
+\draw[->, shorten >=1pt] (Hidden1-8) -- node [midway,above] {$0.00$} (Hidden2-8); 
+\draw[->, shorten >=1pt] (6,-9) node [below] {$1.00$} --  (Hidden2-8); 
+\draw[->, shorten >=1pt] (Hidden2-8) -- node [midway] {$0.70$} (Output); 
+
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$3.50$} (Hidden1-2); 
+\draw[->, shorten >=1pt] (3,4) node [below] {$-0.42$} --  (Hidden1-2); 
+\draw[->, shorten >=1pt] (Hidden1-2) -- node [midway,above] {$-1.00$} (Hidden2-2); 
+\draw[->, shorten >=1pt] (6,4) node [below] {$0.27$} --  (Hidden2-2); 
+\draw[->, shorten >=1pt] (Hidden2-2) -- node [midway] {$-1.00$} (Output); 
+\end{tikzpicture}
+```
+
+Consequently, we have:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2,ymax=2,ytick={-2,-1,...,2},xmin=0,xmax=1]
+\addplot[color=blue,thick,samples=1000]{-max(-max(6*x,0)+0.70,0))+0.70-max(-max(3.50*x - 0.42,0)+0.27,0)};
+\addplot[color=green,samples=1000,domain=0:1]{sin(deg(2*3.14*x))};
+\end{axis}
+\end{tikzpicture}
+```
+
+And again, just like the first pair, we use the bottom pair to fix the vertical offset.
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Input) at (0,0) {\large $x_1$};
+
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden1-\i) at (3.0,-\i * 2) {\large $h_\i^{(1)}$};
+        
+}
+\foreach \i in {1,2,...,8}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        fill=blue!50,
+        yshift=90 mm
+        ] (Hidden2-\i) at (6.0,-\i * 2) {\large $h_\i^{(2)}$};
+        
+}
+
+\node[circle, 
+    minimum size = 15mm,
+    fill=red!30
+    ] (Output) at (9,0) {\large $\hat{y}_1$};
+
+% Connect neurons In-Hidden1
+\foreach \j in {3,...,7}
+{
+    \draw[->, shorten >=1pt] (Input) -- (Hidden1-\j);   
+}
+% Connect neurons Hidden1-Hidden2
+\foreach \i in {3,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden1-\i) -- (Hidden2-\i);   
+    
+}
+
+\foreach \i in {3,...,7}
+{
+    
+        \draw[->, shorten >=1pt] (Hidden2-\i) -- (Output);   
+}
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$6.00$} (Hidden1-1);   
+\draw[->, shorten >=1pt] (Hidden1-1) -- node [midway,above] {$-1.00$} (Hidden2-1); 
+\draw[->, shorten >=1pt] (Hidden2-1) -- node [midway] {$-1.00$} (Output); 
+\draw[->, shorten >=1pt] (6,6) node [below] {$0.70$} --  (Hidden2-1); 
+\draw[->, shorten >=1pt] (3,6) node [below] {$0.00$} --  (Hidden1-1); 
+
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$0.00$} (Hidden1-8); 
+\draw[->, shorten >=1pt] (3,-9) node [below] {$0.00$} --  (Hidden1-8); 
+\draw[->, shorten >=1pt] (Hidden1-8) -- node [midway,above] {$0.00$} (Hidden2-8); 
+\draw[->, shorten >=1pt] (6,-9) node [below] {$1.00$} --  (Hidden2-8); 
+\draw[->, shorten >=1pt] (Hidden2-8) -- node [midway] {$0.97$} (Output); 
+
+\draw[->, shorten >=1pt] (Input) -- node [midway] {$3.50$} (Hidden1-2); 
+\draw[->, shorten >=1pt] (3,4) node [below] {$-0.42$} --  (Hidden1-2); 
+\draw[->, shorten >=1pt] (Hidden1-2) -- node [midway,above] {$-1.00$} (Hidden2-2); 
+\draw[->, shorten >=1pt] (6,4) node [below] {$0.27$} --  (Hidden2-2); 
+\draw[->, shorten >=1pt] (Hidden2-2) -- node [midway] {$-1.00$} (Output); 
+\end{tikzpicture}
+```
+
+We get:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[grid,ymin=-2,ymax=2,ytick={-2,-1,...,2},xmin=0,xmax=1]
+\addplot[color=blue,thick,samples=1000]{-max(-max(6*x,0)+0.70,0))+0.97-max(-max(3.50*x - 0.42,0)+0.27,0)};
+\addplot[color=green,samples=1000,domain=0:1]{sin(deg(2*3.14*x))};
+\end{axis}
+\end{tikzpicture}
+```
+
+We then just continue this methodology. It should begin to make more sense to you now, how more neurons can enable more unique areas of effect, why we need two or more hidden layers, and why we need nonlinear activation functions to map nonlinear problems. 
+
+We can write a `ReLUActivation` class to represent the ReLU activation function:
+
+```python
+class ReLUActivation:
+
+    # Forward pass
+    def forward(self, inputs):
+        # Calculate output values from the inputs
+        self.output = np.maximum(0, inputs)
+
+```
+
