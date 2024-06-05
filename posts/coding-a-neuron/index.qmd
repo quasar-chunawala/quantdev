@@ -494,7 +494,7 @@ Keep in mind that the neural network will not be aware of the color differences 
 Now that we no longer need to hand-type our data, we should create something similar for our various types of neural network layers. So far, we've only used what's called a **dense** or **fully-connected** layer. These layers are commonly referred to as dense layers in papers, literature and code, but you will see them called fully-connected or fc for short in the code I write. Our dense layer class begins with two methods:
 
 ```{python}
-class LayerDense:
+class DenseLayer:
     def __init__(self, n_inputs, n_neurons):
         # Initialize weights and biases
         pass # using pass statement as a placeholder
@@ -534,7 +534,7 @@ It's possible for $\text{weights} \cdot \text{inputs} + \text{biases}$ not to me
 On to our `forward` method now. 
 
 ```{python}
-class LayerDense:
+class DenseLayer:
     def __init__(self, n_inputs, n_neurons):
         self.weights = 0.01 * np.random.randn(n_inputs,n_neurons)
         self.biases = np.zeros((1,n_neurons))
@@ -547,10 +547,10 @@ We are now ready to make use of this new class instead of hardcoded calculations
 
 ```{python}
 # Create dataset
-X, y = spiral_data(samples = 100, classes=3)
+X, y = spiral_data(samples=100, classes=3)
 
 # Create a dense layer with 2 input features and 3 output values
-dense1 = LayerDense(2, 3)
+dense1 = DenseLayer(2, 3)
 
 # Perform a forward pass of our training data through this layer
 dense1.forward(X)
@@ -1955,7 +1955,7 @@ We then just continue this methodology. It should begin to make more sense to yo
 
 We can write a `ReLUActivation` class to represent the ReLU activation function:
 
-```python
+```{python}
 class ReLUActivation:
 
     # Forward pass
@@ -1964,4 +1964,85 @@ class ReLUActivation:
         self.output = np.maximum(0, inputs)
 
 ```
+
+Let's apply this activation function to the `DenseLayer`'s outputs in our code:
+
+```{python}
+from nnfs.datasets import spiral_data
+import numpy as np
+
+# Create dataset
+X, y = spiral_data(samples=100, classes=3)
+
+# Create Dense layer with 2 input features and 3 output values
+dense1 = DenseLayer(2, 3)
+
+# Create ReLU activation function (to be used with the DenseLayer)
+activation1 = ReLUActivation()
+
+# Make a forward pass of our training data through this layer
+dense1.forward(X)
+
+# Forward pass through our activation function
+# Takes in output from the previous layer
+activation1.forward(dense1.output)
+
+# Let's see output of the first few samples
+print(activation1.output[:5])
+```
+
+As we can see, negative values have been clipped (modified to zero). That's all there is to the rectified linear activation function used in the hidden layer. Let's talk about the activation function that we are going to use on the output of the last layer.
+
+## The Softmax Activation function
+
+In our case, we're looking to get this model to be a classifier, so we want an activation function meant for classification. One of these is the softmax activation function. First, why are we bothering with another activation function? It just depends on what our overall goals are. 
+
+The rectified linear unit is unbounded, not normalized with other units and exclusive. "Not normalized" implies the values can be anything, an output of `[12,99,318]` is without context, and exclusive means each output is independent of others. To address this lack of context, the softmax activation function on the output data can take in non-normalized, or uncalibrated, inputs and produce a normalized distribution of probabilities for our classes. In the case of classification, what we want to see is a prediction of which class the network thinks the input represents. This distribution returned by the softmax activation function represents confidence scores in our overarching algorithm/program that uses this network. For example, if our network has a confidence distirbution for two classes $[0.45,0.55]$, the prediction is the $2$nd class, but the confidence in this prediction isn't very high. 
+
+Maybe our program wouldn't act in this case, since it's not very confident. 
+
+The softmax function takes as input a vector of $L$ real numbers and normalizes it into a probability distribution consisting of $L$ probabilities proportional to the exponentials of the input numbers. 
+
+*Definition*. The standard(unit) **softmax** function $\sigma:\mathbf{R}^L \to (0,1)^L$ takes a vector $\mathbf{z}=(z_1,\ldots,z_l)\in\mathbf{R}^L$ and computes each component of the vector $\sigma(\mathbf{z})\in(0,1)^L$ with:
+
+\begin{align*}
+\sigma(\mathbf{z})_i = \frac{e^{z_{i}}}{\sum_{l=1}^{L}e^{z_{l}}}
+\end{align*}
+
+That might look daunting, but it's easy to follow. Suppose the example outputs from a neural network layer are:
+
+```{python}
+layer_outputs = [4.80, 1.21, 2.385]
+```
+
+Then, the normalized values are:
+
+```{python}
+import numpy as np
+
+norm_values = np.exp(layer_outputs)/np.sum(np.exp(layer_outputs))
+print(norm_values)
+```
+
+To train in batches, we need to convert this functionality to accept layer outputs in batches. Do this is easy:
+
+```{python}
+layer_outputs = np.random.randn(100,3)
+norm_values = np.exp(layer_outputs)/np.sum(np.exp(layer_outputs),axis=1,keepdims=True)
+```
+
+We can now write a `SoftmaxActivation` class as:
+
+```{python}
+# Softmax activation
+class SoftmaxActivation:
+
+    # Forward pass
+    def forward(self, inputs):
+        exp_values = np.exp(inputs - np.max(inputs, axis=1, keepdims=True))
+        probabilities = exp_values / np.sum(exp_values, axis=1, keepdims=True)
+        self.output = probabilities
+```
+
+We also included a subtraction of the largest of the inputs before we do the exponentiation. There are two main pervasive challenges with neural networks : dead neurons and very large numbers (referred to as exploding values). Dead neurons and enormous numbers can wreak havoc down the line and render a network useless over time. Let's see some examples of how:
 
