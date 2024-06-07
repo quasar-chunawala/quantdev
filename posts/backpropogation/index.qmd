@@ -69,6 +69,10 @@ Assume that we have a softmax output $\hat{\mathbf{y}}_i$, `[0.7, 0.1, 0.2]` and
 Let's that we have a batch of $3$ samples. Additionally, suppose the target `y_true` is integer encoded. After running through the softmax activation function, the network's output layer yields:
 
 ```{python}
+%load_ext itikz
+```
+
+```{python}
 import numpy as np
 
 y_pred = np.array(
@@ -162,8 +166,6 @@ I first create an abstract base class `Loss`. Every `Loss` object exposes the `c
 
 `CategoricalCrossEntropyLoss` class is a child class of `Loss` and provides an implementation of the `forward` method.
 
-### Full code upto this point
-
 ```{python}
 import numpy as np
 import nnfs
@@ -176,5 +178,155 @@ class Loss:
     # Calculates the data and regularization losses
     # given model output and ground truth values
     def calculate(self, output, y):
-        pass
+        
+        # Calculate the sample losses
+        sample_losses = self.forward(output, y)
+
+        # Calculate the mean loss
+        data_loss = np.mean(sample_losses)
+
+        # Return loss
+        return data_loss
+
+# Cross-Entropy loss
+class CategoricalCrossEntropyLoss(Loss):
+
+    # Forward pass
+    def forward(self, y_pred, y_true):
+        num_samples = len(y_pred)
+
+        # Clip data to prevent division by 0
+        # Clip both sides to not drag mean towards any value
+        epsilon = 1e-7
+        y_pred_clipped = np.clip(y_pred, epsilon, 1 - epsilon)
+
+        # If categorical labels
+        if(len(y_pred.shape) == 1):
+            correct_confidences = y_pred[range(len(y_pred)), y_true]
+        # else if one-hot encoding
+        elif(len(y_pred.shape)==2):
+            correct_confidences = np.sum(y_pred * y_true, axis=1)
+
+        neg_log = -np.log(correct_confidences)
+        return neg_log
 ```
+
+Using the manual created outputs and targets, we have:
+
+```{python}
+y_pred = np.array(
+    [
+        [0.7, 0.1, 0.2],
+        [0.1, 0.5, 0.4],
+        [0.02, 0.9, 0.08]
+    ]
+)
+
+y_true = np.array(
+    [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1]
+    ]
+)
+
+loss_function = CategoricalCrossEntropyLoss()
+loss = loss_function.calculate(y_pred, y_true)
+print(loss)
+```
+
+## Backpropogation
+
+Let's say we have a series of compositions:
+
+\begin{align*}
+y = f^{(n)}(f^{(n-1)}(\cdots( f^{(1)}(x))))
+\end{align*}
+
+Then, by the chain rule, the derivative of $y$ with respect to $x$ is:
+
+\begin{align*}
+\frac{dy}{dx} = \frac{df^{(n)}}{df^{(n-1)}} \cdots \frac{df^{(i+1)}}{df^{(i)}} \cdot \frac{df^{(i)}}{df^{(i-1)}} \cdots \frac{df^{(1)}}{dx}
+\end{align*}
+
+Let's start with a simple forward pass with $1$ neuron. Let's say, we have the following input vector, weights and bias:
+
+```{python}
+x = [1.0, -2.0, 3.0]  # input values
+w = [-3.0, -1.0, 2.0] # weights
+b = 1.0
+
+# Forward pass
+z = np.dot(x,w) + b
+
+# ReLU Activation function
+y = max(z, 0)
+```
+
+Let's assume that our neuron receives a gradient of $1$ from the next layer (I'll explain this at length further ahead). We're making up this value for demonstration purposes, and a value of $1$ won't change the values, which means that we can more easily show all of the processes. Let's draw a computation graph:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+\foreach \i in {0,...,2}
+{
+    \node[] (Input-\i) at (0,-\i * 4) {\large $x[\i]$};
+}
+\foreach \i in {0,...,2}
+{
+    \node[] (Weight-\i) at (0,-\i * 4-2) {\large $w[\i]$};
+}
+\foreach \i in {0,...,2}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        draw,
+        ] (Mult-\i) at (3.0,-\i * 4 - 1) {\large $\times$};
+        
+}
+
+\node [] (bias) at (0,-12) {\large $b$};
+
+\node [circle,minimum size=15mm,draw] (Add) at (6,-5) {\large +};
+\node [circle,minimum size=15mm,draw] (ReLU) at (9,-5) {\large $\max(x,0)$};
+\node [] (NextLayer) at (12,-5) {};
+
+\draw[->, shorten >=1pt] (Input-0) -- node[midway,above,blue] {\large $1.0$} (Mult-0);   
+\draw[->, shorten >=1pt] (Weight-0) -- node[midway,above,blue] {\large $-3.0$} (Mult-0);   
+\draw[->, shorten >=1pt] (Input-1) -- node[midway,above,blue] {\large $-2.0$}(Mult-1);   
+\draw[->, shorten >=1pt] (Weight-1) -- node[midway,above,blue] {\large $-1.0$}(Mult-1);   
+\draw[->, shorten >=1pt] (Input-2) -- node[midway,above,blue] {\large $3.0$}(Mult-2);   
+\draw[->, shorten >=1pt] (Weight-2) -- node[midway,above,blue] {\large $2.0$}(Mult-2);   
+
+\draw (bias) -- node[midway,above,blue] {\large $1.0$}(6,-12);
+\draw[->, shorten >=1pt] (6,-12) -- (Add);
+
+\draw[->, shorten >=1pt] (Mult-0) -- node[midway,above,blue] {\large $-3.0$}(Add);   
+\draw[->, shorten >=1pt] (Mult-1) -- node[midway,above,blue] {\large $2.0$}(Add);   
+\draw[->, shorten >=1pt] (Mult-2) -- node[midway,above,blue] {\large $6.0$}(Add);   
+
+\draw[->, shorten >=1pt] (Add) -- node[midway,above,blue] {\large $6.0$}(ReLU);   
+\draw[->, shorten >=1pt] (ReLU) -- node[midway,above,blue] {\large $6.0$}(NextLayer);
+\node [red] (A) at (11,-5.5) {\large $1.00$};
+\end{tikzpicture}
+```
+
+The ReLU function $f(x)=\max(x,0)$ is differentiable everywhere except at $x = 0$. We define $f'(x)$ as:
+
+\begin{align*}
+f'(x) = 
+\begin{cases}
+1 & x > 0 \\
+0 & \text{otherwise}
+\end{cases}
+\end{align*}
+
+In Python, we write:
+
+```{python}
+relu_dz = (1. if z > 0 else 0.)
+```
+
+The input to the ReLU function is $6.00$, so the derivative equals $1.00$. We have to use the chain rule 
