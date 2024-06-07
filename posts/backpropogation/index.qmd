@@ -237,17 +237,98 @@ print(loss)
 
 ## Backpropogation
 
-Let's say we have a series of compositions:
+We are going to represent our neural network as a computational graph. Backpropogration consists going backwards along the edges and passing along gradients. Each node receives an upstream gradient. The goal is pass on the correct downstream gradient.
 
-\begin{align*}
-y = f^{(n)}(f^{(n-1)}(\cdots( f^{(1)}(x))))
-\end{align*}
+Each node has a *local gradient* - the gradient of it's output with respect to it's input. Consider a node receiving an input $z$ and producing an output $h=f(z)$. Then, we have:
 
-Then, by the chain rule, the derivative of $y$ with respect to $x$ is:
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+    \node [circle,minimum size=40mm,draw] (f) at (0,0) {\huge $f$};
+    \node [blue] (localgrad) at (-1,0) {\huge $\frac{\partial h}{\partial z}$};
+    \node [blue] (lgrad) at (0.0,1) {\large Local gradient};
+    \draw [->, shorten >=1pt] (1.80,1) -- node [above,midway] {\huge $h$} (5,1);
+    \draw [->, shorten >=1pt] (5,-1) -- node [below,midway] {\huge $\frac{\partial s}{\partial h}$} (1.80,-1);
+    \node [] (upgrad) at (4.0,-3) {\huge Upstream gradient};
+    \draw [->, shorten >=1pt] (-5,1) -- node [above,midway] {\huge $z$} (-1.80,1);
+    \draw [->, shorten >=1pt] (-1.80,-1) -- node [below,midway] {\huge $\frac{\partial s}{\partial z} = \frac{\partial s}{\partial h} \cdot \frac{\partial h}{\partial z}$} (-5,-1);
+    \node [] (downgrad) at (-4.0,-3) {\huge Downstream gradient};
+\end{tikzpicture}
+```
 
-\begin{align*}
-\frac{dy}{dx} = \frac{df^{(n)}}{df^{(n-1)}} \cdots \frac{df^{(i+1)}}{df^{(i)}} \cdot \frac{df^{(i)}}{df^{(i-1)}} \cdots \frac{df^{(1)}}{dx}
-\end{align*}
+ The downstream gradient $\frac{\partial s}{\partial z}$ equals the upstream graient $\frac{\partial s}{\partial h}$ times the local gradient $\frac{\partial h}{\partial z}$. 
+
+ What about nodes with multiple inputs? Say that, $h=f(x,y)$. Multiple inputs imply multiple local gradients.
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[x=0.75pt,y=0.75pt,yscale=-1,scale=1.75]
+%uncomment if require: \path (0,216); %set diagram left start at 0, and has height of 216
+
+%Shape: Circle [id:dp08328772161506959] 
+\draw   (302.75,83.38) .. controls (302.75,53.62) and (326.87,29.5) .. (356.63,29.5) .. controls (386.38,29.5) and (410.5,53.62) .. (410.5,83.38) .. controls (410.5,113.13) and (386.38,137.25) .. (356.63,137.25) .. controls (326.87,137.25) and (302.75,113.13) .. (302.75,83.38) -- cycle ;
+%Straight Lines [id:da2730189357413113] 
+\draw    (406,59.38) -- (513.5,59.74) ;
+\draw [shift={(515.5,59.75)}, rotate = 180.2] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+%Straight Lines [id:da21080101466010737] 
+\draw    (515,110.75) -- (405,110.26) ;
+\draw [shift={(403,110.25)}, rotate = 0.26] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+%Straight Lines [id:da05192158713361961] 
+\draw    (209,1.75) -- (309.71,51.37) ;
+\draw [shift={(311.5,52.25)}, rotate = 206.23] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+%Straight Lines [id:da3568530309648137] 
+\draw    (305,68.25) -- (204.31,20.61) ;
+\draw [shift={(202.5,19.75)}, rotate = 25.32] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+%Straight Lines [id:da4437541566257528] 
+\draw    (205,167.25) -- (311.2,116.12) ;
+\draw [shift={(313,115.25)}, rotate = 154.29] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+%Straight Lines [id:da2672766038605987] 
+\draw    (304.5,101.75) -- (205.82,146.92) ;
+\draw [shift={(204,147.75)}, rotate = 335.41] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+% Text Node
+\draw (352,76.4) node [anchor=north west][inner sep=0.75pt]    {\huge $f$};
+% Text Node
+\draw (318.5,44.4) node [anchor=north west][inner sep=0.75pt]  [font=\small,color={rgb, 255:red, 0; green, 28; blue, 247 }  ,opacity=1 ]  {\huge $\frac{\partial h}{\partial x}$};
+% Text Node
+\draw (318.5,88.9) node [anchor=north west][inner sep=0.75pt]  [font=\small,color={rgb, 255:red, 0; green, 36; blue, 255 }  ,opacity=1 ]  {\huge $\frac{\partial h}{\partial y}$};
+% Text Node
+\draw (258.5,7.4) node [anchor=north west][inner sep=0.75pt]    {\huge $x$};
+% Text Node
+\draw (264,136.9) node [anchor=north west][inner sep=0.75pt]    {\huge $y$};
+% Text Node
+\draw (151.5,96.9) node [anchor=north west][inner sep=0.75pt]  [font=\small,color={rgb, 255:red, 0; green, 28; blue, 247 }  ,opacity=1 ]  {\huge $\frac{\partial s}{\partial y} =\frac{\partial s}{\partial h} \cdot \frac{\partial h}{\partial y}$};
+% Text Node
+\draw (150,33.4) node [anchor=north west][inner sep=0.75pt]  [font=\small,color={rgb, 255:red, 0; green, 28; blue, 247 }  ,opacity=1 ]  {\huge $\frac{\partial s}{\partial x} =\frac{\partial s}{\partial h} \cdot \frac{\partial h}{\partial x}$};
+% Text Node
+\draw (322.5,4.9) node [anchor=north west][inner sep=0.75pt]    {\huge $h=f(x,y)$};
+% Text Node
+\draw (449.5,39.9) node [anchor=north west][inner sep=0.75pt]    {\huge $h$};
+% Text Node
+\draw (451.5,112.9) node [anchor=north west][inner sep=0.75pt]    {\huge $\frac{\partial s}{\partial h}$};
+% Text Node
+\draw (164.5,172.9) node [anchor=north west][inner sep=0.75pt]    {\huge $ \begin{array}{l}
+Downstream\ \\
+gradients
+\end{array}$};
+% Text Node
+\draw (430.5,175.4) node [anchor=north west][inner sep=0.75pt]    {\huge $ \begin{array}{l}
+Upstream\ \\
+gradients
+\end{array}$};
+% Text Node
+\draw (318.5,173.9) node [anchor=north west][inner sep=0.75pt]  [color={rgb, 255:red, 3; green, 50; blue, 255 }  ,opacity=1 ]  {\huge $ \begin{array}{l}
+Local\ \\
+gradients
+\end{array}$};
+
+
+\end{tikzpicture}
+```
 
 Let's start with a simple forward pass with $1$ neuron. Let's say, we have the following input vector, weights and bias:
 
@@ -262,8 +343,6 @@ z = np.dot(x,w) + b
 # ReLU Activation function
 y = max(z, 0)
 ```
-
-Let's assume that our neuron receives a gradient of $1$ from the next layer (I'll explain this at length further ahead). We're making up this value for demonstration purposes, and a value of $1$ won't change the values, which means that we can more easily show all of the processes. Let's draw a computation graph:
 
 ```{python}
 # | code-fold: true
@@ -329,4 +408,235 @@ In Python, we write:
 relu_dz = (1. if z > 0 else 0.)
 ```
 
-The input to the ReLU function is $6.00$, so the derivative equals $1.00$. We have to use the chain rule 
+The input to the ReLU function is $6.00$, so the derivative equals $1.00$. We have to use the chain rule and multiply this derivative with the derivative received from the next layer, which is $1.0$ for the purpose of this example:
+
+```{python}
+import numpy as np
+
+x = [1.0, -2.0, 3.0]  # input values
+w = [-3.0, -1.0, 2.0]  # weights
+b = 1.0
+
+# Forward pass
+z = np.dot(x, w) + b
+
+# ReLU Activation function
+y = max(z, 0)
+
+# Backward pass
+# Upstream gradient
+ds_drelu = 1.0
+
+# Derivative of the ReLU and the chain rule
+drelu_dz = 1.0 if z > 0 else 0.0
+ds_dz = ds_drelu * drelu_dz
+print(ds_dz)
+```
+
+The results with the derivative of the ReLU function and chain rule look as follows:
+
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+\foreach \i in {0,...,2}
+{
+    \node[] (Input-\i) at (0,-\i * 4) {\large $x[\i]$};
+}
+\foreach \i in {0,...,2}
+{
+    \node[] (Weight-\i) at (0,-\i * 4-2) {\large $w[\i]$};
+}
+\foreach \i in {0,...,2}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        draw,
+        ] (Mult-\i) at (3.0,-\i * 4 - 1) {\large $\times$};
+        
+}
+
+\node [] (bias) at (0,-12) {\large $b$};
+
+\node [circle,minimum size=15mm,draw] (Add) at (6,-5) {\large +};
+\node [circle,minimum size=15mm,draw] (ReLU) at (9,-5) {\large $\max(x,0)$};
+\node [] (NextLayer) at (12,-5) {};
+
+\draw[->, shorten >=1pt] (Input-0) -- node[midway,above,blue] {\large $1.0$} (Mult-0);   
+\draw[->, shorten >=1pt] (Weight-0) -- node[midway,above,blue] {\large $-3.0$} (Mult-0);   
+\draw[->, shorten >=1pt] (Input-1) -- node[midway,above,blue] {\large $-2.0$}(Mult-1);   
+\draw[->, shorten >=1pt] (Weight-1) -- node[midway,above,blue] {\large $-1.0$}(Mult-1);   
+\draw[->, shorten >=1pt] (Input-2) -- node[midway,above,blue] {\large $3.0$}(Mult-2);   
+\draw[->, shorten >=1pt] (Weight-2) -- node[midway,above,blue] {\large $2.0$}(Mult-2);   
+
+\draw (bias) -- node[midway,above,blue] {\large $1.0$}(6,-12);
+\draw[->, shorten >=1pt] (6,-12) -- (Add);
+
+\draw[->, shorten >=1pt] (Mult-0) -- node[midway,above,blue] {\large $-3.0$}(Add);   
+\draw[->, shorten >=1pt] (Mult-1) -- node[midway,above,blue] {\large $2.0$}(Add);   
+\draw[->, shorten >=1pt] (Mult-2) -- node[midway,above,blue] {\large $6.0$}(Add);   
+
+\draw[->, shorten >=1pt] (Add) -- node[midway,above,blue] {\large $6.0$}(ReLU);   
+\draw[->, shorten >=1pt] (ReLU) -- node[midway,above,blue] {\large $6.0$}(NextLayer);
+\node [red] (A) at (11,-5.5) {\large $1.00$};
+\node [red] (B) at (7,-5.5) {\large $1.00$};
+\end{tikzpicture}
+```
+
+Moving backward through our neural network, consider the add function $f(x,y,z)=x + y + z$. The partial derivatives $\frac{\partial f}{\partial x}$, $\frac{\partial f}{\partial y}$ and $\frac{\partial f}{\partial z}$ are all equal to $1$. So, the **add gate** always takes on the gradient on its output and distributes it equally to all of its inputs, regardless of what their values were during the forward pass.
+
+```{python}
+# Local gradients for the + function
+dz_dw0x0 = 1
+dz_dw1x1 = 1
+dz_dw2x2 = 1
+dz_db = 1
+
+# Calculate the downstream gradients
+ds_dw0x0 = ds_dz * dz_dw0x0
+ds_dw1x1 = ds_dz * dz_dw1x1
+ds_dw2x2 = ds_dz * dz_dw2x2
+ds_db = ds_dz * dz_db
+print(ds_dw0x0, ds_dw1x1, ds_dw2x2, ds_db)
+```
+
+We can update the computation graph as:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+\foreach \i in {0,...,2}
+{
+    \node[] (Input-\i) at (0,-\i * 4) {\large $x[\i]$};
+}
+\foreach \i in {0,...,2}
+{
+    \node[] (Weight-\i) at (0,-\i * 4-2) {\large $w[\i]$};
+}
+\foreach \i in {0,...,2}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        draw,
+        ] (Mult-\i) at (3.0,-\i * 4 - 1) {\large $\times$};
+        
+}
+
+\node [] (bias) at (0,-12) {\large $b$};
+
+\node [circle,minimum size=15mm,draw] (Add) at (6,-5) {\large +};
+\node [circle,minimum size=15mm,draw] (ReLU) at (9,-5) {\large $\max(x,0)$};
+\node [] (NextLayer) at (12,-5) {};
+
+\draw[->, shorten >=1pt] (Input-0) -- node[midway,above,blue] {\large $1.0$} (Mult-0);   
+\draw[->, shorten >=1pt] (Weight-0) -- node[midway,above,blue] {\large $-3.0$} (Mult-0);   
+\draw[->, shorten >=1pt] (Input-1) -- node[midway,above,blue] {\large $-2.0$}(Mult-1);   
+\draw[->, shorten >=1pt] (Weight-1) -- node[midway,above,blue] {\large $-1.0$}(Mult-1);   
+\draw[->, shorten >=1pt] (Input-2) -- node[midway,above,blue] {\large $3.0$}(Mult-2);   
+\draw[->, shorten >=1pt] (Weight-2) -- node[midway,above,blue] {\large $2.0$}(Mult-2);   
+
+\draw (bias) -- node[midway,above,blue] {\large $1.0$}(6,-12);
+\draw[->, shorten >=1pt] (6,-12) -- (Add);
+
+\draw[->, shorten >=1pt] (Mult-0) -- node[midway,above,blue] {\large $-3.0$}(Add);   
+\draw[->, shorten >=1pt] (Mult-1) -- node[midway,above,blue] {\large $2.0$}(Add);   
+\draw[->, shorten >=1pt] (Mult-2) -- node[midway,above,blue] {\large $6.0$}(Add);   
+
+\draw[->, shorten >=1pt] (Add) -- node[midway,above,blue] {\large $6.0$}(ReLU);   
+\draw[->, shorten >=1pt] (ReLU) -- node[midway,above,blue] {\large $6.0$}(NextLayer);
+\node [red] (A) at (11,-5.5) {\large $1.00$};
+\node [red] (B) at (7,-5.5) {\large $1.00$};
+\node [red] (C) at (5,-3.5) {\large $1.00$};
+\node [red] (D) at (5,-5.5) {\large $1.00$};
+\node [red] (E) at (5,-7.5) {\large $1.00$};
+\node [red] (f) at (5,-12.5) {\large $1.00$};
+\end{tikzpicture}
+```
+
+Now, consider the production function $f(x,y) = x * y$. The gradients of $f$ are $\frac{\partial f}{\partial x} = y$, $\frac{\partial f}{\partial y} = x$. The **multiply gate** is therefore a little less easy to interpret. Its local gradients are the input values, except switched and this is multiplied by the upstream gradient. 
+
+```{python}
+# Local gradients for the * function
+dw0x0_dx0 = w[0]
+dw0x0_dw0 = x[0]
+dw1x1_dx1 = w[1]
+dw1x1_dw1 = x[1]
+dw2x2_dx2 = w[2]
+dw2x2_dw2 = x[2]
+
+# Calculate the downstream gradients
+ds_dx0 = ds_dw0x0 * dw0x0_dx0
+ds_dw0 = ds_dw0x0 * dw0x0_dw0
+ds_dx1 = ds_dw1x1 * dw1x1_dx1
+ds_dw1 = ds_dw1x1 * dw1x1_dw1
+ds_dx2 = ds_dw2x2 * dw2x2_dx2
+ds_dw2 = ds_dw2x2 * dw2x2_dw2
+
+print(ds_dx0, ds_dw0, ds_dx1, ds_dw1, ds_dx2, ds_dw2)
+```
+
+We can update the computation graph as follows:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}
+\foreach \i in {0,...,2}
+{
+    \node[] (Input-\i) at (0,-\i * 4) {\large $x[\i]$};
+}
+\foreach \i in {0,...,2}
+{
+    \node[] (Weight-\i) at (0,-\i * 4-2) {\large $w[\i]$};
+}
+\foreach \i in {0,...,2}
+{
+    \node[circle, 
+        minimum size = 15mm,
+        draw,
+        ] (Mult-\i) at (3.0,-\i * 4 - 1) {\large $\times$};
+        
+}
+
+\node [] (bias) at (0,-12) {\large $b$};
+
+\node [circle,minimum size=15mm,draw] (Add) at (6,-5) {\large +};
+\node [circle,minimum size=15mm,draw] (ReLU) at (9,-5) {\large $\max(x,0)$};
+\node [] (NextLayer) at (12,-5) {};
+
+\draw[->, shorten >=1pt] (Input-0) -- node[midway,above,blue] {\large $1.0$} (Mult-0);   
+\draw[->, shorten >=1pt] (Weight-0) -- node[midway,above,blue] {\large $-3.0$} (Mult-0);   
+\draw[->, shorten >=1pt] (Input-1) -- node[midway,above,blue] {\large $-2.0$}(Mult-1);   
+\draw[->, shorten >=1pt] (Weight-1) -- node[midway,above,blue] {\large $-1.0$}(Mult-1);   
+\draw[->, shorten >=1pt] (Input-2) -- node[midway,above,blue] {\large $3.0$}(Mult-2);   
+\draw[->, shorten >=1pt] (Weight-2) -- node[midway,above,blue] {\large $2.0$}(Mult-2);   
+
+\draw (bias) -- node[midway,above,blue] {\large $1.0$}(6,-12);
+\draw[->, shorten >=1pt] (6,-12) -- (Add);
+
+\draw[->, shorten >=1pt] (Mult-0) -- node[midway,above,blue] {\large $-3.0$}(Add);   
+\draw[->, shorten >=1pt] (Mult-1) -- node[midway,above,blue] {\large $2.0$}(Add);   
+\draw[->, shorten >=1pt] (Mult-2) -- node[midway,above,blue] {\large $6.0$}(Add);   
+
+\draw[->, shorten >=1pt] (Add) -- node[midway,above,blue] {\large $6.0$}(ReLU);   
+\draw[->, shorten >=1pt] (ReLU) -- node[midway,above,blue] {\large $6.0$}(NextLayer);
+\node [red] (A) at (11,-5.5) {\large $1.00$};
+\node [red] (B) at (7,-5.5) {\large $1.00$};
+\node [red] (C) at (5,-3.5) {\large $1.00$};
+\node [red] (D) at (5,-5.5) {\large $1.00$};
+\node [red] (E) at (5,-7.5) {\large $1.00$};
+\node [red] (F) at (5,-12.5) {\large $1.00$};
+\node [red] (G) at (1,-0.75) {\large $-3.0$};
+\node [red] (H) at (1,-2) {\large $1.0$};
+\node [red] (I) at (1,-4.75) {\large $-1.0$};
+\node [red] (J) at (1,-6) {\large $-2.0$};
+\node [red] (K) at (1,-8.75) {\large $2.0$};
+\node [red] (L) at (1,-10) {\large $3.0$};
+\end{tikzpicture}
+```
+
