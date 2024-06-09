@@ -849,6 +849,87 @@ print("Final weights : ", weights)
 print("Final bias : ", biases)
 ```
 
+## Adding `backward()` to `DenseLayer` and Activation functions
+
+We will now add backward pass code to the `DenseLayer` and `ReLUActivation` classes.
+
+```{python}
+from nnfs.datasets import spiral_data
+import matplotlib.pyplot as plt
+import numpy as np
+import nnfs
+
+nnfs.init()
+
+
+class DenseLayer:
+    def __init__(self, n_inputs, n_neurons):
+        self.width = n_neurons
+        self.weights = np.array(
+            [[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8], [0.9, 1.0, 1.1, 1.2]]
+        )
+        self.biases = np.array([0.1, 0.2, 0.3])
+
+    def forward(self, inputs):
+        self.inputs = inputs
+        self.output = np.dot(inputs, self.weights.T) + self.biases
+
+    def backward(self, dloss_dz):
+        self.dloss_dz = dloss_dz
+        self.dz_dweights = self.inputs
+        self.dz_dbiases = np.ones_like(self.inputs)
+        self.dz_dinputs = self.weights
+        self.dloss_dweights = np.outer(self.dloss_dz, self.dz_dweights)
+        self.dloss_dbiases = self.dloss_dz
+        self.dloss_dinputs = np.dot(self.dloss_dz, self.dz_dinputs)
+
+
+class ReLUActivation:
+
+    # Forward pass
+    def forward(self, inputs):
+        # Calculate output values from the inputs
+        self.inputs = inputs
+        self.output = np.maximum(0, inputs)
+
+    # Backward pass
+    def backward(self, dloss_da):
+        self.dloss_da = dloss_da
+        self.da_dz = np.where(self.inputs > 0., 1., 0.)
+        self.dloss_dz = self.dloss_da * self.da_dz
+
+# Create dataset
+X = np.array(
+    [
+        [1, 2, 3, 4]
+    ]
+)
+
+# Create a dense layer with 4 input features and 3 output values
+dense1 = DenseLayer(4, 3)
+relu = ReLUActivation()
+
+# Perform a forward pass of our training data through this layer
+dense1.forward(X)
+relu.forward(dense1.output)
+
+# Calculate loss
+y_pred = np.sum(relu.output)
+y_true = 0.
+loss = (y_pred - y_true)**2
+
+# Gradient of the loss with respect to y
+dloss_dy = 2*(y_pred - y_true)
+dy_da = np.ones_like(relu.output)
+dloss_da = dloss_dy * dy_da
+
+relu.backward(dloss_da)
+dense1.backward(relu.dloss_dz)
+print(f"dloss_dweights = {dense1.dloss_dweights}")
+print(f"dloss_dbiases = {dense1.dloss_dbiases}")
+print(f"dloss_dinputs = {dense1.dloss_dinputs}")
+```
+
 ### Backpropogation in matrix form
 
 Let $\mathcal{L}$ be a loss function of a neural network to minimize. Let $x \in \mathbf{R}^{d_0}$ be a single sample(input). Let $d_{l}$ be number of neurons(inputs) in layer $l$. Define it's pre-activation functions as follows:
@@ -942,54 +1023,3 @@ Consequently,
 \begin{align*}
 \frac{\partial \mathcal{L}}{\partial b^{(l)}} = \delta^{(l)} \tag{3}
 \end{align*}
-
-```{python}
-from nnfs.datasets import spiral_data
-import matplotlib.pyplot as plt
-import numpy as np
-import nnfs
-
-nnfs.init()
-
-class DenseLayer:
-    def __init__(self, n_inputs, n_neurons):
-        self.width = n_neurons
-        self.weights = 0.01 * np.random.randn(n_neurons, n_inputs)
-        self.biases = np.zeros((1, n_neurons))
-
-    def forward(self, inputs):
-        self.inputs = inputs
-        self.output = np.dot(inputs, self.weights.T) + self.biases
-
-    def backward(self,dloss_dz):
-        """
-        dloss/dz is a vector of shape [1,d_l] where d_l is the number
-        of neurons in the current layer. dz/dW is a matrix of 
-        shape [d_l,d_(l-1)]. We'll take the element-wise product.
-        """
-        self.dloss_dz = dloss_dz
-        self.dz_dweights = np.empty(self.width)
-        self.dz_dweights = np.fill(self.inputs)
-        self.dz_dweights = self.inputs
-        self.dloss_dweights = self.dloss_dz * dz_dweights
-
-# Create dataset
-X = np.array(
-    [
-        [1, 2, 3, 2.5],
-        [2.0, 5.0, -1.0, 2.0],
-        [-1.5, 2.7, 3.3, -0.8],
-        [-1.5, 2.7, 3.3, -0.8],
-    ]
-)
-
-# Create a dense layer with 4 input features and 3 output values
-dense1 = DenseLayer(4, 3)
-
-# Perform a forward pass of our training data through this layer
-dense1.forward(X)
-
-# Let's see the output of the first few samples
-print(dense1.output[:5])
-```
-

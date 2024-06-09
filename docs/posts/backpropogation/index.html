@@ -191,6 +191,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul class="collapse">
   <li><a href="#backprop-for-a-single-neuron---a-python-implementation" id="toc-backprop-for-a-single-neuron---a-python-implementation" class="nav-link" data-scroll-target="#backprop-for-a-single-neuron---a-python-implementation">Backprop for a single neuron - a python implementation</a></li>
   <li><a href="#backprop-for-a-layer-of-neurons---a-naive-implementation" id="toc-backprop-for-a-layer-of-neurons---a-naive-implementation" class="nav-link" data-scroll-target="#backprop-for-a-layer-of-neurons---a-naive-implementation">Backprop for a layer of neurons - a naive implementation</a></li>
+  </ul></li>
+  <li><a href="#adding-backward-to-denselayer-and-activation-functions" id="toc-adding-backward-to-denselayer-and-activation-functions" class="nav-link" data-scroll-target="#adding-backward-to-denselayer-and-activation-functions">Adding <code>backward()</code> to <code>DenseLayer</code> and Activation functions</a>
+  <ul class="collapse">
   <li><a href="#backpropogation-in-matrix-form" id="toc-backpropogation-in-matrix-form" class="nav-link" data-scroll-target="#backpropogation-in-matrix-form">Backpropogation in matrix form</a></li>
   </ul></li>
   </ul>
@@ -1076,6 +1079,93 @@ Final bias :  [-0.00698895 -0.04024714 -0.06451539]</code></pre>
 </div>
 </div>
 </section>
+</section>
+<section id="adding-backward-to-denselayer-and-activation-functions" class="level2">
+<h2 class="anchored" data-anchor-id="adding-backward-to-denselayer-and-activation-functions">Adding <code>backward()</code> to <code>DenseLayer</code> and Activation functions</h2>
+<p>We will now add backward pass code to the <code>DenseLayer</code> and <code>ReLUActivation</code> classes.</p>
+<div class="cell" data-execution_count="26">
+<div class="sourceCode cell-code" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> nnfs.datasets <span class="im">import</span> spiral_data</span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb38-4"><a href="#cb38-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> nnfs</span>
+<span id="cb38-5"><a href="#cb38-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-6"><a href="#cb38-6" aria-hidden="true" tabindex="-1"></a>nnfs.init()</span>
+<span id="cb38-7"><a href="#cb38-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-8"><a href="#cb38-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-9"><a href="#cb38-9" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> DenseLayer:</span>
+<span id="cb38-10"><a href="#cb38-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, n_inputs, n_neurons):</span>
+<span id="cb38-11"><a href="#cb38-11" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.width <span class="op">=</span> n_neurons</span>
+<span id="cb38-12"><a href="#cb38-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.weights <span class="op">=</span> np.array(</span>
+<span id="cb38-13"><a href="#cb38-13" aria-hidden="true" tabindex="-1"></a>            [[<span class="fl">0.1</span>, <span class="fl">0.2</span>, <span class="fl">0.3</span>, <span class="fl">0.4</span>], [<span class="fl">0.5</span>, <span class="fl">0.6</span>, <span class="fl">0.7</span>, <span class="fl">0.8</span>], [<span class="fl">0.9</span>, <span class="fl">1.0</span>, <span class="fl">1.1</span>, <span class="fl">1.2</span>]]</span>
+<span id="cb38-14"><a href="#cb38-14" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb38-15"><a href="#cb38-15" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.biases <span class="op">=</span> np.array([<span class="fl">0.1</span>, <span class="fl">0.2</span>, <span class="fl">0.3</span>])</span>
+<span id="cb38-16"><a href="#cb38-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-17"><a href="#cb38-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, inputs):</span>
+<span id="cb38-18"><a href="#cb38-18" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.inputs <span class="op">=</span> inputs</span>
+<span id="cb38-19"><a href="#cb38-19" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.output <span class="op">=</span> np.dot(inputs, <span class="va">self</span>.weights.T) <span class="op">+</span> <span class="va">self</span>.biases</span>
+<span id="cb38-20"><a href="#cb38-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-21"><a href="#cb38-21" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> backward(<span class="va">self</span>, dloss_dz):</span>
+<span id="cb38-22"><a href="#cb38-22" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dz <span class="op">=</span> dloss_dz</span>
+<span id="cb38-23"><a href="#cb38-23" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dz_dweights <span class="op">=</span> <span class="va">self</span>.inputs</span>
+<span id="cb38-24"><a href="#cb38-24" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dz_dbiases <span class="op">=</span> np.ones_like(<span class="va">self</span>.inputs)</span>
+<span id="cb38-25"><a href="#cb38-25" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dz_dinputs <span class="op">=</span> <span class="va">self</span>.weights</span>
+<span id="cb38-26"><a href="#cb38-26" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dweights <span class="op">=</span> np.outer(<span class="va">self</span>.dloss_dz, <span class="va">self</span>.dz_dweights)</span>
+<span id="cb38-27"><a href="#cb38-27" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dbiases <span class="op">=</span> <span class="va">self</span>.dloss_dz</span>
+<span id="cb38-28"><a href="#cb38-28" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dinputs <span class="op">=</span> np.dot(<span class="va">self</span>.dloss_dz, <span class="va">self</span>.dz_dinputs)</span>
+<span id="cb38-29"><a href="#cb38-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-30"><a href="#cb38-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-31"><a href="#cb38-31" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> ReLUActivation:</span>
+<span id="cb38-32"><a href="#cb38-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-33"><a href="#cb38-33" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Forward pass</span></span>
+<span id="cb38-34"><a href="#cb38-34" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, inputs):</span>
+<span id="cb38-35"><a href="#cb38-35" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Calculate output values from the inputs</span></span>
+<span id="cb38-36"><a href="#cb38-36" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.inputs <span class="op">=</span> inputs</span>
+<span id="cb38-37"><a href="#cb38-37" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.output <span class="op">=</span> np.maximum(<span class="dv">0</span>, inputs)</span>
+<span id="cb38-38"><a href="#cb38-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-39"><a href="#cb38-39" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Backward pass</span></span>
+<span id="cb38-40"><a href="#cb38-40" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> backward(<span class="va">self</span>, dloss_da):</span>
+<span id="cb38-41"><a href="#cb38-41" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_da <span class="op">=</span> dloss_da</span>
+<span id="cb38-42"><a href="#cb38-42" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.da_dz <span class="op">=</span> np.where(<span class="va">self</span>.inputs <span class="op">&gt;</span> <span class="fl">0.</span>, <span class="fl">1.</span>, <span class="fl">0.</span>)</span>
+<span id="cb38-43"><a href="#cb38-43" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dz <span class="op">=</span> <span class="va">self</span>.dloss_da <span class="op">*</span> <span class="va">self</span>.da_dz</span>
+<span id="cb38-44"><a href="#cb38-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-45"><a href="#cb38-45" aria-hidden="true" tabindex="-1"></a><span class="co"># Create dataset</span></span>
+<span id="cb38-46"><a href="#cb38-46" aria-hidden="true" tabindex="-1"></a>X <span class="op">=</span> np.array(</span>
+<span id="cb38-47"><a href="#cb38-47" aria-hidden="true" tabindex="-1"></a>    [</span>
+<span id="cb38-48"><a href="#cb38-48" aria-hidden="true" tabindex="-1"></a>        [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>]</span>
+<span id="cb38-49"><a href="#cb38-49" aria-hidden="true" tabindex="-1"></a>    ]</span>
+<span id="cb38-50"><a href="#cb38-50" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb38-51"><a href="#cb38-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-52"><a href="#cb38-52" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a dense layer with 4 input features and 3 output values</span></span>
+<span id="cb38-53"><a href="#cb38-53" aria-hidden="true" tabindex="-1"></a>dense1 <span class="op">=</span> DenseLayer(<span class="dv">4</span>, <span class="dv">3</span>)</span>
+<span id="cb38-54"><a href="#cb38-54" aria-hidden="true" tabindex="-1"></a>relu <span class="op">=</span> ReLUActivation()</span>
+<span id="cb38-55"><a href="#cb38-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-56"><a href="#cb38-56" aria-hidden="true" tabindex="-1"></a><span class="co"># Perform a forward pass of our training data through this layer</span></span>
+<span id="cb38-57"><a href="#cb38-57" aria-hidden="true" tabindex="-1"></a>dense1.forward(X)</span>
+<span id="cb38-58"><a href="#cb38-58" aria-hidden="true" tabindex="-1"></a>relu.forward(dense1.output)</span>
+<span id="cb38-59"><a href="#cb38-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-60"><a href="#cb38-60" aria-hidden="true" tabindex="-1"></a><span class="co"># Calculate loss</span></span>
+<span id="cb38-61"><a href="#cb38-61" aria-hidden="true" tabindex="-1"></a>y_pred <span class="op">=</span> np.<span class="bu">sum</span>(relu.output)</span>
+<span id="cb38-62"><a href="#cb38-62" aria-hidden="true" tabindex="-1"></a>y_true <span class="op">=</span> <span class="fl">0.</span></span>
+<span id="cb38-63"><a href="#cb38-63" aria-hidden="true" tabindex="-1"></a>loss <span class="op">=</span> (y_pred <span class="op">-</span> y_true)<span class="op">**</span><span class="dv">2</span></span>
+<span id="cb38-64"><a href="#cb38-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-65"><a href="#cb38-65" aria-hidden="true" tabindex="-1"></a><span class="co"># Gradient of the loss with respect to y</span></span>
+<span id="cb38-66"><a href="#cb38-66" aria-hidden="true" tabindex="-1"></a>dloss_dy <span class="op">=</span> <span class="dv">2</span><span class="op">*</span>(y_pred <span class="op">-</span> y_true)</span>
+<span id="cb38-67"><a href="#cb38-67" aria-hidden="true" tabindex="-1"></a>dy_da <span class="op">=</span> np.ones_like(relu.output)</span>
+<span id="cb38-68"><a href="#cb38-68" aria-hidden="true" tabindex="-1"></a>dloss_da <span class="op">=</span> dloss_dy <span class="op">*</span> dy_da</span>
+<span id="cb38-69"><a href="#cb38-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-70"><a href="#cb38-70" aria-hidden="true" tabindex="-1"></a>relu.backward(dloss_da)</span>
+<span id="cb38-71"><a href="#cb38-71" aria-hidden="true" tabindex="-1"></a>dense1.backward(relu.dloss_dz)</span>
+<span id="cb38-72"><a href="#cb38-72" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"dloss_dweights = </span><span class="sc">{</span>dense1<span class="sc">.</span>dloss_dweights<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb38-73"><a href="#cb38-73" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"dloss_dbiases = </span><span class="sc">{</span>dense1<span class="sc">.</span>dloss_dbiases<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb38-74"><a href="#cb38-74" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"dloss_dinputs = </span><span class="sc">{</span>dense1<span class="sc">.</span>dloss_dinputs<span class="sc">}</span><span class="ss">"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>dloss_dweights = [[ 43.2  86.4 129.6 172.8]
+ [ 43.2  86.4 129.6 172.8]
+ [ 43.2  86.4 129.6 172.8]]
+dloss_dbiases = [[43.2 43.2 43.2]]
+dloss_dinputs = [[ 64.8   77.76  90.72 103.68]]</code></pre>
+</div>
+</div>
 <section id="backpropogation-in-matrix-form" class="level3">
 <h3 class="anchored" data-anchor-id="backpropogation-in-matrix-form">Backpropogation in matrix form</h3>
 <p>Let <span class="math inline">\(\mathcal{L}\)</span> be a loss function of a neural network to minimize. Let <span class="math inline">\(x \in \mathbf{R}^{d_0}\)</span> be a single sample(input). Let <span class="math inline">\(d_{l}\)</span> be number of neurons(inputs) in layer <span class="math inline">\(l\)</span>. Define it’s pre-activation functions as follows:</p>
@@ -1140,61 +1230,6 @@ z_j^{(l)} = w_{jk}^{(l)}a_k^{(l-1)} + b_j^{(l)}
 <p><span class="math display">\[\begin{align*}
 \frac{\partial \mathcal{L}}{\partial b^{(l)}} = \delta^{(l)} \tag{3}
 \end{align*}\]</span></p>
-<div class="cell" data-execution_count="26">
-<div class="sourceCode cell-code" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> nnfs.datasets <span class="im">import</span> spiral_data</span>
-<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
-<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
-<span id="cb38-4"><a href="#cb38-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> nnfs</span>
-<span id="cb38-5"><a href="#cb38-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb38-6"><a href="#cb38-6" aria-hidden="true" tabindex="-1"></a>nnfs.init()</span>
-<span id="cb38-7"><a href="#cb38-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb38-8"><a href="#cb38-8" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> DenseLayer:</span>
-<span id="cb38-9"><a href="#cb38-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, n_inputs, n_neurons):</span>
-<span id="cb38-10"><a href="#cb38-10" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.width <span class="op">=</span> n_neurons</span>
-<span id="cb38-11"><a href="#cb38-11" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.weights <span class="op">=</span> <span class="fl">0.01</span> <span class="op">*</span> np.random.randn(n_neurons, n_inputs)</span>
-<span id="cb38-12"><a href="#cb38-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.biases <span class="op">=</span> np.zeros((<span class="dv">1</span>, n_neurons))</span>
-<span id="cb38-13"><a href="#cb38-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb38-14"><a href="#cb38-14" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, inputs):</span>
-<span id="cb38-15"><a href="#cb38-15" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.inputs <span class="op">=</span> inputs</span>
-<span id="cb38-16"><a href="#cb38-16" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.output <span class="op">=</span> np.dot(inputs, <span class="va">self</span>.weights.T) <span class="op">+</span> <span class="va">self</span>.biases</span>
-<span id="cb38-17"><a href="#cb38-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb38-18"><a href="#cb38-18" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> backward(<span class="va">self</span>,dloss_dz):</span>
-<span id="cb38-19"><a href="#cb38-19" aria-hidden="true" tabindex="-1"></a>        <span class="co">"""</span></span>
-<span id="cb38-20"><a href="#cb38-20" aria-hidden="true" tabindex="-1"></a><span class="co">        dloss/dz is a vector of shape [1,d_l] where d_l is the number</span></span>
-<span id="cb38-21"><a href="#cb38-21" aria-hidden="true" tabindex="-1"></a><span class="co">        of neurons in the current layer. dz/dW is a matrix of </span></span>
-<span id="cb38-22"><a href="#cb38-22" aria-hidden="true" tabindex="-1"></a><span class="co">        shape [d_l,d_(l-1)]. We'll take the element-wise product.</span></span>
-<span id="cb38-23"><a href="#cb38-23" aria-hidden="true" tabindex="-1"></a><span class="co">        """</span></span>
-<span id="cb38-24"><a href="#cb38-24" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dz <span class="op">=</span> dloss_dz</span>
-<span id="cb38-25"><a href="#cb38-25" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dz_dweights <span class="op">=</span> np.empty(<span class="va">self</span>.width)</span>
-<span id="cb38-26"><a href="#cb38-26" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dz_dweights <span class="op">=</span> np.fill(<span class="va">self</span>.inputs)</span>
-<span id="cb38-27"><a href="#cb38-27" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dz_dweights <span class="op">=</span> <span class="va">self</span>.inputs</span>
-<span id="cb38-28"><a href="#cb38-28" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dweights <span class="op">=</span> <span class="va">self</span>.dloss_dz <span class="op">*</span> dz_dweights</span>
-<span id="cb38-29"><a href="#cb38-29" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb38-30"><a href="#cb38-30" aria-hidden="true" tabindex="-1"></a><span class="co"># Create dataset</span></span>
-<span id="cb38-31"><a href="#cb38-31" aria-hidden="true" tabindex="-1"></a>X <span class="op">=</span> np.array(</span>
-<span id="cb38-32"><a href="#cb38-32" aria-hidden="true" tabindex="-1"></a>    [</span>
-<span id="cb38-33"><a href="#cb38-33" aria-hidden="true" tabindex="-1"></a>        [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="fl">2.5</span>],</span>
-<span id="cb38-34"><a href="#cb38-34" aria-hidden="true" tabindex="-1"></a>        [<span class="fl">2.0</span>, <span class="fl">5.0</span>, <span class="op">-</span><span class="fl">1.0</span>, <span class="fl">2.0</span>],</span>
-<span id="cb38-35"><a href="#cb38-35" aria-hidden="true" tabindex="-1"></a>        [<span class="op">-</span><span class="fl">1.5</span>, <span class="fl">2.7</span>, <span class="fl">3.3</span>, <span class="op">-</span><span class="fl">0.8</span>],</span>
-<span id="cb38-36"><a href="#cb38-36" aria-hidden="true" tabindex="-1"></a>        [<span class="op">-</span><span class="fl">1.5</span>, <span class="fl">2.7</span>, <span class="fl">3.3</span>, <span class="op">-</span><span class="fl">0.8</span>],</span>
-<span id="cb38-37"><a href="#cb38-37" aria-hidden="true" tabindex="-1"></a>    ]</span>
-<span id="cb38-38"><a href="#cb38-38" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb38-39"><a href="#cb38-39" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb38-40"><a href="#cb38-40" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a dense layer with 4 input features and 3 output values</span></span>
-<span id="cb38-41"><a href="#cb38-41" aria-hidden="true" tabindex="-1"></a>dense1 <span class="op">=</span> DenseLayer(<span class="dv">4</span>, <span class="dv">3</span>)</span>
-<span id="cb38-42"><a href="#cb38-42" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb38-43"><a href="#cb38-43" aria-hidden="true" tabindex="-1"></a><span class="co"># Perform a forward pass of our training data through this layer</span></span>
-<span id="cb38-44"><a href="#cb38-44" aria-hidden="true" tabindex="-1"></a>dense1.forward(X)</span>
-<span id="cb38-45"><a href="#cb38-45" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb38-46"><a href="#cb38-46" aria-hidden="true" tabindex="-1"></a><span class="co"># Let's see the output of the first few samples</span></span>
-<span id="cb38-47"><a href="#cb38-47" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(dense1.output[:<span class="dv">5</span>])</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>[[ 0.11102813  0.02384874  0.04785793]
- [ 0.09031939 -0.02404076  0.04611058]
- [-0.00128533 -0.02183609  0.00575369]
- [-0.00128533 -0.02183609  0.00575369]]</code></pre>
-</div>
-</div>
 
 
 </section>
