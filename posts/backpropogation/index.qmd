@@ -237,7 +237,7 @@ print(loss)
 
 ## Backpropogation
 
-We are going to represent our neural network as a computational graph. Backpropogration consists going backwards along the edges and passing along gradients. Each node receives an upstream gradient. The goal is pass on the correct downstream gradient.
+Backpropogation consists going backwards along the edges and passing along gradients. We are going to chop up a neuron into it's elementary operations and draw a computational graph. Each node in the graph receives an upstream gradient. The goal is pass on the correct downstream gradient.
 
 Each node has a *local gradient* - the gradient of it's output with respect to it's input. Consider a node receiving an input $z$ and producing an output $h=f(z)$. Then, we have:
 
@@ -697,7 +697,7 @@ Gradients sum at outward branches. Consider the following computation graph:
 % Text Node
 \draw (365.52,94.3) node [anchor=north west][inner sep=0.75pt]  [color={rgb, 255:red, 0; green, 13; blue, 247 }  ,opacity=1 ]  {\huge $\frac{\partial s}{\partial z^{2}}$};
 % Text Node
-\draw (366.72,154) node [anchor=north west][inner sep=0.75pt]  [color={rgb, 255:red, 0; green, 13; blue, 247 }  ,opacity=1 ]  {$\huge \frac{\partial s}{\partial z^{3}}$};
+\draw (366.72,154) node [anchor=north west][inner sep=0.75pt]  [color={rgb, 255:red, 0; green, 13; blue, 247 }  ,opacity=1 ]  {\huge $\frac{\partial s}{\partial z^{3}}$};
 % Text Node
 \draw (183.5,85.4) node [anchor=north west][inner sep=0.75pt]    {\huge $a$};
 % Text Node
@@ -723,4 +723,273 @@ The upstream gradient for the node $a$ is $\frac{ds}{da}$. By the law of total d
 \begin{align*}
 \frac{ds}{da} = \frac{\partial s}{\partial z^1} \cdot \frac{\partial z^1}{\partial a} + \frac{\partial s}{\partial z^2} \cdot \frac{\partial z^2}{\partial a} + \frac{\partial s}{\partial z^3} \cdot \frac{\partial z^3}{\partial a}
 \end{align*}
+
+### Backprop for a single neuron - a python implementation 
+
+We can write a naive implementation for the backprop algorithm for a single neuron.
+
+```{python}
+import numpy as np
+
+weights = np.array([-3.0, -1.0, 2.0])
+bias = 1.0
+inputs = np.array([1.0, -2.0, 3.0])
+target_output = 0.0
+learning_rate = 0.001
+
+
+def relu(x):
+    return np.maximum(x, 0)
+
+
+def relu_derivative(x):
+    return np.where(x > 0, 1.0, 0.0)
+
+
+for iter in range(200):
+    # Forward pass
+    z = np.dot(weights, inputs) + bias
+    a = relu(z)
+    loss = (a - target_output) ** 2
+
+    # Backward pass
+    dloss_da = 2 * (a - target_output)
+    dloss_dz = dloss_da * relu_derivative(z)
+    dz_dx = weights
+    dz_dw = inputs
+    dz_db = 1.0
+    dloss_dx = dloss_dz * dz_dx
+    dloss_dw = dloss_dz * dz_dw
+    dloss_db = dloss_dz * dz_db
+
+    # Update the weights and bias
+    weights -= learning_rate * dloss_dw
+    bias -= learning_rate * dloss_db
+
+    # print the loss for this iteration
+    if (iter + 1) % 10 == 0:
+        print(f"Iteration {iter + 1}, loss: {loss}")
+
+print("Final weights : ", weights)
+print("Final bias : ", bias)
+```
+
+### Backprop for a layer of neurons - a naive implementation
+
+We are now in a position to write a naive implementation of the backprop algorithm for a layer of neurons. 
+
+A neural network with a single hidden layer is shown below. 
+
+![backprop](backprop.png){fig-align="center"}
+
+```{python}
+import numpy as np
+
+inputs = np.array([1, 2, 3, 4])
+weights = np.array([[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8], [0.9, 1.0, 1.1, 1.2]])
+
+biases = np.array([0.1, 0.2, 0.3])
+
+# Learning rate
+learning_rate = 0.001
+
+
+# ReLU Activation function and its derivative
+def relu(x):
+    return np.maximum(x, 0)
+
+
+def relu_derivative(z):
+    return np.where(z > 0.0, 1.0, 0.0)
+
+
+for iter in range(200):
+    # Forward pass
+    z = np.dot(weights, inputs) + biases
+    a = relu(z)
+    y_pred = np.sum(a)
+    y_true = 0.0
+    loss = (y_pred - y_true) ** 2
+
+    # Backward pass
+    # Gradient of loss with respect to y_pred
+    dloss_dy = 2 * (y_pred - y_true)
+
+    # Gradient of y_pred with respect to a
+    dy_da = np.ones_like(a)
+
+    # Gradient of the activation function with respect to z
+    da_dz = relu_derivative(z)
+
+    # Gradient of z with respect to the weights
+    dz_dw = inputs
+
+    # Gradient of z with respect to inputs
+    dz_dx = weights
+
+    # Gradient of loss with respect to a
+    dloss_da = dloss_dy * dy_da
+
+    # Gradient of loss with respect to z
+    dloss_dz = dloss_da * da_dz
+
+    # Gradient of loss with respect to the weights
+    dloss_dw = np.outer(dloss_dz, dz_dw)
+
+    # Gradient of loss with respect to biases
+    dloss_db = dloss_dz
+
+    weights -= learning_rate * dloss_dw
+    biases -= learning_rate * dloss_db
+
+    if (iter + 1) % 20 == 0:
+        print(f"Iteration {iter+1}, loss = {loss}")
+
+print("Final weights : ", weights)
+print("Final bias : ", biases)
+```
+
+### Backpropogation in matrix form
+
+Let $\mathcal{L}$ be a loss function of a neural network to minimize. Let $x \in \mathbf{R}^{d_0}$ be a single sample(input). Let $d_{l}$ be number of neurons(inputs) in layer $l$. Define it's pre-activation functions as follows:
+
+\begin{align*}
+z^{(l)} = W^{(l)} a^{(l-1)} + b^{(l)}
+\end{align*}
+
+and $a^{(l)} = g(z^{(l)})$ for $l=1,2,3,\ldots,L$ where $L$ is the number of layers. Here $W^{(l)} \in \mathbf{R}^{d_l \times d_{l-1}}$, the weight vectors per neuron and $b^{(l)}\in\mathbf{R}^{d_l}$ biases are the parameters of the neural network model that we need to optimize. The $(i,j)$ element of $W^{(l)}$ is $w_{ij}$ representing the weight on the edge connecting the $j$th node in layer $l-1$ and the $i$th node in layer $l$. $a^{(l)} \in \mathbf{R}^{d_l}$ is the $l$-th layer activation output, and $g^{(l)}:\mathbf{R}^{d_l} \to \mathbf{R}^{d_l}$ is the corresponding activation function (such as ReLU). The zeroth layer activation is set as $a^{(0)}=x$.
+
+Define $\delta_j^{(l)}=\frac{\partial \mathcal{L}}{\partial z_j^{(l)}}$. 
+
+Observe first that:
+
+\begin{align*}
+\delta_j^{(l)} &= \frac{\partial \mathcal{L}}{\partial z_j^{(l)}} \\
+&= \sum_k \frac{\partial L}{\partial z_k^{(l+1)}} \cdot \frac{\partial z_k^{(l+1)}}{\partial z_j^{(l)}} \\
+&= \sum_k \delta_k^{(l+1)} \cdot \frac{\partial z_k^{(l+1)}}{\partial z_j^{(l)}}\\
+&= \sum_k \delta_k^{(l+1)} \cdot \frac{\partial z_k^{(l+1)}}{\partial a_j^{(l)}} \cdot \frac{\partial a_j^{(l)}}{\partial z_j^{(l)}}
+\end{align*}
+
+Since 
+
+\begin{align*}
+z_k^{(l+1)} = \sum_i w_{ki}^{(l+1)} a_{i}^{(l)} + b_{i}^{(l+1)}
+\end{align*}
+
+we have:
+
+\begin{align*}
+\frac{\partial z_k^{(l+1)}}{\partial a_j^{(l)}} = w_{kj}^{(l+1)}
+\end{align*}
+
+and it follows that:
+
+\begin{align*}
+\delta_j^{(l)} &= \sum_k \delta_k^{(l+1)} \cdot w_{kj}^{(l+1)} \cdot \frac{\partial a_j^{(l)}}{\partial z_j^{(l)}}\\
+&= \sum_k \delta_k^{(l+1)} \cdot w_{kj}^{(l+1)} \cdot g'(z_j^{(l)})
+\end{align*}
+
+so in matrix form, the vector:
+
+\begin{align*}
+\delta^{(l)} = \left((W^{(l+1)})^T \delta^{(l+1)}\right) \odot g'(z^{(l)}) \tag{1}
+\end{align*}
+
+where $\odot$ denotes the element-wise product.
+
+Let's also compute $\frac{\partial \mathcal{L}}{\partial W^{(l)}}$. First off,
+
+\begin{align*}
+\frac{\partial \mathcal{L}}{\partial w_{ji}^{(l)}} &= \frac{\partial \mathcal{L}}{\partial z_j^{(l)}} \cdot \frac{\partial z_j^{(l)}}{\partial w_{ji}^{(l)}}
+\end{align*}
+
+But, 
+
+\begin{align*}
+z_j^{(l)} = w_{jk}^{(l)}a_k^{(l-1)} + b_j^{(l)}
+\end{align*}
+
+So,
+
+\begin{align*}
+\frac{\partial z_j^{(l)}}{\partial w_{ji}^{(l)}} = a_i^{(l-1)}
+\end{align*}
+
+Consequently, we have:
+
+\begin{align*}
+\frac{\partial \mathcal{L}}{\partial w_{ji}^{(l)}} &= \delta_j^{(l)} \cdot a_i^{(l-1)}
+\end{align*}
+
+It follows that:
+
+\begin{align*}
+\frac{\partial \mathcal{L}}{\partial W^{(l)}} = \delta^{(l)} (a^{(l-1)})^T \tag{2}
+\end{align*}
+
+Finally, we compute $\frac{\partial \mathcal{L}}{\partial b^{(l)}}$. 
+
+We have:
+
+\begin{align*}
+\frac{\partial \mathcal{L}}{\partial b_j^{(l)}} &= \frac{\partial \mathcal{L}}{\partial z_j^{(l)}} \cdot \frac{\partial z_j^{(l)}}{\partial b_j^{l}} \\
+&= \delta_j^{(l)} \cdot 1\\
+&= \delta_j^{(l)}
+\end{align*}
+
+Consequently,
+
+\begin{align*}
+\frac{\partial \mathcal{L}}{\partial b^{(l)}} = \delta^{(l)} \tag{3}
+\end{align*}
+
+```{python}
+from nnfs.datasets import spiral_data
+import matplotlib.pyplot as plt
+import numpy as np
+import nnfs
+
+nnfs.init()
+
+class DenseLayer:
+    def __init__(self, n_inputs, n_neurons):
+        self.width = n_neurons
+        self.weights = 0.01 * np.random.randn(n_neurons, n_inputs)
+        self.biases = np.zeros((1, n_neurons))
+
+    def forward(self, inputs):
+        self.inputs = inputs
+        self.output = np.dot(inputs, self.weights.T) + self.biases
+
+    def backward(self,dloss_dz):
+        """
+        dloss/dz is a vector of shape [1,d_l] where d_l is the number
+        of neurons in the current layer. dz/dW is a matrix of 
+        shape [d_l,d_(l-1)]. We'll take the element-wise product.
+        """
+        self.dloss_dz = dloss_dz
+        self.dz_dweights = np.empty(self.width)
+        self.dz_dweights = np.fill(self.inputs)
+        self.dz_dweights = self.inputs
+        self.dloss_dweights = self.dloss_dz * dz_dweights
+
+# Create dataset
+X = np.array(
+    [
+        [1, 2, 3, 2.5],
+        [2.0, 5.0, -1.0, 2.0],
+        [-1.5, 2.7, 3.3, -0.8],
+        [-1.5, 2.7, 3.3, -0.8],
+    ]
+)
+
+# Create a dense layer with 4 input features and 3 output values
+dense1 = DenseLayer(4, 3)
+
+# Perform a forward pass of our training data through this layer
+dense1.forward(X)
+
+# Let's see the output of the first few samples
+print(dense1.output[:5])
+```
 
