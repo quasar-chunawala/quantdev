@@ -1146,3 +1146,68 @@ print(f"dloss_dbiases = {dense1.dloss_dbiases}")
 print(f"dloss_dinputs = {dense1.dloss_dinputs}")
 ```
 
+## Categorical cross-entropy loss derivative
+
+The cross-entropy loss of the $i$-th sample is given by:
+
+\begin{align*}
+L_i = -\sum_k y_{ik}log(\hat{y}_ik)
+\end{align*}
+
+Differentiating with respect to $\hat{y}_{ij}$, we have:
+
+\begin{align*}
+\frac{\partial L_i}{\partial \hat{y}_{ij}} &= -\frac{\partial}{\partial \hat{y}_{ik}} \left[\sum_k y_{ik}\log (\hat{y}_{ik})\right] \\
+&= -y_{ij} \cdot \frac{\partial }{\partial \hat{y}_{ij}} \log (\hat{y}_{ij})\\
+&= -\frac{y_{ij}}{\hat{y}_{ij}}
+\end{align*}
+
+## Adding `backward()` to `CategoricalCrossEntropyLoss`
+
+```{python}
+# Cross-Entropy loss
+class CategoricalCrossEntropyLoss(Loss):
+
+    # Forward pass
+    def forward(self, y_pred, y_true):
+        num_samples = len(y_pred)
+
+        # Clip data to prevent division by 0
+        # Clip both sides to not drag mean towards any value
+        epsilon = 1e-7
+        y_pred_clipped = np.clip(y_pred, epsilon, 1 - epsilon)
+
+        # If categorical labels
+        if(len(y_pred.shape) == 1):
+            correct_confidences = y_pred[range(len(y_pred)), y_true]
+        # else if one-hot encoding
+        elif(len(y_pred.shape)==2):
+            correct_confidences = np.sum(y_pred * y_true, axis=1)
+
+        neg_log = -np.log(correct_confidences)
+        return neg_log
+    
+    # Backward pass
+    def backward(self, y_pred, y_true):
+        
+        # number of samples
+        batch_size = len(y_pred)
+
+        # number of labels
+        num_labels = len(y_pred[0])
+
+        # If labels are sparse, turn them into a one-hot vector
+        if len(y_true.shape) == 1:
+            y_true = np.eye(labels)[y_true]
+
+        # Calculate gradient
+        self.dloss_da = -y_true/y_pred
+
+        # Normalize the gradient
+        self.dloss_da = self.dloss_da/batch_size
+```
+
+## Softmax Activation function derivative
+
+We are interested to calculate the derivative of the softmax function. 
+
