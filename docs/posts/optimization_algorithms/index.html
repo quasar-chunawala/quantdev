@@ -186,6 +186,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#gradients-and-steepest-ascent" id="toc-gradients-and-steepest-ascent" class="nav-link" data-scroll-target="#gradients-and-steepest-ascent">Gradients and steepest ascent</a></li>
   </ul></li>
   <li><a href="#gradient-descent---naive-implementation" id="toc-gradient-descent---naive-implementation" class="nav-link" data-scroll-target="#gradient-descent---naive-implementation">Gradient Descent - Naive Implementation</a></li>
+  <li><a href="#stochastic-gradient-descentsgd" id="toc-stochastic-gradient-descentsgd" class="nav-link" data-scroll-target="#stochastic-gradient-descentsgd">Stochastic Gradient Descent(SGD)</a></li>
   </ul>
 </nav>
     </div>
@@ -307,96 +308,99 @@ D_{\mathbf{u}}f(\mathbf{a}) = \nabla f(\mathbf{a}) \cdot \mathbf{u} = ||\nabla f
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> typing <span class="im">import</span> Callable</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> gradient_descent(</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    func:Callable[[<span class="bu">float</span>], <span class="bu">float</span>], </span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    alpha:<span class="bu">float</span>, </span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    lower_bnd:np.array, </span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    upper_bnd:np.array,</span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    epsilon:<span class="bu">float</span><span class="op">=</span><span class="fl">1e-6</span>, </span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    n_iter:<span class="bu">int</span><span class="op">=</span><span class="dv">200</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    ):</span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="co">    The gradient descent algorithm.</span></span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
-<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Generate an initial point</span></span>
-<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    x_0 <span class="op">=</span> lower_bnd <span class="op">+</span> np.random.rand()<span class="op">*</span>(upper_bnd <span class="op">-</span> lower_bnd)</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> gradient_descent(</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    func: Callable[[<span class="bu">float</span>], <span class="bu">float</span>],</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    alpha: <span class="bu">float</span>,</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    xval_0: np.array,</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    epsilon: <span class="bu">float</span> <span class="op">=</span> <span class="fl">1e-7</span>,</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    n_iter: <span class="bu">int</span> <span class="op">=</span> <span class="dv">10000</span>,</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>):</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="co">    The gradient descent algorithm.</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    xval_hist <span class="op">=</span> []</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    funcval_hist <span class="op">=</span> []</span>
 <span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> np.array()</span>
-<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    f_x <span class="op">=</span> np.array()</span>
-<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    x_curr <span class="op">=</span> x_0</span>
-<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(n_iter):</span>
-<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Calculate the forward difference</span></span>
-<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>        h <span class="op">=</span> <span class="fl">0.001</span></span>
-<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>        f_x_curr <span class="op">=</span> f(x_curr)</span>
-<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>        grad <span class="op">=</span> (f(x_curr <span class="op">+</span> h) <span class="op">-</span> f_x_curr)<span class="op">/</span>h</span>
-<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Compute the next iterate</span></span>
-<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>        x_next <span class="op">=</span> x_curr <span class="op">-</span> alpha <span class="op">*</span> grad</span>
-<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> np.concatenate((x,x_curr))</span>
-<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>        f_x <span class="op">=</span> np.concatenate((f_x,f_x_curr))</span>
-<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>        x_curr <span class="op">=</span> x_next</span>
-<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="ss">f"Iter=</span><span class="sc">{</span>i<span class="sc">}</span><span class="ss">, x</span><span class="sc">{</span>[i]<span class="sc">}</span><span class="ss">=</span><span class="sc">{</span>x_curr<span class="sc">}</span><span class="ss">, f(</span><span class="sc">{</span>x_curr<span class="sc">}</span><span class="ss">)=</span><span class="sc">{</span>f_x_curr<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    xval_curr <span class="op">=</span> xval_0</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    error <span class="op">=</span> <span class="fl">1.0</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    i <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> np.linalg.norm(error) <span class="op">&gt;</span> epsilon <span class="kw">and</span> i <span class="op">&lt;</span> n_iter:</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Save down x_curr and func(x_curr)</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>        xval_hist.append(xval_curr)</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>        funcval_hist.append(func(xval_curr))</span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Calculate the forward difference</span></span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>        bump <span class="op">=</span> <span class="fl">0.001</span></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>        num_dims <span class="op">=</span> <span class="bu">len</span>(xval_curr)</span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>        xval_bump <span class="op">=</span> xval_curr <span class="op">+</span> np.eye(num_dims) <span class="op">*</span> bump</span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>        xval_nobump <span class="op">=</span> np.full((num_dims,num_dims),xval_curr)</span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>        grad <span class="op">=</span> np.array(</span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>            [(func(xval_h) <span class="op">-</span> func(xval))<span class="op">/</span>bump <span class="cf">for</span> xval_h,xval <span class="kw">in</span> <span class="bu">zip</span>(xval_bump,xval_nobump)]</span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>        )</span>
 <span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x, f_x</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Compute the next iterate</span></span>
+<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>        xval_next <span class="op">=</span> xval_curr <span class="op">-</span> alpha <span class="op">*</span> grad</span>
+<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Compute the error vector</span></span>
+<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a>        error <span class="op">=</span> xval_next <span class="op">-</span> xval_curr</span>
+<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a>        xval_curr <span class="op">=</span> xval_next</span>
+<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a>        i <span class="op">+=</span> <span class="dv">1</span></span>
+<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> xval_hist, funcval_hist</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>One infamous test function is the <em>Rosenbrock function</em> defined as:</p>
 <p><span class="math display">\[\begin{align*}
 f(x,y) = (a-x)^2 + b(y-x^2)^2
 \end{align*}\]</span></p>
-<p>Here is the plot of the Rosenbrock function with parameters <span class="math inline">\(a=1,b=100\)</span>.</p>
 <div class="cell" data-execution_count="3">
-<details>
-<summary>Show the code</summary>
-<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,pgfplots <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>\begin{tikzpicture}[scale<span class="op">=</span><span class="fl">1.5</span>]</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>\begin{axis}</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    \addplot3 [surf] {(<span class="dv">1</span><span class="op">-</span>x)<span class="op">^</span><span class="dv">2</span> <span class="op">+</span> <span class="dv">100</span><span class="op">*</span>(y<span class="op">-</span>x<span class="op">^</span><span class="dv">2</span>)<span class="op">^</span><span class="dv">2</span>}<span class="op">;</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>\end{axis}</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>\end{tikzpicture}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</details>
-<div class="cell-output cell-output-display" data-execution_count="3">
-<p><img src="index_files/figure-html/cell-4-output-1.svg" class="img-fluid"></p>
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> rosenbrock(x):</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">1</span><span class="op">*</span>(<span class="dv">1</span><span class="op">-</span>x[<span class="dv">0</span>])<span class="op">**</span><span class="dv">2</span> <span class="op">+</span> <span class="dv">100</span><span class="op">*</span>(x[<span class="dv">1</span>]<span class="op">-</span>x[<span class="dv">0</span>]<span class="op">**</span><span class="dv">2</span>)<span class="op">**</span><span class="dv">2</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> f(x):</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x[<span class="dv">0</span>]<span class="op">**</span><span class="dv">2</span> <span class="op">+</span> x[<span class="dv">1</span>]<span class="op">**</span><span class="dv">2</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
-</div>
+<p>Here is the plot of the Rosenbrock function with parameters <span class="math inline">\(a=1,b=100\)</span>.</p>
 <div class="cell" data-execution_count="4">
 <details>
 <summary>Show the code</summary>
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,pgfplots <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>\begin{tikzpicture}[scale<span class="op">=</span><span class="fl">1.5</span>]</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>\begin{axis}</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    \addplot3 [</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>        contour</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    ] {(<span class="dv">1</span><span class="op">-</span>x)<span class="op">^</span><span class="dv">2</span> <span class="op">+</span> <span class="dv">100</span><span class="op">*</span>(y<span class="op">-</span>x<span class="op">^</span><span class="dv">2</span>)<span class="op">^</span><span class="dv">2</span>}<span class="op">;</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>\end{axis}</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>\end{tikzpicture}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    \addplot3 [surf] {(<span class="dv">1</span><span class="op">-</span>x)<span class="op">^</span><span class="dv">2</span> <span class="op">+</span> <span class="dv">100</span><span class="op">*</span>(y<span class="op">-</span>x<span class="op">^</span><span class="dv">2</span>)<span class="op">^</span><span class="dv">2</span>}<span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>\end{axis}</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>\end{tikzpicture}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
-<div class="cell-output cell-output-stderr">
-<pre><code> on input line 4.
-
-
-! Package pgfkeys Error: I do not know the key '/tikz/contour' and I am going t
-o ignore it. Perhaps you misspelled it.
-
-See the pgfkeys package documentation for explanation.
-Type  H &lt;return&gt;  for immediate help.
- ...                                              
-                                                  
-l.9     ] {(1-x)^2 + 100*(y-x^2)^2};
-                                    
-? 
-! Emergency stop.
- ...                                              
-                                                  
-l.9     ] {(1-x)^2 + 100*(y-x^2)^2};
-                                    
-!  ==&gt; Fatal error occurred, no output PDF file produced!
-Transcript written on 75830abe1d82f7394784178633ba4163.log.</code></pre>
+<div class="cell-output cell-output-display" data-execution_count="4">
+<p><img src="index_files/figure-html/cell-5-output-1.svg" class="img-fluid"></p>
 </div>
 </div>
+<div class="cell" data-execution_count="5">
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>x_history, f_x_history <span class="op">=</span> gradient_descent(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    func<span class="op">=</span>rosenbrock, </span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    alpha<span class="op">=</span><span class="fl">0.001</span>, </span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    xval_0<span class="op">=</span>np.array([<span class="op">-</span><span class="fl">2.0</span>, <span class="fl">2.0</span>]), </span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    epsilon<span class="op">=</span><span class="fl">1e-7</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"x* = </span><span class="sc">{</span>x_history[<span class="op">-</span><span class="dv">1</span>]<span class="sc">}</span><span class="ss">, f(x*)=</span><span class="sc">{</span>f_x_history[<span class="op">-</span><span class="dv">1</span>]<span class="sc">}</span><span class="ss">"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>x* = [0.7936218  0.62933403], f(x*)=0.04261711392593988</code></pre>
+</div>
+</div>
+</section>
+<section id="stochastic-gradient-descentsgd" class="level2">
+<h2 class="anchored" data-anchor-id="stochastic-gradient-descentsgd">Stochastic Gradient Descent(SGD)</h2>
+<p>In machine learning applications, we typically want to minimize the loss function <span class="math inline">\(\mathcal{L}(w,b)\)</span> that has the form of a sum:</p>
+<p><span class="math display">\[\begin{align*}
+\mathcal{L}(w,b) = \frac{1}{n}\sum_i L_i(w,b)
+\end{align*}\]</span></p>
+<p>where the weights <span class="math inline">\(w\)</span> and the biases <span class="math inline">\(b\)</span> are to be estimated. Each summand function <span class="math inline">\(L_i\)</span> is typically associated with the <span class="math inline">\(i\)</span>-th sample in the data-set used for training.</p>
 
 
 </section>
