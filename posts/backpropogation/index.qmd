@@ -1178,18 +1178,18 @@ class CategoricalCrossEntropyLoss(Loss):
         y_pred_clipped = np.clip(y_pred, epsilon, 1 - epsilon)
 
         # If categorical labels
-        if(len(y_pred.shape) == 1):
+        if len(y_pred.shape) == 1:
             correct_confidences = y_pred[range(len(y_pred)), y_true]
         # else if one-hot encoding
-        elif(len(y_pred.shape)==2):
+        elif len(y_pred.shape) == 2:
             correct_confidences = np.sum(y_pred * y_true, axis=1)
 
         neg_log = -np.log(correct_confidences)
         return neg_log
-    
+
     # Backward pass
     def backward(self, y_pred, y_true):
-        
+
         # number of samples
         batch_size = len(y_pred)
 
@@ -1198,16 +1198,102 @@ class CategoricalCrossEntropyLoss(Loss):
 
         # If labels are sparse, turn them into a one-hot vector
         if len(y_true.shape) == 1:
-            y_true = np.eye(labels)[y_true]
+            y_true = np.eye(num_labels)[y_true]
 
         # Calculate gradient
-        self.dloss_da = -y_true/y_pred
+        self.dloss_da = -y_true / y_pred
 
         # Normalize the gradient
-        self.dloss_da = self.dloss_da/batch_size
+        self.dloss_da = self.dloss_da / batch_size
 ```
 
 ## Softmax Activation function derivative
 
-We are interested to calculate the derivative of the softmax function. 
+We are interested to calculate the derivative of the softmax function. The softmax activation function is defined as:
+
+\begin{align*}
+S_{i,j} &= \frac{e^{z_{i,j}}}{\sum_{l=1}^{d_l} e^{z_{i,l}}}
+\end{align*}
+
+where $S_{i,j}$ denotes the output of the $j$-th neuron for the $i$-th sample. Thus, $S_{i,j} = f(z_{i,1},\ldots,z_{i,d_l})$. Let's calculate the partial derivative of $S_{i,j}$ with respect to $z_{i,k}$.
+
+By the $u/v$ rule:
+
+\begin{align*}
+\frac{\partial S_{i,j}}{\partial z_{i,k}} &= \frac{\sum_{l=1}^{d_l} e^{z_{i,l}} \cdot \frac{\partial e^{z_{i,j}}}{\partial z_{i,k}}-e^{z_{i,j}} \cdot \frac{\partial}{\partial z_{i,k}} \sum_{l=1}^{d_l} e^{z_{i,l}}}{\left(\sum_{l=1}^{d_l} e^{z_{i,l}}\right)^2}
+\end{align*}
+
+We have two cases. If $j=k$, then $\frac{\partial e^{z_{i,j}}}{\partial z_{i,k}} = e^{z_{i,k}}$ and we get:
+
+\begin{align*}
+\frac{\partial S_{i,j}}{\partial z_{i,k}} &= \frac{e^{z_{i,k}} \cdot \sum_{l=1}^{d_l} e^{z_{i,l}} -e^{z_{i,k}} \cdot e^{z_{i,k}}}{\left(\sum_{l=1}^{d_l} e^{z_{i,l}}\right)^2}\\
+&=\frac{e^{z_{i,k}}}{\sum_{l=1}^{d_l} e^{z_{i,l}}} \cdot \frac{\sum_{l=1}^{d_l} e^{z_{i,l}} -e^{z_{i,k}}}{\sum_{l=1}^{d_l} e^{z_{i,l}}}\\
+&=S_{i,k}(1-S_{i,k})
+\end{align*}
+
+In the case where $j \neq k$, $\frac{\partial e^{z_{i,j}}}{\partial z_{i,k}} = 0$ and we have:
+
+\begin{align*}
+\frac{\partial S_{i,j}}{\partial z_{i,k}} &= -\frac{e^{z_{i,j}}}{\sum_{l=1}^{d_l}e^{z_{i,l}}}\cdot \frac{e^{z_{i,k}}}{\sum_{l=1}^{d_l}e^{z_{i,l}}}\\
+&=-S_{i,j} S_{i,k}
+\end{align*}
+
+So, the derivative of the softmax activation function can be expressed in terms of Kronecker's delta as:
+
+\begin{align*}
+\frac{\partial S_{i,j}}{\partial z_{i,k}} &= S_{i,j}(\delta_{j,k} -  S_{i,k})\\
+&= S_{i,j} \delta_{j,k} - S_{i,j}S_{i,k}
+\end{align*}
+
+Now, like before, let's say we have neural network with a single hidden layer with $d_1 = 3$ neurons. We apply the softmax activation function to the output of this layer. The jacobian matrix $\frac{\partial S_i}{\partial z_i}$ for the $i$-th sample can be expressed as:
+
+\begin{align*}
+\frac{\partial S_i}{\partial z_i} &= 
+\begin{bmatrix}
+\frac{\partial S_{i1}}{\partial z_{i1}} & \frac{\partial S_{i1}}{\partial z_{i2}} & \frac{\partial S_{i1}}{\partial z_{i3}} \\
+\frac{\partial S_{i2}}{\partial z_{i1}} & \frac{\partial S_{i2}}{\partial z_{i2}} & \frac{\partial S_{i2}}{\partial z_{i3}} \\
+\frac{\partial S_{i3}}{\partial z_{i1}} & \frac{\partial S_{i3}}{\partial z_{i2}} & \frac{\partial S_{i3}}{\partial z_{i3}} 
+\end{bmatrix}\\
+&=\begin{bmatrix}
+S_{i1}(\delta_{11} - S_{i1}) & S_{i1}(\delta_{12} - S_{i2}) & S_{i1}(\delta_{13} - S_{i3}) \\
+S_{i2}(\delta_{21} - S_{i1}) & S_{i2}(\delta_{22} - S_{i2}) & S_{i2}(\delta_{23} - S_{i3}) \\
+S_{i3}(\delta_{31} - S_{i1}) & S_{i3}(\delta_{32} - S_{i2}) & S_{i3}(\delta_{33} - S_{i3}) 
+\end{bmatrix}\\
+&=\begin{bmatrix}
+S_{i1}(1 - S_{i1}) & S_{i1}(0 - S_{i2}) & S_{i1}(0 - S_{i3}) \\
+S_{i2}(0 - S_{i1}) & S_{i2}(1 - S_{i2}) & S_{i2}(0 - S_{i3}) \\
+S_{i3}(0 - S_{i1}) & S_{i3}(0 - S_{i2}) & S_{i3}(1 - S_{i3}) 
+\end{bmatrix}\\
+&=\begin{bmatrix}
+S_{i1}\\
+S_{i2}\\
+S_{i3}
+\end{bmatrix}\odot 
+\begin{bmatrix}
+1 & 0 & 0 \\
+0 & 1 & 0 \\
+0 & 0 & 1
+\end{bmatrix} - 
+\begin{bmatrix}
+S_{i1}\\
+S_{i2}\\
+S_{i3}
+\end{bmatrix}\begin{bmatrix}
+S_{i1} & S_{i2} & S_{i3}
+\end{bmatrix}
+\end{align*}
+
+Say the `softmax_output=[0.70, 0.10, 0.20]`. Then, in python, we can find the Jacobian matrix as:
+
+```{python}
+import numpy as np
+
+softmax_output = np.array([0.70, 0.10, 0.20])
+
+da_dz = np.diagflat(softmax_output) - np.dot(softmax_output.T, softmax_output)
+print(da_dz)
+```
+
+### Python implementation
+
 
