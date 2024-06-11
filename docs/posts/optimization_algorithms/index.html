@@ -22,6 +22,40 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -261,6 +295,108 @@ D_{\mathbf{u}}f(\mathbf{a}) = \nabla f(\mathbf{a}) \cdot \mathbf{u} = ||\nabla f
 </section>
 <section id="gradient-descent---naive-implementation" class="level2">
 <h2 class="anchored" data-anchor-id="gradient-descent---naive-implementation">Gradient Descent - Naive Implementation</h2>
+<p>Beginning at <span class="math inline">\(\mathbf{x}_0\)</span>, optimization algorithms generate a sequence of iterates ${<em>k}</em>{k=0}^{} that terminate when no more progress can be made or it seems a solution point has been approximated with sufficient accuracy. $The <em>gradient descent method</em> is an optimization algorithm that moves along <span class="math inline">\(\mathbf{d}_k = -\nabla f(\mathbf{x}_k)\)</span> at every step. Thus,</p>
+<p><span class="math display">\[\begin{align*}
+\mathbf{x}_{k+1} = \mathbf{x}_k - \alpha_k \mathbf{d}_k
+\end{align*}\]</span></p>
+<p>It can choose the step length <span class="math inline">\(\alpha_k\)</span> in a variety of ways. One advantage of steepest descent is that it requires the calculation of the gradient <span class="math inline">\(\nabla f(\mathbf{x}_k)\)</span>, but not of the second derivatives. However, it can be excruciatingly slow on difficult problems.</p>
+<div class="cell" data-execution_count="1">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>load_ext itikz</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell" data-execution_count="2">
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> typing <span class="im">import</span> Callable</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> gradient_descent(</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    func:Callable[[<span class="bu">float</span>], <span class="bu">float</span>], </span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    alpha:<span class="bu">float</span>, </span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    lower_bnd:np.array, </span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    upper_bnd:np.array,</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    epsilon:<span class="bu">float</span><span class="op">=</span><span class="fl">1e-6</span>, </span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    n_iter:<span class="bu">int</span><span class="op">=</span><span class="dv">200</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    ):</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="co">    The gradient descent algorithm.</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Generate an initial point</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    x_0 <span class="op">=</span> lower_bnd <span class="op">+</span> np.random.rand()<span class="op">*</span>(upper_bnd <span class="op">-</span> lower_bnd)</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> np.array()</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    f_x <span class="op">=</span> np.array()</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    x_curr <span class="op">=</span> x_0</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(n_iter):</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Calculate the forward difference</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>        h <span class="op">=</span> <span class="fl">0.001</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>        f_x_curr <span class="op">=</span> f(x_curr)</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>        grad <span class="op">=</span> (f(x_curr <span class="op">+</span> h) <span class="op">-</span> f_x_curr)<span class="op">/</span>h</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Compute the next iterate</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>        x_next <span class="op">=</span> x_curr <span class="op">-</span> alpha <span class="op">*</span> grad</span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> np.concatenate((x,x_curr))</span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>        f_x <span class="op">=</span> np.concatenate((f_x,f_x_curr))</span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>        x_curr <span class="op">=</span> x_next</span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="ss">f"Iter=</span><span class="sc">{</span>i<span class="sc">}</span><span class="ss">, x</span><span class="sc">{</span>[i]<span class="sc">}</span><span class="ss">=</span><span class="sc">{</span>x_curr<span class="sc">}</span><span class="ss">, f(</span><span class="sc">{</span>x_curr<span class="sc">}</span><span class="ss">)=</span><span class="sc">{</span>f_x_curr<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x, f_x</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>One infamous test function is the <em>Rosenbrock function</em> defined as:</p>
+<p><span class="math display">\[\begin{align*}
+f(x,y) = (a-x)^2 + b(y-x^2)^2
+\end{align*}\]</span></p>
+<p>Here is the plot of the Rosenbrock function with parameters <span class="math inline">\(a=1,b=100\)</span>.</p>
+<div class="cell" data-execution_count="3">
+<details>
+<summary>Show the code</summary>
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,pgfplots <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>\begin{tikzpicture}[scale<span class="op">=</span><span class="fl">1.5</span>]</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>\begin{axis}</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    \addplot3 [surf] {(<span class="dv">1</span><span class="op">-</span>x)<span class="op">^</span><span class="dv">2</span> <span class="op">+</span> <span class="dv">100</span><span class="op">*</span>(y<span class="op">-</span>x<span class="op">^</span><span class="dv">2</span>)<span class="op">^</span><span class="dv">2</span>}<span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>\end{axis}</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>\end{tikzpicture}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-display" data-execution_count="3">
+<p><img src="index_files/figure-html/cell-4-output-1.svg" class="img-fluid"></p>
+</div>
+</div>
+<div class="cell" data-execution_count="4">
+<details>
+<summary>Show the code</summary>
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,pgfplots <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>\begin{tikzpicture}[scale<span class="op">=</span><span class="fl">1.5</span>]</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>\begin{axis}</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    \addplot3 [</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>        contour</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    ] {(<span class="dv">1</span><span class="op">-</span>x)<span class="op">^</span><span class="dv">2</span> <span class="op">+</span> <span class="dv">100</span><span class="op">*</span>(y<span class="op">-</span>x<span class="op">^</span><span class="dv">2</span>)<span class="op">^</span><span class="dv">2</span>}<span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>\end{axis}</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>\end{tikzpicture}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-stderr">
+<pre><code> on input line 4.
+
+
+! Package pgfkeys Error: I do not know the key '/tikz/contour' and I am going t
+o ignore it. Perhaps you misspelled it.
+
+See the pgfkeys package documentation for explanation.
+Type  H &lt;return&gt;  for immediate help.
+ ...                                              
+                                                  
+l.9     ] {(1-x)^2 + 100*(y-x^2)^2};
+                                    
+? 
+! Emergency stop.
+ ...                                              
+                                                  
+l.9     ] {(1-x)^2 + 100*(y-x^2)^2};
+                                    
+!  ==&gt; Fatal error occurred, no output PDF file produced!
+Transcript written on 75830abe1d82f7394784178633ba4163.log.</code></pre>
+</div>
+</div>
 
 
 </section>
