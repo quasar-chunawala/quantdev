@@ -1354,4 +1354,55 @@ class SoftmaxActivation:
 
 ## Categorical cross-entropy loss and softmax activation function derivative
 
+The derivative of the categorical cross entropy loss and softmax activation function can be combined and results in a faster and simple implementation. The current implementation of the `backward` function in `SoftMaxActivation` is not vectorized and has a loop.
 
+Let's focus again on $\frac{\partial L_{i}}{\partial z_{ij}}$. We have:
+
+\begin{align*}
+\frac{\partial L_i}{\partial z_{ij}} &= \sum_{k} \frac{\partial L_i}{\partial S_{ik}} \frac{\partial S_{ik}}{\partial z_{ij}} \\
+&= \frac{\partial L_i}{S_{ij}} \cdot \frac{\partial S_{ij}}{\partial z_{ij}} + \sum_{k\neq j}\frac{\partial L_i}{\partial S_{ik}} \frac{\partial S_{ik}}{\partial z_{ij}} \\
+&= -\frac{y_{ij}}{\hat{y}_{ij}}\hat{y}_{ij}(1-\hat{y}_{ij}) + \sum_{k \neq j}-\frac{y_{ik}}{\hat{y}_{ik}}\cdot \hat{y}_{ik}(0 - \hat{y}_{ij})\\
+&= -\frac{y_{ij}}{\cancel{\hat{y}_{ij}}}\cancel{\hat{y}_{ij}}(1-\hat{y}_{ij}) + \sum_{k \neq j}-\frac{y_{ik}}{\cancel{\hat{y}_{ik}}}\cdot \cancel{\hat{y}_{ik}}(0 - \hat{y}_{ij})\\
+&= -y_{ij} + y_{ij}\hat{y}_{ij} + \sum_{k\neq j}y_{ik} \hat{y}_{ij}\\
+&= -y_{ij} + \hat{y}_{ij}(\sum_{k}y_{ik})\\
+&= \hat{y}_{ij} - y_{ij}
+\end{align*}
+
+```{python}
+class CategoricalCrossEntropySoftmax:
+
+    # create activation and loss function objects
+    def __init__(self):
+        self.activation = SoftmaxActivation()
+        self.loss = CategoricalCrossEntropyLoss()
+
+    # forward pass
+    def forward(self, inputs, y_true):
+
+        self.inputs = inputs
+        self.activation.forward(inputs)
+
+        self.output = self.activation.output
+
+        return self.loss.calculate(self.output, y_true)
+
+    # Backward pass
+    def backward(self, y_pred, y_true):
+        # number of samples
+        batch_size = len(y_pred)
+
+        # number of labels
+        num_labels = len(y_pred[0])
+
+        # If labels are sparse, turn them into a one-hot vector
+        if len(y_true.shape) == 1:
+            y_true = np.eye(num_labels)[y_true]
+
+        # Calculate the gradient
+        self.dloss_dz = y_pred - y_true
+
+        # Normalize the gradient
+        self.dloss_dz = self.dloss_dz / batch_size
+```
+
+We can now test if the combined backward step returns the same values compared to when we backpropogate gradients through both of the functions separately.
