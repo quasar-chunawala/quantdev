@@ -1548,7 +1548,7 @@ S_{i1} &amp; S_{i2} &amp; S_{i3}
 <section id="categorical-cross-entropy-loss-and-softmax-activation-function-derivative" class="level2">
 <h2 class="anchored" data-anchor-id="categorical-cross-entropy-loss-and-softmax-activation-function-derivative">Categorical cross-entropy loss and softmax activation function derivative</h2>
 <p>The derivative of the categorical cross entropy loss and softmax activation function can be combined and results in a faster and simple implementation. The current implementation of the <code>backward</code> function in <code>SoftMaxActivation</code> is not vectorized and has a loop.</p>
-<p>Let’s focus again on <span class="math inline">\(\frac{\partial L^{i}}{\partial z_{ij}}\)</span>. We have:</p>
+<p>Let’s focus again on <span class="math inline">\(\frac{\partial L_{i}}{\partial z_{ij}}\)</span>. We have:</p>
 <p><span class="math display">\[\begin{align*}
 \frac{\partial L_i}{\partial z_{ij}} &amp;= \sum_{k} \frac{\partial L_i}{\partial S_{ik}} \frac{\partial S_{ik}}{\partial z_{ij}} \\
 &amp;= \frac{\partial L_i}{S_{ij}} \cdot \frac{\partial S_{ij}}{\partial z_{ij}} + \sum_{k\neq j}\frac{\partial L_i}{\partial S_{ik}} \frac{\partial S_{ik}}{\partial z_{ij}} \\
@@ -1558,6 +1558,43 @@ S_{i1} &amp; S_{i2} &amp; S_{i3}
 &amp;= -y_{ij} + \hat{y}_{ij}(\sum_{k}y_{ik})\\
 &amp;= \hat{y}_{ij} - y_{ij}
 \end{align*}\]</span></p>
+<div class="cell" data-execution_count="31">
+<div class="sourceCode cell-code" id="cb46"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> CategoricalCrossEntropySoftmax:</span>
+<span id="cb46-2"><a href="#cb46-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-3"><a href="#cb46-3" aria-hidden="true" tabindex="-1"></a>    <span class="co"># create activation and loss function objects</span></span>
+<span id="cb46-4"><a href="#cb46-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>):</span>
+<span id="cb46-5"><a href="#cb46-5" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.activation <span class="op">=</span> SoftmaxActivation()</span>
+<span id="cb46-6"><a href="#cb46-6" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.loss <span class="op">=</span> CategoricalCrossEntropyLoss()</span>
+<span id="cb46-7"><a href="#cb46-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-8"><a href="#cb46-8" aria-hidden="true" tabindex="-1"></a>    <span class="co"># forward pass</span></span>
+<span id="cb46-9"><a href="#cb46-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, inputs, y_true):</span>
+<span id="cb46-10"><a href="#cb46-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-11"><a href="#cb46-11" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.inputs <span class="op">=</span> inputs</span>
+<span id="cb46-12"><a href="#cb46-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.activation.forward(inputs)</span>
+<span id="cb46-13"><a href="#cb46-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-14"><a href="#cb46-14" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.output <span class="op">=</span> <span class="va">self</span>.activation.output</span>
+<span id="cb46-15"><a href="#cb46-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-16"><a href="#cb46-16" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.loss.calculate(<span class="va">self</span>.output, y_true)</span>
+<span id="cb46-17"><a href="#cb46-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-18"><a href="#cb46-18" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Backward pass</span></span>
+<span id="cb46-19"><a href="#cb46-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> backward(<span class="va">self</span>, y_pred, y_true):</span>
+<span id="cb46-20"><a href="#cb46-20" aria-hidden="true" tabindex="-1"></a>        <span class="co"># number of samples</span></span>
+<span id="cb46-21"><a href="#cb46-21" aria-hidden="true" tabindex="-1"></a>        batch_size <span class="op">=</span> <span class="bu">len</span>(y_pred)</span>
+<span id="cb46-22"><a href="#cb46-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-23"><a href="#cb46-23" aria-hidden="true" tabindex="-1"></a>        <span class="co"># number of labels</span></span>
+<span id="cb46-24"><a href="#cb46-24" aria-hidden="true" tabindex="-1"></a>        num_labels <span class="op">=</span> <span class="bu">len</span>(y_pred[<span class="dv">0</span>])</span>
+<span id="cb46-25"><a href="#cb46-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-26"><a href="#cb46-26" aria-hidden="true" tabindex="-1"></a>        <span class="co"># If labels are sparse, turn them into a one-hot vector</span></span>
+<span id="cb46-27"><a href="#cb46-27" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="bu">len</span>(y_true.shape) <span class="op">==</span> <span class="dv">1</span>:</span>
+<span id="cb46-28"><a href="#cb46-28" aria-hidden="true" tabindex="-1"></a>            y_true <span class="op">=</span> np.eye(num_labels)[y_true]</span>
+<span id="cb46-29"><a href="#cb46-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-30"><a href="#cb46-30" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Calculate the gradient</span></span>
+<span id="cb46-31"><a href="#cb46-31" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dz <span class="op">=</span> y_pred <span class="op">-</span> y_true</span>
+<span id="cb46-32"><a href="#cb46-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-33"><a href="#cb46-33" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Normalize the gradient</span></span>
+<span id="cb46-34"><a href="#cb46-34" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dz <span class="op">=</span> <span class="va">self</span>.dloss_dz <span class="op">/</span> batch_size</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>We can now test if the combined backward step returns the same values compared to when we backpropogate gradients through both of the functions separately.</p>
 
 
 </section>
