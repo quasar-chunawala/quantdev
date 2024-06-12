@@ -1294,6 +1294,64 @@ da_dz = np.diagflat(softmax_output) - np.dot(softmax_output.T, softmax_output)
 print(da_dz)
 ```
 
-### Python implementation
+What happens when we have a batch of inputs? By the chain rule:
+
+\begin{align*}
+\frac{\partial L}{\partial z_{11}} &= \frac{\partial L}{\partial S_{11}} \cdot \frac{\partial S_{11}}{\partial z_{11}} + \frac{\partial L}{\partial S_{12}} \cdot \frac{\partial S_{12}}{\partial z_{11}} + \frac{\partial L}{\partial S_{13}}\cdot \frac{\partial S_{13}}{\partial z_{11}}
+\end{align*}
+
+In general,
+
+\begin{align*}
+\frac{\partial L}{\partial z_{ij}} &= \frac{\partial L}{\partial S_{i1}} \cdot \frac{\partial S_{i1}}{\partial z_{ij}} + \frac{\partial L}{\partial S_{i2}} \cdot \frac{\partial S_{i2}}{\partial z_{ij}} + \frac{\partial L}{\partial S_{i3}}\cdot \frac{\partial S_{i3}}{\partial z_{ij}}\\
+&=\sum_{k=1}^{3} \frac{\partial L}{\partial S_{ik}} \cdot \frac{\partial S_{ik}}{\partial z_{ij}}
+\end{align*}
+
+It follows that:
+
+\begin{align*}
+\frac{\partial L}{\partial z_i} &= \begin{bmatrix}
+\frac{\partial L}{\partial z_{i1}} & \frac{\partial L}{\partial z_{i2}} & \frac{\partial L}{\partial z_{i3}}
+\end{bmatrix}\\
+&=\begin{bmatrix}
+\frac{\partial L}{\partial S_{i1}} & \frac{\partial L}{\partial S_{i2}} & \frac{\partial L}{\partial S_{i3}}
+\end{bmatrix} \begin{bmatrix}
+\frac{\partial S_{i1}}{\partial z_{i1}} & \frac{\partial S_{i1}}{\partial z_{i2}} & \frac{\partial S_{i1}}{\partial z_{i3}} \\
+\frac{\partial S_{i2}}{\partial z_{i1}} & \frac{\partial S_{i2}}{\partial z_{i2}} & \frac{\partial S_{i2}}{\partial z_{i3}} \\
+\frac{\partial S_{i3}}{\partial z_{i1}} & \frac{\partial S_{i3}}{\partial z_{i2}} & \frac{\partial S_{i3}}{\partial z_{i3}} 
+\end{bmatrix}\\
+&=\frac{\partial L}{\partial S_i} \cdot \frac{\partial S_i}{\partial z_i}
+\end{align*}
+
+Now, $\partial L/\partial S_i$ has shape `[1,3]` and $\partial S_i/\partial z_i$ is a matrix of size `[3,3]`. So, $\partial L/\partial z_i$ will have dimensions `[1,3]`.
+
+## Softmax `backward()` implementation
+
+We are now in a position to add `backward()` pass to the `SoftmaxActivation` layer.
+
+```{python}
+class SoftmaxActivation:
+
+    # Forward pass
+    def forward(self,inputs):
+        self.inputs = inputs
+        exp_values = np.exp(inputs - np.max(inputs, axis=1, keepdims=True))
+        probabilities = exp_values / np.sum(exp_values, axis=1, keepdims=True)
+        self.output = probabilities
+
+    # Backward pass
+    def backward(self, dloss_da):
+        dloss_dz = []
+        n = len(self.output)
+        for i in range(n):
+            softmax_output = self.output[i]
+            dsoftmax_dz = np.diagflat(softmax_output) - np.dot(softmax_output.T, softmax_output)
+            dloss_dz.append(np.dot(dloss_da[i],dsoftmax_dz))
+        
+        self.dloss_dz = np.array(dloss_dz)
+        
+```
+
+## Categorical cross-entropy loss and softmax activation function derivative
 
 
