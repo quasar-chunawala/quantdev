@@ -1178,11 +1178,11 @@ class CategoricalCrossEntropyLoss(Loss):
         y_pred_clipped = np.clip(y_pred, epsilon, 1 - epsilon)
 
         # If categorical labels
-        if len(y_pred.shape) == 1:
-            correct_confidences = y_pred[range(len(y_pred)), y_true]
+        if len(y_true.shape) == 1:
+            correct_confidences = y_pred_clipped[range(len(y_pred)), y_true]
         # else if one-hot encoding
-        elif len(y_pred.shape) == 2:
-            correct_confidences = np.sum(y_pred * y_true, axis=1)
+        elif len(y_true.shape) == 2:
+            correct_confidences = np.sum(y_pred_clipped * y_true, axis=1)
 
         neg_log = -np.log(correct_confidences)
         return neg_log
@@ -1290,7 +1290,8 @@ import numpy as np
 
 softmax_output = np.array([0.70, 0.10, 0.20])
 
-da_dz = np.diagflat(softmax_output) - np.dot(softmax_output.T, softmax_output)
+softmax_output = softmax_output.reshape(-1,1)
+da_dz = np.diagflat(softmax_output) - np.dot(softmax_output, softmax_output.T)
 print(da_dz)
 ```
 
@@ -1333,7 +1334,7 @@ We are now in a position to add `backward()` pass to the `SoftmaxActivation` lay
 class SoftmaxActivation:
 
     # Forward pass
-    def forward(self,inputs):
+    def forward(self, inputs):
         self.inputs = inputs
         exp_values = np.exp(inputs - np.max(inputs, axis=1, keepdims=True))
         probabilities = exp_values / np.sum(exp_values, axis=1, keepdims=True)
@@ -1345,9 +1346,15 @@ class SoftmaxActivation:
         n = len(self.output)
         for i in range(n):
             softmax_output = self.output[i]
-            dsoftmax_dz = np.diagflat(softmax_output) - np.dot(softmax_output.T, softmax_output)
-            dloss_dz.append(np.dot(dloss_da[i],dsoftmax_dz))
-        
+
+            # Reshape as a column vector
+            softmax_output = softmax_output.reshape(-1, 1)
+
+            dsoftmax_dz = np.diagflat(softmax_output) - np.dot(
+                softmax_output, softmax_output.T
+            )
+            dloss_dz.append(np.dot(dloss_da[i], dsoftmax_dz))
+
         self.dloss_dz = np.array(dloss_dz)
         
 ```
@@ -1406,3 +1413,31 @@ class CategoricalCrossEntropySoftmax:
 ```
 
 We can now test if the combined backward step returns the same values compared to when we backpropogate gradients through both of the functions separately.
+
+```{python}
+import numpy as np
+import nnfs
+
+nnfs.init()
+
+softmax_outputs = np.array([[0.7, 0.1, 0.2], [0.1, 0.5, 0.4], [0.02, 0.9, 0.08]])
+
+class_targets = np.array([0, 1, 1])
+
+
+activation = SoftmaxActivation()
+activation.output = softmax_outputs
+
+loss = CategoricalCrossEntropyLoss()
+loss.backward(softmax_outputs, class_targets)
+print("Gradients : separate loss and activation")
+print(f"dloss_da = {loss.dloss_da}")
+
+activation.backward(loss.dloss_da)
+print(f"dloss_dz = {activation.dloss_dz}")
+
+softmax_cce = CategoricalCrossEntropySoftmax()
+softmax_cce.backward(softmax_outputs, class_targets)
+print("Gradients : combined loss and activation")
+print(f"dloss_dz = {softmax_cce.dloss_dz}")
+```
