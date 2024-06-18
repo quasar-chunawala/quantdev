@@ -280,6 +280,22 @@ w_{k+1} := w_k - \alpha_k \nabla \mathcal{L}(w_{k}) = w_k - \alpha_k \nabla L_i(
 We are now in a position to code the `SGDOptimizer` class.
 
 ```{python}
+# Global imports
+import numpy as np
+import nnfs
+import matplotlib.pyplot as plt
+from nnfs.datasets import spiral_data
+
+from dense_layer import DenseLayer
+from relu_activation import ReLUActivation
+from softmax_activation import SoftmaxActivation
+
+from loss import Loss
+from categorical_cross_entropy_loss import CategoricalCrossEntropyLoss
+from categorical_cross_entropy_softmax import CategoricalCrossEntropySoftmax
+```
+
+```{python}
 class SGDOptimizer:
 
     # Initialize the optimizer
@@ -288,8 +304,126 @@ class SGDOptimizer:
 
     # Update the parameters
     def update_params(self, layer):
-        layer.weights -= self.learning_rate * layer.dloss_dweights
+        layer.weights -= self.learning_rate * layer.dloss_dweights.T
         layer.biases -= self.learning_rate * layer.dloss_dbiases
 ```
 
+Let's play around with our optimizer. 
+
+```{python}
+# Create dataset
+X, y = spiral_data(samples=100, classes=3)
+
+# Create a DenseLayer with 2 input features and 64 neurons
+dense1 = DenseLayer(2, 64)
+
+# Create ReLU Activation (to be used with DenseLayer 1)
+activation1 = ReLUActivation()
+
+# Create the second DenseLayer with 64 inputs and 3 output values
+dense2 = DenseLayer(64,3)
+
+# Create SoftmaxClassifer's combined loss and activation
+loss_activation = CategoricalCrossEntropySoftmax()
+
+# The next step is to create the optimizer object
+optimizer = SGDOptimizer()
+```
+
+Now, we perform a *forward pass* of our sample data.
+
+```{python}
+
+# Perform a forward pass for our sample data
+dense1.forward(X)
+
+# Performs a forward pass through the activation function
+# takes the output of the first dense layer here
+activation1.forward(dense1.output)
+
+# Performs a forward pass through the second DenseLayer
+dense2.forward(activation1.output)
+
+# Performs a forward pass through the activation/loss function
+# takes the output of the second DenseLayer and returns the loss
+loss = loss_activation.forward(dense2.output, y)
+
+# Let's print the loss value
+print(f"Loss = {loss}")
+
+# Now we do our backward pass 
+loss_activation.backward(loss_activation.output, y)
+dense2.backward(loss_activation.dloss_dz)
+activation1.backward(dense2.dloss_dinputs)
+dense1.backward(activation1.dloss_dz)
+
+# Then finally we use our optimizer to update the weights and biases
+optimizer.update_params(dense1)
+optimizer.update_params(dense2)
+```
+
+This is everything we need to train our model! 
+
+But why would we only perform this optimization only once, when we can perform it many times by leveraging Python's looping capabilities? We will repeatedly perform a forward pass, backward pass and optimization until we reach some stopping point. Each full pass through all of the training data is called an *epoch*.
+
+In most deep learning tasks, a neural network will be trained for multiple epochs, though the ideal scenario would be to have a perfect model with ideal weights and biases after only one epoch. To add multiple epochs of our training into our code, we will initialize our model and run a loop around all the code performing the forward pass, backward pass and optimization calculations. 
+
+```{python}
+# Create dataset
+X, y = spiral_data(samples=100, classes=3)
+
+# Create a dense layer with 2 input features and 64 output values
+dense1 = DenseLayer(2, 64)
+
+# Create ReLU Activation (to be used with the DenseLayer)
+activation1 = ReLUActivation()
+
+# Create a second DenseLayer with 64 input features (as we take
+# output of the previous layer here) and 3 output values (output values)
+dense2 = DenseLayer(64, 3)
+
+# Create Softmax classifier's combined loss and activation
+loss_activation = CategoricalCrossEntropySoftmax()
+
+# Create optimizer
+optimizer = SGDOptimizer()
+
+# Train in loop
+for epoch in range(10001):
+
+    # Perform a forward pass of our training data through this layer
+    dense1.forward(X)
+
+    # Perform a forward pass through the activation function
+    # takes the output of the first dense layer here
+    activation1.forward(dense1.output)
+
+    # Perform a forward pass through second DenseLayer
+    # takes the outputs of the activation function of first layer as inputs
+    dense2.forward(activation1.output)
+
+    # Perform a forward pass through the activation/loss function
+    # takes the output of the second DenseLayer here and returns the loss
+    loss = loss_activation.forward(dense2.output, y)
+
+    if not epoch % 1000:
+        print(f"Epoch: {epoch}, Loss: {loss: .3f}")
+
+    # Backward pass
+    loss_activation.backward(loss_activation.output, y)
+    dense2.backward(loss_activation.dloss_dz)
+    activation1.backward(dense2.dloss_dinputs)
+    dense1.backward(activation1.dloss_dz)
+
+    # Update the weights and the biases
+    optimizer.update_params(dense1)
+    optimizer.update_params(dense2)
+
+```
+
+Our neural network mostly stays stuck at around a loss of $1.0$ and later around $0.85$-$0.90$ Given that this loss didn't decrease much, we can assume that this learning rate being too high, also caused the model to get stuck in a **local minimum**, which we'll learn more about soon. Iterating over more epochs, doesn't seem helpful at this point, which tells us that we're likely stuck with our optimization. Does this mean that this is the most we can get from our optimizer on this dataset?
+
+Recall that we're adjusting our weights and biases by applying some fraction, in this case $1.0$ to the gradient and subtracting this from the weights and biases. This fraction is called the **learning rate** (LR) and is the primary adjustable parameter for the optimizer as it decreases loss. 
+
+To gain an intuition for adjusting, planning or initially setting the learning rate, we should first understand how the learning rate affects the optimizer and the output of the loss function. 
 
