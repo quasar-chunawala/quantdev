@@ -240,7 +240,9 @@ Here is the plot of the Rosenbrock function with parameters $a=1,b=100$.
 # | code-summary: "Show the code"
 %%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
 \begin{tikzpicture}[scale=1.5]
-\begin{axis}
+\begin{axis}[
+     title={Plot of $f(x,y)=(1-x)^2 + 100*(y-x^2)^2$},
+]
     \addplot3 [surf] {(1-x)^2 + 100*(y-x^2)^2};
 \end{axis}
 \end{tikzpicture}
@@ -303,12 +305,12 @@ from categorical_cross_entropy_softmax import CategoricalCrossEntropySoftmax
 class SGDOptimizer:
 
     # Initialize the optimizer
-    def __init__(self, learning_rate = 1.0):
+    def __init__(self, learning_rate=1.0):
         self.learning_rate = learning_rate
 
     # Update the parameters
     def update_params(self, layer):
-        layer.weights -= self.learning_rate * layer.dloss_dweights.T
+        layer.weights -= self.learning_rate * layer.dloss_dweights
         layer.biases -= self.learning_rate * layer.dloss_dbiases
 ```
 
@@ -429,109 +431,218 @@ Our neural network mostly stays stuck at around a loss of $1.0$ and later around
 
 Recall that we're adjusting our weights and biases by applying some fraction, in this case $1.0$ to the gradient and subtracting this from the weights and biases. This fraction is called the **learning rate** (LR) and is the primary adjustable parameter for the optimizer as it decreases loss. 
 
-To gain an intuition for adjusting, planning or initially setting the learning rate, we should first understand how the learning rate affects the optimizer and the output of the loss function. 
-
-## Learning rate $\alpha$
-
 So far, we have a gradient of the loss function with respect to all of the parameters, and we want to apply a fraction of this gradient to the parameters in order to descend the loss value. In most cases, we won't apply the negative gradient as is, as the direction of the function's steepest descent will be continuously changing, and these values will usually be too big for meaningful model improvements to occur. Instead, we want to perform small steps - calculating the gradient, updating the parameters by a negative fraction of this gradient and repeating this in a loop. Small steps ensure that we are following the direction of the steepest descent, but these steps can also be too small, causing learning stagnation.
 
-Consider the function $f(x)=x*\sin(x)$ on $[0,10\pi]$. 
+## Learning Rate Decay
+
+The idea of a *learning rate decay* is to start with a large learning rate, say $1.0$ in our case and then decrease it during training. There are a few methods for doing this. One option is program a **decay rate**, which steadily decays the learning rate per batch or per epoch.
+
+Let's plan to decay per step. This can also be referred to as $1/t$ **decaying** or **exponential decaying**. Basically, we're going to update the learning rate each step by the reciprocal of the step count fraction. This fraction is a new hyper parameter that we'll add to the optimizer, called the **learning rate decay**.
+
+```{python}
+initial_learning_rate = 1.0
+learning_rate_decay = 0.1
+
+for step in range(10):
+    learning_rate = initial_learning_rate * 1.0 / (1 + learning_rate_decay * step)
+    print(learning_rate)
+```
+
+The derivative of the function $\frac{1}{1+x}$ is $-\frac{1}{(1+x)^2}$.
 
 ```{python}
 # | code-fold: true
 # | code-summary: "Show the code"
 %%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
 \begin{tikzpicture}[scale=1.5]
-\begin{axis}
-    \addplot [domain=0:10*pi,samples=400] {x*sin(deg(x))};
+\begin{axis}[
+     title={Plot of $f(x)=-\frac{1}{(1+x)^2}$},
+     xlabel={$x$},
+     ylabel={$f(x)$}
+]
+    \addplot [domain=0:1,samples=400] {-1/(( 1 + x)^2)};
 \end{axis}
 \end{tikzpicture}
 ```
 
-Gradient descent with a learning rate of $0.4$ yields and $x_0=15$ yields:
+The learning rate drops fast initially, but the change in the learning rate lowers in each step. We can update our `SGDOptimizer` class to allow for the learning rate decay.
 
 ```{python}
-import matplotlib.pyplot as plt
+class SGDOptimizer:
 
-def func(x):
-    return x[0]*np.sin(x[0])
+    # Initial optimizer - set settings
+    # learning rate of 1. is default for this optimizer
+    def __init__(self, learning_rate=1.0, decay=0.0):
+        self.learning_rate = learning_rate
+        self.current_learning_rate = learning_rate
+        self.decay = decay
+        self.iterations = 0
 
-xval_hist, funcval_hist = gradient_descent(
-    func,
-    alpha=0.4,
-    xval_0 = np.array([15]),
-    epsilon=1e-5,
-    n_iter=50,
-    debug_step=4
-)
+    # Call once before any parameter updates
+    def pre_update_params(self):
+        if self.decay:
+            self.current_learning_rate = self.learning_rate * (
+                1.0 / (1.0 + self.decay * self.iterations)
+            )
 
-xval_hist = np.concatenate(xval_hist).ravel()
-#funcval_hist = np.concatenate(funcval_hist).ravel()
+    # Update parameters
+    def update_params(self, layer):
+        layer.weights += -self.current_learning_rate * layer.dloss_dweights
+        layer.biases += -self.current_learning_rate * layer.dloss_dbiases
 
+    def post_update_params(self):
+        self.iterations += 1
+```
+
+Let's use a decay rate of $0.01$ and train our neural network again.
+
+```{python}
+def train(decay):
+    # Create a dataset
+    X, y = spiral_data(samples=100, classes=3)
+
+    # Create a dense layer with 2 input features and 64 output values
+    dense1 = DenseLayer(2, 64)
+
+    # Create ReLU activation (to be used with the dense layer)
+    activation1 = ReLUActivation()
+
+    # Create second DenseLayer with 64 input features (as we take output of the
+    # previous layer here) and 3 output values
+    dense2 = DenseLayer(64, 3)
+
+    # Create Softmax classifier's combined loss and activation
+    loss_activation = CategoricalCrossEntropySoftmax()
+
+    # Create optimizer
+    optimizer = SGDOptimizer(learning_rate=1.0,decay=decay)
+
+    acc_vals = []
+    loss_vals = []
+    lr_vals = []
+
+    # Train in a loop
+    for epoch in range(10001):
+        # Perform a forward pass of our training data through this layer
+        dense1.forward(X)
+
+        # Perform a forward pass through the activation function
+        # takes the output of the first dense layer here
+        activation1.forward(dense1.output)
+
+        # Perform a forward pass through second DenseLayer
+        # takes the outputs of the activation function of first layer as inputs
+        dense2.forward(activation1.output)
+
+        # Perform a forward pass through the activation/loss function
+        # takes the output of the second DenseLayer here and returns the loss
+        loss = loss_activation.forward(dense2.output, y)
+
+        # Calculate accuracy from output of activation2 and targets
+        # Calculate values along the first axis
+        predictions = np.argmax(loss_activation.output, axis=1)
+        if len(y.shape) == 2:
+            y = np.argmax(y, axis=1)
+
+        accuracy = np.mean(predictions == y)
+
+        if epoch % 1000 == 0:
+            print(
+                f"epoch: {epoch}, \
+                acc : {accuracy:.3f}, \
+                loss: {loss: .3f}, \
+                lr : {optimizer.current_learning_rate}"
+            )
+
+        acc_vals.append(accuracy)
+        loss_vals.append(loss)
+        lr_vals.append(optimizer.current_learning_rate)
+
+        # Backward pass
+        loss_activation.backward(loss_activation.output, y)
+        dense2.backward(loss_activation.dloss_dz)
+        activation1.backward(dense2.dloss_dinputs)
+        dense1.backward(activation1.dloss_dz)
+
+        # Update the weights and the biases
+        optimizer.pre_update_params()
+        optimizer.update_params(dense1)
+        optimizer.update_params(dense2)
+        optimizer.post_update_params()
+
+    return acc_vals, loss_vals, lr_vals
+```
+
+```{python}
+acc_vals, loss_vals, lr_vals = train(decay=0.01)
+```
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
 plt.grid(True)
-x = np.linspace(0,10*np.pi,1000)
-y = x * np.sin(x)
-plt.plot(x,y)
-plt.scatter(xval_hist,funcval_hist,marker='o',color='green')
+epochs = np.linspace(0,10000,10001)
+plt.ylabel('Accuracy')
+plt.xlabel('Epochs')
+plt.plot(epochs,acc_vals)
 plt.show()
 ```
 
-A learning rate of $0.3$ yields and $x_0=15$ yields:
-
 ```{python}
-import matplotlib.pyplot as plt
-
-def func(x):
-    return x[0]*np.sin(x[0])
-
-xval_hist, funcval_hist = gradient_descent(
-    func,
-    alpha=0.3,
-    xval_0 = np.array([15]),
-    epsilon=1e-5,
-    n_iter=50,
-    debug_step=4
-)
-
-xval_hist = np.concatenate(xval_hist).ravel()
-#funcval_hist = np.concatenate(funcval_hist).ravel()
-
+# | code-fold: true
+# | code-summary: "Show the code"
 plt.grid(True)
-x = np.linspace(0,10*np.pi,1000)
-y = x * np.sin(x)
-plt.plot(x,y)
-plt.scatter(xval_hist,funcval_hist,marker='o',color='green')
+plt.ylabel('Loss')
+plt.xlabel('Epochs')
+plt.plot(epochs,loss_vals)
 plt.show()
 ```
 
-A learning rate of $0.1$ yields and $x_0=15$ yields:
-
 ```{python}
-import matplotlib.pyplot as plt
-
-def func(x):
-    return x[0]*np.sin(x[0])
-
-xval_hist, funcval_hist = gradient_descent(
-    func,
-    alpha=0.1,
-    xval_0 = np.array([15]),
-    epsilon=1e-5,
-    n_iter=50,
-    debug_step=4
-)
-
-xval_hist = np.concatenate(xval_hist).ravel()
-#funcval_hist = np.concatenate(funcval_hist).ravel()
-
+# | code-fold: true
+# | code-summary: "Show the code"
 plt.grid(True)
-x = np.linspace(0,10*np.pi,1000)
-y = x * np.sin(x)
-plt.plot(x,y)
-plt.scatter(xval_hist,funcval_hist,marker='o',color='green')
+plt.ylabel("Learning rate")
+plt.xlabel("Epochs")
+plt.plot(epochs, lr_vals)
 plt.show()
 ```
 
-Thus, sometimes the optimizer gets stuck in local minimums. 
+The optimization algorithm appears to be stuck and the reason is because the learning rate decayed far too quickly and became too small, trapping the optimizer in some local minimum. We can, instead, try to decay a bit slower by making our decay a smaller number. For example, let's go with $10^{-3}$.
 
-Momentum in an optimizer adds to the gradient what, in the physical world, we could call inertia - for example, we can throw a ball uphill and, with a small enough hill or big enough applied force, the ball can roll over to the other side of the hill
+```{python}
+acc_vals, loss_vals, lr_vals = train(decay=1e-3)
+```
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+plt.grid(True)
+epochs = np.linspace(0,10000,10001)
+plt.ylabel('Accuracy')
+plt.xlabel('Epochs')
+plt.plot(epochs,acc_vals)
+plt.show()
+```
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+plt.grid(True)
+plt.ylabel('Loss')
+plt.xlabel('Epochs')
+plt.plot(epochs,loss_vals)
+plt.show()
+```
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+plt.grid(True)
+plt.ylabel("Learning rate")
+plt.xlabel("Epochs")
+plt.plot(epochs, lr_vals)
+plt.show()
+```
+
+
