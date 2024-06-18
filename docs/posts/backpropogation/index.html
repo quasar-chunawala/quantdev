@@ -202,6 +202,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul class="collapse">
   <li><a href="#gradient-of-the-loss-with-respect-to-weights-w-1" id="toc-gradient-of-the-loss-with-respect-to-weights-w-1" class="nav-link" data-scroll-target="#gradient-of-the-loss-with-respect-to-weights-w-1">Gradient of the loss with respect to weights <span class="math inline">\(w\)</span></a></li>
   <li><a href="#gradient-of-the-loss-with-respect-to-the-biases-b-1" id="toc-gradient-of-the-loss-with-respect-to-the-biases-b-1" class="nav-link" data-scroll-target="#gradient-of-the-loss-with-respect-to-the-biases-b-1">Gradient of the loss with respect to the biases <span class="math inline">\(b\)</span></a></li>
+  <li><a href="#gradient-of-the-loss-with-respect-to-the-inputs" id="toc-gradient-of-the-loss-with-respect-to-the-inputs" class="nav-link" data-scroll-target="#gradient-of-the-loss-with-respect-to-the-inputs">Gradient of the loss with respect to the inputs</a></li>
   </ul></li>
   <li><a href="#adding-backward-to-denselayer" id="toc-adding-backward-to-denselayer" class="nav-link" data-scroll-target="#adding-backward-to-denselayer">Adding <code>backward()</code> to <code>DenseLayer</code></a></li>
   <li><a href="#categorical-cross-entropy-loss-derivative" id="toc-categorical-cross-entropy-loss-derivative" class="nav-link" data-scroll-target="#categorical-cross-entropy-loss-derivative">Categorical cross-entropy loss derivative</a>
@@ -367,45 +368,54 @@ L_i = -\sum_{j} y_{i,j} \log(\hat{y}_{i,j})
 <div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
 <span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> nnfs</span>
 <span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> nnfs.datasets <span class="im">import</span> spiral_data</span>
-<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> abc <span class="im">import</span> abstractmethod</span>
 <span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Abstract base class for losses</span></span>
-<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Loss:</span>
-<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Calculates the data and regularization losses</span></span>
-<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>    <span class="co"># given model output and ground truth values</span></span>
-<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> calculate(<span class="va">self</span>, output, y):</span>
-<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>        </span>
-<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Calculate the sample losses</span></span>
-<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>        sample_losses <span class="op">=</span> <span class="va">self</span>.forward(output, y)</span>
-<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Calculate the mean loss</span></span>
-<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a>        data_loss <span class="op">=</span> np.mean(sample_losses)</span>
-<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Return loss</span></span>
-<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> data_loss</span>
-<span id="cb16-21"><a href="#cb16-21" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-22"><a href="#cb16-22" aria-hidden="true" tabindex="-1"></a><span class="co"># Cross-Entropy loss</span></span>
-<span id="cb16-23"><a href="#cb16-23" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> CategoricalCrossEntropyLoss(Loss):</span>
-<span id="cb16-24"><a href="#cb16-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-25"><a href="#cb16-25" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Forward pass</span></span>
-<span id="cb16-26"><a href="#cb16-26" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, y_pred, y_true):</span>
-<span id="cb16-27"><a href="#cb16-27" aria-hidden="true" tabindex="-1"></a>        num_samples <span class="op">=</span> <span class="bu">len</span>(y_pred)</span>
-<span id="cb16-28"><a href="#cb16-28" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-29"><a href="#cb16-29" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Clip data to prevent division by 0</span></span>
-<span id="cb16-30"><a href="#cb16-30" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Clip both sides to not drag mean towards any value</span></span>
-<span id="cb16-31"><a href="#cb16-31" aria-hidden="true" tabindex="-1"></a>        epsilon <span class="op">=</span> <span class="fl">1e-7</span></span>
-<span id="cb16-32"><a href="#cb16-32" aria-hidden="true" tabindex="-1"></a>        y_pred_clipped <span class="op">=</span> np.clip(y_pred, epsilon, <span class="dv">1</span> <span class="op">-</span> epsilon)</span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Abstract base class for losses</span></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Loss:</span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">@abstractmethod</span></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, y_pred, y_true):</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>        <span class="cf">pass</span></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">@abstractmethod</span></span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> backward(<span class="va">self</span>, y_pred, y_true):</span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>        <span class="cf">pass</span></span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Calculates the data and regularization losses</span></span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>    <span class="co"># given model output and ground truth values</span></span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> calculate(<span class="va">self</span>, output, y):</span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-21"><a href="#cb16-21" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Calculate the sample losses</span></span>
+<span id="cb16-22"><a href="#cb16-22" aria-hidden="true" tabindex="-1"></a>        sample_losses <span class="op">=</span> <span class="va">self</span>.forward(output, y)</span>
+<span id="cb16-23"><a href="#cb16-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-24"><a href="#cb16-24" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Calculate the mean loss</span></span>
+<span id="cb16-25"><a href="#cb16-25" aria-hidden="true" tabindex="-1"></a>        data_loss <span class="op">=</span> np.mean(sample_losses)</span>
+<span id="cb16-26"><a href="#cb16-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-27"><a href="#cb16-27" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Return loss</span></span>
+<span id="cb16-28"><a href="#cb16-28" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> data_loss</span>
+<span id="cb16-29"><a href="#cb16-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-30"><a href="#cb16-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-31"><a href="#cb16-31" aria-hidden="true" tabindex="-1"></a><span class="co"># Cross-Entropy loss</span></span>
+<span id="cb16-32"><a href="#cb16-32" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> CategoricalCrossEntropyLoss(Loss):</span>
 <span id="cb16-33"><a href="#cb16-33" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-34"><a href="#cb16-34" aria-hidden="true" tabindex="-1"></a>        <span class="co"># If categorical labels</span></span>
-<span id="cb16-35"><a href="#cb16-35" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span>(<span class="bu">len</span>(y_pred.shape) <span class="op">==</span> <span class="dv">1</span>):</span>
-<span id="cb16-36"><a href="#cb16-36" aria-hidden="true" tabindex="-1"></a>            correct_confidences <span class="op">=</span> y_pred[<span class="bu">range</span>(<span class="bu">len</span>(y_pred)), y_true]</span>
-<span id="cb16-37"><a href="#cb16-37" aria-hidden="true" tabindex="-1"></a>        <span class="co"># else if one-hot encoding</span></span>
-<span id="cb16-38"><a href="#cb16-38" aria-hidden="true" tabindex="-1"></a>        <span class="cf">elif</span>(<span class="bu">len</span>(y_pred.shape)<span class="op">==</span><span class="dv">2</span>):</span>
-<span id="cb16-39"><a href="#cb16-39" aria-hidden="true" tabindex="-1"></a>            correct_confidences <span class="op">=</span> np.<span class="bu">sum</span>(y_pred <span class="op">*</span> y_true, axis<span class="op">=</span><span class="dv">1</span>)</span>
-<span id="cb16-40"><a href="#cb16-40" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-41"><a href="#cb16-41" aria-hidden="true" tabindex="-1"></a>        neg_log <span class="op">=</span> <span class="op">-</span>np.log(correct_confidences)</span>
-<span id="cb16-42"><a href="#cb16-42" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> neg_log</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb16-34"><a href="#cb16-34" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Forward pass</span></span>
+<span id="cb16-35"><a href="#cb16-35" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, y_pred, y_true):</span>
+<span id="cb16-36"><a href="#cb16-36" aria-hidden="true" tabindex="-1"></a>        num_samples <span class="op">=</span> <span class="bu">len</span>(y_pred)</span>
+<span id="cb16-37"><a href="#cb16-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-38"><a href="#cb16-38" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Clip data to prevent division by 0</span></span>
+<span id="cb16-39"><a href="#cb16-39" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Clip both sides to not drag mean towards any value</span></span>
+<span id="cb16-40"><a href="#cb16-40" aria-hidden="true" tabindex="-1"></a>        epsilon <span class="op">=</span> <span class="fl">1e-7</span></span>
+<span id="cb16-41"><a href="#cb16-41" aria-hidden="true" tabindex="-1"></a>        y_pred_clipped <span class="op">=</span> np.clip(y_pred, epsilon, <span class="dv">1</span> <span class="op">-</span> epsilon)</span>
+<span id="cb16-42"><a href="#cb16-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-43"><a href="#cb16-43" aria-hidden="true" tabindex="-1"></a>        <span class="co"># If categorical labels</span></span>
+<span id="cb16-44"><a href="#cb16-44" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="bu">len</span>(y_pred.shape) <span class="op">==</span> <span class="dv">1</span>:</span>
+<span id="cb16-45"><a href="#cb16-45" aria-hidden="true" tabindex="-1"></a>            correct_confidences <span class="op">=</span> y_pred[<span class="bu">range</span>(<span class="bu">len</span>(y_pred)), y_true]</span>
+<span id="cb16-46"><a href="#cb16-46" aria-hidden="true" tabindex="-1"></a>        <span class="co"># else if one-hot encoding</span></span>
+<span id="cb16-47"><a href="#cb16-47" aria-hidden="true" tabindex="-1"></a>        <span class="cf">elif</span> <span class="bu">len</span>(y_pred.shape) <span class="op">==</span> <span class="dv">2</span>:</span>
+<span id="cb16-48"><a href="#cb16-48" aria-hidden="true" tabindex="-1"></a>            correct_confidences <span class="op">=</span> np.<span class="bu">sum</span>(y_pred <span class="op">*</span> y_true, axis<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb16-49"><a href="#cb16-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-50"><a href="#cb16-50" aria-hidden="true" tabindex="-1"></a>        neg_log <span class="op">=</span> <span class="op">-</span>np.log(correct_confidences)</span>
+<span id="cb16-51"><a href="#cb16-51" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> neg_log</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>Using the manual created outputs and targets, we have:</p>
 <div class="cell" data-execution_count="11">
@@ -1271,6 +1281,35 @@ Final bias :  [-0.00698895 -0.04024714 -0.06451539]</code></pre>
 <p>In python, we would write this as</p>
 <div class="sourceCode" id="cb39"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>dloss_dbiases <span class="op">=</span> np.<span class="bu">sum</span>(dloss_dz, axis<span class="op">=</span><span class="dv">0</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
+<section id="gradient-of-the-loss-with-respect-to-the-inputs" class="level3">
+<h3 class="anchored" data-anchor-id="gradient-of-the-loss-with-respect-to-the-inputs">Gradient of the loss with respect to the inputs</h3>
+<p>The gradients of the loss with respect to the weights in the <span class="math inline">\(l\)</span>, require the gradients of the loss with respect to the inputs in layer <span class="math inline">\(l+1\)</span>. It’s easy to see that:</p>
+<p><span class="math display">\[\begin{align*}
+\frac{\partial L}{\partial w_{11}^{(l)}} &amp;= \frac{\partial L}{\partial x_1^{(l+1)}}\cdot \frac{\partial x_1^{(l+1)}}{\partial z_{1}^{l}} \cdot \frac{\partial z_1^{(l)}}{\partial w_{11}^{(l)}}
+\end{align*}\]</span></p>
+<p>What is <span class="math inline">\(\frac{\partial \mathcal{L}}{\partial x_1}\)</span>, <span class="math inline">\(\frac{\partial \mathcal{L}}{\partial x_2}\)</span>, <span class="math inline">\(\frac{\partial \mathcal{L}}{\partial x_3}\)</span> and <span class="math inline">\(\frac{\partial \mathcal{L}}{\partial x_4}\)</span>?</p>
+<p>By the chain rule:</p>
+<p><span class="math display">\[\begin{align*}
+\frac{\partial \mathcal{L}}{\partial x_1} &amp;= \frac{\partial L}{\partial z_1}\cdot \frac{\partial z_1}{\partial x_1} +  \frac{\partial L}{\partial z_2}\cdot \frac{\partial z_2}{\partial x_1} +  \frac{\partial L}{\partial z_3}\cdot \frac{\partial z_3}{\partial x_1} \\
+&amp;= \frac{\partial L}{\partial z_1}\cdot w_{11} +  \frac{\partial L}{\partial z_2}\cdot w_{21} +  \frac{\partial L}{\partial z_3}\cdot w_{31}
+\end{align*}\]</span></p>
+<p>Consequently,</p>
+<p><span class="math display">\[\begin{align*}
+\begin{bmatrix}
+\frac{\partial \mathcal{L}}{\partial x_1} &amp; \frac{\partial \mathcal{L}}{\partial x_2} &amp; \frac{\partial \mathcal{L}}{\partial x_3} &amp; \frac{\partial \mathcal{L}}{\partial x_4}
+\end{bmatrix} =
+\begin{bmatrix}
+\frac{\partial L}{\partial z_1} &amp; \frac{\partial L}{\partial z_2} &amp; \frac{\partial L}{\partial z_3}
+\end{bmatrix}
+\begin{bmatrix}
+w_{11} &amp; w_{12} &amp; w_{13} &amp; w_{14}\\
+w_{21} &amp; w_{22} &amp; w_{23} &amp; w_{24}\\
+w_{31} &amp; w_{32} &amp; w_{33} &amp; w_{34}
+\end{bmatrix}\\
+\frac{\partial \mathcal{L}}{\partial x} &amp;= \frac{\partial L}{\partial z} \cdot W
+\end{align*}\]</span></p>
+<p>What if we have a batch of input data of 3 examples? In such case, <span class="math inline">\(\frac{\partial \mathcal{L}}{\partial z}\)</span> will have shape <code>(3,3)</code> and <span class="math inline">\(W\)</span> will have shape <code>(3,4)</code>. So, we can multiply them and the result would be <code>(3,4)</code>.</p>
+</section>
 </section>
 <section id="adding-backward-to-denselayer" class="level2">
 <h2 class="anchored" data-anchor-id="adding-backward-to-denselayer">Adding <code>backward()</code> to <code>DenseLayer</code></h2>
@@ -1302,7 +1341,7 @@ Final bias :  [-0.00698895 -0.04024714 -0.06451539]</code></pre>
 <span id="cb40-24"><a href="#cb40-24" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dz_dweights <span class="op">=</span> <span class="va">self</span>.inputs</span>
 <span id="cb40-25"><a href="#cb40-25" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dz_dbiases <span class="op">=</span> np.ones_like(<span class="va">self</span>.inputs)</span>
 <span id="cb40-26"><a href="#cb40-26" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dz_dinputs <span class="op">=</span> <span class="va">self</span>.weights</span>
-<span id="cb40-27"><a href="#cb40-27" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dweights <span class="op">=</span> np.dot(<span class="va">self</span>.inputs.T, <span class="va">self</span>.dloss_dz)</span>
+<span id="cb40-27"><a href="#cb40-27" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dweights <span class="op">=</span> np.dot(<span class="va">self</span>.inputs.T, <span class="va">self</span>.dloss_dz).T</span>
 <span id="cb40-28"><a href="#cb40-28" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dbiases <span class="op">=</span> np.<span class="bu">sum</span>(<span class="va">self</span>.dloss_dz, axis<span class="op">=</span><span class="dv">0</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
 <span id="cb40-29"><a href="#cb40-29" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.dloss_dinputs <span class="op">=</span> np.dot(<span class="va">self</span>.dloss_dz, <span class="va">self</span>.dz_dinputs)</span>
 <span id="cb40-30"><a href="#cb40-30" aria-hidden="true" tabindex="-1"></a></span>
@@ -1349,10 +1388,9 @@ Final bias :  [-0.00698895 -0.04024714 -0.06451539]</code></pre>
 <span id="cb40-71"><a href="#cb40-71" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"dloss_dbiases = </span><span class="sc">{</span>dense1<span class="sc">.</span>dloss_dbiases<span class="sc">}</span><span class="ss">"</span>)</span>
 <span id="cb40-72"><a href="#cb40-72" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"dloss_dinputs = </span><span class="sc">{</span>dense1<span class="sc">.</span>dloss_dinputs<span class="sc">}</span><span class="ss">"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>dloss_dweights = [[124.560005 124.560005 124.560005]
- [805.48804  805.48804  805.48804 ]
- [440.112    440.112    440.112   ]
- [307.24802  307.24802  307.24802 ]]
+<pre><code>dloss_dweights = [[124.560005 805.48804  440.112    307.24802 ]
+ [124.560005 805.48804  440.112    307.24802 ]
+ [124.560005 805.48804  440.112    307.24802 ]]
 dloss_dbiases = [[249.12000303 249.12000303 249.12000303]]
 dloss_dinputs = [[124.560005 149.472    174.384    199.296   ]
  [124.560005 149.472    174.384    199.296   ]

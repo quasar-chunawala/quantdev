@@ -17,6 +17,6 @@ class DenseLayer:
         self.dz_dweights = self.inputs
         self.dz_dbiases = np.ones_like(self.inputs)
         self.dz_dinputs = self.weights
-        self.dloss_dweights = np.dot(self.inputs.T, self.dloss_dz)
+        self.dloss_dweights = np.dot(self.inputs.T, self.dloss_dz).T
         self.dloss_dbiases = np.sum(self.dloss_dz, axis=0, keepdims=True)
         self.dloss_dinputs = np.dot(self.dloss_dz, self.dz_dinputs)
