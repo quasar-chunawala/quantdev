@@ -174,7 +174,7 @@ def gradient_descent(
     xval_0: np.array,
     epsilon: float = 1e-5,
     n_iter: int = 10000,
-    debug_step: int = 100
+    debug_step: int = 100,
 ):
     """
     The gradient descent algorithm.
@@ -196,10 +196,13 @@ def gradient_descent(
         bump = 0.001
         num_dims = len(xval_curr)
         xval_bump = xval_curr + np.eye(num_dims) * bump
-        xval_nobump = np.full((num_dims,num_dims),xval_curr)
+        xval_nobump = np.full((num_dims, num_dims), xval_curr)
 
         grad = np.array(
-            [(func(xval_h) - func(xval))/bump for xval_h,xval in zip(xval_bump,xval_nobump)]
+            [
+                (func(xval_h) - func(xval)) / bump
+                for xval_h, xval in zip(xval_bump, xval_nobump)
+            ]
         )
 
         # Compute the next iterate
@@ -209,12 +212,13 @@ def gradient_descent(
         error = xval_next - xval_curr
 
         if i % debug_step == 0:
-            print(f"x[{i}] = {xval_curr}, f({xval_curr}) = {func(xval_curr)}, f'({xval_curr}) = {grad}, error={error}")
+            print(
+                f"x[{i}] = {xval_curr}, f({xval_curr}) = {func(xval_curr)}, f'({xval_curr}) = {grad}, error={error}"
+            )
 
         xval_curr = xval_next
         i += 1
 
-        
     return xval_hist, funcval_hist
 ```
 
@@ -263,6 +267,131 @@ print(f"x* = {x_history[-1]}, f(x*)={f_x_history[-1]}")
 ## Convergence.
 
 When applying gradient descent in practice, we need to choose a value for the learning rate parameter $\alpha$. An error surface $E$ is usually a convex function on the weight space $\mathbf{w}$. Intuitively, we might expect that increasing the value of $\alpha$ should lead to bigger steps through the weight space and hence faster convergence. However, the successive steps oscillate back and forth across the valley, and if we increase $\alpha$ too much, these oscillations will become divergent. Because $\alpha$ must be kept sufficiently small to avoid divergent oscillations across the valley, progress along the valley is very slow. Gradient descent then takes many small steps to reach the minimum and is a very inefficient procedure. 
+
+We can gain deeper insight into this problem, by considering a quadratic approximation to the error function in the neighbourhood of the minimum. Let the error function be given by:
+
+\begin{align*}
+f(w) = \frac{1}{2}w^T A w - b^T w, \quad w\in\mathbf{R}^n
+\end{align*}
+
+where $A$ is symmetric and $A \succ 0$.
+
+Differentiating on both sides, the gradient of the error function is:
+
+\begin{align*}
+\nabla f(w) = Aw - b
+\end{align*}
+
+and the hessian is:
+
+\begin{align*}
+\nabla^2 f(w) = A
+\end{align*}
+
+The critical points of $f$ are given by:
+
+\begin{align*}
+\nabla f(w^*) &= 0\\
+Aw^{*} - b &= 0\\
+w^{*} &= A^{-1}b
+\end{align*}
+
+and 
+
+\begin{align*}
+f(w^{*}) &= \frac{1}{2}(A^{-1}b)^T A (A^{-1}b) - b^T (A^{-1} b)\\
+&= \frac{1}{2}b^T A^{-1} A A^{-1} b -b^T A^{-1} b \\
+&= \frac{1}{2}b^T A^{-1} b - b^T A^{-1} b \\
+&= -\frac{1}{2}b^T A^{-1} b
+\end{align*}
+
+Therefore, the iterates of $w$ are:
+
+\begin{align*}
+w^{(k+1)} = w^{(k)} - \alpha(Aw^{(k)} - b)
+\end{align*}
+
+By the *spectral theorem*, every symmetric matrix $A$ is orthogonally diagonalizable. So, $A$ admits a factorization:
+
+\begin{align*}
+A = Q \Lambda Q^T
+\end{align*}
+
+where $\Lambda = diag(\lambda_1,\ldots,\lambda_n)$ and as per convention, we will assume that $\lambda_i$\s are sorted from smallest $\lambda_1$ to biggest $\lambda_n$.
+
+Recall that $Q=[q_1,\ldots,q_n]$, where $q_i$ are the eigenvectors of $A$ and $Q$ is the change of basis matrix from the standard basis to the eigenvector basis. So, if $a \in \mathbf{R}^n$ are the coordinates of a vector in the standard basis and $b \in \mathbf{R}^n$ are its coordinates in the eigenvector basis, then $a = Qb$ or $b=Q^T a$. 
+
+Let $x^{(k)}=Q^T(w^{(k)}-w^{*})$. Equivalently, $w^{(k)} = Qx^{(k)} + w^{*}$. Thus, we are shifting the origin to $w^{*}$ and changing the axes to be aligned with the eigenvectors. In this new coordinate system,
+
+\begin{align*}
+Qx^{(k+1)} + w^{*} &= Qx^{(k)} + w^{*} - \alpha(AQx^{(k)} + Aw^{*} - b)\\
+Qx^{(k+1)} &= Qx^{(k)} - \alpha(AQx^{(k)} + Aw^{*} - b)\\
+Qx^{(k+1)} &= Qx^{(k)} - \alpha(AQx^{(k)} + A(A^{-1}b) - b)\\
+& \quad \{\text{Substituting } w^{*}=A^{-1}b \}\\
+Qx^{(k+1)} &= Qx^{(k)} - \alpha(AQx^{(k)})\\
+Qx^{(k+1)} &= Qx^{(k)} - \alpha(Q\Lambda Q^T Qx^{(k)})\\
+& \quad \{\text{Substituting } A = Q\Lambda Q^T \}\\
+Qx^{(k+1)} &= Qx^{(k)} - \alpha(Q\Lambda x^{(k)})\\
+& \quad \{\text{Using } Q^T Q = I \}\\
+x^{(k+1)} &= x^{(k)} - \alpha\Lambda x^{(k)}
+\end{align*}
+
+The $i$-th coordinate of this recursive system is given by:
+
+\begin{align*}
+x_i^{(k+1)} &= x_i^{(k)} - \alpha\lambda_i x_i^{(k)}\\
+&= (1-\alpha \lambda_i)x_i^{(k)}\\
+&= (1-\alpha \lambda_i)^{k+1}x_i^{(0)}
+\end{align*}
+
+Moving back to our original space $w$, we can see that:
+
+\begin{align*}
+w^{(k)} - w^{*} = Qx^{(k)} &= \sum_i q_i x_i^{(k)}\\
+&= \sum_i q_i (1-\alpha \lambda_i)^{k+1} x_i^{(0)}
+\end{align*}
+
+and there we have it - gradient descent in the closed form.
+
+### Decomposing the error
+
+The above equation admits a simple interpretation. Each element of $x^{(0)}$ is the component of the error in the initial guess in $Q$-basis. There are $n$ such errors and each of these errors follow their own, solitary path to the minimum, decreasing exponentially with a compounding rate of $1-\alpha \lambda_i$. The closer that number is to $1$, the slower it converges. 
+
+For most step-sizes, the eigenvectors with the largest eigenvalues converge the fastest. This triggers an explosion of progress in the first few iterations, before things slow down, as the eigenvectors with smaller eigenvalues' struggles are revealed. It's easy to visualize this - look at the sequences of $\frac{1}{2^k}$ and $\frac{1}{3^k}$. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz,pgfplots --tikz-libraries=arrows --implicit-standalone
+\begin{tikzpicture}[scale=1.5]
+\begin{axis}[
+     title={Comparison of the rates of convergence},
+     xlabel={$n$},
+     ylabel={$f(n)$}
+]
+    \addplot [domain=0:5,samples=400,blue] {1/(2^x)} node [midway,above] {$2^{-n}$};
+    \addplot [domain=0:5,samples=400,red] {1/(3^x)} node [midway,below] {$3^{-n}$};
+\end{axis}
+\end{tikzpicture}
+```
+
+### Choosing a step size
+
+The above analysis gives us immediate guidance as to how to set a step-size $\alpha$. In order to converge, each $|1-\alpha \lambda_i| < 1$. All workable step-sizes, therefore, fall in the interval:
+
+\begin{align*}
+-1 &\leq 1 - \alpha \lambda_i &\leq 1 \\
+-2 &\leq - \alpha \lambda_i &\leq 0 \\
+0 &\leq \alpha \lambda_i &\leq 2 
+\end{align*}
+
+Because $(1-\alpha \lambda_i)$ could be either positive or negative, the overall convergence rate is determined by the slowest error component, which must be either $\lambda_1$ or $\lambda_n$:
+
+\begin{align*}
+\text{rate}(\alpha) = \max \{|1-\alpha \lambda_1|,|1-\alpha \lambda_n|\}
+\end{align*}
+
+The ratio $\kappa = \lambda_n / \lambda_1$ determines the convergence rate of the problem. Recall that the level curves of the error surface are ellipsoids. Hence, a poorly conditioned Hessian results in stretching one of the axes of the ellipses, and taken to its extreme, the contours are almost parallel. Since gradient vectors are orthogonal to the level curves, the optimizer keeps pin-balling between parallel lines and takes forever to reach the center.
 
 ## Stochastic Gradient Descent(SGD)
 
@@ -435,8 +564,6 @@ for epoch in range(10001):
 Our neural network mostly stays stuck at around a loss of $1.0$ and later around $0.85$-$0.90$ Given that this loss didn't decrease much, we can assume that this learning rate being too high, also caused the model to get stuck in a **local minimum**, which we'll learn more about soon. Iterating over more epochs, doesn't seem helpful at this point, which tells us that we're likely stuck with our optimization. Does this mean that this is the most we can get from our optimizer on this dataset?
 
 Recall that we're adjusting our weights and biases by applying some fraction, in this case $1.0$ to the gradient and subtracting this from the weights and biases. This fraction is called the **learning rate** (LR) and is the primary adjustable parameter for the optimizer as it decreases loss. 
-
-So far, we have a gradient of the loss function with respect to all of the parameters, and we want to apply a fraction of this gradient to the parameters in order to descend the loss value. In most cases, we won't apply the negative gradient as is, as the direction of the function's steepest descent will be continuously changing, and these values will usually be too big for meaningful model improvements to occur. Instead, we want to perform small steps - calculating the gradient, updating the parameters by a negative fraction of this gradient and repeating this in a loop. Small steps ensure that we are following the direction of the steepest descent, but these steps can also be too small, causing learning stagnation.
 
 ## Learning Rate Decay
 
@@ -653,7 +780,12 @@ plt.show()
 
 ## Stochastic Gradient Descent with Momentum
 
-Momentum creates a rolling average of the gradients over some number of updates and uses this average with the unique gradient at each step. Another way of understanding this is to imagine a ball going downhill - even if it finds a small valley, the momentum of the ball lets it potentially cross the valley and climb the small hill in the search of a deeper minima. This can help in cases where you're stuck in some local minima, bouncing back and forth. 
+Momentum proposes a small tweak to gradient descent. We give gradient descent a short-term memory:
 
-We utilize momentum by setting a parameter between $0$ and $1$, representing the fraction of the previous parameter update to retain, and subtracting (adding the negative) our actual gradient, multiplied by the learning rate (like before), from it. The update contains a portion of the gradient from preceding steps as our momentum (direction of previous changes) and only a portion of the current gradient. Together, these portions form the actual change to our parameters and the bigger the role that momentum takes in the update, the slower the update can change the direction. 
+\begin{align*}
+w^{(k+1)} &= w^{(k)} - \alpha z^{(k+1)}\\
+z^{(k+1)} &= \beta z^{(k)} + \nabla f(w^{(k)})
+\end{align*}
+
+The change is innocent and costs almost nothing. When $\beta=0$
 
