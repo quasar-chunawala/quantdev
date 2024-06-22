@@ -391,6 +391,28 @@ Because $(1-\alpha \lambda_i)$ could be either positive or negative, the overall
 \text{rate}(\alpha) = \max \{|1-\alpha \lambda_1|,|1-\alpha \lambda_n|\}
 \end{align*}
 
+The optimal learning rate is that which balances the convergence rate. Setting the convergence rate to be equal for the smallest and largest eigenvalues, we can solve for the optimal step size.
+
+\begin{align*}
+|1- \alpha \lambda_1| = |1- \alpha \lambda_n| 
+\end{align*}
+
+Assuming $\lambda_1 \neq \lambda_n$:
+
+\begin{align*}
+1 - \alpha \lambda_1 &= -1 + \alpha \lambda_n\\
+\alpha (\lambda_1 + \lambda_n) &= 2\\
+\alpha^* &= \frac{2}{\lambda_1 + \lambda_n}
+\end{align*}
+
+So, the optimal convergence rate equals:
+
+\begin{align*}
+\max \{|1-\alpha \lambda_1|,|1-\alpha \lambda_n|\} &= 1 - \frac{2\lambda_1}{\lambda_1 + \lambda_n} \\
+&= \frac{\lambda_n - \lambda_1}{\lambda_n + \lambda_1}\\
+&= \frac{\kappa - 1}{\kappa + 1}
+\end{align*}
+
 The ratio $\kappa = \lambda_n / \lambda_1$ determines the convergence rate of the problem. Recall that the level curves of the error surface are ellipsoids. Hence, a poorly conditioned Hessian results in stretching one of the axes of the ellipses, and taken to its extreme, the contours are almost parallel. Since gradient vectors are orthogonal to the level curves, the optimizer keeps pin-balling between parallel lines and takes forever to reach the center.
 
 ## Stochastic Gradient Descent(SGD)
@@ -780,12 +802,110 @@ plt.show()
 
 ## Stochastic Gradient Descent with Momentum
 
-Momentum proposes a small tweak to gradient descent. We give gradient descent a short-term memory:
+Momentum proposes a small tweak to gradient descent. We give gradient descent a short-term memory. Let's define the updated velocity $z^{k+1}$ to be weighted and controlled by the mass $\beta$. When $\beta$ is high, we simply use the velocity from the last time, that is, we are entirely driven by momentum. When $\beta=0$, the momentum is zero.
 
 \begin{align*}
-w^{(k+1)} &= w^{(k)} - \alpha z^{(k+1)}\\
-z^{(k+1)} &= \beta z^{(k)} + \nabla f(w^{(k)})
+z^{(k+1)} &= \beta z^{(k)} + \nabla f(w^{(k)})\\
+w^{k+1} &= w^k - \alpha z^{k+1}
 \end{align*}
 
-The change is innocent and costs almost nothing. When $\beta=0$
+### The dynamics of Momentum
+
+Since $\nabla f(w^k) = Aw^k - b$, the update on the quadratic is:
+
+\begin{align*}
+z^{k+1} &= \beta z^k + (Aw^k - b)\\
+w^{k+1} &= w^k - \alpha z^{k+1}
+\end{align*}
+
+We go through the same motions as before with the change of basis $(w^k - w^{*})=Qx^k$ and $z^k = Q y^k$ to yield the update rule:
+
+\begin{align*}
+Q y^{k+1} &= \beta Q y^k + (AQx^k + Aw^* - b)\\
+Q y^{k+1} &= \beta Q y^k + (AQx^k + AA^{-1}b - b)\\
+Q y^{k+1} &= \beta Q y^k + Q\Lambda Q^T Q x^k\\
+Q y^{k+1} &= \beta Q y^k + Q\Lambda x^k\\
+y^{k+1} &= \beta y^k + \Lambda x^k
+\end{align*}
+
+or equivalently:
+
+\begin{align*}
+y_i^{k+1} &= \beta y_i^k + \lambda_i x_i^k
+\end{align*}
+
+Moreover,
+
+\begin{align*}
+Qx^{k+1} + w^* &= Qx^k + w^* - \alpha Qy^{k+1}\\
+x^{k+1} &= x^k - \alpha y^{k+1}
+\end{align*}
+
+or equivalently:
+
+\begin{align*}
+x_i^{k+1} &= x_i^k - \alpha y_i^{k+1}
+\end{align*}
+
+This lets us rewrite our iterates as:
+
+\begin{align*}
+\begin{bmatrix}
+y_i^{k+1}\\
+x_i^{k+1}
+\end{bmatrix} &= 
+\begin{bmatrix}
+\beta y_i^k + \lambda_i x_i^k\\
+(1-\alpha\lambda_i)x_i^k - \alpha \beta y_i^k
+\end{bmatrix}\\
+&=\begin{bmatrix}
+\beta & \lambda_i\\
+- \alpha \beta & (1-\alpha\lambda_i) 
+\end{bmatrix} 
+\begin{bmatrix}
+y_i^k\\
+x_i^k
+\end{bmatrix}
+\end{align*}
+
+Consequently,
+
+\begin{align*}
+\begin{bmatrix}
+y_i^k\\
+x_i^k
+\end{bmatrix} = R^k \begin{bmatrix}
+y_i^0\\
+x_i^0
+\end{bmatrix},\quad 
+R = \begin{bmatrix}
+\beta & \lambda_i\\
+- \alpha \beta & (1-\alpha\lambda_i) 
+\end{bmatrix}
+\end{align*}
+
+In the case of $2 \times 2$ matrix, there is an elegant little known formula in terms of the eigenvalues of the matrix $R$, $\sigma_1$ and $\sigma_2$:
+
+\begin{align*}
+R^k = \begin{cases}
+\sigma_1^k R_1 - \sigma_2^k R_2 & \sigma_1 \neq \sigma_2,\\
+\sigma_1^k(kR\sigma_1-(k-1)I) & \sigma_1 = \sigma_2
+\end{cases}
+\quad
+R_j = \frac{R-\sigma_j I}{\sigma_1 - \sigma_2}
+\end{align*}
+
+The formula is rather complicated, but the takeway here is that it plays the exact same role  the individual convergence rates $(1-\alpha \lambda_i)$ do in gradient descent. The convergence rate is therefore the slowest of the two rates, $\max \{|\sigma_1|,|\sigma_2|\}$.
+
+For what values of $\alpha$ and $\beta$ does momentum converge? Since we need both $\sigma_1$ and $\sigma_2$ to converge, our convergence criterion is now 
+$\max \{|\sigma_1|,|\sigma_2|\} < 1$.
+
+It can be shown that when we choose an optimal value of the parameters $\alpha$ and $\beta$, the convergence rate is proportional to:
+
+\begin{align*}
+\frac{\sqrt{\kappa} - 1}{\sqrt{\kappa} + 1}
+\end{align*}
+
+With barely a modicum of extra effort, we have square-rooted the condition number. 
+
 
