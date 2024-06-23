@@ -908,4 +908,159 @@ It can be shown that when we choose an optimal value of the parameters $\alpha$ 
 
 With barely a modicum of extra effort, we have square-rooted the condition number. 
 
+# Adding momentum to the `SGDOptimizer` class
+
+We are now in a position to add momentum to the `SGDOptimizer` class.
+
+```{python}
+class SGDOptimizer:
+
+    # Initial optimizer - set settings
+    # learning rate of 1. is default for this optimizer
+    def __init__(self, learning_rate=1.0, decay=0.0, momentum=0.0):
+        self.learning_rate = learning_rate
+        self.current_learning_rate = learning_rate
+        self.decay = decay
+        self.iterations = 0
+        self.beta = momentum
+
+    # Call once before any parameter updates
+    def pre_update_params(self):
+        if self.decay:
+            self.current_learning_rate = self.learning_rate * (
+                1.0 / (1.0 + self.decay * self.iterations)
+            )
+
+    # Update parameters
+    def update_params(self, layer):
+
+        # If we use momentum
+        if self.beta:
+
+            # If the layer does not contain momentum arrays, create them
+            # filled with zeros
+            if not hasattr(layer, "weight_momentums"):
+                layer.weight_momentums = np.zeros_like(layer.dloss_dweights)
+                # If there is no momentumm array for weights
+                # the array doesnt exist for biases yet either
+                layer.bias_momentums = np.zeros_like(layer.dloss_dbiases)
+
+            # Build weight updates with momentum - take previous
+            # updates multiplied by retain factor and update with
+            # with current gradients
+            # v[t+1] = \beta * v[t] + \alpha * dL/dw
+            weight_updates = (
+                self.beta * layer.weight_momentums
+                + self.current_learning_rate * layer.dloss_dweights
+            )
+            layer.weight_momentums = weight_updates
+
+            # Build bias updates
+            bias_updates = (
+                self.beta * layer.bias_momentums
+                + self.current_learning_rate * layer.dloss_dbiases
+            )
+            layer.bias_momentums = bias_updates
+        else:
+            # Vanilla SGD updates (as before momentum update)
+            weight_updates = self.current_learning_rate * layer.dloss_dweights
+            bias_updates = self.current_learning_rate * layer.dloss_dbiases
+
+        layer.weights -= weight_updates
+        layer.biases -= bias_updates
+
+    def post_update_params(self):
+        self.iterations += 1
+```
+
+Let's see an example illustrating how adding momentum changes the learning process. Keeping the same `learning_rate=1.0` and `decay=1e-3` from the previous training attempt and using a momentum of `0.50`:
+
+```{python}
+def train(decay, momentum):
+    # Create a dataset
+    X, y = spiral_data(samples=100, classes=3)
+
+    # Create a dense layer with 2 input features and 64 output values
+    dense1 = DenseLayer(2, 64)
+
+    # Create ReLU activation (to be used with the dense layer)
+    activation1 = ReLUActivation()
+
+    # Create second DenseLayer with 64 input features (as we take output of the
+    # previous layer here) and 3 output values
+    dense2 = DenseLayer(64, 3)
+
+    # Create Softmax classifier's combined loss and activation
+    loss_activation = CategoricalCrossEntropySoftmax()
+
+    # Create optimizer
+    optimizer = SGDOptimizer(learning_rate=1.0,decay=decay,momentum=momentum)
+
+    acc_vals = []
+    loss_vals = []
+    lr_vals = []
+
+    # Train in a loop
+    for epoch in range(10001):
+        # Perform a forward pass of our training data through this layer
+        dense1.forward(X)
+
+        # Perform a forward pass through the activation function
+        # takes the output of the first dense layer here
+        activation1.forward(dense1.output)
+
+        # Perform a forward pass through second DenseLayer
+        # takes the outputs of the activation function of first layer as inputs
+        dense2.forward(activation1.output)
+
+        # Perform a forward pass through the activation/loss function
+        # takes the output of the second DenseLayer here and returns the loss
+        loss = loss_activation.forward(dense2.output, y)
+
+        # Calculate accuracy from output of activation2 and targets
+        # Calculate values along the first axis
+        predictions = np.argmax(loss_activation.output, axis=1)
+        if len(y.shape) == 2:
+            y = np.argmax(y, axis=1)
+
+        accuracy = np.mean(predictions == y)
+
+        if epoch % 1000 == 0:
+            print(
+                f"epoch: {epoch}, \
+                acc : {accuracy:.3f}, \
+                loss: {loss: .3f}, \
+                lr : {optimizer.current_learning_rate}"
+            )
+
+        acc_vals.append(accuracy)
+        loss_vals.append(loss)
+        lr_vals.append(optimizer.current_learning_rate)
+
+        # Backward pass
+        loss_activation.backward(loss_activation.output, y)
+        dense2.backward(loss_activation.dloss_dz)
+        activation1.backward(dense2.dloss_dinputs)
+        dense1.backward(activation1.dloss_dz)
+
+        # Update the weights and the biases
+        optimizer.pre_update_params()
+        optimizer.update_params(dense1)
+        optimizer.update_params(dense2)
+        optimizer.post_update_params()
+
+    return acc_vals, loss_vals, lr_vals
+```
+
+```{python}
+acc_vals, loss_vals, lr_vals = train(decay=1e-3, momentum=0.5)
+```
+
+The model achieved the lowest loss and the highest accuracy that we've seen so far. Can we do better? Sure, we can! Let's try to set the momentum to $0.9$:
+
+```{python}
+acc_vals, loss_vals, lr_vals = train(decay=1e-3, momentum=0.9)
+```
+
+## AdaGrad
 
