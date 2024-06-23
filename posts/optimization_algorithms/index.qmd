@@ -1064,3 +1064,63 @@ acc_vals, loss_vals, lr_vals = train(decay=1e-3, momentum=0.9)
 
 ## AdaGrad
 
+In real-world datasets, some input features are sparse and some features are dense. If we use the same learning rate $\alpha$ for all the weights, parameters associated with sparse features receive meaningful updates only when these features occur. Given a decreasing learning rate, we might end up with a situation where parameters for dense features converge rather quickly to their optimal values, whereas for sparse features, we are still short of observing them sufficiently frequently before their optimal values can be determined. In other words, the learning rate decreases too slowly for dense features and too quickly for sparse features. 
+
+The update rule for adaptive step-size gradient descent is:
+
+\begin{align*}
+{w}_{t+1} & {w}_{t} - \frac{\alpha}{\sqrt{G_t + \epsilon}}\odot g_t
+\end{align*}
+
+where $G(t)$ contains the sum of the squares of the past gradients. $Here the operations are applied coordinate-wise. As before, $\alpha$ is the learning rate and $\epsilon$ is an additive constant that ensures that we do not divide by $0$. 
+
+Thus, Adagrad decreases the learning-rate dynamically on a per-coordinate basis.  
+
+```{python}
+class AdagradOptimizer:
+
+    # Initial optimizer - set settings
+    # learning rate of 1. is default for this optimizer
+    def __init__(self, learning_rate=1.0, decay=0.0, epsilon=1e-7):
+        self.learning_rate = learning_rate
+        self.current_learning_rate = learning_rate
+        self.decay = decay
+        self.iterations = 0
+        self.epsilon = epsilon
+
+    # Call once before any parameter updates
+    def pre_update_params(self):
+        if self.decay:
+            self.current_learning_rate = self.learning_rate * (
+                1.0 / (1.0 + self.decay * self.iterations)
+            )
+
+    # Update parameters
+    def update_params(self, layer):
+        if not hasattr(layer, "weight_cache"):
+            layer.weight_cache = np.zeros_like(layer.weights)
+            layer.bias_cache = np.zeros_like(layer.biases)
+
+        # Update cache with squared current gradients
+        layer.weight_cache += layer.dloss_dweights**2
+        layer.bias_cache += layer.dloss_dbiases**2
+
+        # Vanilla SGD parameter update + normalization
+        # with square rooted cache
+        layer.weights += (
+            self.current_learning_rate
+            * layer.dloss_dweights
+            / (np.sqrt(layer.weight_cache) + self.epsilon)
+        )
+        layer.biases += (
+            self.current_learning_rate
+            * layer.dloss_dbiases
+            / (np.sqrt(layer.bias_cache) + self.epsilon)
+        )
+
+    def post_update_params(self):
+        self.iterations += 1
+```
+
+## RMSProp
+
