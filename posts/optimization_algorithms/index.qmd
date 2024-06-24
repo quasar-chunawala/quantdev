@@ -651,6 +651,8 @@ class SGDOptimizer:
 Let's use a decay rate of $0.01$ and train our neural network again.
 
 ```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
 def train(decay):
     # Create a dataset
     X, y = spiral_data(samples=100, classes=3)
@@ -1151,3 +1153,135 @@ The update rule for the RMSProp algorithm is as follows:
 \mathbf{x}_t &= \mathbf{x}_{t-1} - \frac{\alpha}{\sqrt{\mathbf{s}_t + \epsilon}}\odot \mathbf{g}_t
 \end{align*}
 
+We are now in a position to implement an `RMSPropOptimizer` class:
+
+```{python}
+class RMSPropOptimizer:
+
+    # Initialize 
+    def __init__(
+        self,
+        learning_rate : float = 0.001,
+        decay : float = 0.,
+        epsilon : float = 1e-7,
+        rho : float = 0.9
+    ):
+        self.learning_rate = learning_rate
+        self.current_learning_rate = learning_rate
+        self.decay = decay
+        self.iterations = 0
+        self.epsilon = epsilon
+        self.rho = rho
+    
+    # Call once before any parameter updates
+    def pre_update_params(self):
+        if self.decay:
+            self.current_learning_rate = self.learning_rate * (1. / (1. + self.decay * self.iterations))
+
+    def update_params(self, layer):
+
+        # If layer does not contain cache arrays,
+        # create them filled with zeros
+        if not hasattr(layer,'weight_cache'):
+            layer.weigh_cache = np.zeros_like(layer.dloss_dweights)
+            layer.bias_cache = np.zeros_like(layer.dloss_dbiases)
+        
+        # Update cache with squared current gradients
+        layer.weight_cache = self.rho * layer.weight_cache + (1 - self.rho) * layer.dloss_dweights**2
+        layer.bias_cache = self.rho * layer.bias_cache + (1 - self.rho) * layer.dloss_dbiases**2
+
+        # Vanilla SGD parameter update + normalization
+        # with square rooted cache
+        layer.weights -= self.current_learning_rate * layer.dloss_dweights / (np.sqrt(layer.weight_cache) + self.epsilon)
+        layer.biases -= self.current_learning_rate * layer.dloss_dbiases / (np.sqrt(layer.bias_cache) + self.epsilon)
+
+    def post_update_params(self):
+        self.iterations += 1
+```
+
+Changing the optimizer in our main neural network `training` function, we have:
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+def train(decay):
+    # Create a dataset
+    X, y = spiral_data(samples=100, classes=3)
+
+    # Create a dense layer with 2 input features and 64 output values
+    dense1 = DenseLayer(2, 64)
+
+    # Create ReLU activation (to be used with the dense layer)
+    activation1 = ReLUActivation()
+
+    # Create second DenseLayer with 64 input features (as we take output of the
+    # previous layer here) and 3 output values
+    dense2 = DenseLayer(64, 3)
+
+    # Create Softmax classifier's combined loss and activation
+    loss_activation = CategoricalCrossEntropySoftmax()
+
+    # Create optimizer
+    optimizer = RMSPropOptimizer(learning_rate=1.0,decay=decay)
+
+    acc_vals = []
+    loss_vals = []
+    lr_vals = []
+
+    # Train in a loop
+    for epoch in range(10001):
+        # Perform a forward pass of our training data through this layer
+        dense1.forward(X)
+
+        # Perform a forward pass through the activation function
+        # takes the output of the first dense layer here
+        activation1.forward(dense1.output)
+
+        # Perform a forward pass through second DenseLayer
+        # takes the outputs of the activation function of first layer as inputs
+        dense2.forward(activation1.output)
+
+        # Perform a forward pass through the activation/loss function
+        # takes the output of the second DenseLayer here and returns the loss
+        loss = loss_activation.forward(dense2.output, y)
+
+        # Calculate accuracy from output of activation2 and targets
+        # Calculate values along the first axis
+        predictions = np.argmax(loss_activation.output, axis=1)
+        if len(y.shape) == 2:
+            y = np.argmax(y, axis=1)
+
+        accuracy = np.mean(predictions == y)
+
+        if epoch % 1000 == 0:
+            print(
+                f"epoch: {epoch}, \
+                acc : {accuracy:.3f}, \
+                loss: {loss: .3f}, \
+                lr : {optimizer.current_learning_rate}"
+            )
+
+        acc_vals.append(accuracy)
+        loss_vals.append(loss)
+        lr_vals.append(optimizer.current_learning_rate)
+
+        # Backward pass
+        loss_activation.backward(loss_activation.output, y)
+        dense2.backward(loss_activation.dloss_dz)
+        activation1.backward(dense2.dloss_dinputs)
+        dense1.backward(activation1.dloss_dz)
+
+        # Update the weights and the biases
+        optimizer.pre_update_params()
+        optimizer.update_params(dense1)
+        optimizer.update_params(dense2)
+        optimizer.post_update_params()
+
+    return acc_vals, loss_vals, lr_vals
+```
+
+Then, we have:
+
+```{python}
+acc_vals, loss_vals, lr_vals = train(decay=1e-4)
+```
