@@ -437,6 +437,8 @@ In the stochastic (or online) gradient descent algorithm, the true gradient of $
 w_{k+1} := w_k - \alpha_k \nabla \mathcal{L}(w_{k}) = w_k - \alpha_k \nabla L_i(w_{k})
 \end{align*}
 
+if vanilla gradient descent is used, the computational cost of each independent iteration is $O(n)$, where $n$ is the number of training examples. Therefore, when the training dataset is larger, the cost of vanilla gradient descent for each iteration will be higher. We can see that the computational cost of each iteration drops from $O(n)$ to $O(1)$.
+
 ## `SGDOptimizer` class
 
 We are now in a position to code the `SGDOptimizer` class.
@@ -1158,13 +1160,13 @@ We are now in a position to implement an `RMSPropOptimizer` class:
 ```{python}
 class RMSPropOptimizer:
 
-    # Initialize 
+    # Initialize
     def __init__(
         self,
-        learning_rate : float = 0.001,
-        decay : float = 0.,
-        epsilon : float = 1e-7,
-        rho : float = 0.9
+        learning_rate: float = 0.001,
+        decay: float = 0.0,
+        epsilon: float = 1e-7,
+        rho: float = 0.9,
     ):
         self.learning_rate = learning_rate
         self.current_learning_rate = learning_rate
@@ -1172,28 +1174,42 @@ class RMSPropOptimizer:
         self.iterations = 0
         self.epsilon = epsilon
         self.rho = rho
-    
+
     # Call once before any parameter updates
     def pre_update_params(self):
         if self.decay:
-            self.current_learning_rate = self.learning_rate * (1. / (1. + self.decay * self.iterations))
+            self.current_learning_rate = self.learning_rate * (
+                1.0 / (1.0 + self.decay * self.iterations)
+            )
 
     def update_params(self, layer):
 
         # If layer does not contain cache arrays,
         # create them filled with zeros
-        if not hasattr(layer,'weight_cache'):
-            layer.weigh_cache = np.zeros_like(layer.dloss_dweights)
+        if not hasattr(layer, "weight_cache"):
+            layer.weight_cache = np.zeros_like(layer.dloss_dweights)
             layer.bias_cache = np.zeros_like(layer.dloss_dbiases)
-        
+
         # Update cache with squared current gradients
-        layer.weight_cache = self.rho * layer.weight_cache + (1 - self.rho) * layer.dloss_dweights**2
-        layer.bias_cache = self.rho * layer.bias_cache + (1 - self.rho) * layer.dloss_dbiases**2
+        layer.weight_cache = (
+            self.rho * layer.weight_cache + (1 - self.rho) * layer.dloss_dweights**2
+        )
+        layer.bias_cache = (
+            self.rho * layer.bias_cache + (1 - self.rho) * layer.dloss_dbiases**2
+        )
 
         # Vanilla SGD parameter update + normalization
         # with square rooted cache
-        layer.weights -= self.current_learning_rate * layer.dloss_dweights / (np.sqrt(layer.weight_cache) + self.epsilon)
-        layer.biases -= self.current_learning_rate * layer.dloss_dbiases / (np.sqrt(layer.bias_cache) + self.epsilon)
+        layer.weights -= (
+            self.current_learning_rate
+            * layer.dloss_dweights
+            / (np.sqrt(layer.weight_cache) + self.epsilon)
+        )
+        layer.biases -= (
+            self.current_learning_rate
+            * layer.dloss_dbiases
+            / (np.sqrt(layer.bias_cache) + self.epsilon)
+        )
 
     def post_update_params(self):
         self.iterations += 1
@@ -1280,8 +1296,31 @@ def train(decay):
     return acc_vals, loss_vals, lr_vals
 ```
 
-Then, we have:
-
 ```{python}
 acc_vals, loss_vals, lr_vals = train(decay=1e-4)
 ```
+
+## Adam
+
+In the discussions leading up to this section, we encountered a number of techniques for efficient optimization. Let's recap them here in detail :
+
+- We saw that SGD reduces the computational cost from $O(n)$ to $O(1)$ for each independent iteration compared to gradient descent.
+
+- Momentum adds a mechanism for aggregating the history of past gradients to converge. 
+
+- Adagrad used a per-coordinate scaling to allow for allow for different learning rates. The learning rate for weights related to sparse features decreases slower than the learning rate for weights related to dense features.
+
+- RMSProp decoupled per-coordinate scaling from a learning rate adjustment.
+
+Adam combines all these techniques into one efficient learning algorithm. As expected, this is an algorithm that has become rather popular as one of the more robust and effective optimization algorithms to use in deep learning. It is not without issues, though. In particular, there are situations where Adam can diverge due to poor variance control. 
+
+### The Algorithm
+
+One of the key components of Adam is that is uses exponentially weighted moving averages (also known as leaky averaging) to obtain an estimate of both the momentum and also the second moment of the gradient. That is, it uses the state variables:
+
+\begin{align*}
+\mathbf{v}_t &= \beta_1 \mathbf{v}_{t-1} + (1-\beta_1)\mathbf{g}_t\\
+\mathbf{s}_{t} &= \beta_2 \mathbf{v}_{t-1} + (1 - \beta_2)\mathbf{g}_t^2
+\end{align*}
+
+Here $\beta_1$ and $\beta_2$ are nonnegative weighting parameters. Common choices for them are $\beta_1=0.9$ and $\beta_2=0.999$. That is, the variance estimate moves much more slowly than the momentum term. Note that, 
