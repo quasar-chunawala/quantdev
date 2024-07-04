@@ -37,26 +37,6 @@ t\mapsto B_{t}(\omega) & =(B_{t}^{(1)}(\omega),B_{t}^{(2)}(\omega),\ldots,B_{t}^
 
 Of course, this curve is continuous, since each coordinate is. The below numerical project gives an example of one path of a two-dimensional brownian motion. This is a very rugged and intertwined curve! We might wonder, what it does as $t\to\infty$. Does it wander around $(0,0)$ ad infinitum or does it eventually escape to infinity? We will answer this question in a later section. For doing so, we shall need a version of Ito's formula for multi-dimensional Brownian motion. We finish this section by noticing that it is also easy to construct Brownian motions in higher dimensions for which the coordinates are correlated.
 
-*Example 2.*
-(Example of Brownian motion with correlated coordinates) Let $(B_{t}:t\geq0)$ be a two dimensional brownian motion. Let $-1<\rho<1$. We construct the two dimensional process as follows: $W_{t}=(W_{t}^{(1)},W_{t}^{(2)})$ where:
-
-\begin{aligned}
-W_{t}^{(1)} & =B_{t}^{(1)}\\
-W_{t}^{(2)} & =\rho B_{t}^{(1)}+\sqrt{1-\rho^{2}}B_{t}^{(2)}
-\end{aligned}
-
-$W_{t}^{(1)}=B_{t}^{(1)}$ is Gaussian with mean $0$ and variance $t$. Since, $B_{t}^{(1)}$ and $B_{t}^{(2)}$are independent gaussian random variables and the sum of IID Gaussians is Gaussian, $W_{t}^{(2)}$ is Gaussian with mean $0$ and variance $t$. The covariance between
-$W_{t}^{(1)}$ and $W_{t}^{(2)}$ is:
-
-\begin{aligned}
-\mathbf{E}[W_{t}^{(1)}W_{t}^{(2)}] & =\mathbf{E}[B_{t}^{(1)}(\rho B_{t}^{(1)}+\sqrt{1-\rho^{2}}B_{t}^{(2)})]\\
- & =\mathbf{E}[\rho(B_{t}^{(1)})^{2}+\sqrt{1-\rho^{2}}B_{t}^{(1)}B_{t}^{(2)}]\\
- & =\rho t
-\end{aligned}
-
-Hence, the coordinates at time $t$ are not independent.
-
-
 ### 2D Brownian Motion 
 
 Consider a two-dimensional Brownian motion $(B_{t}^{(1)},B_{2}^{(2)})$ starting at $(0,0)$.
@@ -87,9 +67,18 @@ class BrownianMotion2D:
     def generate_paths(self, num_paths : int):
         steps = int(self.endpoint/self.discretization)
         delta_z = np.sqrt(self.discretization) * np.random.randn(num_paths,2,steps)
+        
+        # paths has shape [num_paths,2,num_steps]
         paths = np.cumsum(delta_z,axis=2)
+
+        # Brownian motion has position (0,0) at time t=0
+        # Append initial position 
+        init_position = np.zeros((num_paths,2,1))
+        paths = np.append(init_position,paths,axis=2)
+
         return paths
 ```
+
 
 We can then configure and use `BrownianMotion2D` objects as we please.
 
@@ -111,16 +100,37 @@ plt.show()
 
 ### Brownian motion with correlated coordinates
 
+*Example 2.*
+(Example of Brownian motion with correlated coordinates) Let $(B_{t}:t\geq0)$ be a two dimensional brownian motion. Let $-1<\rho<1$. We construct the two dimensional process as follows: $W_{t}=(W_{t}^{(1)},W_{t}^{(2)})$ where:
+
+\begin{aligned}
+W_{t}^{(1)} & =B_{t}^{(1)}\\
+W_{t}^{(2)} & =\rho B_{t}^{(1)}+\sqrt{1-\rho^{2}}B_{t}^{(2)}
+\end{aligned}
+
+$W_{t}^{(1)}=B_{t}^{(1)}$ is Gaussian with mean $0$ and variance $t$. Since, $B_{t}^{(1)}$ and $B_{t}^{(2)}$are independent gaussian random variables and the sum of IID Gaussians is Gaussian, $W_{t}^{(2)}$ is Gaussian with mean $0$ and variance $t$. The covariance between
+$W_{t}^{(1)}$ and $W_{t}^{(2)}$ is:
+
+\begin{aligned}
+\mathbf{E}[W_{t}^{(1)}W_{t}^{(2)}] & =\mathbf{E}[B_{t}^{(1)}(\rho B_{t}^{(1)}+\sqrt{1-\rho^{2}}B_{t}^{(2)})]\\
+ & =\mathbf{E}[\rho(B_{t}^{(1)})^{2}+\sqrt{1-\rho^{2}}B_{t}^{(1)}B_{t}^{(2)}]\\
+ & =\rho t
+\end{aligned}
+
+Hence, the coordinates at time $t$ are not independent.
+
 Consider now the process $(W_{t}:t\geq0)$ for $\rho=1/2$ as in example 2. Let's plot one path of this process on the plane $\mathbf{R}^{2}$ on the time-interval $[0,5]$ using a discretization of $0.001$.
 
 ```{python}
 class BrownianMotion2DWithCorrelatedCoords(BrownianMotion2D):
     """
-    Generate sample paths for a 2d-brownian motion with correlation rho
+    Generate sample paths for a 2d-brownian motion
+    have correlated coordiantes
     """
 
     def __init__(
-        self, endpoint: float = 1.0, 
+        self, 
+        endpoint: float = 1.0, 
         discretization: float = 0.01, 
         rho: float = 0.0
     ):
@@ -133,8 +143,59 @@ class BrownianMotion2DWithCorrelatedCoords(BrownianMotion2D):
         # Call the base class generate_paths() method to generate a pair of
         # independent brownian motion paths. It returns a tensor of
         # shape (num_paths, 2, num_steps)
-        paths = BrownianMotion2D.generate_paths(num_paths)
+        paths = super().generate_paths(num_paths=num_paths)
 
+        # Extract the brownian motions B1(t) and B2(t)
+        # B1(t) and B2(t) have dimensions [num_paths,num_steps]
+        x_coord = paths[:, 0, :]
+        y_coord = paths[:, 1, :]
+
+        # Apply the transformation
+        # W1(t) = B1(t)
+        # W2(t) = rho * B1(t) + sqrt(1 - rho**2) B2(t)
+        x_coord = x_coord
+        y_coord = self.rho * x_coord + np.sqrt(1 - self.rho**2) * y_coord
+
+        # Assemble back the x- and y- coordinates
+        x_coord = np.expand_dims(x_coord, axis=1)
+        y_coord = np.expand_dims(y_coord, axis=1)
+
+        # Return a tensor of shape [num_paths,d=2,num_steps]
+        return np.concatenate([x_coord, y_coord], axis=1)
+```
+
+Let's configure the `BrownianMotion2DWithCorrelatedCoords` engine with the settings `endpoint=5.0`, `discretization=0.001` and `rho=0.5` and generate a sample path.
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+bm = BrownianMotion2DWithCorrelatedCoords(
+    endpoint=5.0,
+    discretization=0.001,
+    rho=0.50
+)
+paths = bm.generate_paths(num_paths=1)
+path = paths[0]
+
+plt.xlabel(r'$x$')
+plt.ylabel(r'$y$')
+plt.title(r'Correlated Brownian motion $W(t)=(W^{(1)}(t),W^{(2)}(t))$')
+plt.grid(True)
+plt.plot(path[0],path[1],linewidth=1,color='blue')
+plt.show()
+```
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+plt.xlabel(r'$t$')
+plt.ylabel(r'$W_t$')
+plt.title(r'Correlated Brownian motion paths')
+plt.grid(True)
+t = np.linspace(0.0,stop=5.0,num=5001)
+plt.plot(t,path[0],linewidth=0.75)
+plt.plot(t,path[1],linewidth=0.75)
+plt.show()
 ```
 
 ## Ito's Formula.
