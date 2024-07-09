@@ -17,6 +17,8 @@ Let's start with the definition of Ito processes.
 
 Let $(B(t):t\geq0)$ be a standard brownian motion defined on $(\Omega,\mathcal{F},\mathbb{P})$. An Ito process $(X(t):t\geq0)$ is of the form:
 
+
+
 $$\begin{aligned}
 X(t) & =X(0)+\int_{0}^{t}V(s)dB(s)+\int_{0}^{t}D(s)ds
 \end{aligned}$$ {#eq-ito-process}
@@ -843,8 +845,8 @@ Note that, if $\sigma$ and $\mu$ are smooth functions, we can apply Ito's formul
 
 $$
 \begin{align*}
-\sigma(X_s) &= \sigma(X_{t_j}) + \int_{t_j}^{t_{j+1}}\sigma'(X_u) dX_U + \frac{1}{2}\int_{t_j}^{t_{j+1}} \sigma''(X_u)(dX_u)^2\\
-\mu(X_s) &= \mu(X_{t_j}) + \int_{t_j}^{t_{j+1}}\mu'(X_u) dX_U + \frac{1}{2}\int_{t_j}^{t_{j+1}} \mu''(X_u)(dX_u)^2
+\sigma(X_s) &= \sigma(X_{t_j}) + \int_{t_j}^{s}\sigma'(X_u) dX_u + \frac{1}{2}\int_{t_j}^{s} \sigma''(X_u)(dX_u)^2\\
+\mu(X_s) &= \mu(X_{t_j}) + \int_{t_j}^{s}\mu'(X_u) dX_u + \frac{1}{2}\int_{t_j}^{s} \mu''(X_u)(dX_u)^2
 \end{align*}
 $$ {#eq-ito-taylor-expansion-of-mu-and-sigma}
 
@@ -874,5 +876,359 @@ $$
 
 ::: {#exm-milstein-scheme}
 
-(Milstein Scheme).
+(Milstein Scheme). In this scheme, we go an order further for the approximation of the volatility in @eq-ito-taylor-expansion-of-mu-and-sigma and consider also the integral in $dX_u$. We take $dX_u = \sigma(X_{t_j})dB_u$. We then express $\sigma(X_s)$ in @eq-ito-taylor-expansion-of-mu-and-sigma as:
+
+$$
+\begin{align*}
+\sigma(X_s) &\approx \sigma(X_{t_j}) + \int_{t_j}^{s} \sigma'(X_{t_j}) (\sigma(X_{t_j})dB_u)\\
+&= \sigma(X_{t_j}) + \sigma'(X_{t_j}) \sigma(X_{t_j}) \int_{t_j}^{s}  dB_u\\
+&= \sigma(X_{t_j}) + \sigma'(X_{t_j}) \sigma(X_{t_j}) (B_s - B_{t_j})
+\end{align*}
+$$
+
+If we put this back in @eq-increment-of-a-diffusion, we get:
+
+$$
+\begin{align*}
+X_{t_{j+1}} - X_{t_j} &\approx \sigma(X_{t_j})(B_{t_{j+1}}-B_{t_j}) + \mu(X_{t_j})(t_{j+1} - t_j) \\
+&+ \sigma'(X_{t_j}) \sigma(X_{t_j}) \int_{t_j}^{t_{j+1}} (B(s) - B(t_j))dB(s)
+\end{align*}
+$$ {#eq-milstein-approx-step1}
+
+Now, consider the function $f(x)=x^2$. We have:
+
+$$
+\begin{align*}
+f_x(x) &= 2x\\
+f_{xx}(x) &= 2
+\end{align*}
+$$
+
+So, we get:
+
+$$
+B^2(t_{j+1}) - B^2(t_j) = 2 \int_{t_j}^{t_{j+1}} B(s) dB(s) + \frac{1}{2} \int_{t_j}^{t_{j+1}} (2) ds
+$$
+
+Thus,
+
+$$
+\int_{t_j}^{t_{j+1}} B(s) dB(s) = \frac{1}{2}[(B_{t_{j+1}}^2 - B_{t_j}^2)-(t_{j+1}-t_j)]
+$$ {#eq-ito-integral-of-bm}
+
+Substituting @eq-ito-integral-of-bm into @eq-milstein-approx-step1, we get the Milstein approximation:
+
+$$
+\begin{align*}
+X_{t_{j+1}} - X_{t_j} &\approx \sigma(X_{t_j})(B_{t_{j+1}}-B_{t_j}) + \mu(X_{t_j})(t_{j+1} - t_j) \\
+&+\sigma'(X_{t_j}) \sigma(X_{t_j})  \left[\frac{1}{2}((B_{t_{j+1}}^2 - B_{t_j}^2)-(t_{j+1}-t_j)) -  B_{t_j}(B_{t_{j+1}}-B_{t_j})\right]\\
+&= \sigma(X_{t_j})(B_{t_{j+1}}-B_{t_j}) + \mu(X_{t_j})(t_{j+1} - t_j) \\
+&+ \frac{\sigma'(X_{t_j}) \sigma(X_{t_j})}{2}  \left[(B_{t_{j+1}}^2 - B_{t_j}^2)-(t_{j+1}-t_j) -  2B_{t_j}B_{t_{j+1}}+2B_{t_j}^2\right]\\
+&= \sigma(X_{t_j})(B_{t_{j+1}}-B_{t_j}) + \mu(X_{t_j})(t_{j+1} - t_j) \\
+&+ \frac{\sigma'(X_{t_j}) \sigma(X_{t_j})}{2}  \left[(B_{t_{j+1}} - B_{t_j})^2-(t_{j+1}-t_j)\right]
+\end{align*}
+$$
+
+The recursive nature of these two schemes makes them easy to implement numerically. The Milstein scheme is not much more costly to implement as it contains only one more term than the Euler scheme.
 :::
+
+### Python implementation
+
+A python implementation of the `EulerMaruyama` and `Milstein` schemes is as follows.
+
+```{python}
+from typing import Callable
+from dataclasses import dataclass, field
+import numpy as np
+
+
+@dataclass
+class EulerMaruyama:
+    """
+    Numerical solver for a stochastic differential equation(SDE) using
+    the Euler-Maruyama method.
+
+    Consider an SDE of the form :
+
+    dX_t = mu(t,X_t) dt + sigma(t,X_t) dB_t
+
+    with initial condition X_0 = x_0
+
+    The solution to the SDE can be computed using the increments
+
+    X_{n+1} - X_n = mu(n,X_n)(t_{n+1}-t_n) + sigma(n,X_n)(B(n+1)-B(n))
+
+    """
+
+    drift: Callable
+    volatility: Callable
+    init_value: float
+    t_start: float
+    t_end: float
+    step_size: float
+    num_paths: int
+
+    def __post_init__(self):
+        self.iter = 0
+        self.x_curr = np.full(shape=(self.num_paths,), fill_value=self.init_value)
+        self.num_steps = int((self.t_end - self.t_start) / self.step_size)
+        self.times = np.linspace(self.t_start, self.t_end, self.num_steps + 1)
+        self.delta_brownian = np.sqrt(self.step_size) * np.random.standard_normal(
+            size=(self.num_paths, self.num_steps)
+        )
+        self.brownian = np.cumsum(self.delta_brownian, axis=1)
+        self.brownian = np.concatenate([np.zeros(shape=(self.num_paths,1)),self.brownian],axis=1)
+        self.solution = [self.x_curr.copy()]
+
+    def iterate(self):
+        """
+        Generate the next iterate X(n+1)
+        """
+
+        mu_n = np.array([self.drift(self.times[self.iter], x) for x in self.x_curr])
+        sigma_n = np.array(
+            [self.volatility(self.times[self.iter], x) for x in self.x_curr]
+        )
+
+        d_brownian = self.brownian[:, self.iter + 1] - self.brownian[:, self.iter]
+
+        self.x_curr += mu_n * (
+                self.times[self.iter + 1] - self.times[self.iter]
+        ) + sigma_n * d_brownian
+
+        return self.x_curr.copy()
+
+    def solve(self):
+        while self.iter < self.num_steps:
+            self.solution.append(self.iterate())
+            self.iter += 1
+
+        return np.array(self.solution).transpose()
+```
+
+```{python}
+@dataclass
+class Milstein:
+    """
+    Numerical solver for a stochastic differential equation(SDE) using
+    the Milstein method.
+
+    Consider an SDE of the form :
+
+    dX_t = mu(t,X_t) dt + sigma(t,X_t) dB_t
+
+    with initial condition X_0 = x_0
+
+    The solution to the SDE can be computed using the increments
+
+    X_{n+1} - X_n = mu(n,X_n)(t_{n+1}-t_n) + sigma(n,X_n)(B(n+1)-B(n))
+    + 0.5 * sigma(n,X_n) * sigma'(n,X_n) * ((B(n+1) - B(n))**2 - (t_{n+1} - t_n))
+
+    """
+
+    drift: Callable
+    vol: Callable
+    dvol_dx: Callable
+    init_value: float
+    t_start: float
+    t_end: float
+    step_size: float
+    num_paths: int
+
+    def __post_init__(self):
+        self.iter = 0
+        self.x_curr = np.full(shape=(self.num_paths,), fill_value=self.init_value)
+        self.num_steps = int((self.t_end - self.t_start) / self.step_size)
+        self.times = np.linspace(self.t_start, self.t_end, self.num_steps + 1)
+        self.delta_brownian = np.sqrt(self.step_size) * np.random.standard_normal(
+            size=(self.num_paths, self.num_steps)
+        )
+        self.brownian = np.cumsum(self.delta_brownian, axis=1)
+        self.brownian = np.concatenate(
+            [np.zeros(shape=(self.num_paths, 1)), self.brownian], axis=1
+        )
+        self.solution = [self.x_curr.copy()]
+
+    def iterate(self):
+        """
+        Generate the next iterate X(n+1)
+        """
+
+        mu_n = np.array([self.drift(self.times[self.iter], x) for x in self.x_curr])
+        sigma_n = np.array([self.vol(self.times[self.iter], x) for x in self.x_curr])
+        dvol_dx_n = np.array(
+            [self.dvol_dx(self.times[self.iter], x) for x in self.x_curr]
+        )
+
+        d_brownian = self.brownian[:, self.iter + 1] - self.brownian[:, self.iter]
+
+        self.x_curr += (
+            mu_n * self.step_size
+            + sigma_n * d_brownian
+            + 0.5 * sigma_n * dvol_dx_n * (d_brownian**2 - self.step_size)
+        )
+
+        return self.x_curr.copy()
+
+    def solve(self):
+        while self.iter < self.num_steps:
+            self.solution.append(self.iterate())
+            self.iter += 1
+
+        return np.array(self.solution).transpose()
+```
+
+::: {#exr-simulating-sdes}
+
+(Simulating SDEs) Simulate 100 paths for the following diffusions given by their SDEs on $[0,1]$ using the Euler-Maruyama scheme and the Milstein scheme for a discretization of $0.01$.
+
+(a) Geometric Brownian Motion: 
+
+$$
+dS_t = S_t dB_t + \left(\mu + \frac{\sigma^2}{2}\right)S_t dt, \quad S_0 = 1
+$$
+
+for $\mu=-1/2$, $\mu=-2$, and $\mu=0$
+
+(b) Ornstein-Uhlenbeck process:
+
+$$
+dX_t = -X_t dt + dB_t, \quad X_0 = 1
+$$
+
+(c) The diffusion:
+
+$$
+dX_t = \sqrt{1+X_t^2}dB_t + \sin X_t dt, \quad X_0 = 0
+$$
+:::
+
+*Solution.*
+
+We can now use `EulerMaruyama` and `Milstein` solvers and generate some sample paths. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.set_style("whitegrid")
+
+t = np.linspace(start=0.0,stop=1.0,num=101)
+
+em = EulerMaruyama(
+    drift=lambda t_curr, x_curr : 0,
+    volatility=lambda t_curr, x_curr : x_curr,
+    init_value=1.0,
+    t_start=0.0,
+    t_end=1.0,
+    step_size=0.01,
+    num_paths=10
+)
+
+solution = em.solve()
+
+plt.xlabel(r'Time $t$')
+plt.ylabel(r'$S(t)$')
+plt.title(r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=-0.5$, EM scheme')
+plt.grid(True)
+for i in range(10):
+    plt.plot(t,solution[i])
+
+plt.show()
+
+em = EulerMaruyama(
+    drift=lambda t_curr, x_curr : -1.5*x_curr,
+    volatility=lambda t_curr, x_curr : x_curr,
+    init_value=1.0,
+    t_start=0.0,
+    t_end=1.0,
+    step_size=0.01,
+    num_paths=10
+)
+
+solution = em.solve()
+
+plt.xlabel(r'Time $t$')
+plt.ylabel(r'$S(t)$')
+plt.title(r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=-2$, EM scheme')
+plt.grid(True)
+for i in range(10):
+    plt.plot(t,solution[i])
+
+plt.show()
+
+em = EulerMaruyama(
+    drift=lambda t_curr, x_curr : 0.5*x_curr,
+    volatility=lambda t_curr, x_curr : x_curr,
+    init_value=1.0,
+    t_start=0.0,
+    t_end=1.0,
+    step_size=0.01,
+    num_paths=10
+)
+
+solution = em.solve()
+
+plt.xlabel(r'Time $t$')
+plt.ylabel(r'$S(t)$')
+plt.title(r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=0$, EM scheme')
+plt.grid(True)
+for i in range(10):
+    plt.plot(t,solution[i])
+
+plt.show()
+
+em = EulerMaruyama(
+    drift=lambda t_curr, x_curr : -x_curr,
+    volatility=lambda t_curr, x_curr : 1,
+    init_value=1.0,
+    t_start=0.0,
+    t_end=1.0,
+    step_size=0.01,
+    num_paths=10
+)
+
+solution = em.solve()
+
+plt.xlabel(r'Time $t$')
+plt.ylabel(r'$S(t)$')
+plt.title(r'10 sample paths of Ornstein-Uhlenbeck(OU) process, EM scheme')
+plt.grid(True)
+for i in range(10):
+    plt.plot(t,solution[i])
+
+plt.show()
+
+em = EulerMaruyama(
+    drift=lambda t_curr, x_curr : np.sqrt(1+x_curr**2),
+    volatility=lambda t_curr, x_curr : np.sin(x_curr),
+    init_value=0.0,
+    t_start=0.0,
+    t_end=1.0,
+    step_size=0.01,
+    num_paths=10
+)
+
+solution = em.solve()
+
+plt.xlabel(r'Time $t$')
+plt.ylabel(r'$S(t)$')
+plt.title(r'10 sample paths of the diffusion, EM scheme')
+plt.grid(True)
+for i in range(10):
+    plt.plot(t,solution[i])
+
+plt.show()
+```
+
+::: {#exr-euler-vs-milstein} 
+
+(Euler vs Milstein) Go back to (a) above with $\mu=0$. Consider $S_t = \exp(B_t - t/2)$. Let $S$
+:::
+
+
+
+
+
