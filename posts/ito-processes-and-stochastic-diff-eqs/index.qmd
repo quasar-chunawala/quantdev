@@ -943,16 +943,82 @@ The recursive nature of these two schemes makes them easy to implement numerical
 
 ### Python implementation
 
-A python implementation of the `EulerMaruyama` and `Milstein` schemes is as follows.
+Let's code an `SDE` class and an abstract base class `Solver`.
 
 ```{python}
-from typing import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from abc import ABC, abstractmethod
+from typing import Callable, Optional
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
+sns.set_style("whitegrid")
 
 @dataclass
-class EulerMaruyama:
+class SDE:
+    """
+    An abstraction for a stochastic differential equation
+    """
+
+    initial_condition: float
+    drift: Callable[[float, float], float]
+    vol: Callable[[float, float], float]
+    dvol_dx: Optional[Callable[[float, float], float]]
+
+@dataclass
+class Solver(ABC):
+    """
+    An abstract base class for all numerical schemes
+    """
+
+    t_start: float = 0.0
+    t_end: float = 1.0
+    step_size: float = 0.001
+    num_paths: int = 10
+
+    def __post_init__(self):
+        self.iter = 0
+        self.x_curr = np.zeros((self.num_paths,))
+        self.num_steps = int((self.t_end - self.t_start) / self.step_size)
+        self.times = np.linspace(self.t_start, self.t_end, self.num_steps + 1)
+        self.brownian_increments = np.sqrt(self.step_size) * np.random.standard_normal(
+            size=(self.num_paths, self.num_steps)
+        )
+        self.brownian = np.cumsum(self.brownian_increments, axis=1)
+        self.brownian = np.concatenate(
+            [np.zeros(shape=(self.num_paths, 1)), self.brownian], axis=1
+        )
+        self.solution = []
+
+    @abstractmethod
+    def iterate(self):
+        """
+        Compute the next iterate X(n+1)
+        """
+
+    def solve(self, sde: SDE):
+        """
+        Solve the SDE
+        """
+        self.x_curr = np.full(shape=(self.num_paths,), fill_value=sde.initial_condition)
+        self.solution = [self.x_curr.copy()]
+
+        while self.iter < self.num_steps:
+            self.solution.append(self.iterate(sde))
+            self.iter += 1
+
+        return np.array(self.solution).transpose()
+
+    def reset(self):
+        self.__post_init__()
+```
+
+The `EulerMaruyama` and `Milstein` methods will derive from the abstract base class `Solver`.
+
+```{python}
+@dataclass
+class EulerMaruyama(Solver):
     """
     Numerical solver for a stochastic differential equation(SDE) using
     the Euler-Maruyama method.
@@ -969,58 +1035,27 @@ class EulerMaruyama:
 
     """
 
-    drift: Callable
-    volatility: Callable
-    init_value: float
-    t_start: float
-    t_end: float
-    step_size: float
-    num_paths: int
-
-    def __post_init__(self):
-        self.iter = 0
-        self.x_curr = np.full(shape=(self.num_paths,), fill_value=self.init_value)
-        self.num_steps = int((self.t_end - self.t_start) / self.step_size)
-        self.times = np.linspace(self.t_start, self.t_end, self.num_steps + 1)
-        self.delta_brownian = np.sqrt(self.step_size) * np.random.standard_normal(
-            size=(self.num_paths, self.num_steps)
-        )
-        self.brownian = np.cumsum(self.delta_brownian, axis=1)
-        self.brownian = np.concatenate([np.zeros(shape=(self.num_paths,1)),self.brownian],axis=1)
-        self.solution = [self.x_curr.copy()]
-
-    def iterate(self):
+    def iterate(self, sde: SDE):
         """
         Generate the next iterate X(n+1)
         """
 
-        mu_n = np.array([self.drift(self.times[self.iter], x) for x in self.x_curr])
-        sigma_n = np.array(
-            [self.volatility(self.times[self.iter], x) for x in self.x_curr]
-        )
+        mu_n = np.array([sde.drift(self.times[self.iter], x) for x in self.x_curr])
+        sigma_n = np.array([sde.vol(self.times[self.iter], x) for x in self.x_curr])
 
         d_brownian = self.brownian[:, self.iter + 1] - self.brownian[:, self.iter]
 
-        self.x_curr += mu_n * (
-                self.times[self.iter + 1] - self.times[self.iter]
-        ) + sigma_n * d_brownian
+        self.x_curr += mu_n * self.step_size + sigma_n * d_brownian
 
         return self.x_curr.copy()
-
-    def solve(self):
-        while self.iter < self.num_steps:
-            self.solution.append(self.iterate())
-            self.iter += 1
-
-        return np.array(self.solution).transpose()
 ```
 
 ```{python}
 @dataclass
-class Milstein:
+class Milstein(Solver):
     """
     Numerical solver for a stochastic differential equation(SDE) using
-    the Milstein method.
+    the Euler-Maruyama method.
 
     Consider an SDE of the form :
 
@@ -1035,38 +1070,15 @@ class Milstein:
 
     """
 
-    drift: Callable
-    vol: Callable
-    dvol_dx: Callable
-    init_value: float
-    t_start: float
-    t_end: float
-    step_size: float
-    num_paths: int
-
-    def __post_init__(self):
-        self.iter = 0
-        self.x_curr = np.full(shape=(self.num_paths,), fill_value=self.init_value)
-        self.num_steps = int((self.t_end - self.t_start) / self.step_size)
-        self.times = np.linspace(self.t_start, self.t_end, self.num_steps + 1)
-        self.delta_brownian = np.sqrt(self.step_size) * np.random.standard_normal(
-            size=(self.num_paths, self.num_steps)
-        )
-        self.brownian = np.cumsum(self.delta_brownian, axis=1)
-        self.brownian = np.concatenate(
-            [np.zeros(shape=(self.num_paths, 1)), self.brownian], axis=1
-        )
-        self.solution = [self.x_curr.copy()]
-
-    def iterate(self):
+    def iterate(self, sde: SDE):
         """
         Generate the next iterate X(n+1)
         """
 
-        mu_n = np.array([self.drift(self.times[self.iter], x) for x in self.x_curr])
-        sigma_n = np.array([self.vol(self.times[self.iter], x) for x in self.x_curr])
+        mu_n = np.array([sde.drift(self.times[self.iter], x) for x in self.x_curr])
+        sigma_n = np.array([sde.vol(self.times[self.iter], x) for x in self.x_curr])
         dvol_dx_n = np.array(
-            [self.dvol_dx(self.times[self.iter], x) for x in self.x_curr]
+            [sde.dvol_dx(self.times[self.iter], x) for x in self.x_curr]
         )
 
         d_brownian = self.brownian[:, self.iter + 1] - self.brownian[:, self.iter]
@@ -1078,13 +1090,6 @@ class Milstein:
         )
 
         return self.x_curr.copy()
-
-    def solve(self):
-        while self.iter < self.num_steps:
-            self.solution.append(self.iterate())
-            self.iter += 1
-
-        return np.array(self.solution).transpose()
 ```
 
 ::: {#exr-simulating-sdes}
@@ -1119,112 +1124,93 @@ We can now use `EulerMaruyama` and `Milstein` solvers and generate some sample p
 ```{python}
 # | code-fold: true
 # | code-summary: "Show the code"
-import matplotlib.pyplot as plt
-import seaborn as sns
 
-sns.set_style("whitegrid")
+t = np.linspace(start=0.0,stop=1.0,num=1001)
 
-t = np.linspace(start=0.0,stop=1.0,num=101)
+euler = EulerMaruyama()
 
-em = EulerMaruyama(
-    drift=lambda t_curr, x_curr : 0,
-    volatility=lambda t_curr, x_curr : x_curr,
-    init_value=1.0,
-    t_start=0.0,
-    t_end=1.0,
-    step_size=0.01,
-    num_paths=10
+# mu = -0.5 case
+gbm_sde = SDE(
+    initial_condition=1.0,
+    drift = lambda t, s_t : 0.0,
+    vol = lambda t, s_t : s_t,
+    dvol_dx = lambda t, s_t : 1
 )
 
-solution = em.solve()
+solution = euler.solve(gbm_sde)
+euler.reset()
 
 plt.xlabel(r'Time $t$')
 plt.ylabel(r'$S(t)$')
-plt.title(r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=-0.5$, EM scheme')
+plt.title(r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=-0.5$')
 plt.grid(True)
 for i in range(10):
     plt.plot(t,solution[i])
 
 plt.show()
 
-em = EulerMaruyama(
-    drift=lambda t_curr, x_curr : -1.5*x_curr,
-    volatility=lambda t_curr, x_curr : x_curr,
-    init_value=1.0,
-    t_start=0.0,
-    t_end=1.0,
-    step_size=0.01,
-    num_paths=10
-)
-
-solution = em.solve()
+# mu = -2 case
+gbm_sde.drift = lambda t, s_t : -1.5 * s_t
+solution = euler.solve(gbm_sde)
+euler.reset()
 
 plt.xlabel(r'Time $t$')
 plt.ylabel(r'$S(t)$')
-plt.title(r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=-2$, EM scheme')
+plt.title(r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=-2$')
 plt.grid(True)
 for i in range(10):
     plt.plot(t,solution[i])
 
 plt.show()
 
-em = EulerMaruyama(
-    drift=lambda t_curr, x_curr : 0.5*x_curr,
-    volatility=lambda t_curr, x_curr : x_curr,
-    init_value=1.0,
-    t_start=0.0,
-    t_end=1.0,
-    step_size=0.01,
-    num_paths=10
-)
-
-solution = em.solve()
+# mu = 0 case
+gbm_sde.drift = lambda t, s_t : 0.5 * s_t
+solution = euler.solve(gbm_sde)
+euler.reset()
 
 plt.xlabel(r'Time $t$')
 plt.ylabel(r'$S(t)$')
-plt.title(r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=0$, EM scheme')
+plt.title(r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=0.0$')
 plt.grid(True)
 for i in range(10):
     plt.plot(t,solution[i])
 
 plt.show()
 
-em = EulerMaruyama(
-    drift=lambda t_curr, x_curr : -x_curr,
-    volatility=lambda t_curr, x_curr : 1,
-    init_value=1.0,
-    t_start=0.0,
-    t_end=1.0,
-    step_size=0.01,
-    num_paths=10
+# ornstein-uhlenbeck
+ornstein_uhlenbeck_sde = SDE(
+    initial_condition=1.0,
+    drift = lambda t, s_t : -s_t,
+    vol = lambda t, s_t : 1.0,
+    dvol_dx = lambda t, s_t : 0.0
 )
 
-solution = em.solve()
+solution = euler.solve(ornstein_uhlenbeck_sde)
+euler.reset()
 
 plt.xlabel(r'Time $t$')
 plt.ylabel(r'$S(t)$')
-plt.title(r'10 sample paths of Ornstein-Uhlenbeck(OU) process, EM scheme')
+plt.title(r'10 sample paths of Ornstein-Uhlenbeck process')
 plt.grid(True)
 for i in range(10):
     plt.plot(t,solution[i])
 
 plt.show()
 
-em = EulerMaruyama(
-    drift=lambda t_curr, x_curr : np.sqrt(1+x_curr**2),
-    volatility=lambda t_curr, x_curr : np.sin(x_curr),
-    init_value=0.0,
-    t_start=0.0,
-    t_end=1.0,
-    step_size=0.01,
-    num_paths=10
+# diffusion
+diffusion_sde = SDE(
+    initial_condition=0.0,
+    drift = lambda t, s_t : np.sqrt(1+s_t**2),
+    vol = lambda t, s_t : np.sin(s_t),
+    dvol_dx = lambda t, s_t : np.cos(s_t)
 )
 
-solution = em.solve()
+solution = euler.solve(diffusion_sde)
+euler.reset()
 
 plt.xlabel(r'Time $t$')
 plt.ylabel(r'$S(t)$')
-plt.title(r'10 sample paths of the diffusion, EM scheme')
+plt.title(r'10 sample paths of the diffusion')
 plt.grid(True)
 for i in range(10):
     plt.plot(t,solution[i])
@@ -1232,13 +1218,35 @@ for i in range(10):
 plt.show()
 ```
 
-::: {#exr-euler-vs-milstein} 
+### Convergence
 
-(Euler vs Milstein) Go back to (a) above with $\mu=0$. Consider $S_t = \exp(B_t - t/2)$. Let $S^{(n)}$ be the approximating process defined by the Euler-Maruyama scheme in @eq-euler-maruyama for the discretization $1/n$. Find the absolute error $\mathbb{E}[|S_1^{(n)}-S_1|]$ by averaging over $100$ paths for $n=10$, $n=100$, $n=1000$, $n=10000$. Plot the errors on a graph for the Euler-Maruyama scheme. Repeat the experiment for the Milstein scheme @eq-milstein and compare.
+It is of course possible go beyond the Milstein scheme to improve the approximation. However, it turns out that the above schemes already converge quite rapidly to the process itself. To see this, consider the mean absolute error between the approximation $X_T^{(n)}$ at time $T$ and $X_T$. Suppose that the approximation $X^{(n)}$ is obtained for a partition with discretization $t_{j+1}-t_j = 1/n$. It is possible to show that for the Euler scheme, we have:
 
+$$
+\begin{align*}
+\mathbb{E}[|X_T^{(n)} - X_T|] \leq \frac{C}{\sqrt{n}}
+\end{align*}
+$$
+
+whereas for the Milstein scheme
+
+$$
+\begin{align*}
+\mathbb{E}[|X_T^{(n)} - X_T|] \leq \frac{C'}{n}
+\end{align*}
+$$
+
+for some constants $C,C'>0$. Note that the mean error between the two process must be the worst at the last point, since the errors add up. 
+
+::: {#exr-the-cir-model}
+
+**The CIR Model**. Consider the CIR process given by the SDE:
+
+$$
+dZ_t = (a - Z_t) dt + \sqrt{Z_t} dB_t, \quad Z_0 = 1
+$$ {#eq-cir-process}
+
+(We set the parameters $\sigma=1, b=1$ here.)
+
+(a) Plot $10$ paths of this process on $[0,1]$ with a time step of $0.001$ for each of the cases $a=0.1$
 :::
-
-
-
-
-
