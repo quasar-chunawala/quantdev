@@ -730,7 +730,7 @@ X_{t_{j+1}} - X_{t_j} &amp;\approx \sigma(X_{t_j})(B_{t_{j+1}}-B_{t_j}) + \mu(X_
 </div>
 <section id="python-implementation" class="level3">
 <h3 class="anchored" data-anchor-id="python-implementation">Python implementation</h3>
-<p>Let’s code an <code>SDE</code> class and an abstract base class <code>Solver</code>.</p>
+<p>Let’s code an <code>SIVP</code> class and an abstract base class <code>Solver</code>.</p>
 <div class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> dataclasses <span class="im">import</span> dataclass</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> abc <span class="im">import</span> ABC, abstractmethod</span>
@@ -741,63 +741,72 @@ X_{t_{j+1}} - X_{t_j} &amp;\approx \sigma(X_{t_j})(B_{t_{j+1}}-B_{t_j}) + \mu(X_
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>sns.set_style(<span class="st">"whitegrid"</span>)</span>
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">@dataclass</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> SDE:</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="co">    An abstraction for a stochastic differential equation</span></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    initial_condition: <span class="bu">float</span></span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    drift: Callable[[<span class="bu">float</span>, <span class="bu">float</span>], <span class="bu">float</span>]</span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    vol: Callable[[<span class="bu">float</span>, <span class="bu">float</span>], <span class="bu">float</span>]</span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    dvol_dx: Optional[Callable[[<span class="bu">float</span>, <span class="bu">float</span>], <span class="bu">float</span>]]</span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="at">@dataclass</span></span>
-<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Solver(ABC):</span>
-<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
-<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a><span class="co">    An abstract base class for all numerical schemes</span></span>
-<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="co"># More descriptive type hints</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>T <span class="op">=</span> np.ndarray</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>X <span class="op">=</span> np.ndarray</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="at">@dataclass</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> SIVP:</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="co">    An abstraction for a stochastic initial value problem</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    t_start : <span class="bu">float</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    t_end : <span class="bu">float</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    initial_condition: <span class="bu">float</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    drift: Callable[[<span class="bu">float</span>, np.ndarray], np.ndarray]</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    vol: Callable[[<span class="bu">float</span>, np.ndarray], np.ndarray]</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    dvol_dx: Optional[Callable[[<span class="bu">float</span>, np.ndarray], np.ndarray]] <span class="op">=</span> <span class="va">None</span></span>
 <span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    t_start: <span class="bu">float</span> <span class="op">=</span> <span class="fl">0.0</span></span>
-<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    t_end: <span class="bu">float</span> <span class="op">=</span> <span class="fl">1.0</span></span>
-<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>    step_size: <span class="bu">float</span> <span class="op">=</span> <span class="fl">0.001</span></span>
-<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>    num_paths: <span class="bu">int</span> <span class="op">=</span> <span class="dv">10</span></span>
-<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> __post_init__(<span class="va">self</span>):</span>
-<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.<span class="bu">iter</span> <span class="op">=</span> <span class="dv">0</span></span>
-<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.x_curr <span class="op">=</span> np.zeros((<span class="va">self</span>.num_paths,))</span>
-<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.num_steps <span class="op">=</span> <span class="bu">int</span>((<span class="va">self</span>.t_end <span class="op">-</span> <span class="va">self</span>.t_start) <span class="op">/</span> <span class="va">self</span>.step_size)</span>
-<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.times <span class="op">=</span> np.linspace(<span class="va">self</span>.t_start, <span class="va">self</span>.t_end, <span class="va">self</span>.num_steps <span class="op">+</span> <span class="dv">1</span>)</span>
-<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.brownian_increments <span class="op">=</span> np.sqrt(<span class="va">self</span>.step_size) <span class="op">*</span> np.random.standard_normal(</span>
-<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a>            size<span class="op">=</span>(<span class="va">self</span>.num_paths, <span class="va">self</span>.num_steps)</span>
-<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>        )</span>
-<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.brownian <span class="op">=</span> np.cumsum(<span class="va">self</span>.brownian_increments, axis<span class="op">=</span><span class="dv">1</span>)</span>
-<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.brownian <span class="op">=</span> np.concatenate(</span>
-<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a>            [np.zeros(shape<span class="op">=</span>(<span class="va">self</span>.num_paths, <span class="dv">1</span>)), <span class="va">self</span>.brownian], axis<span class="op">=</span><span class="dv">1</span></span>
-<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a>        )</span>
-<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.solution <span class="op">=</span> []</span>
-<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a>    <span class="at">@abstractmethod</span></span>
-<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> iterate(<span class="va">self</span>):</span>
-<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a>        <span class="co">"""</span></span>
-<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a><span class="co">        Compute the next iterate X(n+1)</span></span>
-<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a><span class="co">        """</span></span>
-<span id="cb1-51"><a href="#cb1-51" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-52"><a href="#cb1-52" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> solve(<span class="va">self</span>, sde: SDE):</span>
-<span id="cb1-53"><a href="#cb1-53" aria-hidden="true" tabindex="-1"></a>        <span class="co">"""</span></span>
-<span id="cb1-54"><a href="#cb1-54" aria-hidden="true" tabindex="-1"></a><span class="co">        Solve the SDE</span></span>
-<span id="cb1-55"><a href="#cb1-55" aria-hidden="true" tabindex="-1"></a><span class="co">        """</span></span>
-<span id="cb1-56"><a href="#cb1-56" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.x_curr <span class="op">=</span> np.full(shape<span class="op">=</span>(<span class="va">self</span>.num_paths,), fill_value<span class="op">=</span>sde.initial_condition)</span>
-<span id="cb1-57"><a href="#cb1-57" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.solution <span class="op">=</span> [<span class="va">self</span>.x_curr.copy()]</span>
-<span id="cb1-58"><a href="#cb1-58" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-59"><a href="#cb1-59" aria-hidden="true" tabindex="-1"></a>        <span class="cf">while</span> <span class="va">self</span>.<span class="bu">iter</span> <span class="op">&lt;</span> <span class="va">self</span>.num_steps:</span>
-<span id="cb1-60"><a href="#cb1-60" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.solution.append(<span class="va">self</span>.iterate(sde))</span>
-<span id="cb1-61"><a href="#cb1-61" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.<span class="bu">iter</span> <span class="op">+=</span> <span class="dv">1</span></span>
-<span id="cb1-62"><a href="#cb1-62" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-63"><a href="#cb1-63" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> np.array(<span class="va">self</span>.solution).transpose()</span>
-<span id="cb1-64"><a href="#cb1-64" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-65"><a href="#cb1-65" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> reset(<span class="va">self</span>):</span>
-<span id="cb1-66"><a href="#cb1-66" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.__post_init__()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a><span class="at">@dataclass</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Solver(ABC):</span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a><span class="co">    An abstract base class for all numerical schemes</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>    num_steps: <span class="bu">int</span> <span class="op">=</span> <span class="dv">100</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a>    num_paths: <span class="bu">int</span> <span class="op">=</span> <span class="dv">100</span></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> __post_init__(<span class="va">self</span>):</span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.<span class="bu">iter</span> <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>        <span class="co"># x_values is a matrix of shape [num_paths,num_steps]</span></span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.x_values <span class="op">=</span> np.zeros((<span class="va">self</span>.num_paths, <span class="va">self</span>.num_steps <span class="op">+</span> <span class="dv">1</span>))</span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.step_size <span class="op">=</span> <span class="fl">1.0</span> <span class="op">/</span> <span class="va">self</span>.num_steps</span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>        <span class="co"># gaussian increments</span></span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.brownian_increments <span class="op">=</span> np.sqrt(<span class="va">self</span>.step_size) <span class="op">*</span> np.random.standard_normal(</span>
+<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a>            size<span class="op">=</span>(<span class="va">self</span>.num_paths, <span class="va">self</span>.num_steps)</span>
+<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.brownian <span class="op">=</span> np.cumsum(<span class="va">self</span>.brownian_increments, axis<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.brownian <span class="op">=</span> np.concatenate(</span>
+<span id="cb1-51"><a href="#cb1-51" aria-hidden="true" tabindex="-1"></a>            [np.zeros(shape<span class="op">=</span>(<span class="va">self</span>.num_paths, <span class="dv">1</span>)), <span class="va">self</span>.brownian], axis<span class="op">=</span><span class="dv">1</span></span>
+<span id="cb1-52"><a href="#cb1-52" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb1-53"><a href="#cb1-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-54"><a href="#cb1-54" aria-hidden="true" tabindex="-1"></a>    <span class="at">@abstractmethod</span></span>
+<span id="cb1-55"><a href="#cb1-55" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> iterate(<span class="va">self</span>, sivp: SIVP) <span class="op">-&gt;</span> X:</span>
+<span id="cb1-56"><a href="#cb1-56" aria-hidden="true" tabindex="-1"></a>        <span class="co">"""</span></span>
+<span id="cb1-57"><a href="#cb1-57" aria-hidden="true" tabindex="-1"></a><span class="co">        Compute the next iterate X(n+1)</span></span>
+<span id="cb1-58"><a href="#cb1-58" aria-hidden="true" tabindex="-1"></a><span class="co">        """</span></span>
+<span id="cb1-59"><a href="#cb1-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-60"><a href="#cb1-60" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> solve(<span class="va">self</span>, sivp: SIVP) <span class="op">-&gt;</span> (T, X):</span>
+<span id="cb1-61"><a href="#cb1-61" aria-hidden="true" tabindex="-1"></a>        <span class="co">"""</span></span>
+<span id="cb1-62"><a href="#cb1-62" aria-hidden="true" tabindex="-1"></a><span class="co">        Solve the SIVP</span></span>
+<span id="cb1-63"><a href="#cb1-63" aria-hidden="true" tabindex="-1"></a><span class="co">        """</span></span>
+<span id="cb1-64"><a href="#cb1-64" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.x_values[:, <span class="dv">0</span>] <span class="op">=</span> np.full(</span>
+<span id="cb1-65"><a href="#cb1-65" aria-hidden="true" tabindex="-1"></a>            shape<span class="op">=</span>(<span class="va">self</span>.num_paths,), fill_value<span class="op">=</span>sivp.initial_condition</span>
+<span id="cb1-66"><a href="#cb1-66" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb1-67"><a href="#cb1-67" aria-hidden="true" tabindex="-1"></a>        <span class="cf">while</span> <span class="va">self</span>.<span class="bu">iter</span> <span class="op">&lt;</span> <span class="va">self</span>.num_steps:</span>
+<span id="cb1-68"><a href="#cb1-68" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.x_values[:, <span class="va">self</span>.<span class="bu">iter</span> <span class="op">+</span> <span class="dv">1</span>] <span class="op">=</span> <span class="va">self</span>.iterate(sivp)</span>
+<span id="cb1-69"><a href="#cb1-69" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.<span class="bu">iter</span> <span class="op">+=</span> <span class="dv">1</span></span>
+<span id="cb1-70"><a href="#cb1-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-71"><a href="#cb1-71" aria-hidden="true" tabindex="-1"></a>        times <span class="op">=</span> np.linspace(sivp.t_start, sivp.t_end, <span class="va">self</span>.num_steps <span class="op">+</span> <span class="dv">1</span>)</span>
+<span id="cb1-72"><a href="#cb1-72" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> times, <span class="va">self</span>.x_values</span>
+<span id="cb1-73"><a href="#cb1-73" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-74"><a href="#cb1-74" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> reset(<span class="va">self</span>):</span>
+<span id="cb1-75"><a href="#cb1-75" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.__post_init__()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>The <code>EulerMaruyama</code> and <code>Milstein</code> methods will derive from the abstract base class <code>Solver</code>.</p>
 <div class="cell" data-execution_count="2">
@@ -819,19 +828,17 @@ X_{t_{j+1}} - X_{t_j} &amp;\approx \sigma(X_{t_j})(B_{t_{j+1}}-B_{t_j}) + \mu(X_
 <span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
 <span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> iterate(<span class="va">self</span>, sde: SDE):</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> iterate(<span class="va">self</span>, sivp: SIVP) <span class="op">-&gt;</span> X:</span>
 <span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>        <span class="co">"""</span></span>
 <span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a><span class="co">        Generate the next iterate X(n+1)</span></span>
 <span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a><span class="co">        """</span></span>
-<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>        mu_n <span class="op">=</span> np.array([sde.drift(<span class="va">self</span>.times[<span class="va">self</span>.<span class="bu">iter</span>], x) <span class="cf">for</span> x <span class="kw">in</span> <span class="va">self</span>.x_curr])</span>
-<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>        sigma_n <span class="op">=</span> np.array([sde.vol(<span class="va">self</span>.times[<span class="va">self</span>.<span class="bu">iter</span>], x) <span class="cf">for</span> x <span class="kw">in</span> <span class="va">self</span>.x_curr])</span>
-<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>        d_brownian <span class="op">=</span> <span class="va">self</span>.brownian[:, <span class="va">self</span>.<span class="bu">iter</span> <span class="op">+</span> <span class="dv">1</span>] <span class="op">-</span> <span class="va">self</span>.brownian[:, <span class="va">self</span>.<span class="bu">iter</span>]</span>
-<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.x_curr <span class="op">+=</span> mu_n <span class="op">*</span> <span class="va">self</span>.step_size <span class="op">+</span> sigma_n <span class="op">*</span> d_brownian</span>
-<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.x_curr.copy()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>        current_time <span class="op">=</span> <span class="va">self</span>.<span class="bu">iter</span> <span class="op">*</span> <span class="va">self</span>.step_size</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>        mu_n <span class="op">=</span> sivp.drift(current_time, <span class="va">self</span>.x_values[:, <span class="va">self</span>.<span class="bu">iter</span>])</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>        sigma_n <span class="op">=</span> sivp.vol(current_time, <span class="va">self</span>.x_values[:, <span class="va">self</span>.<span class="bu">iter</span>])</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>        delta_x <span class="op">=</span> (</span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>            mu_n <span class="op">*</span> <span class="va">self</span>.step_size <span class="op">+</span> sigma_n <span class="op">*</span> <span class="va">self</span>.brownian_increments[:, <span class="va">self</span>.<span class="bu">iter</span>]</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.x_values[:, <span class="va">self</span>.<span class="bu">iter</span>] <span class="op">+</span> delta_x</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <div class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="at">@dataclass</span></span>
@@ -853,26 +860,25 @@ X_{t_{j+1}} - X_{t_j} &amp;\approx \sigma(X_{t_j})(B_{t_{j+1}}-B_{t_j}) + \mu(X_
 <span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
 <span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> iterate(<span class="va">self</span>, sde: SDE):</span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> iterate(<span class="va">self</span>, sivp: SIVP):</span>
 <span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>        <span class="co">"""</span></span>
 <span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="co">        Generate the next iterate X(n+1)</span></span>
 <span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a><span class="co">        """</span></span>
-<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>        mu_n <span class="op">=</span> np.array([sde.drift(<span class="va">self</span>.times[<span class="va">self</span>.<span class="bu">iter</span>], x) <span class="cf">for</span> x <span class="kw">in</span> <span class="va">self</span>.x_curr])</span>
-<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>        sigma_n <span class="op">=</span> np.array([sde.vol(<span class="va">self</span>.times[<span class="va">self</span>.<span class="bu">iter</span>], x) <span class="cf">for</span> x <span class="kw">in</span> <span class="va">self</span>.x_curr])</span>
-<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>        dvol_dx_n <span class="op">=</span> np.array(</span>
-<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>            [sde.dvol_dx(<span class="va">self</span>.times[<span class="va">self</span>.<span class="bu">iter</span>], x) <span class="cf">for</span> x <span class="kw">in</span> <span class="va">self</span>.x_curr]</span>
-<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>        )</span>
-<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>        d_brownian <span class="op">=</span> <span class="va">self</span>.brownian[:, <span class="va">self</span>.<span class="bu">iter</span> <span class="op">+</span> <span class="dv">1</span>] <span class="op">-</span> <span class="va">self</span>.brownian[:, <span class="va">self</span>.<span class="bu">iter</span>]</span>
-<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.x_curr <span class="op">+=</span> (</span>
-<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>            mu_n <span class="op">*</span> <span class="va">self</span>.step_size</span>
-<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>            <span class="op">+</span> sigma_n <span class="op">*</span> d_brownian</span>
-<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a>            <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> sigma_n <span class="op">*</span> dvol_dx_n <span class="op">*</span> (d_brownian<span class="op">**</span><span class="dv">2</span> <span class="op">-</span> <span class="va">self</span>.step_size)</span>
-<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a>        )</span>
-<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.x_curr.copy()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>        current_time <span class="op">=</span> <span class="va">self</span>.<span class="bu">iter</span> <span class="op">*</span> <span class="va">self</span>.step_size</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>        mu_n <span class="op">=</span> sivp.drift(current_time, <span class="va">self</span>.x_values[:, <span class="va">self</span>.<span class="bu">iter</span>])</span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>        sigma_n <span class="op">=</span> sivp.vol(current_time, <span class="va">self</span>.x_values[:, <span class="va">self</span>.<span class="bu">iter</span>])</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>        dvol_dx_n <span class="op">=</span> sivp.dvol_dx(current_time, <span class="va">self</span>.x_values[:, <span class="va">self</span>.<span class="bu">iter</span>])</span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>        delta_x <span class="op">=</span> (</span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>            mu_n <span class="op">*</span> <span class="va">self</span>.step_size</span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>            <span class="op">+</span> sigma_n <span class="op">*</span> <span class="va">self</span>.brownian_increments[:, <span class="va">self</span>.<span class="bu">iter</span>]</span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>            <span class="op">+</span> <span class="fl">0.5</span></span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>            <span class="op">*</span> sigma_n</span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>            <span class="op">*</span> dvol_dx_n</span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>            <span class="op">*</span> (<span class="va">self</span>.brownian_increments[:, <span class="va">self</span>.<span class="bu">iter</span>] <span class="op">**</span> <span class="dv">2</span> <span class="op">-</span> <span class="va">self</span>.step_size)</span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.x_values[:, <span class="va">self</span>.<span class="bu">iter</span>] <span class="op">+</span> delta_x</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <div id="exr-simulating-sdes" class="theorem exercise">
 <p><span class="theorem-title"><strong>Exercise 4 </strong></span>(Simulating SDEs) Simulate 100 paths for the following diffusions given by their SDEs on <span class="math inline">\([0,1]\)</span> using the Euler-Maruyama scheme and the Milstein scheme for a discretization of <span class="math inline">\(0.01\)</span>.</p>
@@ -901,97 +907,75 @@ dX_t = \sqrt{1+X_t^2}dB_t + \sin X_t dt, \quad X_0 = 0
 <div class="cell" data-execution_count="4">
 <details>
 <summary>Show the code</summary>
-<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>t <span class="op">=</span> np.linspace(start<span class="op">=</span><span class="fl">0.0</span>,stop<span class="op">=</span><span class="fl">1.0</span>,num<span class="op">=</span><span class="dv">1001</span>)</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>euler <span class="op">=</span> EulerMaruyama()</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co"># mu = -0.5 case</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>gbm_sde <span class="op">=</span> SDE(</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    initial_condition<span class="op">=</span><span class="fl">1.0</span>,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    drift <span class="op">=</span> <span class="kw">lambda</span> t, s_t : <span class="fl">0.0</span>,</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    vol <span class="op">=</span> <span class="kw">lambda</span> t, s_t : s_t,</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    dvol_dx <span class="op">=</span> <span class="kw">lambda</span> t, s_t : <span class="dv">1</span></span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>solution <span class="op">=</span> euler.solve(gbm_sde)</span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>euler.reset()</span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>plt.xlabel(<span class="vs">r'Time $t$'</span>)</span>
-<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>plt.ylabel(<span class="vs">r'$S(t)$'</span>)</span>
-<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>plt.title(<span class="vs">r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=-0.5$'</span>)</span>
-<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>plt.grid(<span class="va">True</span>)</span>
-<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">10</span>):</span>
-<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>    plt.plot(t,solution[i])</span>
-<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> plot_trajectories(ts, xs, title):</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    plt.xlabel(<span class="vs">r'Time $t$'</span>)</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    plt.ylabel(<span class="vs">r'$X(t)$'</span>)</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    plt.title(title)</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    plt.grid(<span class="va">True</span>)</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    plt.plot(ts, xs.transpose())</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    plt.show()</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="co"># mu = -0.5 case</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>euler <span class="op">=</span> EulerMaruyama(num_paths<span class="op">=</span><span class="dv">10</span>, num_steps<span class="op">=</span><span class="dv">100</span>)</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>gbm_sde <span class="op">=</span> SIVP(</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    t_start<span class="op">=</span><span class="fl">0.0</span>,</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    t_end<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    initial_condition<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    drift<span class="op">=</span><span class="kw">lambda</span> t, s_t: np.zeros(<span class="dv">10</span>),</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    vol<span class="op">=</span><span class="kw">lambda</span> t, s_t: s_t,</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    dvol_dx<span class="op">=</span><span class="kw">lambda</span> t, s_t: np.ones(<span class="dv">10</span>),</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>ts, xs <span class="op">=</span> euler.solve(gbm_sde)</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>euler.reset()</span>
 <span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a><span class="co"># mu = -2 case</span></span>
-<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>gbm_sde.drift <span class="op">=</span> <span class="kw">lambda</span> t, s_t : <span class="op">-</span><span class="fl">1.5</span> <span class="op">*</span> s_t</span>
-<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>solution <span class="op">=</span> euler.solve(gbm_sde)</span>
-<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>euler.reset()</span>
-<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>plt.xlabel(<span class="vs">r'Time $t$'</span>)</span>
-<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>plt.ylabel(<span class="vs">r'$S(t)$'</span>)</span>
-<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>plt.title(<span class="vs">r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=-2$'</span>)</span>
-<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>plt.grid(<span class="va">True</span>)</span>
-<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">10</span>):</span>
-<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>    plt.plot(t,solution[i])</span>
-<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>plot_trajectories(ts, xs, <span class="vs">r'10 sample paths of Geometric Brownian Motion, $\mu=-0.5$'</span>)</span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a><span class="co"># mu = -2 case</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>gbm_sde.drift <span class="op">=</span> <span class="kw">lambda</span> t, s_t : <span class="op">-</span><span class="fl">1.5</span> <span class="op">*</span> s_t</span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>ts, xs <span class="op">=</span> euler.solve(gbm_sde)</span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>euler.reset()</span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>plot_trajectories(ts, xs, <span class="vs">r'10 sample paths of Geometric Brownian Motion, $\mu=-2.0$'</span>)</span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a><span class="co"># mu = 0 case</span></span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>gbm_sde.drift <span class="op">=</span> <span class="kw">lambda</span> t, s_t : <span class="fl">0.5</span> <span class="op">*</span> s_t</span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>ts, xs <span class="op">=</span> euler.solve(gbm_sde)</span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>euler.reset()</span>
 <span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a><span class="co"># mu = 0 case</span></span>
-<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>gbm_sde.drift <span class="op">=</span> <span class="kw">lambda</span> t, s_t : <span class="fl">0.5</span> <span class="op">*</span> s_t</span>
-<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>solution <span class="op">=</span> euler.solve(gbm_sde)</span>
-<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>euler.reset()</span>
-<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>plt.xlabel(<span class="vs">r'Time $t$'</span>)</span>
-<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>plt.ylabel(<span class="vs">r'$S(t)$'</span>)</span>
-<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>plt.title(<span class="vs">r'10 sample paths of Geometric Brownian Motion(GBM), $\mu=0.0$'</span>)</span>
-<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>plt.grid(<span class="va">True</span>)</span>
-<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">10</span>):</span>
-<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>    plt.plot(t,solution[i])</span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>plot_trajectories(ts, xs, <span class="vs">r'10 sample paths of Geometric Brownian Motion, $\mu=0.0$'</span>)</span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a><span class="co"># ornstein-uhlenbeck</span></span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>ornstein_uhlenbeck_sde <span class="op">=</span> SIVP(</span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>    t_start<span class="op">=</span><span class="fl">0.0</span>,</span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>    t_end<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>    initial_condition<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>    drift <span class="op">=</span> <span class="kw">lambda</span> t, s_t : <span class="op">-</span>s_t,</span>
+<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>    vol <span class="op">=</span> <span class="kw">lambda</span> t, s_t : np.ones(<span class="dv">10</span>),</span>
+<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>    dvol_dx <span class="op">=</span> <span class="kw">lambda</span> t, s_t : np.zeros(<span class="dv">10</span>)</span>
+<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
-<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a><span class="co"># ornstein-uhlenbeck</span></span>
-<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a>ornstein_uhlenbeck_sde <span class="op">=</span> SDE(</span>
-<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a>    initial_condition<span class="op">=</span><span class="fl">1.0</span>,</span>
-<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a>    drift <span class="op">=</span> <span class="kw">lambda</span> t, s_t : <span class="op">-</span>s_t,</span>
-<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a>    vol <span class="op">=</span> <span class="kw">lambda</span> t, s_t : <span class="fl">1.0</span>,</span>
-<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a>    dvol_dx <span class="op">=</span> <span class="kw">lambda</span> t, s_t : <span class="fl">0.0</span></span>
-<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-61"><a href="#cb4-61" aria-hidden="true" tabindex="-1"></a>solution <span class="op">=</span> euler.solve(ornstein_uhlenbeck_sde)</span>
-<span id="cb4-62"><a href="#cb4-62" aria-hidden="true" tabindex="-1"></a>euler.reset()</span>
-<span id="cb4-63"><a href="#cb4-63" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-64"><a href="#cb4-64" aria-hidden="true" tabindex="-1"></a>plt.xlabel(<span class="vs">r'Time $t$'</span>)</span>
-<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a>plt.ylabel(<span class="vs">r'$S(t)$'</span>)</span>
-<span id="cb4-66"><a href="#cb4-66" aria-hidden="true" tabindex="-1"></a>plt.title(<span class="vs">r'10 sample paths of Ornstein-Uhlenbeck process'</span>)</span>
-<span id="cb4-67"><a href="#cb4-67" aria-hidden="true" tabindex="-1"></a>plt.grid(<span class="va">True</span>)</span>
-<span id="cb4-68"><a href="#cb4-68" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">10</span>):</span>
-<span id="cb4-69"><a href="#cb4-69" aria-hidden="true" tabindex="-1"></a>    plt.plot(t,solution[i])</span>
-<span id="cb4-70"><a href="#cb4-70" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-71"><a href="#cb4-71" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
-<span id="cb4-72"><a href="#cb4-72" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-73"><a href="#cb4-73" aria-hidden="true" tabindex="-1"></a><span class="co"># diffusion</span></span>
-<span id="cb4-74"><a href="#cb4-74" aria-hidden="true" tabindex="-1"></a>diffusion_sde <span class="op">=</span> SDE(</span>
-<span id="cb4-75"><a href="#cb4-75" aria-hidden="true" tabindex="-1"></a>    initial_condition<span class="op">=</span><span class="fl">0.0</span>,</span>
-<span id="cb4-76"><a href="#cb4-76" aria-hidden="true" tabindex="-1"></a>    drift <span class="op">=</span> <span class="kw">lambda</span> t, s_t : np.sqrt(<span class="dv">1</span><span class="op">+</span>s_t<span class="op">**</span><span class="dv">2</span>),</span>
-<span id="cb4-77"><a href="#cb4-77" aria-hidden="true" tabindex="-1"></a>    vol <span class="op">=</span> <span class="kw">lambda</span> t, s_t : np.sin(s_t),</span>
-<span id="cb4-78"><a href="#cb4-78" aria-hidden="true" tabindex="-1"></a>    dvol_dx <span class="op">=</span> <span class="kw">lambda</span> t, s_t : np.cos(s_t)</span>
-<span id="cb4-79"><a href="#cb4-79" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb4-80"><a href="#cb4-80" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-81"><a href="#cb4-81" aria-hidden="true" tabindex="-1"></a>solution <span class="op">=</span> euler.solve(diffusion_sde)</span>
-<span id="cb4-82"><a href="#cb4-82" aria-hidden="true" tabindex="-1"></a>euler.reset()</span>
-<span id="cb4-83"><a href="#cb4-83" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-84"><a href="#cb4-84" aria-hidden="true" tabindex="-1"></a>plt.xlabel(<span class="vs">r'Time $t$'</span>)</span>
-<span id="cb4-85"><a href="#cb4-85" aria-hidden="true" tabindex="-1"></a>plt.ylabel(<span class="vs">r'$S(t)$'</span>)</span>
-<span id="cb4-86"><a href="#cb4-86" aria-hidden="true" tabindex="-1"></a>plt.title(<span class="vs">r'10 sample paths of the diffusion'</span>)</span>
-<span id="cb4-87"><a href="#cb4-87" aria-hidden="true" tabindex="-1"></a>plt.grid(<span class="va">True</span>)</span>
-<span id="cb4-88"><a href="#cb4-88" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">10</span>):</span>
-<span id="cb4-89"><a href="#cb4-89" aria-hidden="true" tabindex="-1"></a>    plt.plot(t,solution[i])</span>
-<span id="cb4-90"><a href="#cb4-90" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-91"><a href="#cb4-91" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a>ts, xs <span class="op">=</span> euler.solve(ornstein_uhlenbeck_sde)</span>
+<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a>euler.reset()</span>
+<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a>plot_trajectories(ts, xs, <span class="vs">r'10 sample paths of Ornstein-Uhlenbeck'</span>)</span>
+<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a><span class="co"># diffusion</span></span>
+<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a>diffusion_sde <span class="op">=</span> SIVP(</span>
+<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a>    t_start<span class="op">=</span><span class="fl">0.0</span>,</span>
+<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a>    t_end<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a>    initial_condition<span class="op">=</span><span class="fl">0.0</span>,</span>
+<span id="cb4-61"><a href="#cb4-61" aria-hidden="true" tabindex="-1"></a>    drift <span class="op">=</span> <span class="kw">lambda</span> t, s_t : np.sqrt(<span class="dv">1</span><span class="op">+</span>s_t<span class="op">**</span><span class="dv">2</span>),</span>
+<span id="cb4-62"><a href="#cb4-62" aria-hidden="true" tabindex="-1"></a>    vol <span class="op">=</span> <span class="kw">lambda</span> t, s_t : np.sin(s_t),</span>
+<span id="cb4-63"><a href="#cb4-63" aria-hidden="true" tabindex="-1"></a>    dvol_dx <span class="op">=</span> <span class="kw">lambda</span> t, s_t : np.cos(s_t)</span>
+<span id="cb4-64"><a href="#cb4-64" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-66"><a href="#cb4-66" aria-hidden="true" tabindex="-1"></a>ts,xs <span class="op">=</span> euler.solve(diffusion_sde)</span>
+<span id="cb4-67"><a href="#cb4-67" aria-hidden="true" tabindex="-1"></a>euler.reset()</span>
+<span id="cb4-68"><a href="#cb4-68" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-69"><a href="#cb4-69" aria-hidden="true" tabindex="-1"></a>plot_trajectories(ts, xs, <span class="vs">r'10 sample paths of the diffusion'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output cell-output-display">
 <p><img src="index_files/figure-html/cell-5-output-1.png" width="576" height="448"></p>
@@ -1025,16 +1009,22 @@ dX_t = \sqrt{1+X_t^2}dB_t + \sin X_t dt, \quad X_0 = 0
 \end{align*}
 \]</span></p>
 <p>for some constants <span class="math inline">\(C,C'&gt;0\)</span>. Note that the mean error between the two process must be the worst at the last point, since the errors add up.</p>
-<div id="exr-the-cir-model" class="theorem exercise">
-<p><span class="theorem-title"><strong>Exercise 5 </strong></span><strong>The CIR Model</strong>. Consider the CIR process given by the SDE:</p>
-<p><span id="eq-cir-process"><span class="math display">\[
-dZ_t = (a - Z_t) dt + \sqrt{Z_t} dB_t, \quad Z_0 = 1
-\tag{20}\]</span></span></p>
-<p>(We set the parameters <span class="math inline">\(\sigma=1, b=1\)</span> here.)</p>
-<ol type="a">
-<li>Plot <span class="math inline">\(10\)</span> paths of this process on <span class="math inline">\([0,1]\)</span> with a time step of <span class="math inline">\(0.001\)</span> for each of the cases <span class="math inline">\(a=0.1\)</span></li>
-</ol>
+<div id="exr-sde-of-brownian-bridge" class="theorem exercise">
+<p><span class="theorem-title"><strong>Exercise 5 </strong></span><strong>SDE of Brownian Bridge</strong>. Consider a Brownian bridge <span class="math inline">\((Z_t,0 \leq t \leq 1)\)</span> given by <span class="math inline">\(Z_0 = Z_1 = 0\)</span> and</p>
+<p><span class="math display">\[
+Z_t = (1 - t) \int_0^t \frac{dB_s}{1 - s}, \quad 0 \leq t \leq 1
+\]</span></p>
+<p>Show that <span class="math inline">\((Z_t,0 \leq t \leq 1)\)</span> satisfies the SDE</p>
+<p><span class="math display">\[
+dZ_t = dB_t + \frac{-Z_t}{1 - t} dt
+\]</span></p>
+<p>The Brownian Bridge local volatility is the same as Brownian motion. Can you discuss the form of the local drift?</p>
 </div>
+<p><em>Solution.</em></p>
+<p>Let</p>
+<p><span class="math display">\[\begin{align*}
+Y_t = \frac{Z_t}{1 - t} = \int_0^t \frac{dB_s}{1-s}
+\end{align*}\]</span></p>
 
 
 </section>

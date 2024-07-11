@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 import numpy as np
-from sde import SDE
+from sivp import SIVP
 from solver import Solver
+
+# More descriptive type hints
+T = np.ndarray
+X = np.ndarray
 
 
 @dataclass
@@ -22,16 +26,14 @@ class EulerMaruyama(Solver):
 
     """
 
-    def iterate(self, sde: SDE):
+    def iterate(self, sivp: SIVP) -> X:
         """
         Generate the next iterate X(n+1)
         """
-
-        mu_n = np.array([sde.drift(self.times[self.iter], x) for x in self.x_curr])
-        sigma_n = np.array([sde.vol(self.times[self.iter], x) for x in self.x_curr])
-
-        d_brownian = self.brownian[:, self.iter + 1] - self.brownian[:, self.iter]
-
-        self.x_curr += mu_n * self.step_size + sigma_n * d_brownian
-
-        return self.x_curr.copy()
+        current_time = self.iter * self.step_size
+        mu_n = sivp.drift(current_time, self.x_values[:, self.iter])
+        sigma_n = sivp.vol(current_time, self.x_values[:, self.iter])
+        delta_x = (
+            mu_n * self.step_size + sigma_n * self.brownian_increments[:, self.iter]
+        )
+        return self.x_values[:, self.iter] + delta_x

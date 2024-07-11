@@ -5,7 +5,7 @@ A module for Milstein discretization algorithm.
 from typing import Callable
 from dataclasses import dataclass, field
 import numpy as np
-from sde import SDE
+from sivp import SIVP
 from solver import Solver
 
 
@@ -28,23 +28,22 @@ class Milstein(Solver):
 
     """
 
-    def iterate(self, sde: SDE):
+    def iterate(self, sivp: SIVP):
         """
         Generate the next iterate X(n+1)
         """
+        current_time = self.iter * self.step_size
+        mu_n = sivp.drift(current_time, self.x_values[:, self.iter])
+        sigma_n = sivp.vol(current_time, self.x_values[:, self.iter])
+        dvol_dx_n = sivp.dvol_dx(current_time, self.x_values[:, self.iter])
 
-        mu_n = np.array([sde.drift(self.times[self.iter], x) for x in self.x_curr])
-        sigma_n = np.array([sde.vol(self.times[self.iter], x) for x in self.x_curr])
-        dvol_dx_n = np.array(
-            [sde.dvol_dx(self.times[self.iter], x) for x in self.x_curr]
-        )
-
-        d_brownian = self.brownian[:, self.iter + 1] - self.brownian[:, self.iter]
-
-        self.x_curr += (
+        delta_x = (
             mu_n * self.step_size
-            + sigma_n * d_brownian
-            + 0.5 * sigma_n * dvol_dx_n * (d_brownian**2 - self.step_size)
+            + sigma_n * self.brownian_increments[:, self.iter]
+            + 0.5
+            * sigma_n
+            * dvol_dx_n
+            * (self.brownian_increments[:, self.iter] ** 2 - self.step_size)
         )
 
-        return self.x_curr.copy()
+        return self.x_values[:, self.iter] + delta_x
