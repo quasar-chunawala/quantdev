@@ -54,4 +54,39 @@ Exiting main() thread
 
 Once you've started your thread, you need to explicitly decide whether to wait for it to finish(by joining with it) or leave it to run on its own (by detaching it). If you don't decide before the `std::thread` object goes out of scope and is destroyed, then your program is terminated (the `std::thread` destructor calls `std::terminate()`). So, ensure that the thread is correctly joined or detached. You only have to make this decision before the `std::thread` object is destroyed - the thread itself may well have finished before you join with it or detach it, and if you detach it, then if the thread is still running, it will continue to do so, and may continue running long after the `std::thread` object is destroyed; it will only stop running when it finally returns from the thread function. 
 
-If you don't wait for the thread to finish, you need to ensure that the data accessed by the thread is valid until the thread is finished with it. This isn't a new problem - even in single threaded code it's undefined behavior
+Passing arguments is easy. If the function signature is `void func(int arg1, std::vector<double> arg2, char arg3)`, you just specify the comma separated list in the `std::thread()` constructor, as `std::thread my_thread(func, arg1, arg2, arg3)`. This copies the value of the parameters `arg1`, `arg2` and `arg3` onto the thread stack. It's a *pass-by-value*. To pass by reference, you `std::ref()` the arguments, so for example, if the function signature is `void func(int arg1, std::vector<double>& arg2, char arg3)`, while spawning a new thread, you'd write `std::thread my_thread(func, arg1, std::ref(arg2), arg3)`.
+
+If you don't wait for the thread to finish in the `main()` thread, you need to ensure that the data accessed by the thread is valid until the thread is finished with it. This isn't a new problem - even in single threaded code it's undefined behavior to access an object after it's been destroyed - but the use of threads provides another opportunity to encounter such lifetime issues. 
+
+One situation in which you can encounter such problems is when the thread function holds pointers or references to local variables and the thread hasn't finished when the function exits. 
+
+```cpp
+#include <iostream>
+#include <thread>
+
+void do_some_work(int& i)
+{
+    std::cout << "\nThe value of i is = " << i; //Potential access to dangling reference
+    std::cout << "\nIncrementing the value of i";
+    ++i;
+    std::cout << "\nThe new value of i = " << i;
+}
+
+int main()
+{
+    std::cout << "\nmain() thread";
+    int i{1};
+    std::thread my_thread(do_some_work, std::ref(i)); // Spawn a new thread
+    my_thread.detach(); // Don't wait for the thread to finish
+    std::cout << "\nExiting main() thread"; //New thread might still be running
+    return 0;
+}
+```
+
+stdout:
+```
+main() thread
+Exiting main() thread
+```
+
+In this case, the new thread associated with `my_thread` is still running when `main()` exits, because you explicitly decided not to wait for it by calling `detach()`. If the thread is still running, you have the scenario shown in the table below. The statements `cout<< "\nThe value of i is = " i;` 
