@@ -93,4 +93,52 @@ If you need to wait for a thread to complete, you do this by calling `join()` on
 
 ### Waiting in exceptional circumstances
 
-You need to ensure that you've called either `join()` or `detach()` before a `std::thread` object is destroyed. If you're detaching a thread, you can usually call `detach()` immediately after the thread has been started, so this isn't a problem. But, if you're intending to wait for a thread, you need to 
+You need to ensure that you've called either `join()` or `detach()` before a `std::thread` object is destroyed. If you're detaching a thread, you can usually call `detach()` immediately after the thread has been started, so this isn't a problem. But, if you're intending to wait for a thread, you need to carefully pick the place in the code where you call `join()`. This means that the call to `join()` is liable to be skipped if an exception is thrown after the thread has been started but before the call to `join()`. 
+
+To avoid your application being terminated when an exception is thrown, you need to make a decision about what to do in this case. In general, if you were intending to call `join()` in a non-exceptional case, you also need to call `join()` in the presence of an exception to avoid accidental lifetime problems.
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <stdexcept>
+#include <string>
+
+int main()
+{
+    int i {1};
+
+    auto my_func = [&i](){
+        for(int j{0};j<10000000;++j)
+        {
+            ++i;
+        }
+        std::cout << "\nt's work package is complete." << std::flush;
+
+    };
+
+    std::cout << "main thread" << std::flush;
+    std::thread t(my_func);
+    try
+    {
+        std::string("abc").substr(10); // throws std::out_of_range
+    }
+    catch (const std::exception& e)
+    {
+        std::cout << "\n" << e.what();
+        t.join();
+        throw e; // copy-initializes a new exception object of type std::exception
+    }
+
+    t.join();
+    return 0;
+}
+```
+
+stdout:
+```
+main thread
+invalid string position
+t's work package is complete.
+```
+
+The code in the listing above uses `try/catch` block 
