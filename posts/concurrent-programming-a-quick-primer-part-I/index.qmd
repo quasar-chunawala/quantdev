@@ -141,4 +141,62 @@ invalid string position
 t's work package is complete.
 ```
 
-The code in the listing above uses `try/catch` block 
+The code in the listing above uses `try/catch` block to ensure that a thread with access to the local state is finished before the main thread exits normally, or by an exception. 
+
+A more structured way of doing is to use the standard Resource Aquisition is Initialization(RAII) idiom and provide a wrapper class that does the `join()` in its destructor, as in the following listing:
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <stdexcept>
+#include <string>
+
+class thread_guard
+{
+    private:
+    std::thread& m_t;
+
+    public:
+    explicit thread_guard(std::thread& t) : m_t{t} {}
+    ~thread_guard()
+    {
+        if(m_t.joinable()){
+            m_t.join();
+        }
+    }
+
+    thread_guard(const thread_guard& _tg) = delete;
+    thread_guard& operator=(thread_guard& _tg) = delete;
+};
+
+int main()
+{
+    int i {1};
+
+    auto my_func = [&i](){
+        for(int j{0};j<10000000;++j)
+        {
+            ++i;
+        }
+        std::cout << "\nt's work package is complete." << std::flush;
+
+    };
+
+    std::cout << "main thread" << std::flush;
+    std::thread t(my_func);
+    thread_guard g(t);
+    try
+    {
+        std::string("abc").substr(10); // throws std::out_of_range
+    }
+    catch (const std::exception& e)
+    {
+        std::cout << "\n" << e.what();
+        throw e; // copy-initializes a new exception object of type std::exception
+    }
+
+    return 0;
+}
+```
+
+When the execution of the main thread reaches the end, the local objects are destroyed in the reverse order of their construction. Consequently, the `thread_guard` object id object `g` is destroyed first, and the thread is joined with, which is a blocking call in the destructor. This happens even if there is an exception in the main thread. 
