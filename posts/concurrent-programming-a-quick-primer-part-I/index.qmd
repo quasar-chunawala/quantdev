@@ -200,3 +200,19 @@ int main()
 ```
 
 When the execution of the main thread reaches the end, the local objects are destroyed in the reverse order of their construction. Consequently, the `thread_guard` object id object `g` is destroyed first, and the thread is joined with, which is a blocking call in the destructor. This happens even if there is an exception in the main thread. 
+
+The copy constructor and copy-assignment operators are marked `=delete` to ensure that they're not automatically provided by the compiler. Copying or assigning such an object would be dangerous, because it might outlive the scope of the thread it was joining. By declaring them as as deleted, any attempt to copy a `thread_guard` object will generate a compilation error. 
+
+If you don't need to wait for a thread to finish, you can avoid this exception-safety by detaching from it. This breaks the association of the thread with the `std::thread` object and ensures that `std::terminate()` won't be called when the `std::thread` object is destroyed, even though the thread is still running in the background.
+
+### Running threads in background
+
+Calling `detach()` on a `std::thread` object leaves the thread to run in the background with no direct means of communicating with it. It's no longer possible to wait for that thread to complete; if a thread becomes detached, it isn't possible to obtain a `std::thread` object that references it, so it can no longer be joined. Detached threads truly run in the background; ownership and control are passed over to the C++ runtime library, which ensures that the resources associated with the thread are correctly reclaimed when the thread exits.
+
+Detached threads are often called *daemon threads* after the UNIX concept of a *daemon process* that runs in the background without any explicit user interface. Such threads are typically long-running; they run for almost the entire lifetime of the application, performing a background task such as monitoring the filesystem, clearing unused entries out of object caches, or optimizing data-structures. At the other extreme, it may make sense to use a detached thread where there's another mechanism for identifying when the thread has completed or where the thread is used for a fire-and-forget task. 
+
+As we've seen earlier, we detach a thread by calling `detach()` member function of the `std::thread` object. After the call completes, the `std::thread` object is no longer associated with the actual thread of execution and is therefore no longer joinable. 
+
+In order to detach the thread from a `std::thread` object, there must be a thread to detach: you can't call `detach()` on a `std::thread` object with no associated thread of execution. This is exactly the same requirement for `join()`, and you can check it in the same way - you can call `t.detach()` for a `std::thread` object `t` when `t.joinable()` returns `true`.
+
+Consider an application such as a word-processor that can edit multiple documents at once. There are many ways to handle this, both at the UI level
