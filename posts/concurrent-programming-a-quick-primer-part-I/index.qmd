@@ -203,7 +203,8 @@ When the execution of the main thread reaches the end, the local objects are des
 
 The copy constructor and copy-assignment operators are marked `=delete` to ensure that they're not automatically provided by the compiler. Copying or assigning such an object would be dangerous, because it might outlive the scope of the thread it was joining. By declaring them as as deleted, any attempt to copy a `thread_guard` object will generate a compilation error. 
 
-If you don't need to wait for a thread to finish, you can avoid this exception-safety by detaching from it. This breaks the association of the thread with the `std::thread` object and ensures that `std::terminate()` won't be called when the `std::thread` object is destroyed, even though the thread is still running in the background.
+
+If you don't need to wait for a thread to finish, you can avoid this exception-safety by detaching from it. This breaks the association of the thread with the `std::thread` object and ensures that `std::terminate()` won't be called when the `std::thread` object is destroyed, even though the thread is still running in the background. Note that, the `std::thread` destructor checks if the thread is joinable, and if this condition is true, it invokes `std::terminate`. 
 
 ### Running threads in background
 
@@ -246,4 +247,103 @@ Another interesting scenario for supplying arguments is where the arguments cann
 Several of the classes in the C++ standard library exhibit the same ownership semantics as `std::unique_ptr<T>`, and `std::thread` is one of them. Though `std::thread` instances don't own a dynamic object in the same way as the `std::unique_ptr<T>` does, they do own a resource: each instance is responsible for managing a thread of execution. This ownership can be transferred between instances, because instances of `std::thread` are moveable, even though they aren't copyable. This ensures, that only one object is associated with a particular thread of execution at any time while allowing programmers the option of transferring ownership between objects. 
 
 ## Transferring the ownership of a thread
+
+Suppose you want to write a function that creates a thread to run in the background, but passes ownership of the new thread back to the calling function rather than waiting for it to complete; or maybe you want to do the reverse: create a thread and pass the ownership in to some function that should wait for it to complete. In either case, you need to transfer the ownership from one place to another.
+
+This is where the move support of `std::thread` comes in. Many resource-owing types in the C++ standard library, such as `std::ifstream` and `std::unique_ptr<T>` are movable but not copyable, and `std::thread` is one of them. This means that the ownership of a particular thread of execution can be moved between `std::thread` instances, as in the following example. The example shows the creation of two threads of execution and the transfer of ownership of those threads among three `std::thread` instances `t1`, `t2` and `t3`:
+
+```cpp
+
+#include <thread>
+#include <iostream>
+
+void some_function(){
+    std::cout<< "\nSome function";
+}
+
+void some_other_function()
+{
+    std::cout<<"\nSome other function";
+}
+
+int main()
+{
+    std::thread t1(some_function);
+    std::thread t2 = std::move(t1);
+    t1 = std::thread(some_other_function);
+    std::thread t3 = std::move(t2);
+    //t1 = std::move(t3)    //this assignment will terminate the program
+    t1.join();
+    t3.join();
+    return 0;
+}
+```
+[Compiler Explorer](https://godbolt.org/z/fdrq5YTnP){target="_blank"}
+
+
+stdout:
+```
+Some other function
+Some function
+```
+
+First, a new thread is started and associated with `t1`. Ownership is then transferred over to `t2` when `t2` is constructed by invoking `std::move()` to explicitly move ownership. At this point, `t1` no longer has an associated thread of execution; the thread running `some_function` is now associated with `t2`. 
+
+Then, a new thread is started with a temporary `std::thread` object. The subsequent transfer of ownership into `t1` doesn't require a call to `std::move()` to explicitly move ownership, because the owner is a temporary object - moving from temporaries is automatic and implicit. 
+
+After all these moves, `t1` is associated with the thread running `some_other_function` and `t3` is associated with the thread running `some_function`. 
+
+The commented line transfers the ownership of the thread running `some_function` back to `t1`, where it started. But, in this case `t1` already had an associated thread (which  was running `some_other_function`) that is joinable, so `std::terminate()` will be called in this move assignment. This is done for consistency with the `std::thread` destructor.
+
+The move support in `std::thread` means that ownership can be readily transferred out of a function.
+
+### Lifetime issues of threads
+
+Let's look at an example of the erroneous moving of threads.
+
+```cpp
+//threadMoved.cpp
+
+#include<iostream>
+#include<thread>
+#include<utility>
+
+int main()
+{
+    std::thread t1([](){std::cout << "\n"<<std::this_thread::get_id();});
+    std::thread t2([](){std::cout << "\n"<<std::this_thread::get_id();});
+    t1 = std::move(t2);
+    t1.join();
+    t2.join();
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/WeTndM81s){target="_blank"}
+
+Both threads `t1` and `t2` are meant to do their simple job : printing their IDs. In addition to that, thread `t2` is moved to `t1`. In the main thread takes care of its children and waits for them. But, the result is very different from my expectations:
+
+stdout:
+```
+terminate called without an active exception
+Program terminated with signal: SIGSEGV
+```
+
+What is going wrong? We have two issues:
+
+1. By moving the thread `t2`, `t1` gets a new work package and its destructor is called. As a result, `t1`'s destructor calls `std::terminate`, because it is still joinable.
+2. Thread `t2` has no associated callable unit. The invocation of join on a thread without a callable unit leads to the exception `std::system_error`.
+
+Knowing this fixing errors is straightforward:
+
+
+
+One benefit of the move support of `std::thread` is that you can build on the `thread_guard` class and have it take ownership of the thread. Anthony Williams in his excellent book *Concurrency in action* has written a `scoped_thread` class. This avoids any unpleasant consequences should the `thread_guard` object outlive the thread it was referencing, and it also means that no one else can join or detach the thread once ownership has been transferred into the object. Because, this would primarily be aimed at ensuring that threads are completed before a scope is exited, it's called `scoped_thread`. Here is the implementation:
+
+```cpp
+class scoped_thread
+{
+
+}
+```
 

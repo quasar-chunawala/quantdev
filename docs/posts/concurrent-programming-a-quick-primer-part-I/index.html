@@ -201,7 +201,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#running-threads-in-background" id="toc-running-threads-in-background" class="nav-link" data-scroll-target="#running-threads-in-background">Running threads in background</a></li>
   <li><a href="#passing-arguments-to-a-thread-function" id="toc-passing-arguments-to-a-thread-function" class="nav-link" data-scroll-target="#passing-arguments-to-a-thread-function">Passing arguments to a thread function</a></li>
   </ul></li>
-  <li><a href="#transferring-the-ownership-of-a-thread" id="toc-transferring-the-ownership-of-a-thread" class="nav-link" data-scroll-target="#transferring-the-ownership-of-a-thread">Transferring the ownership of a thread</a></li>
+  <li><a href="#transferring-the-ownership-of-a-thread" id="toc-transferring-the-ownership-of-a-thread" class="nav-link" data-scroll-target="#transferring-the-ownership-of-a-thread">Transferring the ownership of a thread</a>
+  <ul class="collapse">
+  <li><a href="#lifetime-issues-of-threads" id="toc-lifetime-issues-of-threads" class="nav-link" data-scroll-target="#lifetime-issues-of-threads">Lifetime issues of threads</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -366,7 +369,7 @@ t's work package is complete.</code></pre>
 <span id="cb7-51"><a href="#cb7-51" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>When the execution of the main thread reaches the end, the local objects are destroyed in the reverse order of their construction. Consequently, the <code>thread_guard</code> object id object <code>g</code> is destroyed first, and the thread is joined with, which is a blocking call in the destructor. This happens even if there is an exception in the main thread.</p>
 <p>The copy constructor and copy-assignment operators are marked <code>=delete</code> to ensure that they’re not automatically provided by the compiler. Copying or assigning such an object would be dangerous, because it might outlive the scope of the thread it was joining. By declaring them as as deleted, any attempt to copy a <code>thread_guard</code> object will generate a compilation error.</p>
-<p>If you don’t need to wait for a thread to finish, you can avoid this exception-safety by detaching from it. This breaks the association of the thread with the <code>std::thread</code> object and ensures that <code>std::terminate()</code> won’t be called when the <code>std::thread</code> object is destroyed, even though the thread is still running in the background.</p>
+<p>If you don’t need to wait for a thread to finish, you can avoid this exception-safety by detaching from it. This breaks the association of the thread with the <code>std::thread</code> object and ensures that <code>std::terminate()</code> won’t be called when the <code>std::thread</code> object is destroyed, even though the thread is still running in the background. Note that, the <code>std::thread</code> destructor checks if the thread is joinable, and if this condition is true, it invokes <code>std::terminate</code>.</p>
 </section>
 <section id="running-threads-in-background" class="level3">
 <h3 class="anchored" data-anchor-id="running-threads-in-background">Running threads in background</h3>
@@ -400,10 +403,80 @@ t's work package is complete.</code></pre>
 </section>
 <section id="transferring-the-ownership-of-a-thread" class="level2">
 <h2 class="anchored" data-anchor-id="transferring-the-ownership-of-a-thread">Transferring the ownership of a thread</h2>
+<p>Suppose you want to write a function that creates a thread to run in the background, but passes ownership of the new thread back to the calling function rather than waiting for it to complete; or maybe you want to do the reverse: create a thread and pass the ownership in to some function that should wait for it to complete. In either case, you need to transfer the ownership from one place to another.</p>
+<p>This is where the move support of <code>std::thread</code> comes in. Many resource-owing types in the C++ standard library, such as <code>std::ifstream</code> and <code>std::unique_ptr&lt;T&gt;</code> are movable but not copyable, and <code>std::thread</code> is one of them. This means that the ownership of a particular thread of execution can be moved between <code>std::thread</code> instances, as in the following example. The example shows the creation of two threads of execution and the transfer of ownership of those threads among three <code>std::thread</code> instances <code>t1</code>, <code>t2</code> and <code>t3</code>:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> some_function<span class="op">(){</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout<span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Some function"</span><span class="op">;</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> some_other_function<span class="op">()</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout<span class="op">&lt;&lt;</span><span class="st">"</span><span class="sc">\n</span><span class="st">Some other function"</span><span class="op">;</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t1<span class="op">(</span>some_function<span class="op">);</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t2 <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span>t1<span class="op">);</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    t1 <span class="op">=</span> <span class="bu">std::</span>thread<span class="op">(</span>some_other_function<span class="op">);</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t3 <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span>t2<span class="op">);</span></span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>    <span class="co">//t1 = std::move(t3)    //this assignment will terminate the program</span></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://godbolt.org/z/fdrq5YTnP" target="_blank">Compiler Explorer</a></p>
+<p>stdout:</p>
+<pre><code>Some other function
+Some function</code></pre>
+<p>First, a new thread is started and associated with <code>t1</code>. Ownership is then transferred over to <code>t2</code> when <code>t2</code> is constructed by invoking <code>std::move()</code> to explicitly move ownership. At this point, <code>t1</code> no longer has an associated thread of execution; the thread running <code>some_function</code> is now associated with <code>t2</code>.</p>
+<p>Then, a new thread is started with a temporary <code>std::thread</code> object. The subsequent transfer of ownership into <code>t1</code> doesn’t require a call to <code>std::move()</code> to explicitly move ownership, because the owner is a temporary object - moving from temporaries is automatic and implicit.</p>
+<p>After all these moves, <code>t1</code> is associated with the thread running <code>some_other_function</code> and <code>t3</code> is associated with the thread running <code>some_function</code>.</p>
+<p>The commented line transfers the ownership of the thread running <code>some_function</code> back to <code>t1</code>, where it started. But, in this case <code>t1</code> already had an associated thread (which was running <code>some_other_function</code>) that is joinable, so <code>std::terminate()</code> will be called in this move assignment. This is done for consistency with the <code>std::thread</code> destructor.</p>
+<p>The move support in <code>std::thread</code> means that ownership can be readily transferred out of a function.</p>
+<section id="lifetime-issues-of-threads" class="level3">
+<h3 class="anchored" data-anchor-id="lifetime-issues-of-threads">Lifetime issues of threads</h3>
+<p>Let’s look at an example of the erroneous moving of threads.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co">//threadMoved.cpp</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;utility&gt;</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t1<span class="op">([](){</span><span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">&lt;&lt;</span><span class="bu">std::</span>this_thread::get_id<span class="op">();});</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t2<span class="op">([](){</span><span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">&lt;&lt;</span><span class="bu">std::</span>this_thread::get_id<span class="op">();});</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>    t1 <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span>t2<span class="op">);</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://godbolt.org/z/WeTndM81s" target="_blank">Compiler Explorer</a></p>
+<p>Both threads <code>t1</code> and <code>t2</code> are meant to do their simple job : printing their IDs. In addition to that, thread <code>t2</code> is moved to <code>t1</code>. In the main thread takes care of its children and waits for them. But, the result is very different from my expectations:</p>
+<p>stdout:</p>
+<pre><code>terminate called without an active exception
+Program terminated with signal: SIGSEGV</code></pre>
+<p>What is going wrong? We have two issues:</p>
+<ol type="1">
+<li>By moving the thread <code>t2</code>, <code>t1</code> gets a new work package and its destructor is called. As a result, <code>t1</code>’s destructor calls <code>std::terminate</code>, because it is still joinable.</li>
+<li>Thread <code>t2</code> has no associated callable unit. The invocation of join on a thread without a callable unit leads to the exception <code>std::system_error</code>.</li>
+</ol>
+<p>Knowing this fixing errors is straightforward:</p>
+<p>One benefit of the move support of <code>std::thread</code> is that you can build on the <code>thread_guard</code> class and have it take ownership of the thread. Anthony Williams in his excellent book <em>Concurrency in action</em> has written a <code>scoped_thread</code> class. This avoids any unpleasant consequences should the <code>thread_guard</code> object outlive the thread it was referencing, and it also means that no one else can join or detach the thread once ownership has been transferred into the object. Because, this would primarily be aimed at ensuring that threads are completed before a scope is exited, it’s called <code>scoped_thread</code>. Here is the implementation:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> scoped_thread</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 <!-- -->
 
+</section>
 </section>
 
 </main> <!-- /main -->
@@ -878,254 +951,354 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
   }
 });
 </script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
-<div class="sourceCode" id="cb9" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Concurrent programming - A Primer (Part I)"</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="an">date:</span><span class="co"> "2024-09-28"</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="an">toc:</span><span class="co"> true</span></span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="co">    html:</span></span>
-<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="co">        code-tools: true</span></span>
-<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a><span class="co">        code-block-border-left: true</span></span>
-<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a><span class="co">        code-annotations: below</span></span>
-<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="co">        highlight-style: pygments</span></span>
-<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a><span class="fu">## Basic Thread Management</span></span>
-<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>A thread <span class="in">`std::thread`</span> represents an executable unit. This executable unit, which the thread immediately starts, gets its work-package as a *callable unit*. A thread is not copy-constructible or copy-assignable, but move-constructible and move-assignable. A *callable unit* is any entity that behaves like a function, so this could be a function, a function pointer, a lambda function or <span class="in">`std::function`</span> (function) object. </span>
-<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>For example:</span>
-<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> do_some_work<span class="op">()</span></span>
-<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Performing some work in a separate thread..."</span><span class="op">;</span></span>
-<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">main() thread"</span><span class="op">;</span></span>
-<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t<span class="op">(</span>do_some_work<span class="op">);</span>      <span class="co">// Spawn a new thread</span></span>
-<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a>    t<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Exiting main() thread"</span><span class="op">;</span></span>
-<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb9-39"><a href="#cb9-39" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb9-40"><a href="#cb9-40" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb9-41"><a href="#cb9-41" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-42"><a href="#cb9-42" aria-hidden="true" tabindex="-1"></a>stdout:</span>
-<span id="cb9-43"><a href="#cb9-43" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb9-44"><a href="#cb9-44" aria-hidden="true" tabindex="-1"></a><span class="in">main() thread</span></span>
-<span id="cb9-45"><a href="#cb9-45" aria-hidden="true" tabindex="-1"></a><span class="in">Performing some work in a separate thread...</span></span>
-<span id="cb9-46"><a href="#cb9-46" aria-hidden="true" tabindex="-1"></a><span class="in">Exiting main() thread</span></span>
-<span id="cb9-47"><a href="#cb9-47" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb9-48"><a href="#cb9-48" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-49"><a href="#cb9-49" aria-hidden="true" tabindex="-1"></a>Once you've started your thread, you need to explicitly decide whether to wait for it to finish(by joining with it) or leave it to run on its own (by detaching it). If you don't decide before the <span class="in">`std::thread`</span> object goes out of scope and is destroyed, then your program is terminated (the <span class="in">`std::thread`</span> destructor calls <span class="in">`std::terminate()`</span>). So, ensure that the thread is correctly joined or detached. You only have to make this decision before the <span class="in">`std::thread`</span> object is destroyed - the thread itself may well have finished before you join with it or detach it, and if you detach it, then if the thread is still running, it will continue to do so, and may continue running long after the <span class="in">`std::thread`</span> object is destroyed; it will only stop running when it finally returns from the thread function. </span>
-<span id="cb9-50"><a href="#cb9-50" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-51"><a href="#cb9-51" aria-hidden="true" tabindex="-1"></a>Passing arguments is easy. If the function signature is <span class="in">`void func(int arg1, std::vector&lt;double&gt; arg2, char arg3)`</span>, you just specify the comma separated list in the <span class="in">`std::thread()`</span> constructor, as <span class="in">`std::thread my_thread(func, arg1, arg2, arg3)`</span>. This copies the value of the parameters <span class="in">`arg1`</span>, <span class="in">`arg2`</span> and <span class="in">`arg3`</span> onto the thread stack. It's a *pass-by-value*. To pass by reference, you <span class="in">`std::ref()`</span> the arguments, so for example, if the function signature is <span class="in">`void func(int arg1, std::vector&lt;double&gt;&amp; arg2, char arg3)`</span>, while spawning a new thread, you'd write <span class="in">`std::thread my_thread(func, arg1, std::ref(arg2), arg3)`</span>.</span>
-<span id="cb9-52"><a href="#cb9-52" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-53"><a href="#cb9-53" aria-hidden="true" tabindex="-1"></a>If you don't wait for the thread to finish in the <span class="in">`main()`</span> thread, you need to ensure that the data accessed by the thread is valid until the thread is finished with it. This isn't a new problem - even in single threaded code it's undefined behavior to access an object after it's been destroyed - but the use of threads provides another opportunity to encounter such lifetime issues. </span>
-<span id="cb9-54"><a href="#cb9-54" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-55"><a href="#cb9-55" aria-hidden="true" tabindex="-1"></a>One situation in which you can encounter such problems is when the thread function holds pointers or references to local variables and the thread hasn't finished when the function exits. </span>
-<span id="cb9-56"><a href="#cb9-56" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-57"><a href="#cb9-57" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb9-58"><a href="#cb9-58" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb9-59"><a href="#cb9-59" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb9-60"><a href="#cb9-60" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-61"><a href="#cb9-61" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> do_some_work<span class="op">(</span><span class="dt">int</span><span class="op">&amp;</span> i<span class="op">)</span></span>
-<span id="cb9-62"><a href="#cb9-62" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb9-63"><a href="#cb9-63" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">The value of i is = "</span> <span class="op">&lt;&lt;</span> i<span class="op">;</span> <span class="co">//Potential access to dangling reference</span></span>
-<span id="cb9-64"><a href="#cb9-64" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Incrementing the value of i"</span><span class="op">;</span></span>
-<span id="cb9-65"><a href="#cb9-65" aria-hidden="true" tabindex="-1"></a>    <span class="op">++</span>i<span class="op">;</span></span>
-<span id="cb9-66"><a href="#cb9-66" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">The new value of i = "</span> <span class="op">&lt;&lt;</span> i<span class="op">;</span></span>
-<span id="cb9-67"><a href="#cb9-67" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb9-68"><a href="#cb9-68" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-69"><a href="#cb9-69" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb9-70"><a href="#cb9-70" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb9-71"><a href="#cb9-71" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">main() thread"</span><span class="op">;</span></span>
-<span id="cb9-72"><a href="#cb9-72" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> i<span class="op">{</span><span class="dv">1</span><span class="op">};</span></span>
-<span id="cb9-73"><a href="#cb9-73" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread my_thread<span class="op">(</span>do_some_work<span class="op">,</span> <span class="bu">std::</span>ref<span class="op">(</span>i<span class="op">));</span> <span class="co">// Spawn a new thread</span></span>
-<span id="cb9-74"><a href="#cb9-74" aria-hidden="true" tabindex="-1"></a>    my_thread<span class="op">.</span>detach<span class="op">();</span> <span class="co">// Don't wait for the thread to finish</span></span>
-<span id="cb9-75"><a href="#cb9-75" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Exiting main() thread"</span><span class="op">;</span> <span class="co">//New thread might still be running</span></span>
-<span id="cb9-76"><a href="#cb9-76" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb9-77"><a href="#cb9-77" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb9-78"><a href="#cb9-78" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb9-79"><a href="#cb9-79" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-80"><a href="#cb9-80" aria-hidden="true" tabindex="-1"></a>stdout:</span>
-<span id="cb9-81"><a href="#cb9-81" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb9-82"><a href="#cb9-82" aria-hidden="true" tabindex="-1"></a><span class="in">main() thread</span></span>
-<span id="cb9-83"><a href="#cb9-83" aria-hidden="true" tabindex="-1"></a><span class="in">Exiting main() thread</span></span>
-<span id="cb9-84"><a href="#cb9-84" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb9-85"><a href="#cb9-85" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-86"><a href="#cb9-86" aria-hidden="true" tabindex="-1"></a>In this case, the new thread associated with <span class="in">`my_thread`</span> is still running when <span class="in">`main()`</span> exits, because you explicitly decided not to wait for it by calling <span class="in">`detach()`</span>. If the thread is still running, the statements in <span class="in">`do_some_work(int&amp; )`</span>  will access an already destroyed variable <span class="in">`i`</span>. This is like normal single-threaded code - allowing a pointer or reference to a local variable to persist beyond the function exit, which is never a good idea. But, it's easier to make this mistake with multi-threaded code, because it isn't immediately apparent that this has happened.</span>
-<span id="cb9-87"><a href="#cb9-87" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-88"><a href="#cb9-88" aria-hidden="true" tabindex="-1"></a><span class="fu">### Waiting for a thread to complete</span></span>
-<span id="cb9-89"><a href="#cb9-89" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-90"><a href="#cb9-90" aria-hidden="true" tabindex="-1"></a>If you need to wait for a thread to complete, you do this by calling <span class="in">`join()`</span> on the associated <span class="in">`std::thread`</span> instance. In the previous listing, replacing the call to <span class="in">`my_thread.detach()`</span> by <span class="in">`my_thread.join()`</span> would therefore be sufficient to ensure that the thead was finished before the function was exited and thus before the local variables were destroyed. In real code, the original thread would either have work to do or would have launched several threads to do useful work before waiting for them to complete. </span>
-<span id="cb9-91"><a href="#cb9-91" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-92"><a href="#cb9-92" aria-hidden="true" tabindex="-1"></a><span class="in">`join()`</span> is a simple and brute-force technique - either you wait for a thread to finish or you don't. If you need more fine-grained control over waiting for a thread, such as to check whether a thread is finished, or wait only a certain period of time, then you have to use alternative mechanisms such as condition variables and futures. </span>
-<span id="cb9-93"><a href="#cb9-93" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-94"><a href="#cb9-94" aria-hidden="true" tabindex="-1"></a><span class="fu">### Waiting in exceptional circumstances</span></span>
-<span id="cb9-95"><a href="#cb9-95" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-96"><a href="#cb9-96" aria-hidden="true" tabindex="-1"></a>You need to ensure that you've called either <span class="in">`join()`</span> or <span class="in">`detach()`</span> before a <span class="in">`std::thread`</span> object is destroyed. If you're detaching a thread, you can usually call <span class="in">`detach()`</span> immediately after the thread has been started, so this isn't a problem. But, if you're intending to wait for a thread, you need to carefully pick the place in the code where you call <span class="in">`join()`</span>. This means that the call to <span class="in">`join()`</span> is liable to be skipped if an exception is thrown after the thread has been started but before the call to <span class="in">`join()`</span>. </span>
-<span id="cb9-97"><a href="#cb9-97" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-98"><a href="#cb9-98" aria-hidden="true" tabindex="-1"></a>To avoid your application being terminated when an exception is thrown, you need to make a decision about what to do in this case. In general, if you were intending to call <span class="in">`join()`</span> in a non-exceptional case, you also need to call <span class="in">`join()`</span> in the presence of an exception to avoid accidental lifetime problems.</span>
-<span id="cb9-99"><a href="#cb9-99" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-100"><a href="#cb9-100" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb9-101"><a href="#cb9-101" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb9-102"><a href="#cb9-102" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb9-103"><a href="#cb9-103" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stdexcept&gt;</span></span>
-<span id="cb9-104"><a href="#cb9-104" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
-<span id="cb9-105"><a href="#cb9-105" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-106"><a href="#cb9-106" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb9-107"><a href="#cb9-107" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb9-108"><a href="#cb9-108" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> i <span class="op">{</span><span class="dv">1</span><span class="op">};</span></span>
-<span id="cb9-109"><a href="#cb9-109" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-110"><a href="#cb9-110" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span> my_func <span class="op">=</span> <span class="op">[&amp;</span>i<span class="op">](){</span></span>
-<span id="cb9-111"><a href="#cb9-111" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span><span class="op">(</span><span class="dt">int</span> j<span class="op">{</span><span class="dv">0</span><span class="op">};</span>j<span class="op">&lt;</span><span class="dv">10000000</span><span class="op">;++</span>j<span class="op">)</span></span>
-<span id="cb9-112"><a href="#cb9-112" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
-<span id="cb9-113"><a href="#cb9-113" aria-hidden="true" tabindex="-1"></a>            <span class="op">++</span>i<span class="op">;</span></span>
-<span id="cb9-114"><a href="#cb9-114" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb9-115"><a href="#cb9-115" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">t's work package is complete."</span> <span class="op">&lt;&lt;</span> <span class="bu">std::</span>flush<span class="op">;</span></span>
-<span id="cb9-116"><a href="#cb9-116" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-117"><a href="#cb9-117" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
-<span id="cb9-118"><a href="#cb9-118" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-119"><a href="#cb9-119" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"main thread"</span> <span class="op">&lt;&lt;</span> <span class="bu">std::</span>flush<span class="op">;</span></span>
-<span id="cb9-120"><a href="#cb9-120" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t<span class="op">(</span>my_func<span class="op">);</span></span>
-<span id="cb9-121"><a href="#cb9-121" aria-hidden="true" tabindex="-1"></a>    <span class="cf">try</span></span>
-<span id="cb9-122"><a href="#cb9-122" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb9-123"><a href="#cb9-123" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>string<span class="op">(</span><span class="st">"abc"</span><span class="op">).</span>substr<span class="op">(</span><span class="dv">10</span><span class="op">);</span> <span class="co">// throws std::out_of_range</span></span>
-<span id="cb9-124"><a href="#cb9-124" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb9-125"><a href="#cb9-125" aria-hidden="true" tabindex="-1"></a>    <span class="cf">catch</span> <span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>exception<span class="op">&amp;</span> e<span class="op">)</span></span>
-<span id="cb9-126"><a href="#cb9-126" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb9-127"><a href="#cb9-127" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> e<span class="op">.</span>what<span class="op">();</span></span>
-<span id="cb9-128"><a href="#cb9-128" aria-hidden="true" tabindex="-1"></a>        t<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb9-129"><a href="#cb9-129" aria-hidden="true" tabindex="-1"></a>        <span class="cf">throw</span> e<span class="op">;</span> <span class="co">// copy-initializes a new exception object of type std::exception</span></span>
-<span id="cb9-130"><a href="#cb9-130" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb9-131"><a href="#cb9-131" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-132"><a href="#cb9-132" aria-hidden="true" tabindex="-1"></a>    t<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb9-133"><a href="#cb9-133" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb9-134"><a href="#cb9-134" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb9-135"><a href="#cb9-135" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb9-136"><a href="#cb9-136" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-137"><a href="#cb9-137" aria-hidden="true" tabindex="-1"></a>stdout:</span>
-<span id="cb9-138"><a href="#cb9-138" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb9-139"><a href="#cb9-139" aria-hidden="true" tabindex="-1"></a><span class="in">main thread</span></span>
-<span id="cb9-140"><a href="#cb9-140" aria-hidden="true" tabindex="-1"></a><span class="in">invalid string position</span></span>
-<span id="cb9-141"><a href="#cb9-141" aria-hidden="true" tabindex="-1"></a><span class="in">t's work package is complete.</span></span>
-<span id="cb9-142"><a href="#cb9-142" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb9-143"><a href="#cb9-143" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-144"><a href="#cb9-144" aria-hidden="true" tabindex="-1"></a>The code in the listing above uses <span class="in">`try/catch`</span> block to ensure that a thread with access to the local state is finished before the main thread exits normally, or by an exception. </span>
-<span id="cb9-145"><a href="#cb9-145" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-146"><a href="#cb9-146" aria-hidden="true" tabindex="-1"></a>A more structured way of doing is to use the standard Resource Aquisition is Initialization(RAII) idiom and provide a wrapper class that does the <span class="in">`join()`</span> in its destructor, as in the following listing:</span>
-<span id="cb9-147"><a href="#cb9-147" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-148"><a href="#cb9-148" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb9-149"><a href="#cb9-149" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb9-150"><a href="#cb9-150" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb9-151"><a href="#cb9-151" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stdexcept&gt;</span></span>
-<span id="cb9-152"><a href="#cb9-152" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
-<span id="cb9-153"><a href="#cb9-153" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-154"><a href="#cb9-154" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> thread_guard</span>
-<span id="cb9-155"><a href="#cb9-155" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb9-156"><a href="#cb9-156" aria-hidden="true" tabindex="-1"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb9-157"><a href="#cb9-157" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread<span class="op">&amp;</span> <span class="dt">m_t</span><span class="op">;</span></span>
-<span id="cb9-158"><a href="#cb9-158" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-159"><a href="#cb9-159" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb9-160"><a href="#cb9-160" aria-hidden="true" tabindex="-1"></a>    <span class="kw">explicit</span> thread_guard<span class="op">(</span><span class="bu">std::</span>thread<span class="op">&amp;</span> t<span class="op">)</span> <span class="op">:</span> <span class="dt">m_t</span><span class="op">{</span>t<span class="op">}</span> <span class="op">{}</span></span>
-<span id="cb9-161"><a href="#cb9-161" aria-hidden="true" tabindex="-1"></a>    <span class="op">~</span>thread_guard<span class="op">()</span></span>
-<span id="cb9-162"><a href="#cb9-162" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb9-163"><a href="#cb9-163" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span><span class="op">(</span><span class="dt">m_t</span><span class="op">.</span>joinable<span class="op">()){</span></span>
-<span id="cb9-164"><a href="#cb9-164" aria-hidden="true" tabindex="-1"></a>            <span class="dt">m_t</span><span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb9-165"><a href="#cb9-165" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb9-166"><a href="#cb9-166" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb9-167"><a href="#cb9-167" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-168"><a href="#cb9-168" aria-hidden="true" tabindex="-1"></a>    thread_guard<span class="op">(</span><span class="at">const</span> thread_guard<span class="op">&amp;</span> _tg<span class="op">)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
-<span id="cb9-169"><a href="#cb9-169" aria-hidden="true" tabindex="-1"></a>    thread_guard<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span>thread_guard<span class="op">&amp;</span> _tg<span class="op">)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
-<span id="cb9-170"><a href="#cb9-170" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb9-171"><a href="#cb9-171" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-172"><a href="#cb9-172" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb9-173"><a href="#cb9-173" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb9-174"><a href="#cb9-174" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> i <span class="op">{</span><span class="dv">1</span><span class="op">};</span></span>
-<span id="cb9-175"><a href="#cb9-175" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-176"><a href="#cb9-176" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span> my_func <span class="op">=</span> <span class="op">[&amp;</span>i<span class="op">](){</span></span>
-<span id="cb9-177"><a href="#cb9-177" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span><span class="op">(</span><span class="dt">int</span> j<span class="op">{</span><span class="dv">0</span><span class="op">};</span>j<span class="op">&lt;</span><span class="dv">10000000</span><span class="op">;++</span>j<span class="op">)</span></span>
-<span id="cb9-178"><a href="#cb9-178" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
-<span id="cb9-179"><a href="#cb9-179" aria-hidden="true" tabindex="-1"></a>            <span class="op">++</span>i<span class="op">;</span></span>
-<span id="cb9-180"><a href="#cb9-180" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb9-181"><a href="#cb9-181" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">t's work package is complete."</span> <span class="op">&lt;&lt;</span> <span class="bu">std::</span>flush<span class="op">;</span></span>
-<span id="cb9-182"><a href="#cb9-182" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-183"><a href="#cb9-183" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
-<span id="cb9-184"><a href="#cb9-184" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-185"><a href="#cb9-185" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"main thread"</span> <span class="op">&lt;&lt;</span> <span class="bu">std::</span>flush<span class="op">;</span></span>
-<span id="cb9-186"><a href="#cb9-186" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t<span class="op">(</span>my_func<span class="op">);</span></span>
-<span id="cb9-187"><a href="#cb9-187" aria-hidden="true" tabindex="-1"></a>    thread_guard g<span class="op">(</span>t<span class="op">);</span></span>
-<span id="cb9-188"><a href="#cb9-188" aria-hidden="true" tabindex="-1"></a>    <span class="cf">try</span></span>
-<span id="cb9-189"><a href="#cb9-189" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb9-190"><a href="#cb9-190" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>string<span class="op">(</span><span class="st">"abc"</span><span class="op">).</span>substr<span class="op">(</span><span class="dv">10</span><span class="op">);</span> <span class="co">// throws std::out_of_range</span></span>
-<span id="cb9-191"><a href="#cb9-191" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb9-192"><a href="#cb9-192" aria-hidden="true" tabindex="-1"></a>    <span class="cf">catch</span> <span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>exception<span class="op">&amp;</span> e<span class="op">)</span></span>
-<span id="cb9-193"><a href="#cb9-193" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb9-194"><a href="#cb9-194" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> e<span class="op">.</span>what<span class="op">();</span></span>
-<span id="cb9-195"><a href="#cb9-195" aria-hidden="true" tabindex="-1"></a>        <span class="cf">throw</span> e<span class="op">;</span> <span class="co">// copy-initializes a new exception object of type std::exception</span></span>
-<span id="cb9-196"><a href="#cb9-196" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb9-197"><a href="#cb9-197" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-198"><a href="#cb9-198" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb9-199"><a href="#cb9-199" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb9-200"><a href="#cb9-200" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb9-201"><a href="#cb9-201" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-202"><a href="#cb9-202" aria-hidden="true" tabindex="-1"></a>When the execution of the main thread reaches the end, the local objects are destroyed in the reverse order of their construction. Consequently, the <span class="in">`thread_guard`</span> object id object <span class="in">`g`</span> is destroyed first, and the thread is joined with, which is a blocking call in the destructor. This happens even if there is an exception in the main thread. </span>
-<span id="cb9-203"><a href="#cb9-203" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-204"><a href="#cb9-204" aria-hidden="true" tabindex="-1"></a>The copy constructor and copy-assignment operators are marked <span class="in">`=delete`</span> to ensure that they're not automatically provided by the compiler. Copying or assigning such an object would be dangerous, because it might outlive the scope of the thread it was joining. By declaring them as as deleted, any attempt to copy a <span class="in">`thread_guard`</span> object will generate a compilation error. </span>
-<span id="cb9-205"><a href="#cb9-205" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-206"><a href="#cb9-206" aria-hidden="true" tabindex="-1"></a>If you don't need to wait for a thread to finish, you can avoid this exception-safety by detaching from it. This breaks the association of the thread with the <span class="in">`std::thread`</span> object and ensures that <span class="in">`std::terminate()`</span> won't be called when the <span class="in">`std::thread`</span> object is destroyed, even though the thread is still running in the background.</span>
-<span id="cb9-207"><a href="#cb9-207" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-208"><a href="#cb9-208" aria-hidden="true" tabindex="-1"></a><span class="fu">### Running threads in background</span></span>
-<span id="cb9-209"><a href="#cb9-209" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-210"><a href="#cb9-210" aria-hidden="true" tabindex="-1"></a>Calling <span class="in">`detach()`</span> on a <span class="in">`std::thread`</span> object leaves the thread to run in the background with no direct means of communicating with it. It's no longer possible to wait for that thread to complete; if a thread becomes detached, it isn't possible to obtain a <span class="in">`std::thread`</span> object that references it, so it can no longer be joined. Detached threads truly run in the background; ownership and control are passed over to the C++ runtime library, which ensures that the resources associated with the thread are correctly reclaimed when the thread exits.</span>
-<span id="cb9-211"><a href="#cb9-211" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-212"><a href="#cb9-212" aria-hidden="true" tabindex="-1"></a>Detached threads are often called *daemon threads* after the UNIX concept of a *daemon process* that runs in the background without any explicit user interface. Such threads are typically long-running; they run for almost the entire lifetime of the application, performing a background task such as monitoring the filesystem, clearing unused entries out of object caches, or optimizing data-structures. At the other extreme, it may make sense to use a detached thread where there's another mechanism for identifying when the thread has completed or where the thread is used for a fire-and-forget task. </span>
-<span id="cb9-213"><a href="#cb9-213" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-214"><a href="#cb9-214" aria-hidden="true" tabindex="-1"></a>As we've seen earlier, we detach a thread by calling <span class="in">`detach()`</span> member function of the <span class="in">`std::thread`</span> object. After the call completes, the <span class="in">`std::thread`</span> object is no longer associated with the actual thread of execution and is therefore no longer joinable. </span>
-<span id="cb9-215"><a href="#cb9-215" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-216"><a href="#cb9-216" aria-hidden="true" tabindex="-1"></a>In order to detach the thread from a <span class="in">`std::thread`</span> object, there must be a thread to detach: you can't call <span class="in">`detach()`</span> on a <span class="in">`std::thread`</span> object with no associated thread of execution. This is exactly the same requirement for <span class="in">`join()`</span>, and you can check it in the same way - you can call <span class="in">`t.detach()`</span> for a <span class="in">`std::thread`</span> object <span class="in">`t`</span> when <span class="in">`t.joinable()`</span> returns <span class="in">`true`</span>.</span>
-<span id="cb9-217"><a href="#cb9-217" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-218"><a href="#cb9-218" aria-hidden="true" tabindex="-1"></a>Consider an application such as a word-processor that can edit multiple documents at once. There are many ways to handle this, both at the UI level and internally. One way that's increasingly common at the moment is to have multiple, independent, top-level windows, one for each document being edited. Although these windows appear to be completely independent, each with its own menus, they're running within the same instance of the application. One way to handle this internally is to run each document-editing window in its own thread; each thread runs the same code but with different data relating to the document being edited. Opening a new document therefore requires starting a new thread. The thread handling the request isn't going to care about waiting for that other thread to finish, because it's working on an unrelated document, so this makes it a prime candidate for running a detached thread. </span>
-<span id="cb9-219"><a href="#cb9-219" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-220"><a href="#cb9-220" aria-hidden="true" tabindex="-1"></a><span class="fu">### Passing arguments to a thread function</span></span>
-<span id="cb9-221"><a href="#cb9-221" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-222"><a href="#cb9-222" aria-hidden="true" tabindex="-1"></a>Passing arguments to the callable object or function is fundamentally as simple as passing additional arguments to the <span class="in">`std::thread`</span> constructor. But, its important to bear in mind that the arguments are copied into internal storage, where they can be accessed by the newly created thread of execution and then passed to the callable function or object as <span class="in">`rvalue`</span>s as if they were temporaries. </span>
-<span id="cb9-223"><a href="#cb9-223" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-224"><a href="#cb9-224" aria-hidden="true" tabindex="-1"></a>Therefore, if you want to pass an object's member function as a work-package to a thread, you pass the member-function pointer as the function, and an object pointer as the first argument:</span>
-<span id="cb9-225"><a href="#cb9-225" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-226"><a href="#cb9-226" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb9-227"><a href="#cb9-227" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb9-228"><a href="#cb9-228" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-229"><a href="#cb9-229" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> X<span class="op">{</span></span>
-<span id="cb9-230"><a href="#cb9-230" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> do_lengthy_work<span class="op">();</span></span>
-<span id="cb9-231"><a href="#cb9-231" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb9-232"><a href="#cb9-232" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-233"><a href="#cb9-233" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb9-234"><a href="#cb9-234" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb9-235"><a href="#cb9-235" aria-hidden="true" tabindex="-1"></a>    X x<span class="op">;</span></span>
-<span id="cb9-236"><a href="#cb9-236" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t<span class="op">(&amp;</span>X<span class="op">::</span>do_length_work<span class="op">,</span> <span class="op">&amp;</span>x<span class="op">);</span></span>
-<span id="cb9-237"><a href="#cb9-237" aria-hidden="true" tabindex="-1"></a>    t<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb9-238"><a href="#cb9-238" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb9-239"><a href="#cb9-239" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb9-240"><a href="#cb9-240" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb9-241"><a href="#cb9-241" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-242"><a href="#cb9-242" aria-hidden="true" tabindex="-1"></a>You can also supply arguments to such a member-function call: the third argument to the <span class="in">`std::thread`</span> constructor will be the first argument to the function, and so forth.</span>
-<span id="cb9-243"><a href="#cb9-243" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-244"><a href="#cb9-244" aria-hidden="true" tabindex="-1"></a>Another interesting scenario for supplying arguments is where the arguments cannot be copied but can only be moved: the data held within one object is transferred over to another, leaving the original object empty. An example of such a type is <span class="in">`std::unique_ptr&lt;T&gt;`</span>, which provides automatic memory management for dynamically allocated objects. Only one <span class="in">`std::unique_ptr&lt;T&gt;`</span> instance can point to a given object at a time, and when that instance is destroyed, the pointed-to-object is also deleted. The *move constructor* and the *move assignment* operator allow the ownership of an object to be transferred around between <span class="in">`std::unique_ptr&lt;T&gt;`</span> instances. Such a transfer leaves the source object with a <span class="in">`nullptr`</span>. This moving of values allows objects of this type to be accepted as function parameters or returned from functions. When the source object is temporary, the move is automatic, but where the source is a named value, the transfer must be requested directly by invoking <span class="in">`std::move()`</span>. </span>
-<span id="cb9-245"><a href="#cb9-245" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-246"><a href="#cb9-246" aria-hidden="true" tabindex="-1"></a>Several of the classes in the C++ standard library exhibit the same ownership semantics as <span class="in">`std::unique_ptr&lt;T&gt;`</span>, and <span class="in">`std::thread`</span> is one of them. Though <span class="in">`std::thread`</span> instances don't own a dynamic object in the same way as the <span class="in">`std::unique_ptr&lt;T&gt;`</span> does, they do own a resource: each instance is responsible for managing a thread of execution. This ownership can be transferred between instances, because instances of <span class="in">`std::thread`</span> are moveable, even though they aren't copyable. This ensures, that only one object is associated with a particular thread of execution at any time while allowing programmers the option of transferring ownership between objects. </span>
-<span id="cb9-247"><a href="#cb9-247" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-248"><a href="#cb9-248" aria-hidden="true" tabindex="-1"></a><span class="fu">## Transferring the ownership of a thread</span></span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb14" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Concurrent programming - A Primer (Part I)"</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="an">date:</span><span class="co"> "2024-09-28"</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="an">toc:</span><span class="co"> true</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a><span class="co">    html:</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="co">        code-tools: true</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a><span class="co">        code-block-border-left: true</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a><span class="co">        code-annotations: below</span></span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a><span class="co">        highlight-style: pygments</span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a><span class="fu">## Basic Thread Management</span></span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a>A thread <span class="in">`std::thread`</span> represents an executable unit. This executable unit, which the thread immediately starts, gets its work-package as a *callable unit*. A thread is not copy-constructible or copy-assignable, but move-constructible and move-assignable. A *callable unit* is any entity that behaves like a function, so this could be a function, a function pointer, a lambda function or <span class="in">`std::function`</span> (function) object. </span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a>For example:</span>
+<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb14-25"><a href="#cb14-25" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb14-26"><a href="#cb14-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-27"><a href="#cb14-27" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> do_some_work<span class="op">()</span></span>
+<span id="cb14-28"><a href="#cb14-28" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-29"><a href="#cb14-29" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Performing some work in a separate thread..."</span><span class="op">;</span></span>
+<span id="cb14-30"><a href="#cb14-30" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-31"><a href="#cb14-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-32"><a href="#cb14-32" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb14-33"><a href="#cb14-33" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-34"><a href="#cb14-34" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">main() thread"</span><span class="op">;</span></span>
+<span id="cb14-35"><a href="#cb14-35" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t<span class="op">(</span>do_some_work<span class="op">);</span>      <span class="co">// Spawn a new thread</span></span>
+<span id="cb14-36"><a href="#cb14-36" aria-hidden="true" tabindex="-1"></a>    t<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-37"><a href="#cb14-37" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Exiting main() thread"</span><span class="op">;</span></span>
+<span id="cb14-38"><a href="#cb14-38" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-39"><a href="#cb14-39" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-40"><a href="#cb14-40" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-41"><a href="#cb14-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-42"><a href="#cb14-42" aria-hidden="true" tabindex="-1"></a>stdout:</span>
+<span id="cb14-43"><a href="#cb14-43" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-44"><a href="#cb14-44" aria-hidden="true" tabindex="-1"></a><span class="in">main() thread</span></span>
+<span id="cb14-45"><a href="#cb14-45" aria-hidden="true" tabindex="-1"></a><span class="in">Performing some work in a separate thread...</span></span>
+<span id="cb14-46"><a href="#cb14-46" aria-hidden="true" tabindex="-1"></a><span class="in">Exiting main() thread</span></span>
+<span id="cb14-47"><a href="#cb14-47" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-48"><a href="#cb14-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-49"><a href="#cb14-49" aria-hidden="true" tabindex="-1"></a>Once you've started your thread, you need to explicitly decide whether to wait for it to finish(by joining with it) or leave it to run on its own (by detaching it). If you don't decide before the <span class="in">`std::thread`</span> object goes out of scope and is destroyed, then your program is terminated (the <span class="in">`std::thread`</span> destructor calls <span class="in">`std::terminate()`</span>). So, ensure that the thread is correctly joined or detached. You only have to make this decision before the <span class="in">`std::thread`</span> object is destroyed - the thread itself may well have finished before you join with it or detach it, and if you detach it, then if the thread is still running, it will continue to do so, and may continue running long after the <span class="in">`std::thread`</span> object is destroyed; it will only stop running when it finally returns from the thread function. </span>
+<span id="cb14-50"><a href="#cb14-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-51"><a href="#cb14-51" aria-hidden="true" tabindex="-1"></a>Passing arguments is easy. If the function signature is <span class="in">`void func(int arg1, std::vector&lt;double&gt; arg2, char arg3)`</span>, you just specify the comma separated list in the <span class="in">`std::thread()`</span> constructor, as <span class="in">`std::thread my_thread(func, arg1, arg2, arg3)`</span>. This copies the value of the parameters <span class="in">`arg1`</span>, <span class="in">`arg2`</span> and <span class="in">`arg3`</span> onto the thread stack. It's a *pass-by-value*. To pass by reference, you <span class="in">`std::ref()`</span> the arguments, so for example, if the function signature is <span class="in">`void func(int arg1, std::vector&lt;double&gt;&amp; arg2, char arg3)`</span>, while spawning a new thread, you'd write <span class="in">`std::thread my_thread(func, arg1, std::ref(arg2), arg3)`</span>.</span>
+<span id="cb14-52"><a href="#cb14-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-53"><a href="#cb14-53" aria-hidden="true" tabindex="-1"></a>If you don't wait for the thread to finish in the <span class="in">`main()`</span> thread, you need to ensure that the data accessed by the thread is valid until the thread is finished with it. This isn't a new problem - even in single threaded code it's undefined behavior to access an object after it's been destroyed - but the use of threads provides another opportunity to encounter such lifetime issues. </span>
+<span id="cb14-54"><a href="#cb14-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-55"><a href="#cb14-55" aria-hidden="true" tabindex="-1"></a>One situation in which you can encounter such problems is when the thread function holds pointers or references to local variables and the thread hasn't finished when the function exits. </span>
+<span id="cb14-56"><a href="#cb14-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-57"><a href="#cb14-57" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb14-58"><a href="#cb14-58" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb14-59"><a href="#cb14-59" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb14-60"><a href="#cb14-60" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-61"><a href="#cb14-61" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> do_some_work<span class="op">(</span><span class="dt">int</span><span class="op">&amp;</span> i<span class="op">)</span></span>
+<span id="cb14-62"><a href="#cb14-62" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-63"><a href="#cb14-63" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">The value of i is = "</span> <span class="op">&lt;&lt;</span> i<span class="op">;</span> <span class="co">//Potential access to dangling reference</span></span>
+<span id="cb14-64"><a href="#cb14-64" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Incrementing the value of i"</span><span class="op">;</span></span>
+<span id="cb14-65"><a href="#cb14-65" aria-hidden="true" tabindex="-1"></a>    <span class="op">++</span>i<span class="op">;</span></span>
+<span id="cb14-66"><a href="#cb14-66" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">The new value of i = "</span> <span class="op">&lt;&lt;</span> i<span class="op">;</span></span>
+<span id="cb14-67"><a href="#cb14-67" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-68"><a href="#cb14-68" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-69"><a href="#cb14-69" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb14-70"><a href="#cb14-70" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-71"><a href="#cb14-71" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">main() thread"</span><span class="op">;</span></span>
+<span id="cb14-72"><a href="#cb14-72" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> i<span class="op">{</span><span class="dv">1</span><span class="op">};</span></span>
+<span id="cb14-73"><a href="#cb14-73" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread my_thread<span class="op">(</span>do_some_work<span class="op">,</span> <span class="bu">std::</span>ref<span class="op">(</span>i<span class="op">));</span> <span class="co">// Spawn a new thread</span></span>
+<span id="cb14-74"><a href="#cb14-74" aria-hidden="true" tabindex="-1"></a>    my_thread<span class="op">.</span>detach<span class="op">();</span> <span class="co">// Don't wait for the thread to finish</span></span>
+<span id="cb14-75"><a href="#cb14-75" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Exiting main() thread"</span><span class="op">;</span> <span class="co">//New thread might still be running</span></span>
+<span id="cb14-76"><a href="#cb14-76" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-77"><a href="#cb14-77" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-78"><a href="#cb14-78" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-79"><a href="#cb14-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-80"><a href="#cb14-80" aria-hidden="true" tabindex="-1"></a>stdout:</span>
+<span id="cb14-81"><a href="#cb14-81" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-82"><a href="#cb14-82" aria-hidden="true" tabindex="-1"></a><span class="in">main() thread</span></span>
+<span id="cb14-83"><a href="#cb14-83" aria-hidden="true" tabindex="-1"></a><span class="in">Exiting main() thread</span></span>
+<span id="cb14-84"><a href="#cb14-84" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-85"><a href="#cb14-85" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-86"><a href="#cb14-86" aria-hidden="true" tabindex="-1"></a>In this case, the new thread associated with <span class="in">`my_thread`</span> is still running when <span class="in">`main()`</span> exits, because you explicitly decided not to wait for it by calling <span class="in">`detach()`</span>. If the thread is still running, the statements in <span class="in">`do_some_work(int&amp; )`</span>  will access an already destroyed variable <span class="in">`i`</span>. This is like normal single-threaded code - allowing a pointer or reference to a local variable to persist beyond the function exit, which is never a good idea. But, it's easier to make this mistake with multi-threaded code, because it isn't immediately apparent that this has happened.</span>
+<span id="cb14-87"><a href="#cb14-87" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-88"><a href="#cb14-88" aria-hidden="true" tabindex="-1"></a><span class="fu">### Waiting for a thread to complete</span></span>
+<span id="cb14-89"><a href="#cb14-89" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-90"><a href="#cb14-90" aria-hidden="true" tabindex="-1"></a>If you need to wait for a thread to complete, you do this by calling <span class="in">`join()`</span> on the associated <span class="in">`std::thread`</span> instance. In the previous listing, replacing the call to <span class="in">`my_thread.detach()`</span> by <span class="in">`my_thread.join()`</span> would therefore be sufficient to ensure that the thead was finished before the function was exited and thus before the local variables were destroyed. In real code, the original thread would either have work to do or would have launched several threads to do useful work before waiting for them to complete. </span>
+<span id="cb14-91"><a href="#cb14-91" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-92"><a href="#cb14-92" aria-hidden="true" tabindex="-1"></a><span class="in">`join()`</span> is a simple and brute-force technique - either you wait for a thread to finish or you don't. If you need more fine-grained control over waiting for a thread, such as to check whether a thread is finished, or wait only a certain period of time, then you have to use alternative mechanisms such as condition variables and futures. </span>
+<span id="cb14-93"><a href="#cb14-93" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-94"><a href="#cb14-94" aria-hidden="true" tabindex="-1"></a><span class="fu">### Waiting in exceptional circumstances</span></span>
+<span id="cb14-95"><a href="#cb14-95" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-96"><a href="#cb14-96" aria-hidden="true" tabindex="-1"></a>You need to ensure that you've called either <span class="in">`join()`</span> or <span class="in">`detach()`</span> before a <span class="in">`std::thread`</span> object is destroyed. If you're detaching a thread, you can usually call <span class="in">`detach()`</span> immediately after the thread has been started, so this isn't a problem. But, if you're intending to wait for a thread, you need to carefully pick the place in the code where you call <span class="in">`join()`</span>. This means that the call to <span class="in">`join()`</span> is liable to be skipped if an exception is thrown after the thread has been started but before the call to <span class="in">`join()`</span>. </span>
+<span id="cb14-97"><a href="#cb14-97" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-98"><a href="#cb14-98" aria-hidden="true" tabindex="-1"></a>To avoid your application being terminated when an exception is thrown, you need to make a decision about what to do in this case. In general, if you were intending to call <span class="in">`join()`</span> in a non-exceptional case, you also need to call <span class="in">`join()`</span> in the presence of an exception to avoid accidental lifetime problems.</span>
+<span id="cb14-99"><a href="#cb14-99" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-100"><a href="#cb14-100" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb14-101"><a href="#cb14-101" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb14-102"><a href="#cb14-102" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb14-103"><a href="#cb14-103" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stdexcept&gt;</span></span>
+<span id="cb14-104"><a href="#cb14-104" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
+<span id="cb14-105"><a href="#cb14-105" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-106"><a href="#cb14-106" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb14-107"><a href="#cb14-107" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-108"><a href="#cb14-108" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> i <span class="op">{</span><span class="dv">1</span><span class="op">};</span></span>
+<span id="cb14-109"><a href="#cb14-109" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-110"><a href="#cb14-110" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span> my_func <span class="op">=</span> <span class="op">[&amp;</span>i<span class="op">](){</span></span>
+<span id="cb14-111"><a href="#cb14-111" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span><span class="op">(</span><span class="dt">int</span> j<span class="op">{</span><span class="dv">0</span><span class="op">};</span>j<span class="op">&lt;</span><span class="dv">10000000</span><span class="op">;++</span>j<span class="op">)</span></span>
+<span id="cb14-112"><a href="#cb14-112" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
+<span id="cb14-113"><a href="#cb14-113" aria-hidden="true" tabindex="-1"></a>            <span class="op">++</span>i<span class="op">;</span></span>
+<span id="cb14-114"><a href="#cb14-114" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb14-115"><a href="#cb14-115" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">t's work package is complete."</span> <span class="op">&lt;&lt;</span> <span class="bu">std::</span>flush<span class="op">;</span></span>
+<span id="cb14-116"><a href="#cb14-116" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-117"><a href="#cb14-117" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb14-118"><a href="#cb14-118" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-119"><a href="#cb14-119" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"main thread"</span> <span class="op">&lt;&lt;</span> <span class="bu">std::</span>flush<span class="op">;</span></span>
+<span id="cb14-120"><a href="#cb14-120" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t<span class="op">(</span>my_func<span class="op">);</span></span>
+<span id="cb14-121"><a href="#cb14-121" aria-hidden="true" tabindex="-1"></a>    <span class="cf">try</span></span>
+<span id="cb14-122"><a href="#cb14-122" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb14-123"><a href="#cb14-123" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>string<span class="op">(</span><span class="st">"abc"</span><span class="op">).</span>substr<span class="op">(</span><span class="dv">10</span><span class="op">);</span> <span class="co">// throws std::out_of_range</span></span>
+<span id="cb14-124"><a href="#cb14-124" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-125"><a href="#cb14-125" aria-hidden="true" tabindex="-1"></a>    <span class="cf">catch</span> <span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>exception<span class="op">&amp;</span> e<span class="op">)</span></span>
+<span id="cb14-126"><a href="#cb14-126" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb14-127"><a href="#cb14-127" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> e<span class="op">.</span>what<span class="op">();</span></span>
+<span id="cb14-128"><a href="#cb14-128" aria-hidden="true" tabindex="-1"></a>        t<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-129"><a href="#cb14-129" aria-hidden="true" tabindex="-1"></a>        <span class="cf">throw</span> e<span class="op">;</span> <span class="co">// copy-initializes a new exception object of type std::exception</span></span>
+<span id="cb14-130"><a href="#cb14-130" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-131"><a href="#cb14-131" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-132"><a href="#cb14-132" aria-hidden="true" tabindex="-1"></a>    t<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-133"><a href="#cb14-133" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-134"><a href="#cb14-134" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-135"><a href="#cb14-135" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-136"><a href="#cb14-136" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-137"><a href="#cb14-137" aria-hidden="true" tabindex="-1"></a>stdout:</span>
+<span id="cb14-138"><a href="#cb14-138" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-139"><a href="#cb14-139" aria-hidden="true" tabindex="-1"></a><span class="in">main thread</span></span>
+<span id="cb14-140"><a href="#cb14-140" aria-hidden="true" tabindex="-1"></a><span class="in">invalid string position</span></span>
+<span id="cb14-141"><a href="#cb14-141" aria-hidden="true" tabindex="-1"></a><span class="in">t's work package is complete.</span></span>
+<span id="cb14-142"><a href="#cb14-142" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-143"><a href="#cb14-143" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-144"><a href="#cb14-144" aria-hidden="true" tabindex="-1"></a>The code in the listing above uses <span class="in">`try/catch`</span> block to ensure that a thread with access to the local state is finished before the main thread exits normally, or by an exception. </span>
+<span id="cb14-145"><a href="#cb14-145" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-146"><a href="#cb14-146" aria-hidden="true" tabindex="-1"></a>A more structured way of doing is to use the standard Resource Aquisition is Initialization(RAII) idiom and provide a wrapper class that does the <span class="in">`join()`</span> in its destructor, as in the following listing:</span>
+<span id="cb14-147"><a href="#cb14-147" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-148"><a href="#cb14-148" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb14-149"><a href="#cb14-149" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb14-150"><a href="#cb14-150" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb14-151"><a href="#cb14-151" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stdexcept&gt;</span></span>
+<span id="cb14-152"><a href="#cb14-152" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
+<span id="cb14-153"><a href="#cb14-153" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-154"><a href="#cb14-154" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> thread_guard</span>
+<span id="cb14-155"><a href="#cb14-155" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-156"><a href="#cb14-156" aria-hidden="true" tabindex="-1"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb14-157"><a href="#cb14-157" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread<span class="op">&amp;</span> <span class="dt">m_t</span><span class="op">;</span></span>
+<span id="cb14-158"><a href="#cb14-158" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-159"><a href="#cb14-159" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb14-160"><a href="#cb14-160" aria-hidden="true" tabindex="-1"></a>    <span class="kw">explicit</span> thread_guard<span class="op">(</span><span class="bu">std::</span>thread<span class="op">&amp;</span> t<span class="op">)</span> <span class="op">:</span> <span class="dt">m_t</span><span class="op">{</span>t<span class="op">}</span> <span class="op">{}</span></span>
+<span id="cb14-161"><a href="#cb14-161" aria-hidden="true" tabindex="-1"></a>    <span class="op">~</span>thread_guard<span class="op">()</span></span>
+<span id="cb14-162"><a href="#cb14-162" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb14-163"><a href="#cb14-163" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span><span class="op">(</span><span class="dt">m_t</span><span class="op">.</span>joinable<span class="op">()){</span></span>
+<span id="cb14-164"><a href="#cb14-164" aria-hidden="true" tabindex="-1"></a>            <span class="dt">m_t</span><span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-165"><a href="#cb14-165" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb14-166"><a href="#cb14-166" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-167"><a href="#cb14-167" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-168"><a href="#cb14-168" aria-hidden="true" tabindex="-1"></a>    thread_guard<span class="op">(</span><span class="at">const</span> thread_guard<span class="op">&amp;</span> _tg<span class="op">)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
+<span id="cb14-169"><a href="#cb14-169" aria-hidden="true" tabindex="-1"></a>    thread_guard<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span>thread_guard<span class="op">&amp;</span> _tg<span class="op">)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
+<span id="cb14-170"><a href="#cb14-170" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb14-171"><a href="#cb14-171" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-172"><a href="#cb14-172" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb14-173"><a href="#cb14-173" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-174"><a href="#cb14-174" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> i <span class="op">{</span><span class="dv">1</span><span class="op">};</span></span>
+<span id="cb14-175"><a href="#cb14-175" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-176"><a href="#cb14-176" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span> my_func <span class="op">=</span> <span class="op">[&amp;</span>i<span class="op">](){</span></span>
+<span id="cb14-177"><a href="#cb14-177" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span><span class="op">(</span><span class="dt">int</span> j<span class="op">{</span><span class="dv">0</span><span class="op">};</span>j<span class="op">&lt;</span><span class="dv">10000000</span><span class="op">;++</span>j<span class="op">)</span></span>
+<span id="cb14-178"><a href="#cb14-178" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
+<span id="cb14-179"><a href="#cb14-179" aria-hidden="true" tabindex="-1"></a>            <span class="op">++</span>i<span class="op">;</span></span>
+<span id="cb14-180"><a href="#cb14-180" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb14-181"><a href="#cb14-181" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">t's work package is complete."</span> <span class="op">&lt;&lt;</span> <span class="bu">std::</span>flush<span class="op">;</span></span>
+<span id="cb14-182"><a href="#cb14-182" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-183"><a href="#cb14-183" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb14-184"><a href="#cb14-184" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-185"><a href="#cb14-185" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"main thread"</span> <span class="op">&lt;&lt;</span> <span class="bu">std::</span>flush<span class="op">;</span></span>
+<span id="cb14-186"><a href="#cb14-186" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t<span class="op">(</span>my_func<span class="op">);</span></span>
+<span id="cb14-187"><a href="#cb14-187" aria-hidden="true" tabindex="-1"></a>    thread_guard g<span class="op">(</span>t<span class="op">);</span></span>
+<span id="cb14-188"><a href="#cb14-188" aria-hidden="true" tabindex="-1"></a>    <span class="cf">try</span></span>
+<span id="cb14-189"><a href="#cb14-189" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb14-190"><a href="#cb14-190" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>string<span class="op">(</span><span class="st">"abc"</span><span class="op">).</span>substr<span class="op">(</span><span class="dv">10</span><span class="op">);</span> <span class="co">// throws std::out_of_range</span></span>
+<span id="cb14-191"><a href="#cb14-191" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-192"><a href="#cb14-192" aria-hidden="true" tabindex="-1"></a>    <span class="cf">catch</span> <span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>exception<span class="op">&amp;</span> e<span class="op">)</span></span>
+<span id="cb14-193"><a href="#cb14-193" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb14-194"><a href="#cb14-194" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> e<span class="op">.</span>what<span class="op">();</span></span>
+<span id="cb14-195"><a href="#cb14-195" aria-hidden="true" tabindex="-1"></a>        <span class="cf">throw</span> e<span class="op">;</span> <span class="co">// copy-initializes a new exception object of type std::exception</span></span>
+<span id="cb14-196"><a href="#cb14-196" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-197"><a href="#cb14-197" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-198"><a href="#cb14-198" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-199"><a href="#cb14-199" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-200"><a href="#cb14-200" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-201"><a href="#cb14-201" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-202"><a href="#cb14-202" aria-hidden="true" tabindex="-1"></a>When the execution of the main thread reaches the end, the local objects are destroyed in the reverse order of their construction. Consequently, the <span class="in">`thread_guard`</span> object id object <span class="in">`g`</span> is destroyed first, and the thread is joined with, which is a blocking call in the destructor. This happens even if there is an exception in the main thread. </span>
+<span id="cb14-203"><a href="#cb14-203" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-204"><a href="#cb14-204" aria-hidden="true" tabindex="-1"></a>The copy constructor and copy-assignment operators are marked <span class="in">`=delete`</span> to ensure that they're not automatically provided by the compiler. Copying or assigning such an object would be dangerous, because it might outlive the scope of the thread it was joining. By declaring them as as deleted, any attempt to copy a <span class="in">`thread_guard`</span> object will generate a compilation error. </span>
+<span id="cb14-205"><a href="#cb14-205" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-206"><a href="#cb14-206" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-207"><a href="#cb14-207" aria-hidden="true" tabindex="-1"></a>If you don't need to wait for a thread to finish, you can avoid this exception-safety by detaching from it. This breaks the association of the thread with the <span class="in">`std::thread`</span> object and ensures that <span class="in">`std::terminate()`</span> won't be called when the <span class="in">`std::thread`</span> object is destroyed, even though the thread is still running in the background. Note that, the <span class="in">`std::thread`</span> destructor checks if the thread is joinable, and if this condition is true, it invokes <span class="in">`std::terminate`</span>. </span>
+<span id="cb14-208"><a href="#cb14-208" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-209"><a href="#cb14-209" aria-hidden="true" tabindex="-1"></a><span class="fu">### Running threads in background</span></span>
+<span id="cb14-210"><a href="#cb14-210" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-211"><a href="#cb14-211" aria-hidden="true" tabindex="-1"></a>Calling <span class="in">`detach()`</span> on a <span class="in">`std::thread`</span> object leaves the thread to run in the background with no direct means of communicating with it. It's no longer possible to wait for that thread to complete; if a thread becomes detached, it isn't possible to obtain a <span class="in">`std::thread`</span> object that references it, so it can no longer be joined. Detached threads truly run in the background; ownership and control are passed over to the C++ runtime library, which ensures that the resources associated with the thread are correctly reclaimed when the thread exits.</span>
+<span id="cb14-212"><a href="#cb14-212" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-213"><a href="#cb14-213" aria-hidden="true" tabindex="-1"></a>Detached threads are often called *daemon threads* after the UNIX concept of a *daemon process* that runs in the background without any explicit user interface. Such threads are typically long-running; they run for almost the entire lifetime of the application, performing a background task such as monitoring the filesystem, clearing unused entries out of object caches, or optimizing data-structures. At the other extreme, it may make sense to use a detached thread where there's another mechanism for identifying when the thread has completed or where the thread is used for a fire-and-forget task. </span>
+<span id="cb14-214"><a href="#cb14-214" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-215"><a href="#cb14-215" aria-hidden="true" tabindex="-1"></a>As we've seen earlier, we detach a thread by calling <span class="in">`detach()`</span> member function of the <span class="in">`std::thread`</span> object. After the call completes, the <span class="in">`std::thread`</span> object is no longer associated with the actual thread of execution and is therefore no longer joinable. </span>
+<span id="cb14-216"><a href="#cb14-216" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-217"><a href="#cb14-217" aria-hidden="true" tabindex="-1"></a>In order to detach the thread from a <span class="in">`std::thread`</span> object, there must be a thread to detach: you can't call <span class="in">`detach()`</span> on a <span class="in">`std::thread`</span> object with no associated thread of execution. This is exactly the same requirement for <span class="in">`join()`</span>, and you can check it in the same way - you can call <span class="in">`t.detach()`</span> for a <span class="in">`std::thread`</span> object <span class="in">`t`</span> when <span class="in">`t.joinable()`</span> returns <span class="in">`true`</span>.</span>
+<span id="cb14-218"><a href="#cb14-218" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-219"><a href="#cb14-219" aria-hidden="true" tabindex="-1"></a>Consider an application such as a word-processor that can edit multiple documents at once. There are many ways to handle this, both at the UI level and internally. One way that's increasingly common at the moment is to have multiple, independent, top-level windows, one for each document being edited. Although these windows appear to be completely independent, each with its own menus, they're running within the same instance of the application. One way to handle this internally is to run each document-editing window in its own thread; each thread runs the same code but with different data relating to the document being edited. Opening a new document therefore requires starting a new thread. The thread handling the request isn't going to care about waiting for that other thread to finish, because it's working on an unrelated document, so this makes it a prime candidate for running a detached thread. </span>
+<span id="cb14-220"><a href="#cb14-220" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-221"><a href="#cb14-221" aria-hidden="true" tabindex="-1"></a><span class="fu">### Passing arguments to a thread function</span></span>
+<span id="cb14-222"><a href="#cb14-222" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-223"><a href="#cb14-223" aria-hidden="true" tabindex="-1"></a>Passing arguments to the callable object or function is fundamentally as simple as passing additional arguments to the <span class="in">`std::thread`</span> constructor. But, its important to bear in mind that the arguments are copied into internal storage, where they can be accessed by the newly created thread of execution and then passed to the callable function or object as <span class="in">`rvalue`</span>s as if they were temporaries. </span>
+<span id="cb14-224"><a href="#cb14-224" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-225"><a href="#cb14-225" aria-hidden="true" tabindex="-1"></a>Therefore, if you want to pass an object's member function as a work-package to a thread, you pass the member-function pointer as the function, and an object pointer as the first argument:</span>
+<span id="cb14-226"><a href="#cb14-226" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-227"><a href="#cb14-227" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb14-228"><a href="#cb14-228" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb14-229"><a href="#cb14-229" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-230"><a href="#cb14-230" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> X<span class="op">{</span></span>
+<span id="cb14-231"><a href="#cb14-231" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> do_lengthy_work<span class="op">();</span></span>
+<span id="cb14-232"><a href="#cb14-232" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb14-233"><a href="#cb14-233" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-234"><a href="#cb14-234" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb14-235"><a href="#cb14-235" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-236"><a href="#cb14-236" aria-hidden="true" tabindex="-1"></a>    X x<span class="op">;</span></span>
+<span id="cb14-237"><a href="#cb14-237" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t<span class="op">(&amp;</span>X<span class="op">::</span>do_length_work<span class="op">,</span> <span class="op">&amp;</span>x<span class="op">);</span></span>
+<span id="cb14-238"><a href="#cb14-238" aria-hidden="true" tabindex="-1"></a>    t<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-239"><a href="#cb14-239" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-240"><a href="#cb14-240" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-241"><a href="#cb14-241" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-242"><a href="#cb14-242" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-243"><a href="#cb14-243" aria-hidden="true" tabindex="-1"></a>You can also supply arguments to such a member-function call: the third argument to the <span class="in">`std::thread`</span> constructor will be the first argument to the function, and so forth.</span>
+<span id="cb14-244"><a href="#cb14-244" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-245"><a href="#cb14-245" aria-hidden="true" tabindex="-1"></a>Another interesting scenario for supplying arguments is where the arguments cannot be copied but can only be moved: the data held within one object is transferred over to another, leaving the original object empty. An example of such a type is <span class="in">`std::unique_ptr&lt;T&gt;`</span>, which provides automatic memory management for dynamically allocated objects. Only one <span class="in">`std::unique_ptr&lt;T&gt;`</span> instance can point to a given object at a time, and when that instance is destroyed, the pointed-to-object is also deleted. The *move constructor* and the *move assignment* operator allow the ownership of an object to be transferred around between <span class="in">`std::unique_ptr&lt;T&gt;`</span> instances. Such a transfer leaves the source object with a <span class="in">`nullptr`</span>. This moving of values allows objects of this type to be accepted as function parameters or returned from functions. When the source object is temporary, the move is automatic, but where the source is a named value, the transfer must be requested directly by invoking <span class="in">`std::move()`</span>. </span>
+<span id="cb14-246"><a href="#cb14-246" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-247"><a href="#cb14-247" aria-hidden="true" tabindex="-1"></a>Several of the classes in the C++ standard library exhibit the same ownership semantics as <span class="in">`std::unique_ptr&lt;T&gt;`</span>, and <span class="in">`std::thread`</span> is one of them. Though <span class="in">`std::thread`</span> instances don't own a dynamic object in the same way as the <span class="in">`std::unique_ptr&lt;T&gt;`</span> does, they do own a resource: each instance is responsible for managing a thread of execution. This ownership can be transferred between instances, because instances of <span class="in">`std::thread`</span> are moveable, even though they aren't copyable. This ensures, that only one object is associated with a particular thread of execution at any time while allowing programmers the option of transferring ownership between objects. </span>
+<span id="cb14-248"><a href="#cb14-248" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-249"><a href="#cb14-249" aria-hidden="true" tabindex="-1"></a><span class="fu">## Transferring the ownership of a thread</span></span>
+<span id="cb14-250"><a href="#cb14-250" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-251"><a href="#cb14-251" aria-hidden="true" tabindex="-1"></a>Suppose you want to write a function that creates a thread to run in the background, but passes ownership of the new thread back to the calling function rather than waiting for it to complete; or maybe you want to do the reverse: create a thread and pass the ownership in to some function that should wait for it to complete. In either case, you need to transfer the ownership from one place to another.</span>
+<span id="cb14-252"><a href="#cb14-252" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-253"><a href="#cb14-253" aria-hidden="true" tabindex="-1"></a>This is where the move support of <span class="in">`std::thread`</span> comes in. Many resource-owing types in the C++ standard library, such as <span class="in">`std::ifstream`</span> and <span class="in">`std::unique_ptr&lt;T&gt;`</span> are movable but not copyable, and <span class="in">`std::thread`</span> is one of them. This means that the ownership of a particular thread of execution can be moved between <span class="in">`std::thread`</span> instances, as in the following example. The example shows the creation of two threads of execution and the transfer of ownership of those threads among three <span class="in">`std::thread`</span> instances <span class="in">`t1`</span>, <span class="in">`t2`</span> and <span class="in">`t3`</span>:</span>
+<span id="cb14-254"><a href="#cb14-254" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-255"><a href="#cb14-255" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb14-256"><a href="#cb14-256" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-257"><a href="#cb14-257" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb14-258"><a href="#cb14-258" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb14-259"><a href="#cb14-259" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-260"><a href="#cb14-260" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> some_function<span class="op">(){</span></span>
+<span id="cb14-261"><a href="#cb14-261" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout<span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Some function"</span><span class="op">;</span></span>
+<span id="cb14-262"><a href="#cb14-262" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-263"><a href="#cb14-263" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-264"><a href="#cb14-264" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> some_other_function<span class="op">()</span></span>
+<span id="cb14-265"><a href="#cb14-265" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-266"><a href="#cb14-266" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout<span class="op">&lt;&lt;</span><span class="st">"</span><span class="sc">\n</span><span class="st">Some other function"</span><span class="op">;</span></span>
+<span id="cb14-267"><a href="#cb14-267" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-268"><a href="#cb14-268" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-269"><a href="#cb14-269" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb14-270"><a href="#cb14-270" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-271"><a href="#cb14-271" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t1<span class="op">(</span>some_function<span class="op">);</span></span>
+<span id="cb14-272"><a href="#cb14-272" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t2 <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span>t1<span class="op">);</span></span>
+<span id="cb14-273"><a href="#cb14-273" aria-hidden="true" tabindex="-1"></a>    t1 <span class="op">=</span> <span class="bu">std::</span>thread<span class="op">(</span>some_other_function<span class="op">);</span></span>
+<span id="cb14-274"><a href="#cb14-274" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t3 <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span>t2<span class="op">);</span></span>
+<span id="cb14-275"><a href="#cb14-275" aria-hidden="true" tabindex="-1"></a>    <span class="co">//t1 = std::move(t3)    //this assignment will terminate the program</span></span>
+<span id="cb14-276"><a href="#cb14-276" aria-hidden="true" tabindex="-1"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-277"><a href="#cb14-277" aria-hidden="true" tabindex="-1"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-278"><a href="#cb14-278" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-279"><a href="#cb14-279" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-280"><a href="#cb14-280" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-281"><a href="#cb14-281" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/fdrq5YTnP)</span>{target="_blank"}</span>
+<span id="cb14-282"><a href="#cb14-282" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-283"><a href="#cb14-283" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-284"><a href="#cb14-284" aria-hidden="true" tabindex="-1"></a>stdout:</span>
+<span id="cb14-285"><a href="#cb14-285" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-286"><a href="#cb14-286" aria-hidden="true" tabindex="-1"></a><span class="in">Some other function</span></span>
+<span id="cb14-287"><a href="#cb14-287" aria-hidden="true" tabindex="-1"></a><span class="in">Some function</span></span>
+<span id="cb14-288"><a href="#cb14-288" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-289"><a href="#cb14-289" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-290"><a href="#cb14-290" aria-hidden="true" tabindex="-1"></a>First, a new thread is started and associated with <span class="in">`t1`</span>. Ownership is then transferred over to <span class="in">`t2`</span> when <span class="in">`t2`</span> is constructed by invoking <span class="in">`std::move()`</span> to explicitly move ownership. At this point, <span class="in">`t1`</span> no longer has an associated thread of execution; the thread running <span class="in">`some_function`</span> is now associated with <span class="in">`t2`</span>. </span>
+<span id="cb14-291"><a href="#cb14-291" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-292"><a href="#cb14-292" aria-hidden="true" tabindex="-1"></a>Then, a new thread is started with a temporary <span class="in">`std::thread`</span> object. The subsequent transfer of ownership into <span class="in">`t1`</span> doesn't require a call to <span class="in">`std::move()`</span> to explicitly move ownership, because the owner is a temporary object - moving from temporaries is automatic and implicit. </span>
+<span id="cb14-293"><a href="#cb14-293" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-294"><a href="#cb14-294" aria-hidden="true" tabindex="-1"></a>After all these moves, <span class="in">`t1`</span> is associated with the thread running <span class="in">`some_other_function`</span> and <span class="in">`t3`</span> is associated with the thread running <span class="in">`some_function`</span>. </span>
+<span id="cb14-295"><a href="#cb14-295" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-296"><a href="#cb14-296" aria-hidden="true" tabindex="-1"></a>The commented line transfers the ownership of the thread running <span class="in">`some_function`</span> back to <span class="in">`t1`</span>, where it started. But, in this case <span class="in">`t1`</span> already had an associated thread (which  was running <span class="in">`some_other_function`</span>) that is joinable, so <span class="in">`std::terminate()`</span> will be called in this move assignment. This is done for consistency with the <span class="in">`std::thread`</span> destructor.</span>
+<span id="cb14-297"><a href="#cb14-297" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-298"><a href="#cb14-298" aria-hidden="true" tabindex="-1"></a>The move support in <span class="in">`std::thread`</span> means that ownership can be readily transferred out of a function.</span>
+<span id="cb14-299"><a href="#cb14-299" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-300"><a href="#cb14-300" aria-hidden="true" tabindex="-1"></a><span class="fu">### Lifetime issues of threads</span></span>
+<span id="cb14-301"><a href="#cb14-301" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-302"><a href="#cb14-302" aria-hidden="true" tabindex="-1"></a>Let's look at an example of the erroneous moving of threads.</span>
+<span id="cb14-303"><a href="#cb14-303" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-304"><a href="#cb14-304" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb14-305"><a href="#cb14-305" aria-hidden="true" tabindex="-1"></a><span class="co">//threadMoved.cpp</span></span>
+<span id="cb14-306"><a href="#cb14-306" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-307"><a href="#cb14-307" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb14-308"><a href="#cb14-308" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb14-309"><a href="#cb14-309" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;utility&gt;</span></span>
+<span id="cb14-310"><a href="#cb14-310" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-311"><a href="#cb14-311" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb14-312"><a href="#cb14-312" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-313"><a href="#cb14-313" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t1<span class="op">([](){</span><span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">&lt;&lt;</span><span class="bu">std::</span>this_thread::get_id<span class="op">();});</span></span>
+<span id="cb14-314"><a href="#cb14-314" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread t2<span class="op">([](){</span><span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">&lt;&lt;</span><span class="bu">std::</span>this_thread::get_id<span class="op">();});</span></span>
+<span id="cb14-315"><a href="#cb14-315" aria-hidden="true" tabindex="-1"></a>    t1 <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span>t2<span class="op">);</span></span>
+<span id="cb14-316"><a href="#cb14-316" aria-hidden="true" tabindex="-1"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-317"><a href="#cb14-317" aria-hidden="true" tabindex="-1"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-318"><a href="#cb14-318" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-319"><a href="#cb14-319" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-320"><a href="#cb14-320" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-321"><a href="#cb14-321" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-322"><a href="#cb14-322" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/WeTndM81s)</span>{target="_blank"}</span>
+<span id="cb14-323"><a href="#cb14-323" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-324"><a href="#cb14-324" aria-hidden="true" tabindex="-1"></a>Both threads <span class="in">`t1`</span> and <span class="in">`t2`</span> are meant to do their simple job : printing their IDs. In addition to that, thread <span class="in">`t2`</span> is moved to <span class="in">`t1`</span>. In the main thread takes care of its children and waits for them. But, the result is very different from my expectations:</span>
+<span id="cb14-325"><a href="#cb14-325" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-326"><a href="#cb14-326" aria-hidden="true" tabindex="-1"></a>stdout:</span>
+<span id="cb14-327"><a href="#cb14-327" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-328"><a href="#cb14-328" aria-hidden="true" tabindex="-1"></a><span class="in">terminate called without an active exception</span></span>
+<span id="cb14-329"><a href="#cb14-329" aria-hidden="true" tabindex="-1"></a><span class="in">Program terminated with signal: SIGSEGV</span></span>
+<span id="cb14-330"><a href="#cb14-330" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb14-331"><a href="#cb14-331" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-332"><a href="#cb14-332" aria-hidden="true" tabindex="-1"></a>What is going wrong? We have two issues:</span>
+<span id="cb14-333"><a href="#cb14-333" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-334"><a href="#cb14-334" aria-hidden="true" tabindex="-1"></a><span class="ss">1. </span>By moving the thread <span class="in">`t2`</span>, <span class="in">`t1`</span> gets a new work package and its destructor is called. As a result, <span class="in">`t1`</span>'s destructor calls <span class="in">`std::terminate`</span>, because it is still joinable.</span>
+<span id="cb14-335"><a href="#cb14-335" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>Thread <span class="in">`t2`</span> has no associated callable unit. The invocation of join on a thread without a callable unit leads to the exception <span class="in">`std::system_error`</span>.</span>
+<span id="cb14-336"><a href="#cb14-336" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-337"><a href="#cb14-337" aria-hidden="true" tabindex="-1"></a>Knowing this fixing errors is straightforward:</span>
+<span id="cb14-338"><a href="#cb14-338" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-339"><a href="#cb14-339" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-340"><a href="#cb14-340" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-341"><a href="#cb14-341" aria-hidden="true" tabindex="-1"></a>One benefit of the move support of <span class="in">`std::thread`</span> is that you can build on the <span class="in">`thread_guard`</span> class and have it take ownership of the thread. Anthony Williams in his excellent book *Concurrency in action* has written a <span class="in">`scoped_thread`</span> class. This avoids any unpleasant consequences should the <span class="in">`thread_guard`</span> object outlive the thread it was referencing, and it also means that no one else can join or detach the thread once ownership has been transferred into the object. Because, this would primarily be aimed at ensuring that threads are completed before a scope is exited, it's called <span class="in">`scoped_thread`</span>. Here is the implementation:</span>
+<span id="cb14-342"><a href="#cb14-342" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-343"><a href="#cb14-343" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb14-344"><a href="#cb14-344" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> scoped_thread</span>
+<span id="cb14-345"><a href="#cb14-345" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-346"><a href="#cb14-346" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-347"><a href="#cb14-347" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-348"><a href="#cb14-348" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 
