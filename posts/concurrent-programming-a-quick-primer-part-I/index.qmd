@@ -146,6 +146,8 @@ The code in the listing above uses `try/catch` block to ensure that a thread wit
 A more structured way of doing is to use the standard Resource Aquisition is Initialization(RAII) idiom and provide a wrapper class that does the `join()` in its destructor, as in the following listing:
 
 ```cpp
+//thread_guard.cpp
+
 #include <iostream>
 #include <thread>
 #include <stdexcept>
@@ -240,7 +242,7 @@ int main()
 }
 ```
 
-You can also supply arguments to such a member-function call: the third argument to the `std::thread` constructor will be the first argument to the function, and so forth.
+You can also supply arguments to such a member-function call: the third argument to the `std::thread` constructor will be the first argument to the function, and so forth. `std::thread` is a variadic template.
 
 Another interesting scenario for supplying arguments is where the arguments cannot be copied but can only be moved: the data held within one object is transferred over to another, leaving the original object empty. An example of such a type is `std::unique_ptr<T>`, which provides automatic memory management for dynamically allocated objects. Only one `std::unique_ptr<T>` instance can point to a given object at a time, and when that instance is destroyed, the pointed-to-object is also deleted. The *move constructor* and the *move assignment* operator allow the ownership of an object to be transferred around between `std::unique_ptr<T>` instances. Such a transfer leaves the source object with a `nullptr`. This moving of values allows objects of this type to be accepted as function parameters or returned from functions. When the source object is temporary, the move is automatic, but where the source is a named value, the transfer must be requested directly by invoking `std::move()`. 
 
@@ -336,14 +338,67 @@ What is going wrong? We have two issues:
 
 Knowing this fixing errors is straightforward:
 
+```cpp
+//threadMoveFixed.cpp
 
+#include<iostream>
+#include<thread>
+#include<utility>
+
+int main()
+{
+    std::thread t1([](){std::cout << "\nThread id="<<std::this_thread::get_id();});
+    std::thread t2([](){std::cout << "\nThread id="<<std::this_thread::get_id();});
+    t1.join();
+    t1 = std::move(t2);
+    t1.join();
+
+    std::cout << "\n";
+    std::cout << std::boolalpha << "t2.joinable() = " << t2.joinable();
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/f44Mfdf3r){target="_blank"}
+
+### `scoped_thread` by Anthony Williams
 
 One benefit of the move support of `std::thread` is that you can build on the `thread_guard` class and have it take ownership of the thread. Anthony Williams in his excellent book *Concurrency in action* has written a `scoped_thread` class. This avoids any unpleasant consequences should the `thread_guard` object outlive the thread it was referencing, and it also means that no one else can join or detach the thread once ownership has been transferred into the object. Because, this would primarily be aimed at ensuring that threads are completed before a scope is exited, it's called `scoped_thread`. Here is the implementation:
 
 ```cpp
+//scoped_thread.cpp
+
+#include <thread>
+#include <utility>
+#include <stdexcept>
+
 class scoped_thread
 {
+    private:
+    std::thread t;
+    
+    public:
+    explicit scoped_thread(std::thread t_) : t(std::move(t_)) {
+        if(!t.joinable()) throw std::logic_error("No thread");
+    }
 
+    ~scoped_thread(){
+        t.join();
+    }
+
+    scoped_thread(scoped_thread&) = delete;
+    scoped_thread& operator=(const scoped_thread&) = delete;
+};
+
+int main()
+{
+    {
+        scoped_thread t(std::thread([]{for(int i{0};i<1000000;++i);}));
+    }
+    return 0;
 }
 ```
 
+[Compiler Explorer](https://godbolt.org/z/Yfsahhddx){target="_blank"}
+
+This example is similar to `thread_guard.cpp`, but the new thread is passed into the `scoped_thread` rather than having to create a separate named variable for it. When the main thread reaches its end, the `scoped_thread` object is destroyed and then joins the thread supplied to the constructor. Whereas with the `thread_guard` class, the destructor had to check that the thread was still joinable, you can do that in the constructor and throw an exception if it's not.
