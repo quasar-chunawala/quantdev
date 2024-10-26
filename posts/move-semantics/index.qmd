@@ -16,62 +16,228 @@ format:
 
 ## Motivation for Move Semantics
 
-To understand the basic principles of move semantics, let's look at the execution of a small piece of code, first without move semantics (compiled with an old C++ compiler that only supports C++ 03) and then with move semantics (compiled with a modern C++ compiler) that supports C++11 or later.
+To understand the basic principles of move semantics, let's look at the execution of a small piece of code. I've written a toy `Vector` class. 
 
 ### Before move semantics
 
 Assume that we have the following program:
 
 ```cpp
-#include <vector>
-#include <string>
+#include <iostream>
+#include <stdexcept>
+#include <initializer_list>
 
-std::vector<std::string> createAndInsert()
+#define assertm(exp, msg) assert(((void)msg, exp))
+
+template <typename T>
+class Vector {
+private:
+    int capacity_;
+    int size_;
+    T* ptr_;
+
+public:
+    Vector<T>() :capacity_{ 0 }, size_{ 0 }, ptr_{ nullptr } {}
+    Vector<T>(int size) : capacity_{ size }, ptr_{ new T[size] }, size_{ size } {}
+    Vector<T>(int size, T data) : Vector<T>(size) {
+        for (int i{ 0 }; i < size; ++i)
+            ptr_[i] = data;
+    }
+
+    Vector<T>(std::initializer_list<T> list) {
+        clear();
+        for (const T& elem : list)
+            push_back(elem);
+    }
+
+    //Destructor
+    ~Vector<T>()
+    {
+        clear();
+    }
+
+    //Copy constructor
+    Vector<T>(const Vector<T>& v)
+    {
+        if (this == &v)
+            return;
+
+        capacity_ = v.capacity_;
+        size_ = v.size_;
+        ptr_ = new T[v.size_];
+
+        for (int i{ 0 }; i < v.size_; ++i)
+            ptr_[i] = v.ptr_[i];
+    }
+
+    //Copy assignment operator
+    Vector<T>& operator=(const Vector<T>& v)
+    {
+        if (ptr_ != nullptr)
+            delete[] ptr_;
+
+        capacity_ = v.capacity_;
+        size_ = v.size_;
+        ptr_ = new T[v.size_];
+
+        for (int i{ 0 }; i < v.size_; ++i)
+            ptr_[i] = v.ptr_[i];
+
+        return *this;
+    }
+
+    T operator[](int i)
+    {
+        if (i < size_)
+            return ptr_[i];
+        else
+            throw std::out_of_range("Index out of bounds.");
+    }
+
+    T operator[](int i) const
+    {
+        if (i < size_)
+            return ptr_[i];
+        else
+            throw std::out_of_range("Index out of bounds.");
+    }
+
+    void reserve(int size)
+    {
+        if (ptr_ == nullptr)
+        {
+            size_ = 0;
+            capacity_ = 0;
+        }
+
+        T* bufferNew = new T[size];
+        unsigned int l_size = std::min(capacity_, size);
+        for (int i{ 0 }; i < l_size; ++i)
+        {
+            bufferNew[i] = ptr_[i];
+        }
+
+        if (ptr_ != nullptr)
+            delete[] ptr_;
+
+        ptr_ = bufferNew;
+        capacity_ = size;
+    }
+
+    void clear()
+    {
+        if (ptr_ != nullptr)
+            delete[] ptr_;
+        ptr_ = nullptr;
+        size_ = 0;
+        capacity_ = 0;
+    }
+
+    int size() const
+    {
+        return size_;
+    }
+
+    int capacity()
+    {
+        return capacity_;
+    }
+
+    void push_back(const T& elem)
+    {
+        if (size_ >= capacity_)
+            reserve(capacity_ + 5);
+
+        ptr_[size_++] = elem;
+    }
+
+    void pop_back()
+    {
+        --size_;
+    }
+
+    T front()
+    {
+        if (size_ > 0)
+            return ptr_[0];
+        else
+            throw std::out_of_range("Index out of bounds.");
+    }
+
+    T back()
+    {
+        if (size_ > 0)
+            return ptr_[size_ - 1];
+        else
+            throw std::out_of_range("Index out of bounds.");
+    }
+};
+
+template <typename T>
+Vector<T> operator+(const Vector<T>& v1, const Vector<T>& v2)
 {
-    std::vector<std::string> coll;      //create a vector of strings
-    coll.reserve(3);                    //reserve memory for 3 elements
-    std::string s {"data"};             //create string object
-    coll.push_back(s);                  //insert string object
-    coll.push_back(s+s);                //insert temporary string
-    coll.push_back(s);                  //insert string
-    return coll;                        //return vector of strings
+    if (v1.size() != v2.size())
+        throw std::logic_error("Vector lengths must be equal.");
+    Vector<T> result;
+    for (int i{ 0 }; i < v1.size(); ++i)
+        result.push_back(v1[i] + v2[i]);
+
+    return result;
 }
 
 int main()
 {
-    std::vector<std::string> v;         //create empty vector of strings
-    v = createAndInsert();              //assign returned vector of strings
+    Vector<Vector<double>> pts;
+    pts.reserve(3);
+    Vector<double> x{1.0, 1.0};
+    std::cout << "\nCheckpoint #1";
+    std::cout << "\npts->ptr_ = "<<pts.getRawPointer();
+    std::cout << "\nx->ptr_ = "<<x.getRawPointer();
+    pts.push_back(x);
+    pts.push_back(x + x);
+    pts.push_back(x);
     return 0;
 }
 ```
 
-Let us look at the individual steps of the program (inspecting both stack and the heap) when we compile this program with a C++ compiler that does **not** support move semantics.
+[Compiler Explorer](https://godbolt.org/z/b48xxeEKM){target="_blank"}
 
-First in `main`, we create the empty vector `v`:
+Let us look at the individual steps of the program (inspecting both stack and the heap) when we compile this program with a C++ compiler.
+
+First in `main`, we create the empty vector `pts` which will be used to store points in the euclidean space $\mathbf{R}^2$:
 
 ```
-std::vector<std::string> v;
+Vector<Vector<double>> pts;
 ```
 
-which is placed on the stack as an object that has 0 as the number of elements and no memory allocated for elements.
+which is placed on the stack as an object that has `size_ = 0`, `capacity_ = 0` and no memory allocated for elements.
 
 Then, we call 
 
 ```
-v = createAndInsert();
+pts.reserve(3);
 ```
 
-where we create another empty vector `coll` on the stack and reserve memory for three elements on the heap:
+This allocates memory for `3` elements on the heap. The member `pts_->capacity_` equals `3`, `pts->size_` equals `0` and `pts_->ptr_` contains the address to heap block. The allocated memory is not initialized, because the number of elements is still `0`.
+
+Then, we create a $2$-tuple to hold the cartesian coordinates of a point $(1.0,1.0)$. We create a `Vector<double>` initialized to `{1.0,1.0}`. Essentially, we create an object `x` on the stack with its members `x->size_ = 2`, `x->capacity_ = 5` and a pointer `x->ptr_` containing the address of newly allocated memory on the heap for `5` elements. Further, `ptr_[0]=1.0`, `ptr_[1]=1.0`. 
 
 ```
-std::vector<std::string> coll;
-coll.reserve(3);
+Vector<double> x{1.0, 1.0};
 ```
 
-The allocated memory is not initialized because the number of elements is still 0. Then, we create a string initialized with `"data"`:
+After this statement, the program has the following state: we have two objects on the stack : `pts` and `x`. Both of them have memory allocated on the heap. 
+
+![Checkpoint #1](move_semantics_01.png)
+
+The next step is the command to insert `x` into the `pts` vector. 
 
 ```
-std::string s = "data";
+pts.push_back(x);
 ```
 
-A string is something like a vector with `char` elements. Essentially, we create an object on the stack  
+My toy `Vector` class is said to have value semantics, which means it creates copies of the values passed to it. As a result, we get a first element in the vector, which is a full(deep) copy of the passed value/object `x`:
+
+![Checkpoint #2](move_semantics_02.png)
+
+The next step is the command to insert the string into the vector `coll`
