@@ -16,13 +16,14 @@ format:
 
 ## Motivation for Move Semantics
 
-To understand the basic principles of move semantics, let's look at the execution of a small piece of code. I've written a toy `Vector` class. I have also overloaded `operator+()` to support element-wise addition of two vectors. 
+To understand the basic principles of move semantics, let's look at the execution of a small piece of code. I've written a toy `Vector` class. I choose the manage the memory myself, so I will follow the [rule of three](https://en.wikipedia.org/wiki/Rule_of_three_%28C++_programming%29). I will supply a copy-constructor, copy-assignment operator and a destructor. I have also overloaded `operator+()` to support element-wise addition of two vectors. 
 
-### Before move semantics
+### Value Semantics
 
 Assume that we have the following program:
 
 ```cpp
+//basics/copy_semantics.cpp
 #include <iostream>
 #include <stdexcept>
 #include <initializer_list>
@@ -36,27 +37,27 @@ private:
     T* ptr_;
 
 public:
-    Vector<T>() :capacity_{ 0 }, size_{ 0 }, ptr_{ nullptr } {}
-    Vector<T>(int size) : capacity_{ size }, ptr_{ new T[size] }, size_{ size } {}
-    Vector<T>(int size, T data) : Vector<T>(size) {
+    Vector() :capacity_{ 0 }, size_{ 0 }, ptr_{ nullptr } {}
+    Vector(int size) : capacity_{ size }, ptr_{ new T[size] }, size_{ size } {}
+    Vector(int size, T data) : Vector(size) {
         for (int i{ 0 }; i < size; ++i)
             ptr_[i] = data;
     }
 
-    Vector<T>(std::initializer_list<T> list) {
+    Vector(std::initializer_list<T> list) {
         clear();
         for (const T& elem : list)
             push_back(elem);
     }
 
     //Destructor
-    ~Vector<T>()
+    ~Vector()
     {
         clear();
     }
 
     //Copy constructor
-    Vector<T>(const Vector<T>& v)
+    Vector(const Vector& v)
     {
         if (this == &v)
             return;
@@ -88,7 +89,7 @@ public:
         return *this;
     }
 
-    T operator[](int i)
+    T& operator[](int i)
     {
         if (i >= 0 && i < size_)
             return ptr_[i];
@@ -96,7 +97,7 @@ public:
             throw std::out_of_range("Index out of bounds.");
     }
 
-    T operator[](int i) const
+    T& operator[](int i) const
     {
         if (i >= 0 && i < size_)
             return ptr_[i];
@@ -150,7 +151,7 @@ public:
     void push_back(const T& elem)
     {
         if (size_ >= capacity_) {
-            reserve(capacity_ == 0 ? 1 : capacity_ * 2); // Double the capacity
+            reserve(capacity_ + 5); // Double the capacity
         }
 
         ptr_[size_++] = elem;
@@ -186,7 +187,6 @@ public:
 template <typename T>
 Vector<T> operator+(const Vector<T>& v1, const Vector<T>& v2)
 {
-    std::cout << "\nInside operator+";
     if (v1.size() != v2.size())
         throw std::logic_error("Vector lengths must be equal.");
     Vector<T> result;
@@ -222,7 +222,7 @@ int main()
 }
 ```
 
-[Compiler Explorer](https://godbolt.org/z/M3d6K8nac){target="_blank"}
+[Compiler Explorer](https://godbolt.org/z/TTfKs4seP){target="_blank"}
 
 Let us look at the individual steps of the program (inspecting both stack and the heap) when we compile this program with a C++ compiler.
 
@@ -309,3 +309,64 @@ return pts;
 Here, the behaviour of the program is a bit more complicated. We return by value (the return type is not a reference), which should be a copy of the value in the `return` statement. Creating a copy of `pts` means that we have create a deep copy of the whole vector with all of its elements. Thus, we have to allocate heap memory for the array of elements in the `pts` and heap memory for the value of each 2-tuple. Here, we would have to allocate memory 4 times.
 
 However, since at the same time `pts` is destroyed because we leave the scope where it is declared, the compiler is allowed to perform *named return value optimization (NRVO)*. This means that the compiler can generate code so that `pts` is used as the return value.  
+
+Let us assume that we have the named return value optimization. In that case, at the end of the `return` statement, `pts` simply becomes the return value and the destructor of `x` is called, which frees the memory allocated when it was declared.
+
+![Return statement](move_semantics_06.png)
+
+Finally, we come to the assignment of the return value to `result`:
+
+```
+result = createAndInsert()
+```
+
+Here, we really get behavior that can be improved: the usual assignment operator has the goal of giving `result` the same value as the source value that is assigned. In general, any source(assigned) value should not be modified and should independent from the object that the value was assigned to. So, the assignment operator will create a deep-copy of the whole return value:
+
+![Return statement](move_semantics_07.png)
+
+However, right after that we no longer need the temporary return value and we destroy it:
+
+Again, we create a copy of a temporary object and destroy the source of the copy immediately afterwards, which means that we again unnecessarily allocate and free memory. This time it applies to four allocations
+
+For the state of the program after this assignment in `main()`, we allocated memory numerous times and released it. Unnecessary memory allocations were caused by:
+
+- Inserting a temporary object into `pts`.
+- Inserting an object into `pts` where we no longer need the value.
+- Assigning a temporary vector with all its elements.
+
+We can more or less avoid these performance pennalties. 
+
+## Copy and swap idiom
+
+Any class which manages resources (a wrapper like a *smart pointer*) needs to implement [The Big Three](https://stackoverflow.com/questions/4172722/what-is-the-rule-of-three). While the goals of the copy constructor and destructor are straightforward, the copy-assignment operator is arguably the most nuanced and difficult. What pitfalls need to be avoided?
+
+The *copy-and-swap* idiom is the solution, and elegantly assists the assignment operator in achieving two things: avoiding code duplication and providing a strong exception guarantee.
+
+Conceptually, it works by using the copy-constructor's functionality to create a local copy of the data, then takes the copied data with a `swap()` function swapping the old data with the new data. 
+
+In order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a `swap` function.
+
+A swap function is a *non-throwing* function
+
+## Value Categories
+
+In C++, every expression is either an `lvalue` or an `rvalue`. Consider an object that owns some resources(file-descriptors, sockets, memory buffer).
+
+- An `lvalue` denotes an object whose resources cannot be reused. The object is an `lvalue`, if you can't take the guts(resources) out of this object and donate it to someone else. `lvalue`s include expressions that designate objects by their name. For example, in the expression `double y = f(x)`, `y` is an `lvalue`. Moreover, `lvalue`s have persistent storage and an identifiable memory address. For instance, if I declare `std::vector<double> v{1.0,2.0,3.0,4.0,5.0};`, then `v[0]` is an `lvalue`.
+
+- An `rvalue` denotes an object whose resources can be reused. The object is an `rvalue`, if you can take the guts(resources) out of it and donate it to another object. `rvalue`s typically include temporary objects as they can't manipulated at the place they are created and are likely to be destroyed soon. For instance, if declare `int x = 5;`, `5` is an `rvalue`. Moreover, in the statement `double y = f(x);`, the expression `f(x)` is an `rvalue`. 
+
+## Writing a move constructor
+
+Apart from the copy-constructor, you can provide a move constructor for your class. The purpose of the move-constructor is to steal as many resources as it can from the original object, as fast as possible, because the original is going to be destroyed (or sometimes assigned to) in a moment anyway. Note that, stealing has certain constraints. While we can steal the resources, we must leave the object in a valid (but unspecified state), such that it can correctly (without leaking resources or triggering undefined behavior) be destroyed or assigned to. How is such stealing implemented?
+
+```cpp
+
+void swap(Vector&& other)
+{
+    std::swap(size_, other.size_);
+    std::swap(capacity_,other.capacity_);
+    std::swap(ptr_, other.ptr_);
+}
+```
+
