@@ -27,7 +27,6 @@ Assume that we have the following program:
 #include <stdexcept>
 #include <initializer_list>
 
-#define assertm(exp, msg) assert(((void)msg, exp))
 
 template <typename T>
 class Vector {
@@ -73,22 +72,25 @@ public:
     //Copy assignment operator
     Vector<T>& operator=(const Vector<T>& v)
     {
-        if (ptr_ != nullptr)
+        if (this != &v)
+        {
             delete[] ptr_;
+            ptr_ = nullptr;
 
-        capacity_ = v.capacity_;
-        size_ = v.size_;
-        ptr_ = new T[v.size_];
+            capacity_ = v.capacity_;
+            size_ = v.size_;
+            ptr_ = new T[capacity_];
 
-        for (int i{ 0 }; i < v.size_; ++i)
-            ptr_[i] = v.ptr_[i];
+            for (int i{ 0 }; i < v.size_; ++i)
+                ptr_[i] = v.ptr_[i];
+        }
 
         return *this;
     }
 
     T operator[](int i)
     {
-        if (i < size_)
+        if (i >= 0 && i < size_)
             return ptr_[i];
         else
             throw std::out_of_range("Index out of bounds.");
@@ -96,7 +98,7 @@ public:
 
     T operator[](int i) const
     {
-        if (i < size_)
+        if (i >= 0 && i < size_)
             return ptr_[i];
         else
             throw std::out_of_range("Index out of bounds.");
@@ -104,6 +106,8 @@ public:
 
     void reserve(int size)
     {
+        if (size_ < capacity_) return;
+
         if (ptr_ == nullptr)
         {
             size_ = 0;
@@ -145,8 +149,9 @@ public:
 
     void push_back(const T& elem)
     {
-        if (size_ >= capacity_)
-            reserve(capacity_ + 5);
+        if (size_ >= capacity_) {
+            reserve(capacity_ == 0 ? 1 : capacity_ * 2); // Double the capacity
+        }
 
         ptr_[size_++] = elem;
     }
@@ -171,11 +176,17 @@ public:
         else
             throw std::out_of_range("Index out of bounds.");
     }
+
+    T* getRawPointer()
+    {
+        return ptr_;
+    }
 };
 
 template <typename T>
 Vector<T> operator+(const Vector<T>& v1, const Vector<T>& v2)
 {
+    std::cout << "\nInside operator+";
     if (v1.size() != v2.size())
         throw std::logic_error("Vector lengths must be equal.");
     Vector<T> result;
@@ -185,22 +196,33 @@ Vector<T> operator+(const Vector<T>& v1, const Vector<T>& v2)
     return result;
 }
 
-int main()
+Vector<Vector<double>> createAndInsert()
 {
     Vector<Vector<double>> pts;
     pts.reserve(3);
-    Vector<double> x{1.0, 1.0};
+    Vector<double> x{ 1.0, 1.0 };
     std::cout << "\nCheckpoint #1";
     std::cout << "\npts->ptr_ = "<<pts.getRawPointer();
     std::cout << "\nx->ptr_ = "<<x.getRawPointer();
     pts.push_back(x);
+    std::cout << "\nCheckpoint #2";
+    std::cout << "\npts[0]->ptr_ = " << pts[0].getRawPointer();
     pts.push_back(x + x);
+    std::cout << "\npts[1]->ptr_ = " << pts[1].getRawPointer();
     pts.push_back(x);
+    std::cout << "\nCheckpoint #3";
+    std::cout << "\npts[2]->ptr_ = " << pts[2].getRawPointer();
+    return pts;
+}
+
+int main()
+{
+    Vector<Vector<double>> result = createAndInsert();
     return 0;
 }
 ```
 
-[Compiler Explorer](https://godbolt.org/z/b48xxeEKM){target="_blank"}
+[Compiler Explorer](https://godbolt.org/z/M3d6K8nac){target="_blank"}
 
 Let us look at the individual steps of the program (inspecting both stack and the heap) when we compile this program with a C++ compiler.
 
@@ -228,7 +250,7 @@ Vector<double> x{1.0, 1.0};
 
 After this statement, the program has the following state: we have two objects on the stack : `pts` and `x`. Both of them have memory allocated on the heap. 
 
-![Checkpoint #1](move_semantics_01.png)
+![Checkpoint #1](move_semantics_00.png)
 
 The next step is the command to insert `x` into the `pts` vector. 
 
@@ -238,7 +260,7 @@ pts.push_back(x);
 
 My toy `Vector` class is said to have value semantics, which means it creates copies of the values passed to it. As a result, we get a first element in the vector, which is a full(deep) copy of the passed value/object `x`:
 
-![Checkpoint #2](move_semantics_02.png)
+![Checkpoint #2](move_semantics_01.png)
 
 The current state is that we have a vector `pts` and two copies of `x={1.0,1.0}`, one of which is the first element in `pts`. 
 
@@ -250,4 +272,40 @@ pts.push_back(x + x);
 
 This statement is performed in three steps:
 
+*Step 1*. We create a temporary `Vector<double>` object `x + x`. 
 
+![Step #1](move_semantics_02.png)
+
+*Step 2*.  `x+x` is a temporary.  The `Vector<T>::push_back(const T&)` function accepts a reference-to-`const` as an argument. Since `x+x` is a temporary, it cannot be modified and binds to a reference-to-`const`. Moreover, being a temporary object, it is likely to die soon. Referencing it extends the lifetime of the temporary x + x={2.0,2.0}. 
+
+Now, the statement `pts_[size++] = elem` will invoke the copy-assignment operator on the yet uninitialized second element  `pts[1]` which is of type `Vector<double>`. This will force a full (deep) copy of `x + x={2.0,2.0}`. At this time, two copies of `{2.0,2.0}`  exist on the heap. One of these is assigned to pts[1]. 
+
+![Step #2](move_semantics_03.png)
+
+*Step 3*. When `push_back(const T&)` returns, the temporary `x + x` will die and its destructor is called and the memory allocated on the heap is freed.
+
+Our code is clearly not performing well: we create a copy of the temporary `x + x` and destroy the source of the copy immediately afterwards, which means we unnecessarily allocate and free memory that we could have just moved from source to the copy.
+
+![Step #3](move_semantics_04.png)
+
+With the next statement, again we insert `x` into `pts`:
+
+```
+pts.push_back(x)
+```
+
+Again, `pts` copies `x`.
+
+![Checkpoint #3](move_semantics_05.png)
+
+This is also something to improve. Because the value of `x` is no longer needed, some optimization could use the memory of `x` as the memory for the new element instead. 
+
+At the end of `createAndInsert()` we come to the return statement:
+
+```
+return pts;
+```
+
+Here, the behaviour of the program is a bit more complicated. We return by value (the return type is not a reference), which should be a copy of the value in the `return` statement. Creating a copy of `pts` means that we have create a deep copy of the whole vector with all of its elements. Thus, we have to allocate heap memory for the array of elements in the `pts` and heap memory for the value of each 2-tuple. Here, we would have to allocate memory 4 times.
+
+However, since at the same time `pts` is destroyed because we leave the scope where it is declared, the compiler is allowed to perform *named return value optimization (NRVO)*. This means that the compiler can generate code so that `pts` is used as the return value.  
