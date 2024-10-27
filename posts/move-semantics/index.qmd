@@ -340,13 +340,78 @@ We can more or less avoid these performance pennalties.
 
 Any class which manages resources (a wrapper like a *smart pointer*) needs to implement [The Big Three](https://stackoverflow.com/questions/4172722/what-is-the-rule-of-three). While the goals of the copy constructor and destructor are straightforward, the copy-assignment operator is arguably the most nuanced and difficult. What pitfalls need to be avoided?
 
+Consider our naive implementation of the assignment operator:
+
+```cpp
+//Copy assignment operator
+Vector<T>& operator=(const Vector<T>& v)
+{
+    if (this != &v)     //(1)
+    {
+        delete[] ptr_;  //(2)
+        ptr_ = nullptr;
+
+        capacity_ = v.capacity_;    //(3)
+        size_ = v.size_;            //(3)
+        ptr_ = new T[capacity_];    //(3)
+
+        for (int i{ 0 }; i < v.size_; ++i)
+            ptr_[i] = v.ptr_[i];
+    }
+
+    return *this;
+}
+```
+
+While this manages the heap memory without leaks, it suffers from three problems, marked sequentially in the code as `(n)`.
+
+1. The first is the self-assignment test. This check is an easy way to prevent us from running needless code on self-assignment. But, in all other cases, it merely serves to slow down the program and acts as noise in the code; self-assignment rarely occurs, so most of the time this check is a waste.
+2. The seond is, it only provides a basic exception guarantee. If `new T[capacity_]` fails, `*this` will have been modified. Namely, the `size_` and `capacity_` are wrong and the old data referenced by `ptr_` is gone! For a strong exception guarantee, we need something akin to:
+
+```cpp
+//Copy assignment operator
+Vector<T>& operator=(const Vector<T>& v)
+{
+    if (this != &v)     //(1)
+    {
+        // get the new data ready, before we replace the old data
+        int newCapacity = v.capacity_;
+        int newSize = v.size_;
+        T* newPtr_ = new T[newCapacity]();
+
+        for (int i{ 0 }; i < v.size_; ++i)
+            newPtr_[i] = v.ptr_[i];
+
+        //replace the old data (all are non-throwing)
+        delete[] ptr_;
+        size_ = newSize;
+        capacity_ = newCapacity_;
+        ptr_ = newPtr;
+    }
+
+    return *this;
+}
+```
+
+3. Our code has expanded! This leads us to the third problem: code duplication. 
+
+In our case, the core of it is only two lines (the allocation and the copy), but with more complex resources, this code bloat can be quite a hassle. What if my class manages more than one resource?
+
 The *copy-and-swap* idiom is the solution, and elegantly assists the assignment operator in achieving two things: avoiding code duplication and providing a strong exception guarantee.
+
+While, the *rule-of-three* successfully entails our copy-constructor, assignment and destructor, it should really be called *The Big Three and A Half*: any time your class manages a resource, it also makes sense to provide a `swap` function. 
+
+We need to add `swap` functionality to our class, and we do that as follows:
+
+
 
 Conceptually, it works by using the copy-constructor's functionality to create a local copy of the data, then takes the copied data with a `swap()` function swapping the old data with the new data. 
 
 In order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a `swap` function.
 
-A swap function is a *non-throwing* function
+A swap function is a *non-throwing* function that swaps two objects of a class member-for-member. 
+
+
 
 ## Value Categories
 
