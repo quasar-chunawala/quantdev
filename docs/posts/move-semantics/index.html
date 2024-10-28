@@ -227,7 +227,10 @@ window.Quarto = {
   <ul class="collapse">
   <li><a href="#value-semantics" id="toc-value-semantics" class="nav-link" data-scroll-target="#value-semantics">Value Semantics</a></li>
   </ul></li>
-  <li><a href="#copy-and-swap-idiom" id="toc-copy-and-swap-idiom" class="nav-link" data-scroll-target="#copy-and-swap-idiom">Copy and swap idiom</a></li>
+  <li><a href="#copy-and-swap-idiom" id="toc-copy-and-swap-idiom" class="nav-link" data-scroll-target="#copy-and-swap-idiom">Copy and swap idiom</a>
+  <ul class="collapse">
+  <li><a href="#why-does-it-work" id="toc-why-does-it-work" class="nav-link" data-scroll-target="#why-does-it-work">Why does it work?</a></li>
+  </ul></li>
   <li><a href="#value-categories" id="toc-value-categories" class="nav-link" data-scroll-target="#value-categories">Value Categories</a></li>
   <li><a href="#writing-a-move-constructor" id="toc-writing-a-move-constructor" class="nav-link" data-scroll-target="#writing-a-move-constructor">Writing a move constructor</a></li>
   </ul>
@@ -592,10 +595,41 @@ window.Quarto = {
 <p>In our case, the core of it is only two lines (the allocation and the copy), but with more complex resources, this code bloat can be quite a hassle. What if my class manages more than one resource?</p>
 <p>The <em>copy-and-swap</em> idiom is the solution, and elegantly assists the assignment operator in achieving two things: avoiding code duplication and providing a strong exception guarantee.</p>
 <p>While, the <em>rule-of-three</em> successfully entails our copy-constructor, assignment and destructor, it should really be called <em>The Big Three and A Half</em>: any time your class manages a resource, it also makes sense to provide a <code>swap</code> function.</p>
+<p>A swap function is a <em>non-throwing</em> function that swaps two objects of a class member-for-member.</p>
 <p>We need to add <code>swap</code> functionality to our class, and we do that as follows:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> swap<span class="op">(</span>Vector<span class="op">&amp;</span> other<span class="op">)</span> <span class="kw">noexcept</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">size_</span><span class="op">,</span> other<span class="op">.</span><span class="va">size_</span><span class="op">);</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">capacity_</span><span class="op">,</span>other<span class="op">.</span><span class="va">capacity_</span><span class="op">);</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">ptr_</span><span class="op">,</span> other<span class="op">.</span><span class="va">ptr_</span><span class="op">);</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="kw">friend</span> <span class="dt">void</span> swap<span class="op">(</span>Vector<span class="op">&amp;</span> lhs<span class="op">,</span> Vector<span class="op">&amp;</span> rhs<span class="op">)</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">size_</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">size_</span><span class="op">);</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">capacity_</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">capacity_</span><span class="op">);</span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">ptr_</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">ptr_</span><span class="op">);</span></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Now, this is extremely efficient, it merely swaps pointers and sizes rather than allocating and copying entire arrays. We are now ready to implement the copy-and-swap idiom.</p>
+<p>Our assignment operator is:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span>Vector other<span class="op">)</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> other<span class="op">);</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="why-does-it-work" class="level3">
+<h3 class="anchored" data-anchor-id="why-does-it-work">Why does it work?</h3>
+<p>We first notice an important choice : the parameter argument is taken <em>by-value</em>. While one could just as easily do the following(and indeed many naive implementations of the idiom do):</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> Vector<span class="op">&amp;</span> other<span class="op">)</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>    Vector temp <span class="op">{</span>other<span class="op">};</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> temp<span class="op">);</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>We lose an important optimization opportunity. Not only that, but this choice is critical in C++ 11, which is discussed later. (On a general note, a remarkably useful guideline is as follows: if you’re going to make a copy of something in a function, let the compiler do it in the parameter list).</p>
+<p>Either way, this method of obtaining our resource is key to eliminating code duplication: we get to use the code from the copy-constructor to make the copy</p>
 <p>Conceptually, it works by using the copy-constructor’s functionality to create a local copy of the data, then takes the copied data with a <code>swap()</code> function swapping the old data with the new data.</p>
 <p>In order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a <code>swap</code> function.</p>
-<p>A swap function is a <em>non-throwing</em> function that swaps two objects of a class member-for-member.</p>
+</section>
 </section>
 <section id="value-categories" class="level2">
 <h2 class="anchored" data-anchor-id="value-categories">Value Categories</h2>
@@ -608,13 +642,13 @@ window.Quarto = {
 <section id="writing-a-move-constructor" class="level2">
 <h2 class="anchored" data-anchor-id="writing-a-move-constructor">Writing a move constructor</h2>
 <p>Apart from the copy-constructor, you can provide a move constructor for your class. The purpose of the move-constructor is to steal as many resources as it can from the original object, as fast as possible, because the original is going to be destroyed (or sometimes assigned to) in a moment anyway. Note that, stealing has certain constraints. While we can steal the resources, we must leave the object in a valid (but unspecified state), such that it can correctly (without leaking resources or triggering undefined behavior) be destroyed or assigned to. How is such stealing implemented?</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> swap<span class="op">(</span>Vector<span class="op">&amp;&amp;</span> other<span class="op">)</span></span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">size_</span><span class="op">,</span> other<span class="op">.</span><span class="va">size_</span><span class="op">);</span></span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">capacity_</span><span class="op">,</span>other<span class="op">.</span><span class="va">capacity_</span><span class="op">);</span></span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">ptr_</span><span class="op">,</span> other<span class="op">.</span><span class="va">ptr_</span><span class="op">);</span></span>
-<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> swap<span class="op">(</span>Vector<span class="op">&amp;&amp;</span> other<span class="op">)</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">size_</span><span class="op">,</span> other<span class="op">.</span><span class="va">size_</span><span class="op">);</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">capacity_</span><span class="op">,</span>other<span class="op">.</span><span class="va">capacity_</span><span class="op">);</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">ptr_</span><span class="op">,</span> other<span class="op">.</span><span class="va">ptr_</span><span class="op">);</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 <!-- -->
@@ -1093,442 +1127,486 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
   }
 });
 </script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
-<div class="sourceCode" id="cb13" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Move Semantics"</span></span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
-<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="an">date:</span><span class="co"> "2024-10-26"</span></span>
-<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
-<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
-<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="an">toc:</span><span class="co"> true</span></span>
-<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
-<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
-<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a><span class="co">    html:</span></span>
-<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a><span class="co">        code-tools: true</span></span>
-<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a><span class="co">        code-block-border-left: true</span></span>
-<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a><span class="co">        code-annotations: below</span></span>
-<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a><span class="co">        highlight-style: pygments</span></span>
-<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a><span class="fu">## Motivation for Move Semantics</span></span>
-<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>To understand the basic principles of move semantics, let's look at the execution of a small piece of code. I've written a toy <span class="in">`Vector`</span> class. I choose the manage the memory myself, so I will follow the <span class="co">[</span><span class="ot">rule of three</span><span class="co">](https://en.wikipedia.org/wiki/Rule_of_three_%28C++_programming%29)</span>. I will supply a copy-constructor, copy-assignment operator and a destructor. I have also overloaded <span class="in">`operator+()`</span> to support element-wise addition of two vectors. </span>
-<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a><span class="fu">### Value Semantics</span></span>
-<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>Assume that we have the following program:</span>
-<span id="cb13-24"><a href="#cb13-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-25"><a href="#cb13-25" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb13-26"><a href="#cb13-26" aria-hidden="true" tabindex="-1"></a><span class="co">//basics/copy_semantics.cpp</span></span>
-<span id="cb13-27"><a href="#cb13-27" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb13-28"><a href="#cb13-28" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stdexcept&gt;</span></span>
-<span id="cb13-29"><a href="#cb13-29" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;initializer_list&gt;</span></span>
-<span id="cb13-30"><a href="#cb13-30" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-31"><a href="#cb13-31" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-32"><a href="#cb13-32" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb13-33"><a href="#cb13-33" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Vector <span class="op">{</span></span>
-<span id="cb13-34"><a href="#cb13-34" aria-hidden="true" tabindex="-1"></a><span class="kw">private</span><span class="op">:</span></span>
-<span id="cb13-35"><a href="#cb13-35" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> <span class="va">capacity_</span><span class="op">;</span></span>
-<span id="cb13-36"><a href="#cb13-36" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> <span class="va">size_</span><span class="op">;</span></span>
-<span id="cb13-37"><a href="#cb13-37" aria-hidden="true" tabindex="-1"></a>    T<span class="op">*</span> <span class="va">ptr_</span><span class="op">;</span></span>
-<span id="cb13-38"><a href="#cb13-38" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-39"><a href="#cb13-39" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span><span class="op">:</span></span>
-<span id="cb13-40"><a href="#cb13-40" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">()</span> <span class="op">:</span><span class="va">capacity_</span><span class="op">{</span> <span class="dv">0</span> <span class="op">},</span> <span class="va">size_</span><span class="op">{</span> <span class="dv">0</span> <span class="op">},</span> <span class="va">ptr_</span><span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span> <span class="op">{}</span></span>
-<span id="cb13-41"><a href="#cb13-41" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">(</span><span class="dt">int</span> size<span class="op">)</span> <span class="op">:</span> <span class="va">capacity_</span><span class="op">{</span> size <span class="op">},</span> <span class="va">ptr_</span><span class="op">{</span> <span class="kw">new</span> T<span class="op">[</span>size<span class="op">]</span> <span class="op">},</span> <span class="va">size_</span><span class="op">{</span> size <span class="op">}</span> <span class="op">{}</span></span>
-<span id="cb13-42"><a href="#cb13-42" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">(</span><span class="dt">int</span> size<span class="op">,</span> T data<span class="op">)</span> <span class="op">:</span> Vector<span class="op">(</span>size<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb13-43"><a href="#cb13-43" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> size<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
-<span id="cb13-44"><a href="#cb13-44" aria-hidden="true" tabindex="-1"></a>            <span class="va">ptr_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> data<span class="op">;</span></span>
-<span id="cb13-45"><a href="#cb13-45" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-46"><a href="#cb13-46" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-47"><a href="#cb13-47" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">(</span><span class="bu">std::</span>initializer_list<span class="op">&lt;</span>T<span class="op">&gt;</span> list<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb13-48"><a href="#cb13-48" aria-hidden="true" tabindex="-1"></a>        clear<span class="op">();</span></span>
-<span id="cb13-49"><a href="#cb13-49" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="at">const</span> T<span class="op">&amp;</span> elem <span class="op">:</span> list<span class="op">)</span></span>
-<span id="cb13-50"><a href="#cb13-50" aria-hidden="true" tabindex="-1"></a>            push_back<span class="op">(</span>elem<span class="op">);</span></span>
-<span id="cb13-51"><a href="#cb13-51" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-52"><a href="#cb13-52" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-53"><a href="#cb13-53" aria-hidden="true" tabindex="-1"></a>    <span class="co">//Destructor</span></span>
-<span id="cb13-54"><a href="#cb13-54" aria-hidden="true" tabindex="-1"></a>    <span class="op">~</span>Vector<span class="op">()</span></span>
-<span id="cb13-55"><a href="#cb13-55" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-56"><a href="#cb13-56" aria-hidden="true" tabindex="-1"></a>        clear<span class="op">();</span></span>
-<span id="cb13-57"><a href="#cb13-57" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-58"><a href="#cb13-58" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-59"><a href="#cb13-59" aria-hidden="true" tabindex="-1"></a>    <span class="co">//Copy constructor</span></span>
-<span id="cb13-60"><a href="#cb13-60" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">(</span><span class="at">const</span> Vector<span class="op">&amp;</span> v<span class="op">)</span></span>
-<span id="cb13-61"><a href="#cb13-61" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-62"><a href="#cb13-62" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="kw">this</span> <span class="op">==</span> <span class="op">&amp;</span>v<span class="op">)</span></span>
-<span id="cb13-63"><a href="#cb13-63" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span><span class="op">;</span></span>
-<span id="cb13-64"><a href="#cb13-64" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-65"><a href="#cb13-65" aria-hidden="true" tabindex="-1"></a>        <span class="va">capacity_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">capacity_</span><span class="op">;</span></span>
-<span id="cb13-66"><a href="#cb13-66" aria-hidden="true" tabindex="-1"></a>        <span class="va">size_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span></span>
-<span id="cb13-67"><a href="#cb13-67" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">new</span> T<span class="op">[</span>v<span class="op">.</span><span class="va">size_</span><span class="op">];</span></span>
-<span id="cb13-68"><a href="#cb13-68" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-69"><a href="#cb13-69" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
-<span id="cb13-70"><a href="#cb13-70" aria-hidden="true" tabindex="-1"></a>            <span class="va">ptr_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v<span class="op">.</span><span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
-<span id="cb13-71"><a href="#cb13-71" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-72"><a href="#cb13-72" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-73"><a href="#cb13-73" aria-hidden="true" tabindex="-1"></a>    <span class="co">//Copy assignment operator</span></span>
-<span id="cb13-74"><a href="#cb13-74" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> v<span class="op">)</span></span>
-<span id="cb13-75"><a href="#cb13-75" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-76"><a href="#cb13-76" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="kw">this</span> <span class="op">!=</span> <span class="op">&amp;</span>v<span class="op">)</span></span>
-<span id="cb13-77"><a href="#cb13-77" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
-<span id="cb13-78"><a href="#cb13-78" aria-hidden="true" tabindex="-1"></a>            <span class="kw">delete</span><span class="op">[]</span> <span class="va">ptr_</span><span class="op">;</span></span>
-<span id="cb13-79"><a href="#cb13-79" aria-hidden="true" tabindex="-1"></a>            <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
-<span id="cb13-80"><a href="#cb13-80" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-81"><a href="#cb13-81" aria-hidden="true" tabindex="-1"></a>            <span class="va">capacity_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">capacity_</span><span class="op">;</span></span>
-<span id="cb13-82"><a href="#cb13-82" aria-hidden="true" tabindex="-1"></a>            <span class="va">size_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span></span>
-<span id="cb13-83"><a href="#cb13-83" aria-hidden="true" tabindex="-1"></a>            <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">new</span> T<span class="op">[</span><span class="va">capacity_</span><span class="op">];</span></span>
-<span id="cb13-84"><a href="#cb13-84" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-85"><a href="#cb13-85" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
-<span id="cb13-86"><a href="#cb13-86" aria-hidden="true" tabindex="-1"></a>                <span class="va">ptr_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v<span class="op">.</span><span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
-<span id="cb13-87"><a href="#cb13-87" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb13-88"><a href="#cb13-88" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-89"><a href="#cb13-89" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
-<span id="cb13-90"><a href="#cb13-90" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-91"><a href="#cb13-91" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-92"><a href="#cb13-92" aria-hidden="true" tabindex="-1"></a>    T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span></span>
-<span id="cb13-93"><a href="#cb13-93" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-94"><a href="#cb13-94" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span>i <span class="op">&gt;=</span> <span class="dv">0</span> <span class="op">&amp;&amp;</span> i <span class="op">&lt;</span> <span class="va">size_</span><span class="op">)</span></span>
-<span id="cb13-95"><a href="#cb13-95" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
-<span id="cb13-96"><a href="#cb13-96" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span></span>
-<span id="cb13-97"><a href="#cb13-97" aria-hidden="true" tabindex="-1"></a>            <span class="cf">throw</span> <span class="bu">std::</span>out_of_range<span class="op">(</span><span class="st">"Index out of bounds."</span><span class="op">);</span></span>
-<span id="cb13-98"><a href="#cb13-98" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-99"><a href="#cb13-99" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-100"><a href="#cb13-100" aria-hidden="true" tabindex="-1"></a>    T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span> <span class="at">const</span></span>
-<span id="cb13-101"><a href="#cb13-101" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-102"><a href="#cb13-102" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span>i <span class="op">&gt;=</span> <span class="dv">0</span> <span class="op">&amp;&amp;</span> i <span class="op">&lt;</span> <span class="va">size_</span><span class="op">)</span></span>
-<span id="cb13-103"><a href="#cb13-103" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
-<span id="cb13-104"><a href="#cb13-104" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span></span>
-<span id="cb13-105"><a href="#cb13-105" aria-hidden="true" tabindex="-1"></a>            <span class="cf">throw</span> <span class="bu">std::</span>out_of_range<span class="op">(</span><span class="st">"Index out of bounds."</span><span class="op">);</span></span>
-<span id="cb13-106"><a href="#cb13-106" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-107"><a href="#cb13-107" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-108"><a href="#cb13-108" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> reserve<span class="op">(</span><span class="dt">int</span> size<span class="op">)</span></span>
-<span id="cb13-109"><a href="#cb13-109" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-110"><a href="#cb13-110" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">size_</span> <span class="op">&lt;</span> <span class="va">capacity_</span><span class="op">)</span> <span class="cf">return</span><span class="op">;</span></span>
-<span id="cb13-111"><a href="#cb13-111" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-112"><a href="#cb13-112" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">ptr_</span> <span class="op">==</span> <span class="kw">nullptr</span><span class="op">)</span></span>
-<span id="cb13-113"><a href="#cb13-113" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
-<span id="cb13-114"><a href="#cb13-114" aria-hidden="true" tabindex="-1"></a>            <span class="va">size_</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb13-115"><a href="#cb13-115" aria-hidden="true" tabindex="-1"></a>            <span class="va">capacity_</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb13-116"><a href="#cb13-116" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb13-117"><a href="#cb13-117" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-118"><a href="#cb13-118" aria-hidden="true" tabindex="-1"></a>        T<span class="op">*</span> bufferNew <span class="op">=</span> <span class="kw">new</span> T<span class="op">[</span>size<span class="op">];</span></span>
-<span id="cb13-119"><a href="#cb13-119" aria-hidden="true" tabindex="-1"></a>        <span class="dt">unsigned</span> <span class="dt">int</span> l_size <span class="op">=</span> <span class="bu">std::</span>min<span class="op">(</span><span class="va">capacity_</span><span class="op">,</span> size<span class="op">);</span></span>
-<span id="cb13-120"><a href="#cb13-120" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> l_size<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
-<span id="cb13-121"><a href="#cb13-121" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
-<span id="cb13-122"><a href="#cb13-122" aria-hidden="true" tabindex="-1"></a>            bufferNew<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> <span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
-<span id="cb13-123"><a href="#cb13-123" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb13-124"><a href="#cb13-124" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-125"><a href="#cb13-125" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">ptr_</span> <span class="op">!=</span> <span class="kw">nullptr</span><span class="op">)</span></span>
-<span id="cb13-126"><a href="#cb13-126" aria-hidden="true" tabindex="-1"></a>            <span class="kw">delete</span><span class="op">[]</span> <span class="va">ptr_</span><span class="op">;</span></span>
-<span id="cb13-127"><a href="#cb13-127" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-128"><a href="#cb13-128" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> bufferNew<span class="op">;</span></span>
-<span id="cb13-129"><a href="#cb13-129" aria-hidden="true" tabindex="-1"></a>        <span class="va">capacity_</span> <span class="op">=</span> size<span class="op">;</span></span>
-<span id="cb13-130"><a href="#cb13-130" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-131"><a href="#cb13-131" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-132"><a href="#cb13-132" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> clear<span class="op">()</span></span>
-<span id="cb13-133"><a href="#cb13-133" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-134"><a href="#cb13-134" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">ptr_</span> <span class="op">!=</span> <span class="kw">nullptr</span><span class="op">)</span></span>
-<span id="cb13-135"><a href="#cb13-135" aria-hidden="true" tabindex="-1"></a>            <span class="kw">delete</span><span class="op">[]</span> <span class="va">ptr_</span><span class="op">;</span></span>
-<span id="cb13-136"><a href="#cb13-136" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
-<span id="cb13-137"><a href="#cb13-137" aria-hidden="true" tabindex="-1"></a>        <span class="va">size_</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb13-138"><a href="#cb13-138" aria-hidden="true" tabindex="-1"></a>        <span class="va">capacity_</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb13-139"><a href="#cb13-139" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-140"><a href="#cb13-140" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-141"><a href="#cb13-141" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span></span>
-<span id="cb13-142"><a href="#cb13-142" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-143"><a href="#cb13-143" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">size_</span><span class="op">;</span></span>
-<span id="cb13-144"><a href="#cb13-144" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-145"><a href="#cb13-145" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-146"><a href="#cb13-146" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> capacity<span class="op">()</span></span>
-<span id="cb13-147"><a href="#cb13-147" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-148"><a href="#cb13-148" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">capacity_</span><span class="op">;</span></span>
-<span id="cb13-149"><a href="#cb13-149" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-150"><a href="#cb13-150" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-151"><a href="#cb13-151" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> push_back<span class="op">(</span><span class="at">const</span> T<span class="op">&amp;</span> elem<span class="op">)</span></span>
-<span id="cb13-152"><a href="#cb13-152" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-153"><a href="#cb13-153" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">size_</span> <span class="op">&gt;=</span> <span class="va">capacity_</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb13-154"><a href="#cb13-154" aria-hidden="true" tabindex="-1"></a>            reserve<span class="op">(</span><span class="va">capacity_</span> <span class="op">+</span> <span class="dv">5</span><span class="op">);</span> <span class="co">// Double the capacity</span></span>
-<span id="cb13-155"><a href="#cb13-155" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb13-156"><a href="#cb13-156" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-157"><a href="#cb13-157" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span><span class="op">[</span><span class="va">size_</span><span class="op">++]</span> <span class="op">=</span> elem<span class="op">;</span></span>
-<span id="cb13-158"><a href="#cb13-158" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-159"><a href="#cb13-159" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-160"><a href="#cb13-160" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> pop_back<span class="op">()</span></span>
-<span id="cb13-161"><a href="#cb13-161" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-162"><a href="#cb13-162" aria-hidden="true" tabindex="-1"></a>        <span class="op">--</span><span class="va">size_</span><span class="op">;</span></span>
-<span id="cb13-163"><a href="#cb13-163" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-164"><a href="#cb13-164" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-165"><a href="#cb13-165" aria-hidden="true" tabindex="-1"></a>    T front<span class="op">()</span></span>
-<span id="cb13-166"><a href="#cb13-166" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-167"><a href="#cb13-167" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">size_</span> <span class="op">&gt;</span> <span class="dv">0</span><span class="op">)</span></span>
-<span id="cb13-168"><a href="#cb13-168" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">ptr_</span><span class="op">[</span><span class="dv">0</span><span class="op">];</span></span>
-<span id="cb13-169"><a href="#cb13-169" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span></span>
-<span id="cb13-170"><a href="#cb13-170" aria-hidden="true" tabindex="-1"></a>            <span class="cf">throw</span> <span class="bu">std::</span>out_of_range<span class="op">(</span><span class="st">"Index out of bounds."</span><span class="op">);</span></span>
-<span id="cb13-171"><a href="#cb13-171" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-172"><a href="#cb13-172" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-173"><a href="#cb13-173" aria-hidden="true" tabindex="-1"></a>    T back<span class="op">()</span></span>
-<span id="cb13-174"><a href="#cb13-174" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-175"><a href="#cb13-175" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">size_</span> <span class="op">&gt;</span> <span class="dv">0</span><span class="op">)</span></span>
-<span id="cb13-176"><a href="#cb13-176" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">ptr_</span><span class="op">[</span><span class="va">size_</span> <span class="op">-</span> <span class="dv">1</span><span class="op">];</span></span>
-<span id="cb13-177"><a href="#cb13-177" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span></span>
-<span id="cb13-178"><a href="#cb13-178" aria-hidden="true" tabindex="-1"></a>            <span class="cf">throw</span> <span class="bu">std::</span>out_of_range<span class="op">(</span><span class="st">"Index out of bounds."</span><span class="op">);</span></span>
-<span id="cb13-179"><a href="#cb13-179" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-180"><a href="#cb13-180" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-181"><a href="#cb13-181" aria-hidden="true" tabindex="-1"></a>    T<span class="op">*</span> getRawPointer<span class="op">()</span></span>
-<span id="cb13-182"><a href="#cb13-182" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-183"><a href="#cb13-183" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">ptr_</span><span class="op">;</span></span>
-<span id="cb13-184"><a href="#cb13-184" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-185"><a href="#cb13-185" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb13-186"><a href="#cb13-186" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-187"><a href="#cb13-187" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb13-188"><a href="#cb13-188" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="kw">operator</span><span class="op">+(</span><span class="at">const</span> Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> v1<span class="op">,</span> <span class="at">const</span> Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> v2<span class="op">)</span></span>
-<span id="cb13-189"><a href="#cb13-189" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb13-190"><a href="#cb13-190" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>v1<span class="op">.</span>size<span class="op">()</span> <span class="op">!=</span> v2<span class="op">.</span>size<span class="op">())</span></span>
-<span id="cb13-191"><a href="#cb13-191" aria-hidden="true" tabindex="-1"></a>        <span class="cf">throw</span> <span class="bu">std::</span>logic_error<span class="op">(</span><span class="st">"Vector lengths must be equal."</span><span class="op">);</span></span>
-<span id="cb13-192"><a href="#cb13-192" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">;</span></span>
-<span id="cb13-193"><a href="#cb13-193" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> v1<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span></span>
-<span id="cb13-194"><a href="#cb13-194" aria-hidden="true" tabindex="-1"></a>        result<span class="op">.</span>push_back<span class="op">(</span>v1<span class="op">[</span>i<span class="op">]</span> <span class="op">+</span> v2<span class="op">[</span>i<span class="op">]);</span></span>
-<span id="cb13-195"><a href="#cb13-195" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-196"><a href="#cb13-196" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> result<span class="op">;</span></span>
-<span id="cb13-197"><a href="#cb13-197" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb13-198"><a href="#cb13-198" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-199"><a href="#cb13-199" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&lt;</span>Vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;&gt;</span> createAndInsert<span class="op">()</span></span>
-<span id="cb13-200"><a href="#cb13-200" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb13-201"><a href="#cb13-201" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">&lt;</span>Vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;&gt;</span> pts<span class="op">;</span></span>
-<span id="cb13-202"><a href="#cb13-202" aria-hidden="true" tabindex="-1"></a>    pts<span class="op">.</span>reserve<span class="op">(</span><span class="dv">3</span><span class="op">);</span></span>
-<span id="cb13-203"><a href="#cb13-203" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> x<span class="op">{</span> <span class="fl">1.0</span><span class="op">,</span> <span class="fl">1.0</span> <span class="op">};</span></span>
-<span id="cb13-204"><a href="#cb13-204" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Checkpoint #1"</span><span class="op">;</span></span>
-<span id="cb13-205"><a href="#cb13-205" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">pts-&gt;ptr_ = "</span><span class="op">&lt;&lt;</span>pts<span class="op">.</span>getRawPointer<span class="op">();</span></span>
-<span id="cb13-206"><a href="#cb13-206" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">x-&gt;ptr_ = "</span><span class="op">&lt;&lt;</span>x<span class="op">.</span>getRawPointer<span class="op">();</span></span>
-<span id="cb13-207"><a href="#cb13-207" aria-hidden="true" tabindex="-1"></a>    pts<span class="op">.</span>push_back<span class="op">(</span>x<span class="op">);</span></span>
-<span id="cb13-208"><a href="#cb13-208" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Checkpoint #2"</span><span class="op">;</span></span>
-<span id="cb13-209"><a href="#cb13-209" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">pts[0]-&gt;ptr_ = "</span> <span class="op">&lt;&lt;</span> pts<span class="op">[</span><span class="dv">0</span><span class="op">].</span>getRawPointer<span class="op">();</span></span>
-<span id="cb13-210"><a href="#cb13-210" aria-hidden="true" tabindex="-1"></a>    pts<span class="op">.</span>push_back<span class="op">(</span>x <span class="op">+</span> x<span class="op">);</span></span>
-<span id="cb13-211"><a href="#cb13-211" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">pts[1]-&gt;ptr_ = "</span> <span class="op">&lt;&lt;</span> pts<span class="op">[</span><span class="dv">1</span><span class="op">].</span>getRawPointer<span class="op">();</span></span>
-<span id="cb13-212"><a href="#cb13-212" aria-hidden="true" tabindex="-1"></a>    pts<span class="op">.</span>push_back<span class="op">(</span>x<span class="op">);</span></span>
-<span id="cb13-213"><a href="#cb13-213" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Checkpoint #3"</span><span class="op">;</span></span>
-<span id="cb13-214"><a href="#cb13-214" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">pts[2]-&gt;ptr_ = "</span> <span class="op">&lt;&lt;</span> pts<span class="op">[</span><span class="dv">2</span><span class="op">].</span>getRawPointer<span class="op">();</span></span>
-<span id="cb13-215"><a href="#cb13-215" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> pts<span class="op">;</span></span>
-<span id="cb13-216"><a href="#cb13-216" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb13-217"><a href="#cb13-217" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-218"><a href="#cb13-218" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb13-219"><a href="#cb13-219" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb13-220"><a href="#cb13-220" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">&lt;</span>Vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;&gt;</span> result <span class="op">=</span> createAndInsert<span class="op">();</span></span>
-<span id="cb13-221"><a href="#cb13-221" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb13-222"><a href="#cb13-222" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb13-223"><a href="#cb13-223" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-224"><a href="#cb13-224" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-225"><a href="#cb13-225" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/TTfKs4seP)</span>{target="_blank"}</span>
-<span id="cb13-226"><a href="#cb13-226" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-227"><a href="#cb13-227" aria-hidden="true" tabindex="-1"></a>Let us look at the individual steps of the program (inspecting both stack and the heap) when we compile this program with a C++ compiler.</span>
-<span id="cb13-228"><a href="#cb13-228" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-229"><a href="#cb13-229" aria-hidden="true" tabindex="-1"></a>First in <span class="in">`main`</span>, we create the empty vector <span class="in">`pts`</span> which will be used to store points in the euclidean space $\mathbf{R}^2$:</span>
-<span id="cb13-230"><a href="#cb13-230" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-231"><a href="#cb13-231" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-232"><a href="#cb13-232" aria-hidden="true" tabindex="-1"></a><span class="in">Vector&lt;Vector&lt;double&gt;&gt; pts;</span></span>
-<span id="cb13-233"><a href="#cb13-233" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-234"><a href="#cb13-234" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-235"><a href="#cb13-235" aria-hidden="true" tabindex="-1"></a>which is placed on the stack as an object that has <span class="in">`size_ = 0`</span>, <span class="in">`capacity_ = 0`</span> and no memory allocated for elements.</span>
-<span id="cb13-236"><a href="#cb13-236" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-237"><a href="#cb13-237" aria-hidden="true" tabindex="-1"></a>Then, we call </span>
-<span id="cb13-238"><a href="#cb13-238" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-239"><a href="#cb13-239" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-240"><a href="#cb13-240" aria-hidden="true" tabindex="-1"></a><span class="in">pts.reserve(3);</span></span>
-<span id="cb13-241"><a href="#cb13-241" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-242"><a href="#cb13-242" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-243"><a href="#cb13-243" aria-hidden="true" tabindex="-1"></a>This allocates memory for <span class="in">`3`</span> elements on the heap. The member <span class="in">`pts_-&gt;capacity_`</span> equals <span class="in">`3`</span>, <span class="in">`pts-&gt;size_`</span> equals <span class="in">`0`</span> and <span class="in">`pts_-&gt;ptr_`</span> contains the address to heap block. The allocated memory is not initialized, because the number of elements is still <span class="in">`0`</span>.</span>
-<span id="cb13-244"><a href="#cb13-244" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-245"><a href="#cb13-245" aria-hidden="true" tabindex="-1"></a>Then, we create a $2$-tuple to hold the cartesian coordinates of a point $(1.0,1.0)$. We create a <span class="in">`Vector&lt;double&gt;`</span> initialized to <span class="in">`{1.0,1.0}`</span>. Essentially, we create an object <span class="in">`x`</span> on the stack with its members <span class="in">`x-&gt;size_ = 2`</span>, <span class="in">`x-&gt;capacity_ = 5`</span> and a pointer <span class="in">`x-&gt;ptr_`</span> containing the address of newly allocated memory on the heap for <span class="in">`5`</span> elements. Further, <span class="in">`ptr_[0]=1.0`</span>, <span class="in">`ptr_[1]=1.0`</span>. </span>
-<span id="cb13-246"><a href="#cb13-246" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-247"><a href="#cb13-247" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-248"><a href="#cb13-248" aria-hidden="true" tabindex="-1"></a><span class="in">Vector&lt;double&gt; x{1.0, 1.0};</span></span>
-<span id="cb13-249"><a href="#cb13-249" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-250"><a href="#cb13-250" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-251"><a href="#cb13-251" aria-hidden="true" tabindex="-1"></a>After this statement, the program has the following state: we have two objects on the stack : <span class="in">`pts`</span> and <span class="in">`x`</span>. Both of them have memory allocated on the heap. </span>
-<span id="cb13-252"><a href="#cb13-252" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-253"><a href="#cb13-253" aria-hidden="true" tabindex="-1"></a><span class="al">![Checkpoint #1](move_semantics_00.png)</span></span>
-<span id="cb13-254"><a href="#cb13-254" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-255"><a href="#cb13-255" aria-hidden="true" tabindex="-1"></a>The next step is the command to insert <span class="in">`x`</span> into the <span class="in">`pts`</span> vector. </span>
-<span id="cb13-256"><a href="#cb13-256" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-257"><a href="#cb13-257" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-258"><a href="#cb13-258" aria-hidden="true" tabindex="-1"></a><span class="in">pts.push_back(x);</span></span>
-<span id="cb13-259"><a href="#cb13-259" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-260"><a href="#cb13-260" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-261"><a href="#cb13-261" aria-hidden="true" tabindex="-1"></a>My toy <span class="in">`Vector`</span> class is said to have value semantics, which means it creates copies of the values passed to it. As a result, we get a first element in the vector, which is a full(deep) copy of the passed value/object <span class="in">`x`</span>:</span>
-<span id="cb13-262"><a href="#cb13-262" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-263"><a href="#cb13-263" aria-hidden="true" tabindex="-1"></a><span class="al">![Checkpoint #2](move_semantics_01.png)</span></span>
-<span id="cb13-264"><a href="#cb13-264" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-265"><a href="#cb13-265" aria-hidden="true" tabindex="-1"></a>The current state is that we have a vector <span class="in">`pts`</span> and two copies of <span class="in">`x={1.0,1.0}`</span>, one of which is the first element in <span class="in">`pts`</span>. </span>
-<span id="cb13-266"><a href="#cb13-266" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-267"><a href="#cb13-267" aria-hidden="true" tabindex="-1"></a>Let's now look at the next statement, which creates a new temporary vector and again inserts it into the <span class="in">`pts`</span> vector:</span>
-<span id="cb13-268"><a href="#cb13-268" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-269"><a href="#cb13-269" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-270"><a href="#cb13-270" aria-hidden="true" tabindex="-1"></a><span class="in">pts.push_back(x + x);</span></span>
-<span id="cb13-271"><a href="#cb13-271" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-272"><a href="#cb13-272" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-273"><a href="#cb13-273" aria-hidden="true" tabindex="-1"></a>This statement is performed in three steps:</span>
-<span id="cb13-274"><a href="#cb13-274" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-275"><a href="#cb13-275" aria-hidden="true" tabindex="-1"></a>*Step 1*. We create a temporary <span class="in">`Vector&lt;double&gt;`</span> object <span class="in">`x + x`</span>. </span>
-<span id="cb13-276"><a href="#cb13-276" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-277"><a href="#cb13-277" aria-hidden="true" tabindex="-1"></a><span class="al">![Step #1](move_semantics_02.png)</span></span>
-<span id="cb13-278"><a href="#cb13-278" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-279"><a href="#cb13-279" aria-hidden="true" tabindex="-1"></a>*Step 2*.  <span class="in">`x+x`</span> is a temporary.  The <span class="in">`Vector&lt;T&gt;::push_back(const T&amp;)`</span> function accepts a reference-to-<span class="in">`const`</span> as an argument. Since <span class="in">`x+x`</span> is a temporary, it cannot be modified and binds to a reference-to-<span class="in">`const`</span>. Moreover, being a temporary object, it is likely to die soon. Referencing it extends the lifetime of the temporary x + x={2.0,2.0}. </span>
-<span id="cb13-280"><a href="#cb13-280" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-281"><a href="#cb13-281" aria-hidden="true" tabindex="-1"></a>Now, the statement <span class="in">`pts_[size++] = elem`</span> will invoke the copy-assignment operator on the yet uninitialized second element  <span class="in">`pts[1]`</span> which is of type <span class="in">`Vector&lt;double&gt;`</span>. This will force a full (deep) copy of <span class="in">`x + x={2.0,2.0}`</span>. At this time, two copies of <span class="in">`{2.0,2.0}`</span>  exist on the heap. One of these is assigned to pts<span class="co">[</span><span class="ot">1</span><span class="co">]</span>. </span>
-<span id="cb13-282"><a href="#cb13-282" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-283"><a href="#cb13-283" aria-hidden="true" tabindex="-1"></a><span class="al">![Step #2](move_semantics_03.png)</span></span>
-<span id="cb13-284"><a href="#cb13-284" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-285"><a href="#cb13-285" aria-hidden="true" tabindex="-1"></a>*Step 3*. When <span class="in">`push_back(const T&amp;)`</span> returns, the temporary <span class="in">`x + x`</span> will die and its destructor is called and the memory allocated on the heap is freed.</span>
-<span id="cb13-286"><a href="#cb13-286" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-287"><a href="#cb13-287" aria-hidden="true" tabindex="-1"></a>Our code is clearly not performing well: we create a copy of the temporary <span class="in">`x + x`</span> and destroy the source of the copy immediately afterwards, which means we unnecessarily allocate and free memory that we could have just moved from source to the copy.</span>
-<span id="cb13-288"><a href="#cb13-288" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-289"><a href="#cb13-289" aria-hidden="true" tabindex="-1"></a><span class="al">![Step #3](move_semantics_04.png)</span></span>
-<span id="cb13-290"><a href="#cb13-290" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-291"><a href="#cb13-291" aria-hidden="true" tabindex="-1"></a>With the next statement, again we insert <span class="in">`x`</span> into <span class="in">`pts`</span>:</span>
-<span id="cb13-292"><a href="#cb13-292" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-293"><a href="#cb13-293" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-294"><a href="#cb13-294" aria-hidden="true" tabindex="-1"></a><span class="in">pts.push_back(x)</span></span>
-<span id="cb13-295"><a href="#cb13-295" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-296"><a href="#cb13-296" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-297"><a href="#cb13-297" aria-hidden="true" tabindex="-1"></a>Again, <span class="in">`pts`</span> copies <span class="in">`x`</span>.</span>
-<span id="cb13-298"><a href="#cb13-298" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-299"><a href="#cb13-299" aria-hidden="true" tabindex="-1"></a><span class="al">![Checkpoint #3](move_semantics_05.png)</span></span>
-<span id="cb13-300"><a href="#cb13-300" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-301"><a href="#cb13-301" aria-hidden="true" tabindex="-1"></a>This is also something to improve. Because the value of <span class="in">`x`</span> is no longer needed, some optimization could use the memory of <span class="in">`x`</span> as the memory for the new element instead. </span>
-<span id="cb13-302"><a href="#cb13-302" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-303"><a href="#cb13-303" aria-hidden="true" tabindex="-1"></a>At the end of <span class="in">`createAndInsert()`</span> we come to the return statement:</span>
-<span id="cb13-304"><a href="#cb13-304" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-305"><a href="#cb13-305" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-306"><a href="#cb13-306" aria-hidden="true" tabindex="-1"></a><span class="in">return pts;</span></span>
-<span id="cb13-307"><a href="#cb13-307" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-308"><a href="#cb13-308" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-309"><a href="#cb13-309" aria-hidden="true" tabindex="-1"></a>Here, the behaviour of the program is a bit more complicated. We return by value (the return type is not a reference), which should be a copy of the value in the <span class="in">`return`</span> statement. Creating a copy of <span class="in">`pts`</span> means that we have create a deep copy of the whole vector with all of its elements. Thus, we have to allocate heap memory for the array of elements in the <span class="in">`pts`</span> and heap memory for the value of each 2-tuple. Here, we would have to allocate memory 4 times.</span>
-<span id="cb13-310"><a href="#cb13-310" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-311"><a href="#cb13-311" aria-hidden="true" tabindex="-1"></a>However, since at the same time <span class="in">`pts`</span> is destroyed because we leave the scope where it is declared, the compiler is allowed to perform *named return value optimization (NRVO)*. This means that the compiler can generate code so that <span class="in">`pts`</span> is used as the return value.  </span>
-<span id="cb13-312"><a href="#cb13-312" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-313"><a href="#cb13-313" aria-hidden="true" tabindex="-1"></a>Let us assume that we have the named return value optimization. In that case, at the end of the <span class="in">`return`</span> statement, <span class="in">`pts`</span> simply becomes the return value and the destructor of <span class="in">`x`</span> is called, which frees the memory allocated when it was declared.</span>
-<span id="cb13-314"><a href="#cb13-314" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-315"><a href="#cb13-315" aria-hidden="true" tabindex="-1"></a><span class="al">![Return statement](move_semantics_06.png)</span></span>
-<span id="cb13-316"><a href="#cb13-316" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-317"><a href="#cb13-317" aria-hidden="true" tabindex="-1"></a>Finally, we come to the assignment of the return value to <span class="in">`result`</span>:</span>
-<span id="cb13-318"><a href="#cb13-318" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-319"><a href="#cb13-319" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-320"><a href="#cb13-320" aria-hidden="true" tabindex="-1"></a><span class="in">result = createAndInsert()</span></span>
-<span id="cb13-321"><a href="#cb13-321" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-322"><a href="#cb13-322" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-323"><a href="#cb13-323" aria-hidden="true" tabindex="-1"></a>Here, we really get behavior that can be improved: the usual assignment operator has the goal of giving <span class="in">`result`</span> the same value as the source value that is assigned. In general, any source(assigned) value should not be modified and should independent from the object that the value was assigned to. So, the assignment operator will create a deep-copy of the whole return value:</span>
-<span id="cb13-324"><a href="#cb13-324" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-325"><a href="#cb13-325" aria-hidden="true" tabindex="-1"></a><span class="al">![Return statement](move_semantics_07.png)</span></span>
-<span id="cb13-326"><a href="#cb13-326" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-327"><a href="#cb13-327" aria-hidden="true" tabindex="-1"></a>However, right after that we no longer need the temporary return value and we destroy it:</span>
-<span id="cb13-328"><a href="#cb13-328" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-329"><a href="#cb13-329" aria-hidden="true" tabindex="-1"></a>Again, we create a copy of a temporary object and destroy the source of the copy immediately afterwards, which means that we again unnecessarily allocate and free memory. This time it applies to four allocations</span>
-<span id="cb13-330"><a href="#cb13-330" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-331"><a href="#cb13-331" aria-hidden="true" tabindex="-1"></a>For the state of the program after this assignment in <span class="in">`main()`</span>, we allocated memory numerous times and released it. Unnecessary memory allocations were caused by:</span>
-<span id="cb13-332"><a href="#cb13-332" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-333"><a href="#cb13-333" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Inserting a temporary object into <span class="in">`pts`</span>.</span>
-<span id="cb13-334"><a href="#cb13-334" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Inserting an object into <span class="in">`pts`</span> where we no longer need the value.</span>
-<span id="cb13-335"><a href="#cb13-335" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Assigning a temporary vector with all its elements.</span>
-<span id="cb13-336"><a href="#cb13-336" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-337"><a href="#cb13-337" aria-hidden="true" tabindex="-1"></a>We can more or less avoid these performance pennalties. </span>
-<span id="cb13-338"><a href="#cb13-338" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-339"><a href="#cb13-339" aria-hidden="true" tabindex="-1"></a><span class="fu">## Copy and swap idiom</span></span>
-<span id="cb13-340"><a href="#cb13-340" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-341"><a href="#cb13-341" aria-hidden="true" tabindex="-1"></a>Any class which manages resources (a wrapper like a *smart pointer*) needs to implement <span class="co">[</span><span class="ot">The Big Three</span><span class="co">](https://stackoverflow.com/questions/4172722/what-is-the-rule-of-three)</span>. While the goals of the copy constructor and destructor are straightforward, the copy-assignment operator is arguably the most nuanced and difficult. What pitfalls need to be avoided?</span>
-<span id="cb13-342"><a href="#cb13-342" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-343"><a href="#cb13-343" aria-hidden="true" tabindex="-1"></a>Consider our naive implementation of the assignment operator:</span>
-<span id="cb13-344"><a href="#cb13-344" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-345"><a href="#cb13-345" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb13-346"><a href="#cb13-346" aria-hidden="true" tabindex="-1"></a><span class="co">//Copy assignment operator</span></span>
-<span id="cb13-347"><a href="#cb13-347" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> v<span class="op">)</span></span>
-<span id="cb13-348"><a href="#cb13-348" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb13-349"><a href="#cb13-349" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="kw">this</span> <span class="op">!=</span> <span class="op">&amp;</span>v<span class="op">)</span>     <span class="co">//(1)</span></span>
-<span id="cb13-350"><a href="#cb13-350" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-351"><a href="#cb13-351" aria-hidden="true" tabindex="-1"></a>        <span class="kw">delete</span><span class="op">[]</span> <span class="va">ptr_</span><span class="op">;</span>  <span class="co">//(2)</span></span>
-<span id="cb13-352"><a href="#cb13-352" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
-<span id="cb13-353"><a href="#cb13-353" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-354"><a href="#cb13-354" aria-hidden="true" tabindex="-1"></a>        <span class="va">capacity_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">capacity_</span><span class="op">;</span>    <span class="co">//(3)</span></span>
-<span id="cb13-355"><a href="#cb13-355" aria-hidden="true" tabindex="-1"></a>        <span class="va">size_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span>            <span class="co">//(3)</span></span>
-<span id="cb13-356"><a href="#cb13-356" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">new</span> T<span class="op">[</span><span class="va">capacity_</span><span class="op">];</span>    <span class="co">//(3)</span></span>
-<span id="cb13-357"><a href="#cb13-357" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-358"><a href="#cb13-358" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
-<span id="cb13-359"><a href="#cb13-359" aria-hidden="true" tabindex="-1"></a>            <span class="va">ptr_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v<span class="op">.</span><span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
-<span id="cb13-360"><a href="#cb13-360" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-361"><a href="#cb13-361" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-362"><a href="#cb13-362" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
-<span id="cb13-363"><a href="#cb13-363" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb13-364"><a href="#cb13-364" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-365"><a href="#cb13-365" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-366"><a href="#cb13-366" aria-hidden="true" tabindex="-1"></a>While this manages the heap memory without leaks, it suffers from three problems, marked sequentially in the code as <span class="in">`(n)`</span>.</span>
-<span id="cb13-367"><a href="#cb13-367" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-368"><a href="#cb13-368" aria-hidden="true" tabindex="-1"></a><span class="ss">1. </span>The first is the self-assignment test. This check is an easy way to prevent us from running needless code on self-assignment. But, in all other cases, it merely serves to slow down the program and acts as noise in the code; self-assignment rarely occurs, so most of the time this check is a waste.</span>
-<span id="cb13-369"><a href="#cb13-369" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>The seond is, it only provides a basic exception guarantee. If <span class="in">`new T[capacity_]`</span> fails, <span class="in">`*this`</span> will have been modified. Namely, the <span class="in">`size_`</span> and <span class="in">`capacity_`</span> are wrong and the old data referenced by <span class="in">`ptr_`</span> is gone! For a strong exception guarantee, we need something akin to:</span>
-<span id="cb13-370"><a href="#cb13-370" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-371"><a href="#cb13-371" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb13-372"><a href="#cb13-372" aria-hidden="true" tabindex="-1"></a><span class="co">//Copy assignment operator</span></span>
-<span id="cb13-373"><a href="#cb13-373" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> v<span class="op">)</span></span>
-<span id="cb13-374"><a href="#cb13-374" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb13-375"><a href="#cb13-375" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="kw">this</span> <span class="op">!=</span> <span class="op">&amp;</span>v<span class="op">)</span>     <span class="co">//(1)</span></span>
-<span id="cb13-376"><a href="#cb13-376" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
-<span id="cb13-377"><a href="#cb13-377" aria-hidden="true" tabindex="-1"></a>        <span class="co">// get the new data ready, before we replace the old data</span></span>
-<span id="cb13-378"><a href="#cb13-378" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> newCapacity <span class="op">=</span> v<span class="op">.</span><span class="va">capacity_</span><span class="op">;</span></span>
-<span id="cb13-379"><a href="#cb13-379" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> newSize <span class="op">=</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span></span>
-<span id="cb13-380"><a href="#cb13-380" aria-hidden="true" tabindex="-1"></a>        T<span class="op">*</span> <span class="va">newPtr_</span> <span class="op">=</span> <span class="kw">new</span> T<span class="op">[</span>newCapacity<span class="op">]();</span></span>
-<span id="cb13-381"><a href="#cb13-381" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-382"><a href="#cb13-382" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
-<span id="cb13-383"><a href="#cb13-383" aria-hidden="true" tabindex="-1"></a>            <span class="va">newPtr_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v<span class="op">.</span><span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
-<span id="cb13-384"><a href="#cb13-384" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-385"><a href="#cb13-385" aria-hidden="true" tabindex="-1"></a>        <span class="co">//replace the old data (all are non-throwing)</span></span>
-<span id="cb13-386"><a href="#cb13-386" aria-hidden="true" tabindex="-1"></a>        <span class="kw">delete</span><span class="op">[]</span> <span class="va">ptr_</span><span class="op">;</span></span>
-<span id="cb13-387"><a href="#cb13-387" aria-hidden="true" tabindex="-1"></a>        <span class="va">size_</span> <span class="op">=</span> newSize<span class="op">;</span></span>
-<span id="cb13-388"><a href="#cb13-388" aria-hidden="true" tabindex="-1"></a>        <span class="va">capacity_</span> <span class="op">=</span> <span class="va">newCapacity_</span><span class="op">;</span></span>
-<span id="cb13-389"><a href="#cb13-389" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> newPtr<span class="op">;</span></span>
-<span id="cb13-390"><a href="#cb13-390" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb13-391"><a href="#cb13-391" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-392"><a href="#cb13-392" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
-<span id="cb13-393"><a href="#cb13-393" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb13-394"><a href="#cb13-394" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb13-395"><a href="#cb13-395" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-396"><a href="#cb13-396" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>Our code has expanded! This leads us to the third problem: code duplication. </span>
-<span id="cb13-397"><a href="#cb13-397" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-398"><a href="#cb13-398" aria-hidden="true" tabindex="-1"></a>In our case, the core of it is only two lines (the allocation and the copy), but with more complex resources, this code bloat can be quite a hassle. What if my class manages more than one resource?</span>
-<span id="cb13-399"><a href="#cb13-399" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-400"><a href="#cb13-400" aria-hidden="true" tabindex="-1"></a>The *copy-and-swap* idiom is the solution, and elegantly assists the assignment operator in achieving two things: avoiding code duplication and providing a strong exception guarantee.</span>
-<span id="cb13-401"><a href="#cb13-401" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-402"><a href="#cb13-402" aria-hidden="true" tabindex="-1"></a>While, the *rule-of-three* successfully entails our copy-constructor, assignment and destructor, it should really be called *The Big Three and A Half*: any time your class manages a resource, it also makes sense to provide a <span class="in">`swap`</span> function. </span>
-<span id="cb13-403"><a href="#cb13-403" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-404"><a href="#cb13-404" aria-hidden="true" tabindex="-1"></a>We need to add <span class="in">`swap`</span> functionality to our class, and we do that as follows:</span>
-<span id="cb13-405"><a href="#cb13-405" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-406"><a href="#cb13-406" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-407"><a href="#cb13-407" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-408"><a href="#cb13-408" aria-hidden="true" tabindex="-1"></a>Conceptually, it works by using the copy-constructor's functionality to create a local copy of the data, then takes the copied data with a <span class="in">`swap()`</span> function swapping the old data with the new data. </span>
-<span id="cb13-409"><a href="#cb13-409" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-410"><a href="#cb13-410" aria-hidden="true" tabindex="-1"></a>In order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a <span class="in">`swap`</span> function.</span>
-<span id="cb13-411"><a href="#cb13-411" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-412"><a href="#cb13-412" aria-hidden="true" tabindex="-1"></a>A swap function is a *non-throwing* function that swaps two objects of a class member-for-member. </span>
-<span id="cb13-413"><a href="#cb13-413" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-414"><a href="#cb13-414" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-415"><a href="#cb13-415" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-416"><a href="#cb13-416" aria-hidden="true" tabindex="-1"></a><span class="fu">## Value Categories</span></span>
-<span id="cb13-417"><a href="#cb13-417" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-418"><a href="#cb13-418" aria-hidden="true" tabindex="-1"></a>In C++, every expression is either an <span class="in">`lvalue`</span> or an <span class="in">`rvalue`</span>. Consider an object that owns some resources(file-descriptors, sockets, memory buffer).</span>
-<span id="cb13-419"><a href="#cb13-419" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-420"><a href="#cb13-420" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>An <span class="in">`lvalue`</span> denotes an object whose resources cannot be reused. The object is an <span class="in">`lvalue`</span>, if you can't take the guts(resources) out of this object and donate it to someone else. <span class="in">`lvalue`</span>s include expressions that designate objects by their name. For example, in the expression <span class="in">`double y = f(x)`</span>, <span class="in">`y`</span> is an <span class="in">`lvalue`</span>. Moreover, <span class="in">`lvalue`</span>s have persistent storage and an identifiable memory address. For instance, if I declare <span class="in">`std::vector&lt;double&gt; v{1.0,2.0,3.0,4.0,5.0};`</span>, then <span class="in">`v[0]`</span> is an <span class="in">`lvalue`</span>.</span>
-<span id="cb13-421"><a href="#cb13-421" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-422"><a href="#cb13-422" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>An <span class="in">`rvalue`</span> denotes an object whose resources can be reused. The object is an <span class="in">`rvalue`</span>, if you can take the guts(resources) out of it and donate it to another object. <span class="in">`rvalue`</span>s typically include temporary objects as they can't manipulated at the place they are created and are likely to be destroyed soon. For instance, if declare <span class="in">`int x = 5;`</span>, <span class="in">`5`</span> is an <span class="in">`rvalue`</span>. Moreover, in the statement <span class="in">`double y = f(x);`</span>, the expression <span class="in">`f(x)`</span> is an <span class="in">`rvalue`</span>. </span>
-<span id="cb13-423"><a href="#cb13-423" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-424"><a href="#cb13-424" aria-hidden="true" tabindex="-1"></a><span class="fu">## Writing a move constructor</span></span>
-<span id="cb13-425"><a href="#cb13-425" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-426"><a href="#cb13-426" aria-hidden="true" tabindex="-1"></a>Apart from the copy-constructor, you can provide a move constructor for your class. The purpose of the move-constructor is to steal as many resources as it can from the original object, as fast as possible, because the original is going to be destroyed (or sometimes assigned to) in a moment anyway. Note that, stealing has certain constraints. While we can steal the resources, we must leave the object in a valid (but unspecified state), such that it can correctly (without leaking resources or triggering undefined behavior) be destroyed or assigned to. How is such stealing implemented?</span>
-<span id="cb13-427"><a href="#cb13-427" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-428"><a href="#cb13-428" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb13-429"><a href="#cb13-429" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-430"><a href="#cb13-430" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> swap<span class="op">(</span>Vector<span class="op">&amp;&amp;</span> other<span class="op">)</span></span>
-<span id="cb13-431"><a href="#cb13-431" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb13-432"><a href="#cb13-432" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">size_</span><span class="op">,</span> other<span class="op">.</span><span class="va">size_</span><span class="op">);</span></span>
-<span id="cb13-433"><a href="#cb13-433" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">capacity_</span><span class="op">,</span>other<span class="op">.</span><span class="va">capacity_</span><span class="op">);</span></span>
-<span id="cb13-434"><a href="#cb13-434" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">ptr_</span><span class="op">,</span> other<span class="op">.</span><span class="va">ptr_</span><span class="op">);</span></span>
-<span id="cb13-435"><a href="#cb13-435" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb13-436"><a href="#cb13-436" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb16" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Move Semantics"</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="an">date:</span><span class="co"> "2024-10-26"</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="an">toc:</span><span class="co"> true</span></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a><span class="co">    html:</span></span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a><span class="co">        code-tools: true</span></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a><span class="co">        code-block-border-left: true</span></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a><span class="co">        code-annotations: below</span></span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a><span class="co">        highlight-style: pygments</span></span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a><span class="fu">## Motivation for Move Semantics</span></span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>To understand the basic principles of move semantics, let's look at the execution of a small piece of code. I've written a toy <span class="in">`Vector`</span> class. I choose the manage the memory myself, so I will follow the <span class="co">[</span><span class="ot">rule of three</span><span class="co">](https://en.wikipedia.org/wiki/Rule_of_three_%28C++_programming%29)</span>. I will supply a copy-constructor, copy-assignment operator and a destructor. I have also overloaded <span class="in">`operator+()`</span> to support element-wise addition of two vectors. </span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-21"><a href="#cb16-21" aria-hidden="true" tabindex="-1"></a><span class="fu">### Value Semantics</span></span>
+<span id="cb16-22"><a href="#cb16-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-23"><a href="#cb16-23" aria-hidden="true" tabindex="-1"></a>Assume that we have the following program:</span>
+<span id="cb16-24"><a href="#cb16-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-25"><a href="#cb16-25" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb16-26"><a href="#cb16-26" aria-hidden="true" tabindex="-1"></a><span class="co">//basics/copy_semantics.cpp</span></span>
+<span id="cb16-27"><a href="#cb16-27" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb16-28"><a href="#cb16-28" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stdexcept&gt;</span></span>
+<span id="cb16-29"><a href="#cb16-29" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;initializer_list&gt;</span></span>
+<span id="cb16-30"><a href="#cb16-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-31"><a href="#cb16-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-32"><a href="#cb16-32" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb16-33"><a href="#cb16-33" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Vector <span class="op">{</span></span>
+<span id="cb16-34"><a href="#cb16-34" aria-hidden="true" tabindex="-1"></a><span class="kw">private</span><span class="op">:</span></span>
+<span id="cb16-35"><a href="#cb16-35" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> <span class="va">capacity_</span><span class="op">;</span></span>
+<span id="cb16-36"><a href="#cb16-36" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> <span class="va">size_</span><span class="op">;</span></span>
+<span id="cb16-37"><a href="#cb16-37" aria-hidden="true" tabindex="-1"></a>    T<span class="op">*</span> <span class="va">ptr_</span><span class="op">;</span></span>
+<span id="cb16-38"><a href="#cb16-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-39"><a href="#cb16-39" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span><span class="op">:</span></span>
+<span id="cb16-40"><a href="#cb16-40" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">()</span> <span class="op">:</span><span class="va">capacity_</span><span class="op">{</span> <span class="dv">0</span> <span class="op">},</span> <span class="va">size_</span><span class="op">{</span> <span class="dv">0</span> <span class="op">},</span> <span class="va">ptr_</span><span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span> <span class="op">{}</span></span>
+<span id="cb16-41"><a href="#cb16-41" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">(</span><span class="dt">int</span> size<span class="op">)</span> <span class="op">:</span> <span class="va">capacity_</span><span class="op">{</span> size <span class="op">},</span> <span class="va">ptr_</span><span class="op">{</span> <span class="kw">new</span> T<span class="op">[</span>size<span class="op">]</span> <span class="op">},</span> <span class="va">size_</span><span class="op">{</span> size <span class="op">}</span> <span class="op">{}</span></span>
+<span id="cb16-42"><a href="#cb16-42" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">(</span><span class="dt">int</span> size<span class="op">,</span> T data<span class="op">)</span> <span class="op">:</span> Vector<span class="op">(</span>size<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb16-43"><a href="#cb16-43" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> size<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb16-44"><a href="#cb16-44" aria-hidden="true" tabindex="-1"></a>            <span class="va">ptr_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> data<span class="op">;</span></span>
+<span id="cb16-45"><a href="#cb16-45" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-46"><a href="#cb16-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-47"><a href="#cb16-47" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">(</span><span class="bu">std::</span>initializer_list<span class="op">&lt;</span>T<span class="op">&gt;</span> list<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb16-48"><a href="#cb16-48" aria-hidden="true" tabindex="-1"></a>        clear<span class="op">();</span></span>
+<span id="cb16-49"><a href="#cb16-49" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="at">const</span> T<span class="op">&amp;</span> elem <span class="op">:</span> list<span class="op">)</span></span>
+<span id="cb16-50"><a href="#cb16-50" aria-hidden="true" tabindex="-1"></a>            push_back<span class="op">(</span>elem<span class="op">);</span></span>
+<span id="cb16-51"><a href="#cb16-51" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-52"><a href="#cb16-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-53"><a href="#cb16-53" aria-hidden="true" tabindex="-1"></a>    <span class="co">//Destructor</span></span>
+<span id="cb16-54"><a href="#cb16-54" aria-hidden="true" tabindex="-1"></a>    <span class="op">~</span>Vector<span class="op">()</span></span>
+<span id="cb16-55"><a href="#cb16-55" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-56"><a href="#cb16-56" aria-hidden="true" tabindex="-1"></a>        clear<span class="op">();</span></span>
+<span id="cb16-57"><a href="#cb16-57" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-58"><a href="#cb16-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-59"><a href="#cb16-59" aria-hidden="true" tabindex="-1"></a>    <span class="co">//Copy constructor</span></span>
+<span id="cb16-60"><a href="#cb16-60" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">(</span><span class="at">const</span> Vector<span class="op">&amp;</span> v<span class="op">)</span></span>
+<span id="cb16-61"><a href="#cb16-61" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-62"><a href="#cb16-62" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="kw">this</span> <span class="op">==</span> <span class="op">&amp;</span>v<span class="op">)</span></span>
+<span id="cb16-63"><a href="#cb16-63" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span><span class="op">;</span></span>
+<span id="cb16-64"><a href="#cb16-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-65"><a href="#cb16-65" aria-hidden="true" tabindex="-1"></a>        <span class="va">capacity_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">capacity_</span><span class="op">;</span></span>
+<span id="cb16-66"><a href="#cb16-66" aria-hidden="true" tabindex="-1"></a>        <span class="va">size_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span></span>
+<span id="cb16-67"><a href="#cb16-67" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">new</span> T<span class="op">[</span>v<span class="op">.</span><span class="va">size_</span><span class="op">];</span></span>
+<span id="cb16-68"><a href="#cb16-68" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-69"><a href="#cb16-69" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb16-70"><a href="#cb16-70" aria-hidden="true" tabindex="-1"></a>            <span class="va">ptr_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v<span class="op">.</span><span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb16-71"><a href="#cb16-71" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-72"><a href="#cb16-72" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-73"><a href="#cb16-73" aria-hidden="true" tabindex="-1"></a>    <span class="co">//Copy assignment operator</span></span>
+<span id="cb16-74"><a href="#cb16-74" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> v<span class="op">)</span></span>
+<span id="cb16-75"><a href="#cb16-75" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-76"><a href="#cb16-76" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="kw">this</span> <span class="op">!=</span> <span class="op">&amp;</span>v<span class="op">)</span></span>
+<span id="cb16-77"><a href="#cb16-77" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
+<span id="cb16-78"><a href="#cb16-78" aria-hidden="true" tabindex="-1"></a>            <span class="kw">delete</span><span class="op">[]</span> <span class="va">ptr_</span><span class="op">;</span></span>
+<span id="cb16-79"><a href="#cb16-79" aria-hidden="true" tabindex="-1"></a>            <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb16-80"><a href="#cb16-80" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-81"><a href="#cb16-81" aria-hidden="true" tabindex="-1"></a>            <span class="va">capacity_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">capacity_</span><span class="op">;</span></span>
+<span id="cb16-82"><a href="#cb16-82" aria-hidden="true" tabindex="-1"></a>            <span class="va">size_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span></span>
+<span id="cb16-83"><a href="#cb16-83" aria-hidden="true" tabindex="-1"></a>            <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">new</span> T<span class="op">[</span><span class="va">capacity_</span><span class="op">];</span></span>
+<span id="cb16-84"><a href="#cb16-84" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-85"><a href="#cb16-85" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb16-86"><a href="#cb16-86" aria-hidden="true" tabindex="-1"></a>                <span class="va">ptr_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v<span class="op">.</span><span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb16-87"><a href="#cb16-87" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb16-88"><a href="#cb16-88" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-89"><a href="#cb16-89" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb16-90"><a href="#cb16-90" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-91"><a href="#cb16-91" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-92"><a href="#cb16-92" aria-hidden="true" tabindex="-1"></a>    T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span></span>
+<span id="cb16-93"><a href="#cb16-93" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-94"><a href="#cb16-94" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span>i <span class="op">&gt;=</span> <span class="dv">0</span> <span class="op">&amp;&amp;</span> i <span class="op">&lt;</span> <span class="va">size_</span><span class="op">)</span></span>
+<span id="cb16-95"><a href="#cb16-95" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb16-96"><a href="#cb16-96" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span></span>
+<span id="cb16-97"><a href="#cb16-97" aria-hidden="true" tabindex="-1"></a>            <span class="cf">throw</span> <span class="bu">std::</span>out_of_range<span class="op">(</span><span class="st">"Index out of bounds."</span><span class="op">);</span></span>
+<span id="cb16-98"><a href="#cb16-98" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-99"><a href="#cb16-99" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-100"><a href="#cb16-100" aria-hidden="true" tabindex="-1"></a>    T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span> <span class="at">const</span></span>
+<span id="cb16-101"><a href="#cb16-101" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-102"><a href="#cb16-102" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span>i <span class="op">&gt;=</span> <span class="dv">0</span> <span class="op">&amp;&amp;</span> i <span class="op">&lt;</span> <span class="va">size_</span><span class="op">)</span></span>
+<span id="cb16-103"><a href="#cb16-103" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb16-104"><a href="#cb16-104" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span></span>
+<span id="cb16-105"><a href="#cb16-105" aria-hidden="true" tabindex="-1"></a>            <span class="cf">throw</span> <span class="bu">std::</span>out_of_range<span class="op">(</span><span class="st">"Index out of bounds."</span><span class="op">);</span></span>
+<span id="cb16-106"><a href="#cb16-106" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-107"><a href="#cb16-107" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-108"><a href="#cb16-108" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> reserve<span class="op">(</span><span class="dt">int</span> size<span class="op">)</span></span>
+<span id="cb16-109"><a href="#cb16-109" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-110"><a href="#cb16-110" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">size_</span> <span class="op">&lt;</span> <span class="va">capacity_</span><span class="op">)</span> <span class="cf">return</span><span class="op">;</span></span>
+<span id="cb16-111"><a href="#cb16-111" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-112"><a href="#cb16-112" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">ptr_</span> <span class="op">==</span> <span class="kw">nullptr</span><span class="op">)</span></span>
+<span id="cb16-113"><a href="#cb16-113" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
+<span id="cb16-114"><a href="#cb16-114" aria-hidden="true" tabindex="-1"></a>            <span class="va">size_</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb16-115"><a href="#cb16-115" aria-hidden="true" tabindex="-1"></a>            <span class="va">capacity_</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb16-116"><a href="#cb16-116" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb16-117"><a href="#cb16-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-118"><a href="#cb16-118" aria-hidden="true" tabindex="-1"></a>        T<span class="op">*</span> bufferNew <span class="op">=</span> <span class="kw">new</span> T<span class="op">[</span>size<span class="op">];</span></span>
+<span id="cb16-119"><a href="#cb16-119" aria-hidden="true" tabindex="-1"></a>        <span class="dt">unsigned</span> <span class="dt">int</span> l_size <span class="op">=</span> <span class="bu">std::</span>min<span class="op">(</span><span class="va">capacity_</span><span class="op">,</span> size<span class="op">);</span></span>
+<span id="cb16-120"><a href="#cb16-120" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> l_size<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb16-121"><a href="#cb16-121" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
+<span id="cb16-122"><a href="#cb16-122" aria-hidden="true" tabindex="-1"></a>            bufferNew<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> <span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb16-123"><a href="#cb16-123" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb16-124"><a href="#cb16-124" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-125"><a href="#cb16-125" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">ptr_</span> <span class="op">!=</span> <span class="kw">nullptr</span><span class="op">)</span></span>
+<span id="cb16-126"><a href="#cb16-126" aria-hidden="true" tabindex="-1"></a>            <span class="kw">delete</span><span class="op">[]</span> <span class="va">ptr_</span><span class="op">;</span></span>
+<span id="cb16-127"><a href="#cb16-127" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-128"><a href="#cb16-128" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> bufferNew<span class="op">;</span></span>
+<span id="cb16-129"><a href="#cb16-129" aria-hidden="true" tabindex="-1"></a>        <span class="va">capacity_</span> <span class="op">=</span> size<span class="op">;</span></span>
+<span id="cb16-130"><a href="#cb16-130" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-131"><a href="#cb16-131" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-132"><a href="#cb16-132" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> clear<span class="op">()</span></span>
+<span id="cb16-133"><a href="#cb16-133" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-134"><a href="#cb16-134" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">ptr_</span> <span class="op">!=</span> <span class="kw">nullptr</span><span class="op">)</span></span>
+<span id="cb16-135"><a href="#cb16-135" aria-hidden="true" tabindex="-1"></a>            <span class="kw">delete</span><span class="op">[]</span> <span class="va">ptr_</span><span class="op">;</span></span>
+<span id="cb16-136"><a href="#cb16-136" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb16-137"><a href="#cb16-137" aria-hidden="true" tabindex="-1"></a>        <span class="va">size_</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb16-138"><a href="#cb16-138" aria-hidden="true" tabindex="-1"></a>        <span class="va">capacity_</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb16-139"><a href="#cb16-139" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-140"><a href="#cb16-140" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-141"><a href="#cb16-141" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span></span>
+<span id="cb16-142"><a href="#cb16-142" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-143"><a href="#cb16-143" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">size_</span><span class="op">;</span></span>
+<span id="cb16-144"><a href="#cb16-144" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-145"><a href="#cb16-145" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-146"><a href="#cb16-146" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> capacity<span class="op">()</span></span>
+<span id="cb16-147"><a href="#cb16-147" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-148"><a href="#cb16-148" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">capacity_</span><span class="op">;</span></span>
+<span id="cb16-149"><a href="#cb16-149" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-150"><a href="#cb16-150" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-151"><a href="#cb16-151" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> push_back<span class="op">(</span><span class="at">const</span> T<span class="op">&amp;</span> elem<span class="op">)</span></span>
+<span id="cb16-152"><a href="#cb16-152" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-153"><a href="#cb16-153" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">size_</span> <span class="op">&gt;=</span> <span class="va">capacity_</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb16-154"><a href="#cb16-154" aria-hidden="true" tabindex="-1"></a>            reserve<span class="op">(</span><span class="va">capacity_</span> <span class="op">+</span> <span class="dv">5</span><span class="op">);</span> <span class="co">// Double the capacity</span></span>
+<span id="cb16-155"><a href="#cb16-155" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb16-156"><a href="#cb16-156" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-157"><a href="#cb16-157" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span><span class="op">[</span><span class="va">size_</span><span class="op">++]</span> <span class="op">=</span> elem<span class="op">;</span></span>
+<span id="cb16-158"><a href="#cb16-158" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-159"><a href="#cb16-159" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-160"><a href="#cb16-160" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> pop_back<span class="op">()</span></span>
+<span id="cb16-161"><a href="#cb16-161" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-162"><a href="#cb16-162" aria-hidden="true" tabindex="-1"></a>        <span class="op">--</span><span class="va">size_</span><span class="op">;</span></span>
+<span id="cb16-163"><a href="#cb16-163" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-164"><a href="#cb16-164" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-165"><a href="#cb16-165" aria-hidden="true" tabindex="-1"></a>    T front<span class="op">()</span></span>
+<span id="cb16-166"><a href="#cb16-166" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-167"><a href="#cb16-167" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">size_</span> <span class="op">&gt;</span> <span class="dv">0</span><span class="op">)</span></span>
+<span id="cb16-168"><a href="#cb16-168" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">ptr_</span><span class="op">[</span><span class="dv">0</span><span class="op">];</span></span>
+<span id="cb16-169"><a href="#cb16-169" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span></span>
+<span id="cb16-170"><a href="#cb16-170" aria-hidden="true" tabindex="-1"></a>            <span class="cf">throw</span> <span class="bu">std::</span>out_of_range<span class="op">(</span><span class="st">"Index out of bounds."</span><span class="op">);</span></span>
+<span id="cb16-171"><a href="#cb16-171" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-172"><a href="#cb16-172" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-173"><a href="#cb16-173" aria-hidden="true" tabindex="-1"></a>    T back<span class="op">()</span></span>
+<span id="cb16-174"><a href="#cb16-174" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-175"><a href="#cb16-175" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span><span class="va">size_</span> <span class="op">&gt;</span> <span class="dv">0</span><span class="op">)</span></span>
+<span id="cb16-176"><a href="#cb16-176" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">ptr_</span><span class="op">[</span><span class="va">size_</span> <span class="op">-</span> <span class="dv">1</span><span class="op">];</span></span>
+<span id="cb16-177"><a href="#cb16-177" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span></span>
+<span id="cb16-178"><a href="#cb16-178" aria-hidden="true" tabindex="-1"></a>            <span class="cf">throw</span> <span class="bu">std::</span>out_of_range<span class="op">(</span><span class="st">"Index out of bounds."</span><span class="op">);</span></span>
+<span id="cb16-179"><a href="#cb16-179" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-180"><a href="#cb16-180" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-181"><a href="#cb16-181" aria-hidden="true" tabindex="-1"></a>    T<span class="op">*</span> getRawPointer<span class="op">()</span></span>
+<span id="cb16-182"><a href="#cb16-182" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-183"><a href="#cb16-183" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">ptr_</span><span class="op">;</span></span>
+<span id="cb16-184"><a href="#cb16-184" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-185"><a href="#cb16-185" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb16-186"><a href="#cb16-186" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-187"><a href="#cb16-187" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb16-188"><a href="#cb16-188" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="kw">operator</span><span class="op">+(</span><span class="at">const</span> Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> v1<span class="op">,</span> <span class="at">const</span> Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> v2<span class="op">)</span></span>
+<span id="cb16-189"><a href="#cb16-189" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb16-190"><a href="#cb16-190" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>v1<span class="op">.</span>size<span class="op">()</span> <span class="op">!=</span> v2<span class="op">.</span>size<span class="op">())</span></span>
+<span id="cb16-191"><a href="#cb16-191" aria-hidden="true" tabindex="-1"></a>        <span class="cf">throw</span> <span class="bu">std::</span>logic_error<span class="op">(</span><span class="st">"Vector lengths must be equal."</span><span class="op">);</span></span>
+<span id="cb16-192"><a href="#cb16-192" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">;</span></span>
+<span id="cb16-193"><a href="#cb16-193" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> v1<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb16-194"><a href="#cb16-194" aria-hidden="true" tabindex="-1"></a>        result<span class="op">.</span>push_back<span class="op">(</span>v1<span class="op">[</span>i<span class="op">]</span> <span class="op">+</span> v2<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb16-195"><a href="#cb16-195" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-196"><a href="#cb16-196" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb16-197"><a href="#cb16-197" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb16-198"><a href="#cb16-198" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-199"><a href="#cb16-199" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&lt;</span>Vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;&gt;</span> createAndInsert<span class="op">()</span></span>
+<span id="cb16-200"><a href="#cb16-200" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb16-201"><a href="#cb16-201" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">&lt;</span>Vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;&gt;</span> pts<span class="op">;</span></span>
+<span id="cb16-202"><a href="#cb16-202" aria-hidden="true" tabindex="-1"></a>    pts<span class="op">.</span>reserve<span class="op">(</span><span class="dv">3</span><span class="op">);</span></span>
+<span id="cb16-203"><a href="#cb16-203" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> x<span class="op">{</span> <span class="fl">1.0</span><span class="op">,</span> <span class="fl">1.0</span> <span class="op">};</span></span>
+<span id="cb16-204"><a href="#cb16-204" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Checkpoint #1"</span><span class="op">;</span></span>
+<span id="cb16-205"><a href="#cb16-205" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">pts-&gt;ptr_ = "</span><span class="op">&lt;&lt;</span>pts<span class="op">.</span>getRawPointer<span class="op">();</span></span>
+<span id="cb16-206"><a href="#cb16-206" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">x-&gt;ptr_ = "</span><span class="op">&lt;&lt;</span>x<span class="op">.</span>getRawPointer<span class="op">();</span></span>
+<span id="cb16-207"><a href="#cb16-207" aria-hidden="true" tabindex="-1"></a>    pts<span class="op">.</span>push_back<span class="op">(</span>x<span class="op">);</span></span>
+<span id="cb16-208"><a href="#cb16-208" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Checkpoint #2"</span><span class="op">;</span></span>
+<span id="cb16-209"><a href="#cb16-209" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">pts[0]-&gt;ptr_ = "</span> <span class="op">&lt;&lt;</span> pts<span class="op">[</span><span class="dv">0</span><span class="op">].</span>getRawPointer<span class="op">();</span></span>
+<span id="cb16-210"><a href="#cb16-210" aria-hidden="true" tabindex="-1"></a>    pts<span class="op">.</span>push_back<span class="op">(</span>x <span class="op">+</span> x<span class="op">);</span></span>
+<span id="cb16-211"><a href="#cb16-211" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">pts[1]-&gt;ptr_ = "</span> <span class="op">&lt;&lt;</span> pts<span class="op">[</span><span class="dv">1</span><span class="op">].</span>getRawPointer<span class="op">();</span></span>
+<span id="cb16-212"><a href="#cb16-212" aria-hidden="true" tabindex="-1"></a>    pts<span class="op">.</span>push_back<span class="op">(</span>x<span class="op">);</span></span>
+<span id="cb16-213"><a href="#cb16-213" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Checkpoint #3"</span><span class="op">;</span></span>
+<span id="cb16-214"><a href="#cb16-214" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">pts[2]-&gt;ptr_ = "</span> <span class="op">&lt;&lt;</span> pts<span class="op">[</span><span class="dv">2</span><span class="op">].</span>getRawPointer<span class="op">();</span></span>
+<span id="cb16-215"><a href="#cb16-215" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> pts<span class="op">;</span></span>
+<span id="cb16-216"><a href="#cb16-216" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb16-217"><a href="#cb16-217" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-218"><a href="#cb16-218" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb16-219"><a href="#cb16-219" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb16-220"><a href="#cb16-220" aria-hidden="true" tabindex="-1"></a>    Vector<span class="op">&lt;</span>Vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;&gt;</span> result <span class="op">=</span> createAndInsert<span class="op">();</span></span>
+<span id="cb16-221"><a href="#cb16-221" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb16-222"><a href="#cb16-222" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb16-223"><a href="#cb16-223" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-224"><a href="#cb16-224" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-225"><a href="#cb16-225" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/TTfKs4seP)</span>{target="_blank"}</span>
+<span id="cb16-226"><a href="#cb16-226" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-227"><a href="#cb16-227" aria-hidden="true" tabindex="-1"></a>Let us look at the individual steps of the program (inspecting both stack and the heap) when we compile this program with a C++ compiler.</span>
+<span id="cb16-228"><a href="#cb16-228" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-229"><a href="#cb16-229" aria-hidden="true" tabindex="-1"></a>First in <span class="in">`main`</span>, we create the empty vector <span class="in">`pts`</span> which will be used to store points in the euclidean space $\mathbf{R}^2$:</span>
+<span id="cb16-230"><a href="#cb16-230" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-231"><a href="#cb16-231" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-232"><a href="#cb16-232" aria-hidden="true" tabindex="-1"></a><span class="in">Vector&lt;Vector&lt;double&gt;&gt; pts;</span></span>
+<span id="cb16-233"><a href="#cb16-233" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-234"><a href="#cb16-234" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-235"><a href="#cb16-235" aria-hidden="true" tabindex="-1"></a>which is placed on the stack as an object that has <span class="in">`size_ = 0`</span>, <span class="in">`capacity_ = 0`</span> and no memory allocated for elements.</span>
+<span id="cb16-236"><a href="#cb16-236" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-237"><a href="#cb16-237" aria-hidden="true" tabindex="-1"></a>Then, we call </span>
+<span id="cb16-238"><a href="#cb16-238" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-239"><a href="#cb16-239" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-240"><a href="#cb16-240" aria-hidden="true" tabindex="-1"></a><span class="in">pts.reserve(3);</span></span>
+<span id="cb16-241"><a href="#cb16-241" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-242"><a href="#cb16-242" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-243"><a href="#cb16-243" aria-hidden="true" tabindex="-1"></a>This allocates memory for <span class="in">`3`</span> elements on the heap. The member <span class="in">`pts_-&gt;capacity_`</span> equals <span class="in">`3`</span>, <span class="in">`pts-&gt;size_`</span> equals <span class="in">`0`</span> and <span class="in">`pts_-&gt;ptr_`</span> contains the address to heap block. The allocated memory is not initialized, because the number of elements is still <span class="in">`0`</span>.</span>
+<span id="cb16-244"><a href="#cb16-244" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-245"><a href="#cb16-245" aria-hidden="true" tabindex="-1"></a>Then, we create a $2$-tuple to hold the cartesian coordinates of a point $(1.0,1.0)$. We create a <span class="in">`Vector&lt;double&gt;`</span> initialized to <span class="in">`{1.0,1.0}`</span>. Essentially, we create an object <span class="in">`x`</span> on the stack with its members <span class="in">`x-&gt;size_ = 2`</span>, <span class="in">`x-&gt;capacity_ = 5`</span> and a pointer <span class="in">`x-&gt;ptr_`</span> containing the address of newly allocated memory on the heap for <span class="in">`5`</span> elements. Further, <span class="in">`ptr_[0]=1.0`</span>, <span class="in">`ptr_[1]=1.0`</span>. </span>
+<span id="cb16-246"><a href="#cb16-246" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-247"><a href="#cb16-247" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-248"><a href="#cb16-248" aria-hidden="true" tabindex="-1"></a><span class="in">Vector&lt;double&gt; x{1.0, 1.0};</span></span>
+<span id="cb16-249"><a href="#cb16-249" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-250"><a href="#cb16-250" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-251"><a href="#cb16-251" aria-hidden="true" tabindex="-1"></a>After this statement, the program has the following state: we have two objects on the stack : <span class="in">`pts`</span> and <span class="in">`x`</span>. Both of them have memory allocated on the heap. </span>
+<span id="cb16-252"><a href="#cb16-252" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-253"><a href="#cb16-253" aria-hidden="true" tabindex="-1"></a><span class="al">![Checkpoint #1](move_semantics_00.png)</span></span>
+<span id="cb16-254"><a href="#cb16-254" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-255"><a href="#cb16-255" aria-hidden="true" tabindex="-1"></a>The next step is the command to insert <span class="in">`x`</span> into the <span class="in">`pts`</span> vector. </span>
+<span id="cb16-256"><a href="#cb16-256" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-257"><a href="#cb16-257" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-258"><a href="#cb16-258" aria-hidden="true" tabindex="-1"></a><span class="in">pts.push_back(x);</span></span>
+<span id="cb16-259"><a href="#cb16-259" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-260"><a href="#cb16-260" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-261"><a href="#cb16-261" aria-hidden="true" tabindex="-1"></a>My toy <span class="in">`Vector`</span> class is said to have value semantics, which means it creates copies of the values passed to it. As a result, we get a first element in the vector, which is a full(deep) copy of the passed value/object <span class="in">`x`</span>:</span>
+<span id="cb16-262"><a href="#cb16-262" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-263"><a href="#cb16-263" aria-hidden="true" tabindex="-1"></a><span class="al">![Checkpoint #2](move_semantics_01.png)</span></span>
+<span id="cb16-264"><a href="#cb16-264" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-265"><a href="#cb16-265" aria-hidden="true" tabindex="-1"></a>The current state is that we have a vector <span class="in">`pts`</span> and two copies of <span class="in">`x={1.0,1.0}`</span>, one of which is the first element in <span class="in">`pts`</span>. </span>
+<span id="cb16-266"><a href="#cb16-266" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-267"><a href="#cb16-267" aria-hidden="true" tabindex="-1"></a>Let's now look at the next statement, which creates a new temporary vector and again inserts it into the <span class="in">`pts`</span> vector:</span>
+<span id="cb16-268"><a href="#cb16-268" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-269"><a href="#cb16-269" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-270"><a href="#cb16-270" aria-hidden="true" tabindex="-1"></a><span class="in">pts.push_back(x + x);</span></span>
+<span id="cb16-271"><a href="#cb16-271" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-272"><a href="#cb16-272" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-273"><a href="#cb16-273" aria-hidden="true" tabindex="-1"></a>This statement is performed in three steps:</span>
+<span id="cb16-274"><a href="#cb16-274" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-275"><a href="#cb16-275" aria-hidden="true" tabindex="-1"></a>*Step 1*. We create a temporary <span class="in">`Vector&lt;double&gt;`</span> object <span class="in">`x + x`</span>. </span>
+<span id="cb16-276"><a href="#cb16-276" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-277"><a href="#cb16-277" aria-hidden="true" tabindex="-1"></a><span class="al">![Step #1](move_semantics_02.png)</span></span>
+<span id="cb16-278"><a href="#cb16-278" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-279"><a href="#cb16-279" aria-hidden="true" tabindex="-1"></a>*Step 2*.  <span class="in">`x+x`</span> is a temporary.  The <span class="in">`Vector&lt;T&gt;::push_back(const T&amp;)`</span> function accepts a reference-to-<span class="in">`const`</span> as an argument. Since <span class="in">`x+x`</span> is a temporary, it cannot be modified and binds to a reference-to-<span class="in">`const`</span>. Moreover, being a temporary object, it is likely to die soon. Referencing it extends the lifetime of the temporary x + x={2.0,2.0}. </span>
+<span id="cb16-280"><a href="#cb16-280" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-281"><a href="#cb16-281" aria-hidden="true" tabindex="-1"></a>Now, the statement <span class="in">`pts_[size++] = elem`</span> will invoke the copy-assignment operator on the yet uninitialized second element  <span class="in">`pts[1]`</span> which is of type <span class="in">`Vector&lt;double&gt;`</span>. This will force a full (deep) copy of <span class="in">`x + x={2.0,2.0}`</span>. At this time, two copies of <span class="in">`{2.0,2.0}`</span>  exist on the heap. One of these is assigned to pts<span class="co">[</span><span class="ot">1</span><span class="co">]</span>. </span>
+<span id="cb16-282"><a href="#cb16-282" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-283"><a href="#cb16-283" aria-hidden="true" tabindex="-1"></a><span class="al">![Step #2](move_semantics_03.png)</span></span>
+<span id="cb16-284"><a href="#cb16-284" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-285"><a href="#cb16-285" aria-hidden="true" tabindex="-1"></a>*Step 3*. When <span class="in">`push_back(const T&amp;)`</span> returns, the temporary <span class="in">`x + x`</span> will die and its destructor is called and the memory allocated on the heap is freed.</span>
+<span id="cb16-286"><a href="#cb16-286" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-287"><a href="#cb16-287" aria-hidden="true" tabindex="-1"></a>Our code is clearly not performing well: we create a copy of the temporary <span class="in">`x + x`</span> and destroy the source of the copy immediately afterwards, which means we unnecessarily allocate and free memory that we could have just moved from source to the copy.</span>
+<span id="cb16-288"><a href="#cb16-288" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-289"><a href="#cb16-289" aria-hidden="true" tabindex="-1"></a><span class="al">![Step #3](move_semantics_04.png)</span></span>
+<span id="cb16-290"><a href="#cb16-290" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-291"><a href="#cb16-291" aria-hidden="true" tabindex="-1"></a>With the next statement, again we insert <span class="in">`x`</span> into <span class="in">`pts`</span>:</span>
+<span id="cb16-292"><a href="#cb16-292" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-293"><a href="#cb16-293" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-294"><a href="#cb16-294" aria-hidden="true" tabindex="-1"></a><span class="in">pts.push_back(x)</span></span>
+<span id="cb16-295"><a href="#cb16-295" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-296"><a href="#cb16-296" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-297"><a href="#cb16-297" aria-hidden="true" tabindex="-1"></a>Again, <span class="in">`pts`</span> copies <span class="in">`x`</span>.</span>
+<span id="cb16-298"><a href="#cb16-298" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-299"><a href="#cb16-299" aria-hidden="true" tabindex="-1"></a><span class="al">![Checkpoint #3](move_semantics_05.png)</span></span>
+<span id="cb16-300"><a href="#cb16-300" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-301"><a href="#cb16-301" aria-hidden="true" tabindex="-1"></a>This is also something to improve. Because the value of <span class="in">`x`</span> is no longer needed, some optimization could use the memory of <span class="in">`x`</span> as the memory for the new element instead. </span>
+<span id="cb16-302"><a href="#cb16-302" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-303"><a href="#cb16-303" aria-hidden="true" tabindex="-1"></a>At the end of <span class="in">`createAndInsert()`</span> we come to the return statement:</span>
+<span id="cb16-304"><a href="#cb16-304" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-305"><a href="#cb16-305" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-306"><a href="#cb16-306" aria-hidden="true" tabindex="-1"></a><span class="in">return pts;</span></span>
+<span id="cb16-307"><a href="#cb16-307" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-308"><a href="#cb16-308" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-309"><a href="#cb16-309" aria-hidden="true" tabindex="-1"></a>Here, the behaviour of the program is a bit more complicated. We return by value (the return type is not a reference), which should be a copy of the value in the <span class="in">`return`</span> statement. Creating a copy of <span class="in">`pts`</span> means that we have create a deep copy of the whole vector with all of its elements. Thus, we have to allocate heap memory for the array of elements in the <span class="in">`pts`</span> and heap memory for the value of each 2-tuple. Here, we would have to allocate memory 4 times.</span>
+<span id="cb16-310"><a href="#cb16-310" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-311"><a href="#cb16-311" aria-hidden="true" tabindex="-1"></a>However, since at the same time <span class="in">`pts`</span> is destroyed because we leave the scope where it is declared, the compiler is allowed to perform *named return value optimization (NRVO)*. This means that the compiler can generate code so that <span class="in">`pts`</span> is used as the return value.  </span>
+<span id="cb16-312"><a href="#cb16-312" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-313"><a href="#cb16-313" aria-hidden="true" tabindex="-1"></a>Let us assume that we have the named return value optimization. In that case, at the end of the <span class="in">`return`</span> statement, <span class="in">`pts`</span> simply becomes the return value and the destructor of <span class="in">`x`</span> is called, which frees the memory allocated when it was declared.</span>
+<span id="cb16-314"><a href="#cb16-314" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-315"><a href="#cb16-315" aria-hidden="true" tabindex="-1"></a><span class="al">![Return statement](move_semantics_06.png)</span></span>
+<span id="cb16-316"><a href="#cb16-316" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-317"><a href="#cb16-317" aria-hidden="true" tabindex="-1"></a>Finally, we come to the assignment of the return value to <span class="in">`result`</span>:</span>
+<span id="cb16-318"><a href="#cb16-318" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-319"><a href="#cb16-319" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-320"><a href="#cb16-320" aria-hidden="true" tabindex="-1"></a><span class="in">result = createAndInsert()</span></span>
+<span id="cb16-321"><a href="#cb16-321" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-322"><a href="#cb16-322" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-323"><a href="#cb16-323" aria-hidden="true" tabindex="-1"></a>Here, we really get behavior that can be improved: the usual assignment operator has the goal of giving <span class="in">`result`</span> the same value as the source value that is assigned. In general, any source(assigned) value should not be modified and should independent from the object that the value was assigned to. So, the assignment operator will create a deep-copy of the whole return value:</span>
+<span id="cb16-324"><a href="#cb16-324" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-325"><a href="#cb16-325" aria-hidden="true" tabindex="-1"></a><span class="al">![Return statement](move_semantics_07.png)</span></span>
+<span id="cb16-326"><a href="#cb16-326" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-327"><a href="#cb16-327" aria-hidden="true" tabindex="-1"></a>However, right after that we no longer need the temporary return value and we destroy it:</span>
+<span id="cb16-328"><a href="#cb16-328" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-329"><a href="#cb16-329" aria-hidden="true" tabindex="-1"></a>Again, we create a copy of a temporary object and destroy the source of the copy immediately afterwards, which means that we again unnecessarily allocate and free memory. This time it applies to four allocations</span>
+<span id="cb16-330"><a href="#cb16-330" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-331"><a href="#cb16-331" aria-hidden="true" tabindex="-1"></a>For the state of the program after this assignment in <span class="in">`main()`</span>, we allocated memory numerous times and released it. Unnecessary memory allocations were caused by:</span>
+<span id="cb16-332"><a href="#cb16-332" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-333"><a href="#cb16-333" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Inserting a temporary object into <span class="in">`pts`</span>.</span>
+<span id="cb16-334"><a href="#cb16-334" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Inserting an object into <span class="in">`pts`</span> where we no longer need the value.</span>
+<span id="cb16-335"><a href="#cb16-335" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Assigning a temporary vector with all its elements.</span>
+<span id="cb16-336"><a href="#cb16-336" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-337"><a href="#cb16-337" aria-hidden="true" tabindex="-1"></a>We can more or less avoid these performance pennalties. </span>
+<span id="cb16-338"><a href="#cb16-338" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-339"><a href="#cb16-339" aria-hidden="true" tabindex="-1"></a><span class="fu">## Copy and swap idiom</span></span>
+<span id="cb16-340"><a href="#cb16-340" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-341"><a href="#cb16-341" aria-hidden="true" tabindex="-1"></a>Any class which manages resources (a wrapper like a *smart pointer*) needs to implement <span class="co">[</span><span class="ot">The Big Three</span><span class="co">](https://stackoverflow.com/questions/4172722/what-is-the-rule-of-three)</span>. While the goals of the copy constructor and destructor are straightforward, the copy-assignment operator is arguably the most nuanced and difficult. What pitfalls need to be avoided?</span>
+<span id="cb16-342"><a href="#cb16-342" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-343"><a href="#cb16-343" aria-hidden="true" tabindex="-1"></a>Consider our naive implementation of the assignment operator:</span>
+<span id="cb16-344"><a href="#cb16-344" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-345"><a href="#cb16-345" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb16-346"><a href="#cb16-346" aria-hidden="true" tabindex="-1"></a><span class="co">//Copy assignment operator</span></span>
+<span id="cb16-347"><a href="#cb16-347" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> v<span class="op">)</span></span>
+<span id="cb16-348"><a href="#cb16-348" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb16-349"><a href="#cb16-349" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="kw">this</span> <span class="op">!=</span> <span class="op">&amp;</span>v<span class="op">)</span>     <span class="co">//(1)</span></span>
+<span id="cb16-350"><a href="#cb16-350" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-351"><a href="#cb16-351" aria-hidden="true" tabindex="-1"></a>        <span class="kw">delete</span><span class="op">[]</span> <span class="va">ptr_</span><span class="op">;</span>  <span class="co">//(2)</span></span>
+<span id="cb16-352"><a href="#cb16-352" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb16-353"><a href="#cb16-353" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-354"><a href="#cb16-354" aria-hidden="true" tabindex="-1"></a>        <span class="va">capacity_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">capacity_</span><span class="op">;</span>    <span class="co">//(3)</span></span>
+<span id="cb16-355"><a href="#cb16-355" aria-hidden="true" tabindex="-1"></a>        <span class="va">size_</span> <span class="op">=</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span>            <span class="co">//(3)</span></span>
+<span id="cb16-356"><a href="#cb16-356" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> <span class="kw">new</span> T<span class="op">[</span><span class="va">capacity_</span><span class="op">];</span>    <span class="co">//(3)</span></span>
+<span id="cb16-357"><a href="#cb16-357" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-358"><a href="#cb16-358" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb16-359"><a href="#cb16-359" aria-hidden="true" tabindex="-1"></a>            <span class="va">ptr_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v<span class="op">.</span><span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb16-360"><a href="#cb16-360" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-361"><a href="#cb16-361" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-362"><a href="#cb16-362" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb16-363"><a href="#cb16-363" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb16-364"><a href="#cb16-364" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-365"><a href="#cb16-365" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-366"><a href="#cb16-366" aria-hidden="true" tabindex="-1"></a>While this manages the heap memory without leaks, it suffers from three problems, marked sequentially in the code as <span class="in">`(n)`</span>.</span>
+<span id="cb16-367"><a href="#cb16-367" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-368"><a href="#cb16-368" aria-hidden="true" tabindex="-1"></a><span class="ss">1. </span>The first is the self-assignment test. This check is an easy way to prevent us from running needless code on self-assignment. But, in all other cases, it merely serves to slow down the program and acts as noise in the code; self-assignment rarely occurs, so most of the time this check is a waste.</span>
+<span id="cb16-369"><a href="#cb16-369" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>The seond is, it only provides a basic exception guarantee. If <span class="in">`new T[capacity_]`</span> fails, <span class="in">`*this`</span> will have been modified. Namely, the <span class="in">`size_`</span> and <span class="in">`capacity_`</span> are wrong and the old data referenced by <span class="in">`ptr_`</span> is gone! For a strong exception guarantee, we need something akin to:</span>
+<span id="cb16-370"><a href="#cb16-370" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-371"><a href="#cb16-371" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb16-372"><a href="#cb16-372" aria-hidden="true" tabindex="-1"></a><span class="co">//Copy assignment operator</span></span>
+<span id="cb16-373"><a href="#cb16-373" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> Vector<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> v<span class="op">)</span></span>
+<span id="cb16-374"><a href="#cb16-374" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb16-375"><a href="#cb16-375" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="kw">this</span> <span class="op">!=</span> <span class="op">&amp;</span>v<span class="op">)</span>     <span class="co">//(1)</span></span>
+<span id="cb16-376"><a href="#cb16-376" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb16-377"><a href="#cb16-377" aria-hidden="true" tabindex="-1"></a>        <span class="co">// get the new data ready, before we replace the old data</span></span>
+<span id="cb16-378"><a href="#cb16-378" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> newCapacity <span class="op">=</span> v<span class="op">.</span><span class="va">capacity_</span><span class="op">;</span></span>
+<span id="cb16-379"><a href="#cb16-379" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> newSize <span class="op">=</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span></span>
+<span id="cb16-380"><a href="#cb16-380" aria-hidden="true" tabindex="-1"></a>        T<span class="op">*</span> <span class="va">newPtr_</span> <span class="op">=</span> <span class="kw">new</span> T<span class="op">[</span>newCapacity<span class="op">]();</span></span>
+<span id="cb16-381"><a href="#cb16-381" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-382"><a href="#cb16-382" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> v<span class="op">.</span><span class="va">size_</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb16-383"><a href="#cb16-383" aria-hidden="true" tabindex="-1"></a>            <span class="va">newPtr_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v<span class="op">.</span><span class="va">ptr_</span><span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb16-384"><a href="#cb16-384" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-385"><a href="#cb16-385" aria-hidden="true" tabindex="-1"></a>        <span class="co">//replace the old data (all are non-throwing)</span></span>
+<span id="cb16-386"><a href="#cb16-386" aria-hidden="true" tabindex="-1"></a>        <span class="kw">delete</span><span class="op">[]</span> <span class="va">ptr_</span><span class="op">;</span></span>
+<span id="cb16-387"><a href="#cb16-387" aria-hidden="true" tabindex="-1"></a>        <span class="va">size_</span> <span class="op">=</span> newSize<span class="op">;</span></span>
+<span id="cb16-388"><a href="#cb16-388" aria-hidden="true" tabindex="-1"></a>        <span class="va">capacity_</span> <span class="op">=</span> <span class="va">newCapacity_</span><span class="op">;</span></span>
+<span id="cb16-389"><a href="#cb16-389" aria-hidden="true" tabindex="-1"></a>        <span class="va">ptr_</span> <span class="op">=</span> newPtr<span class="op">;</span></span>
+<span id="cb16-390"><a href="#cb16-390" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-391"><a href="#cb16-391" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-392"><a href="#cb16-392" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb16-393"><a href="#cb16-393" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb16-394"><a href="#cb16-394" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-395"><a href="#cb16-395" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-396"><a href="#cb16-396" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>Our code has expanded! This leads us to the third problem: code duplication. </span>
+<span id="cb16-397"><a href="#cb16-397" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-398"><a href="#cb16-398" aria-hidden="true" tabindex="-1"></a>In our case, the core of it is only two lines (the allocation and the copy), but with more complex resources, this code bloat can be quite a hassle. What if my class manages more than one resource?</span>
+<span id="cb16-399"><a href="#cb16-399" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-400"><a href="#cb16-400" aria-hidden="true" tabindex="-1"></a>The *copy-and-swap* idiom is the solution, and elegantly assists the assignment operator in achieving two things: avoiding code duplication and providing a strong exception guarantee.</span>
+<span id="cb16-401"><a href="#cb16-401" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-402"><a href="#cb16-402" aria-hidden="true" tabindex="-1"></a>While, the *rule-of-three* successfully entails our copy-constructor, assignment and destructor, it should really be called *The Big Three and A Half*: any time your class manages a resource, it also makes sense to provide a <span class="in">`swap`</span> function. </span>
+<span id="cb16-403"><a href="#cb16-403" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-404"><a href="#cb16-404" aria-hidden="true" tabindex="-1"></a>A swap function is a *non-throwing* function that swaps two objects of a class member-for-member. </span>
+<span id="cb16-405"><a href="#cb16-405" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-406"><a href="#cb16-406" aria-hidden="true" tabindex="-1"></a>We need to add <span class="in">`swap`</span> functionality to our class, and we do that as follows:</span>
+<span id="cb16-407"><a href="#cb16-407" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-408"><a href="#cb16-408" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb16-409"><a href="#cb16-409" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> swap<span class="op">(</span>Vector<span class="op">&amp;</span> other<span class="op">)</span> <span class="kw">noexcept</span></span>
+<span id="cb16-410"><a href="#cb16-410" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb16-411"><a href="#cb16-411" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">size_</span><span class="op">,</span> other<span class="op">.</span><span class="va">size_</span><span class="op">);</span></span>
+<span id="cb16-412"><a href="#cb16-412" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">capacity_</span><span class="op">,</span>other<span class="op">.</span><span class="va">capacity_</span><span class="op">);</span></span>
+<span id="cb16-413"><a href="#cb16-413" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">ptr_</span><span class="op">,</span> other<span class="op">.</span><span class="va">ptr_</span><span class="op">);</span></span>
+<span id="cb16-414"><a href="#cb16-414" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb16-415"><a href="#cb16-415" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-416"><a href="#cb16-416" aria-hidden="true" tabindex="-1"></a><span class="kw">friend</span> <span class="dt">void</span> swap<span class="op">(</span>Vector<span class="op">&amp;</span> lhs<span class="op">,</span> Vector<span class="op">&amp;</span> rhs<span class="op">)</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb16-417"><a href="#cb16-417" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">size_</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">size_</span><span class="op">);</span></span>
+<span id="cb16-418"><a href="#cb16-418" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">capacity_</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">capacity_</span><span class="op">);</span></span>
+<span id="cb16-419"><a href="#cb16-419" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">ptr_</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">ptr_</span><span class="op">);</span></span>
+<span id="cb16-420"><a href="#cb16-420" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb16-421"><a href="#cb16-421" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-422"><a href="#cb16-422" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-423"><a href="#cb16-423" aria-hidden="true" tabindex="-1"></a>Now, this is extremely efficient, it merely swaps pointers and sizes rather than allocating and copying entire arrays. We are now ready to implement the copy-and-swap idiom. </span>
+<span id="cb16-424"><a href="#cb16-424" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-425"><a href="#cb16-425" aria-hidden="true" tabindex="-1"></a>Our assignment operator is:</span>
+<span id="cb16-426"><a href="#cb16-426" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-427"><a href="#cb16-427" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb16-428"><a href="#cb16-428" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span>Vector other<span class="op">)</span></span>
+<span id="cb16-429"><a href="#cb16-429" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb16-430"><a href="#cb16-430" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> other<span class="op">);</span></span>
+<span id="cb16-431"><a href="#cb16-431" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb16-432"><a href="#cb16-432" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb16-433"><a href="#cb16-433" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-434"><a href="#cb16-434" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-435"><a href="#cb16-435" aria-hidden="true" tabindex="-1"></a><span class="fu">### Why does it work?</span></span>
+<span id="cb16-436"><a href="#cb16-436" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-437"><a href="#cb16-437" aria-hidden="true" tabindex="-1"></a>We first notice an important choice : the parameter argument is taken *by-value*. While one could just as easily do the following(and indeed many naive implementations of the idiom do):</span>
+<span id="cb16-438"><a href="#cb16-438" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-439"><a href="#cb16-439" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb16-440"><a href="#cb16-440" aria-hidden="true" tabindex="-1"></a>Vector<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> Vector<span class="op">&amp;</span> other<span class="op">)</span></span>
+<span id="cb16-441"><a href="#cb16-441" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb16-442"><a href="#cb16-442" aria-hidden="true" tabindex="-1"></a>    Vector temp <span class="op">{</span>other<span class="op">};</span></span>
+<span id="cb16-443"><a href="#cb16-443" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> temp<span class="op">);</span></span>
+<span id="cb16-444"><a href="#cb16-444" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb16-445"><a href="#cb16-445" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb16-446"><a href="#cb16-446" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb16-447"><a href="#cb16-447" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-448"><a href="#cb16-448" aria-hidden="true" tabindex="-1"></a>We lose an important optimization opportunity.  Not only that, but this choice is critical in C++ 11, which is discussed later. (On a general note, a remarkably useful guideline is as follows: if you're going to make a copy of something in a function, let the compiler do it in the parameter list).</span>
+<span id="cb16-449"><a href="#cb16-449" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-450"><a href="#cb16-450" aria-hidden="true" tabindex="-1"></a>Either way, this method of obtaining our resource is key to eliminating code duplication: we get to use the code from the copy-constructor to make the copy</span>
+<span id="cb16-451"><a href="#cb16-451" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-452"><a href="#cb16-452" aria-hidden="true" tabindex="-1"></a>Conceptually, it works by using the copy-constructor's functionality to create a local copy of the data, then takes the copied data with a <span class="in">`swap()`</span> function swapping the old data with the new data. </span>
+<span id="cb16-453"><a href="#cb16-453" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-454"><a href="#cb16-454" aria-hidden="true" tabindex="-1"></a>In order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a <span class="in">`swap`</span> function.</span>
+<span id="cb16-455"><a href="#cb16-455" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-456"><a href="#cb16-456" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-457"><a href="#cb16-457" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-458"><a href="#cb16-458" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-459"><a href="#cb16-459" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-460"><a href="#cb16-460" aria-hidden="true" tabindex="-1"></a><span class="fu">## Value Categories</span></span>
+<span id="cb16-461"><a href="#cb16-461" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-462"><a href="#cb16-462" aria-hidden="true" tabindex="-1"></a>In C++, every expression is either an <span class="in">`lvalue`</span> or an <span class="in">`rvalue`</span>. Consider an object that owns some resources(file-descriptors, sockets, memory buffer).</span>
+<span id="cb16-463"><a href="#cb16-463" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-464"><a href="#cb16-464" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>An <span class="in">`lvalue`</span> denotes an object whose resources cannot be reused. The object is an <span class="in">`lvalue`</span>, if you can't take the guts(resources) out of this object and donate it to someone else. <span class="in">`lvalue`</span>s include expressions that designate objects by their name. For example, in the expression <span class="in">`double y = f(x)`</span>, <span class="in">`y`</span> is an <span class="in">`lvalue`</span>. Moreover, <span class="in">`lvalue`</span>s have persistent storage and an identifiable memory address. For instance, if I declare <span class="in">`std::vector&lt;double&gt; v{1.0,2.0,3.0,4.0,5.0};`</span>, then <span class="in">`v[0]`</span> is an <span class="in">`lvalue`</span>.</span>
+<span id="cb16-465"><a href="#cb16-465" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-466"><a href="#cb16-466" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>An <span class="in">`rvalue`</span> denotes an object whose resources can be reused. The object is an <span class="in">`rvalue`</span>, if you can take the guts(resources) out of it and donate it to another object. <span class="in">`rvalue`</span>s typically include temporary objects as they can't manipulated at the place they are created and are likely to be destroyed soon. For instance, if declare <span class="in">`int x = 5;`</span>, <span class="in">`5`</span> is an <span class="in">`rvalue`</span>. Moreover, in the statement <span class="in">`double y = f(x);`</span>, the expression <span class="in">`f(x)`</span> is an <span class="in">`rvalue`</span>. </span>
+<span id="cb16-467"><a href="#cb16-467" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-468"><a href="#cb16-468" aria-hidden="true" tabindex="-1"></a><span class="fu">## Writing a move constructor</span></span>
+<span id="cb16-469"><a href="#cb16-469" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-470"><a href="#cb16-470" aria-hidden="true" tabindex="-1"></a>Apart from the copy-constructor, you can provide a move constructor for your class. The purpose of the move-constructor is to steal as many resources as it can from the original object, as fast as possible, because the original is going to be destroyed (or sometimes assigned to) in a moment anyway. Note that, stealing has certain constraints. While we can steal the resources, we must leave the object in a valid (but unspecified state), such that it can correctly (without leaking resources or triggering undefined behavior) be destroyed or assigned to. How is such stealing implemented?</span>
+<span id="cb16-471"><a href="#cb16-471" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-472"><a href="#cb16-472" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb16-473"><a href="#cb16-473" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-474"><a href="#cb16-474" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> swap<span class="op">(</span>Vector<span class="op">&amp;&amp;</span> other<span class="op">)</span></span>
+<span id="cb16-475"><a href="#cb16-475" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb16-476"><a href="#cb16-476" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">size_</span><span class="op">,</span> other<span class="op">.</span><span class="va">size_</span><span class="op">);</span></span>
+<span id="cb16-477"><a href="#cb16-477" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">capacity_</span><span class="op">,</span>other<span class="op">.</span><span class="va">capacity_</span><span class="op">);</span></span>
+<span id="cb16-478"><a href="#cb16-478" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(</span><span class="va">ptr_</span><span class="op">,</span> other<span class="op">.</span><span class="va">ptr_</span><span class="op">);</span></span>
+<span id="cb16-479"><a href="#cb16-479" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb16-480"><a href="#cb16-480" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 
