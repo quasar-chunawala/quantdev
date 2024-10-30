@@ -282,7 +282,7 @@ Now, the statement `pts_[size++] = elem` will invoke the copy-assignment operato
 
 ![Step #2](move_semantics_03.png)
 
-*Step 3*. When `push_back(const T&)` returns, the temporary `x + x` will die and its destructor is called and the memory allocated on the heap is freed. You can see this on [cppinsights](https://cppinsights.io/s/3f814c34).
+*Step 3*. When `push_back(const T&)` returns, the temporary `x + x` will die and its destructor is called and the memory allocated on the heap is freed. You can see this on [cppinsights](https://cppinsights.io/s/3f814c34){target="_blank"}.
 
 Our code is clearly not performing well: we create a copy of the temporary `x + x` and destroy the source of the copy immediately afterwards, which means we unnecessarily allocate and free memory that we could have just moved from source to the copy.
 
@@ -336,6 +336,31 @@ For the state of the program after this assignment in `main()`, we allocated mem
 
 We can more or less avoid these performance pennalties. 
 
+## Copy elison
+
+Copy-elison is based on the fact that the compiler is allowed to follow the [as-if](https://en.cppreference.com/w/cpp/language/as_if){target="_blank"} rule. The compiler is allowed to generate any code which has the same effect as the code you told it to add. The standard actually says, that if the compiler is told to copy something, but the copy is not really necessary, because the original is not going to be used again, then the compiler is allowed to elide(omit) the copy. The compiler is allowed to elide copies, where the results are *as-if* copies were made.
+
+Consider the function below:
+
+```cpp
+
+#include <cmath>
+double discountFactor(double r, double t){
+    double result = exp(-r * t);
+    return result;
+}
+
+int main()
+{
+    double df {discountFactor(0.05, 1.00)};
+    return 0;
+}
+```
+
+How many parameters are passed to the function `discountFactor(double, double)`? C++ programmers answer $2$, assembly-language programmers answer $3$. Why? At a low-level, when we have a return-value, we have to tell the generated code, where to put the return value. The function is passed the address where the results should be written.
+
+Alright, so this is what's going on. Our function `main()` is going to call `discountFactor(double, double)` in order to populate a local `df`. The stack frame for 
+
 ## Copy and swap idiom
 
 Any class which manages resources (a wrapper like a *smart pointer*) needs to implement [The Big Three](https://stackoverflow.com/questions/4172722/what-is-the-rule-of-three). While the goals of the copy constructor and destructor are straightforward, the copy-assignment operator is arguably the most nuanced and difficult. What pitfalls need to be avoided?
@@ -351,12 +376,12 @@ Vector<T>& operator=(const Vector<T>& v)
         delete[] ptr_;  //(2)
         ptr_ = nullptr;
 
-        capacity_ = v.capacity_;    //(3)
-        size_ = v.size_;            //(3)
-        ptr_ = new T[capacity_];    //(3)
+        capacity_ = v.capacity_;    //(2)
+        size_ = v.size_;            //(2)
+        ptr_ = new T[capacity_];    //(2)
 
         for (int i{ 0 }; i < v.size_; ++i)
-            ptr_[i] = v.ptr_[i];
+            ptr_[i] = v.ptr_[i];                //(3)
     }
 
     return *this;
@@ -377,16 +402,16 @@ Vector<T>& operator=(const Vector<T>& v)
         // get the new data ready, before we replace the old data
         int newCapacity = v.capacity_;
         int newSize = v.size_;
-        T* newPtr_ = new T[newCapacity]();
+        T* newPtr_ = new T[newCapacity]();  //(2)
 
         for (int i{ 0 }; i < v.size_; ++i)
-            newPtr_[i] = v.ptr_[i];
+            newPtr_[i] = v.ptr_[i];         //(3)
 
         //replace the old data (all are non-throwing)
         delete[] ptr_;
-        size_ = newSize;
-        capacity_ = newCapacity_;
-        ptr_ = newPtr;
+        size_ = newSize;       
+        capacity_ = newCapacity_;           
+        ptr_ = newPtr;                      
     }
 
     return *this;
@@ -425,9 +450,9 @@ Now, this is extremely efficient, it merely swaps pointers and sizes rather than
 Our assignment operator is:
 
 ```cpp
-Vector& operator=(Vector other)
+Vector& operator=(Vector other) //(1)
 {
-    std::swap(*this, other);
+    std::swap(*this, other);    //(2)
     return *this;
 }
 ```
@@ -445,15 +470,13 @@ Vector& operator=(const Vector& other)
 }
 ```
 
-We lose an important optimization opportunity.  Not only that, but this choice is critical in C++ 11, which is discussed later. (On a general note, a remarkably useful guideline is as follows: if you're going to make a copy of something in a function, let the compiler do it in the parameter list).
+We lose an important optimization opportunity. Not only that, but this choice is critical in C++ 11, which is discussed later. (On a general note, a remarkably useful guideline is as follows: if you're going to make a copy of something in a function, let the compiler do it in the parameter list).
 
 Either way, this method of obtaining our resource is key to eliminating code duplication: we get to use the code from the copy-constructor to make the copy
 
 Conceptually, it works by using the copy-constructor's functionality to create a local copy of the data, then takes the copied data with a `swap()` function swapping the old data with the new data. 
 
 In order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a `swap` function.
-
-
 
 
 
