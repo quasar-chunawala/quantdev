@@ -371,9 +371,9 @@ Okay, now we execute the function `discountFactor(double, double)` and now the r
 
 ![Return statement](move_semantics_10.png)
 
-So, this is going to elide the copy. 
+So, this is going to elide the copy. This form of copy elison is called *Return Value Optimization*(RVO). The calling function allocates space for the return value on the stack, and passes the address of that memory to the callee. The callee can then construct a return value directly into that space, which eliminates the need to copy from the inside to the outside.
 
-The C++ compiler can perform a similar thing when passing arguments by value.
+Also, although the compiler is normally required to make a copy when a function parameter is passed by value (so modifications to the parameter inside the function can’t affect the caller), it is allowed to elide the copy, when the source is a temporary.
 
 ```cpp
 void f(std::string a)
@@ -390,7 +390,7 @@ void g()
 }
 ```
 
-This is how it actually works. We are going to create our temporary - the string `"A"` in the place, where we would have actually copied it, that is, the local variable `a` in the stack frame of `f(std::string)`. 
+This is how it actually works. We are going to create our temporary - the string `"A"` in the place, where we would have actually copied it, that is, in the local variable `a` in the stack frame of `f(std::string)`. 
 
 ## Copy and swap idiom
 
@@ -501,15 +501,15 @@ Vector& operator=(const Vector& other)
 }
 ```
 
-We lose an important optimization opportunity. Not only that, but this choice is critical in C++ 11, which is discussed later. (On a general note, a remarkably useful guideline is as follows: if you're going to make a copy of something in a function, let the compiler do it in the parameter list).
+We lose an important optimization opportunity - if a temporary is passed, the compiler will not perform copy elison. Not only that, but this choice is critical in C++ 11, which is discussed later. (On a general note, a remarkably useful guideline is as follows: if you're going to make a copy of something in a function, let the compiler do it in the parameter list).
 
-Either way, this method of obtaining our resource is key to eliminating code duplication: we get to use the code from the copy-constructor to make the copy
+Either way, this method of obtaining our resource is key to eliminating code duplication: we get to use the code from the copy-constructor to make the copy, and never need to repeat any bit of it. Now that, the copy is made, we are ready to swap.
+
+Observe that upon entering the function, the new data is already allocated, copied and ready to be used. This is what gives us a strong exception guarantee: we won't even enter the function if the construction of the copy fails, and therefore it's not possible to alter the state of `*this`. The assignment operator guarantees that the operations call will be fully rolled back in case of an error, as if the error never happened.
 
 Conceptually, it works by using the copy-constructor's functionality to create a local copy of the data, then takes the copied data with a `swap()` function swapping the old data with the new data. 
 
-In order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a `swap` function.
-
-
+To summarize: in order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a `swap` function.
 
 ## Value Categories
 

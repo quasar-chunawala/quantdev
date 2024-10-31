@@ -579,8 +579,8 @@ window.Quarto = {
 <figcaption>Return statement</figcaption>
 </figure>
 </div>
-<p>So, this is going to elide the copy.</p>
-<p>The C++ compiler can perform a similar thing when passing arguments by value.</p>
+<p>So, this is going to elide the copy. This form of copy elison is called <em>Return Value Optimization</em>(RVO). The calling function allocates space for the return value on the stack, and passes the address of that memory to the callee. The callee can then construct a return value directly into that space, which eliminates the need to copy from the inside to the outside.</p>
+<p>Also, although the compiler is normally required to make a copy when a function parameter is passed by value (so modifications to the parameter inside the function can’t affect the caller), it is allowed to elide the copy, when the source is a temporary.</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> f<span class="op">(</span><span class="bu">std::</span>string a<span class="op">)</span></span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> b<span class="op">{</span><span class="dv">123</span><span class="op">};</span></span>
@@ -593,7 +593,7 @@ window.Quarto = {
 <span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>    f<span class="op">(</span><span class="bu">std::</span>string<span class="op">(</span><span class="st">"A"</span><span class="op">));</span></span>
 <span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> y<span class="op">;</span></span>
 <span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>This is how it actually works. We are going to create our temporary - the string “A” in the place, where we would have actually copied it, that is, the local variable <code>a</code> in the stack frame of <code>f(std::string)</code>.</p>
+<p>This is how it actually works. We are going to create our temporary - the string <code>"A"</code> in the place, where we would have actually copied it, that is, in the local variable <code>a</code> in the stack frame of <code>f(std::string)</code>.</p>
 </section>
 <section id="copy-and-swap-idiom" class="level2">
 <h2 class="anchored" data-anchor-id="copy-and-swap-idiom">Copy and swap idiom</h2>
@@ -680,10 +680,11 @@ window.Quarto = {
 <span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> temp<span class="op">);</span></span>
 <span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
 <span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>We lose an important optimization opportunity. Not only that, but this choice is critical in C++ 11, which is discussed later. (On a general note, a remarkably useful guideline is as follows: if you’re going to make a copy of something in a function, let the compiler do it in the parameter list).</p>
-<p>Either way, this method of obtaining our resource is key to eliminating code duplication: we get to use the code from the copy-constructor to make the copy</p>
+<p>We lose an important optimization opportunity - if a temporary is passed, the compiler will not perform copy elison. Not only that, but this choice is critical in C++ 11, which is discussed later. (On a general note, a remarkably useful guideline is as follows: if you’re going to make a copy of something in a function, let the compiler do it in the parameter list).</p>
+<p>Either way, this method of obtaining our resource is key to eliminating code duplication: we get to use the code from the copy-constructor to make the copy, and never need to repeat any bit of it. Now that, the copy is made, we are ready to swap.</p>
+<p>Observe that upon entering the function, the new data is already allocated, copied and ready to be used. This is what gives us a strong exception guarantee: we won’t even enter the function if the construction of the copy fails, and therefore it’s not possible to alter the state of <code>*this</code>. The assignment operator guarantees that the operations call will be fully rolled back in case of an error, as if the error never happened.</p>
 <p>Conceptually, it works by using the copy-constructor’s functionality to create a local copy of the data, then takes the copied data with a <code>swap()</code> function swapping the old data with the new data.</p>
-<p>In order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a <code>swap</code> function.</p>
+<p>To summarize: in order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a <code>swap</code> function.</p>
 </section>
 </section>
 <section id="value-categories" class="level2">
@@ -1555,9 +1556,9 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb18-371"><a href="#cb18-371" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb18-372"><a href="#cb18-372" aria-hidden="true" tabindex="-1"></a><span class="al">![Return statement](move_semantics_10.png)</span></span>
 <span id="cb18-373"><a href="#cb18-373" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-374"><a href="#cb18-374" aria-hidden="true" tabindex="-1"></a>So, this is going to elide the copy. </span>
+<span id="cb18-374"><a href="#cb18-374" aria-hidden="true" tabindex="-1"></a>So, this is going to elide the copy. This form of copy elison is called *Return Value Optimization*(RVO). The calling function allocates space for the return value on the stack, and passes the address of that memory to the callee. The callee can then construct a return value directly into that space, which eliminates the need to copy from the inside to the outside.</span>
 <span id="cb18-375"><a href="#cb18-375" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-376"><a href="#cb18-376" aria-hidden="true" tabindex="-1"></a>The C++ compiler can perform a similar thing when passing arguments by value.</span>
+<span id="cb18-376"><a href="#cb18-376" aria-hidden="true" tabindex="-1"></a>Also, although the compiler is normally required to make a copy when a function parameter is passed by value (so modifications to the parameter inside the function can’t affect the caller), it is allowed to elide the copy, when the source is a temporary.</span>
 <span id="cb18-377"><a href="#cb18-377" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb18-378"><a href="#cb18-378" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
 <span id="cb18-379"><a href="#cb18-379" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> f<span class="op">(</span><span class="bu">std::</span>string a<span class="op">)</span></span>
@@ -1574,7 +1575,7 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb18-390"><a href="#cb18-390" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
 <span id="cb18-391"><a href="#cb18-391" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb18-392"><a href="#cb18-392" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-393"><a href="#cb18-393" aria-hidden="true" tabindex="-1"></a>This is how it actually works. We are going to create our temporary - the string "A" in the place, where we would have actually copied it, that is, the local variable <span class="in">`a`</span> in the stack frame of <span class="in">`f(std::string)`</span>. </span>
+<span id="cb18-393"><a href="#cb18-393" aria-hidden="true" tabindex="-1"></a>This is how it actually works. We are going to create our temporary - the string <span class="in">`"A"`</span> in the place, where we would have actually copied it, that is, in the local variable <span class="in">`a`</span> in the stack frame of <span class="in">`f(std::string)`</span>. </span>
 <span id="cb18-394"><a href="#cb18-394" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb18-395"><a href="#cb18-395" aria-hidden="true" tabindex="-1"></a><span class="fu">## Copy and swap idiom</span></span>
 <span id="cb18-396"><a href="#cb18-396" aria-hidden="true" tabindex="-1"></a></span>
@@ -1685,15 +1686,15 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb18-501"><a href="#cb18-501" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
 <span id="cb18-502"><a href="#cb18-502" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb18-503"><a href="#cb18-503" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-504"><a href="#cb18-504" aria-hidden="true" tabindex="-1"></a>We lose an important optimization opportunity. Not only that, but this choice is critical in C++ 11, which is discussed later. (On a general note, a remarkably useful guideline is as follows: if you're going to make a copy of something in a function, let the compiler do it in the parameter list).</span>
+<span id="cb18-504"><a href="#cb18-504" aria-hidden="true" tabindex="-1"></a>We lose an important optimization opportunity - if a temporary is passed, the compiler will not perform copy elison. Not only that, but this choice is critical in C++ 11, which is discussed later. (On a general note, a remarkably useful guideline is as follows: if you're going to make a copy of something in a function, let the compiler do it in the parameter list).</span>
 <span id="cb18-505"><a href="#cb18-505" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-506"><a href="#cb18-506" aria-hidden="true" tabindex="-1"></a>Either way, this method of obtaining our resource is key to eliminating code duplication: we get to use the code from the copy-constructor to make the copy</span>
+<span id="cb18-506"><a href="#cb18-506" aria-hidden="true" tabindex="-1"></a>Either way, this method of obtaining our resource is key to eliminating code duplication: we get to use the code from the copy-constructor to make the copy, and never need to repeat any bit of it. Now that, the copy is made, we are ready to swap.</span>
 <span id="cb18-507"><a href="#cb18-507" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-508"><a href="#cb18-508" aria-hidden="true" tabindex="-1"></a>Conceptually, it works by using the copy-constructor's functionality to create a local copy of the data, then takes the copied data with a <span class="in">`swap()`</span> function swapping the old data with the new data. </span>
+<span id="cb18-508"><a href="#cb18-508" aria-hidden="true" tabindex="-1"></a>Observe that upon entering the function, the new data is already allocated, copied and ready to be used. This is what gives us a strong exception guarantee: we won't even enter the function if the construction of the copy fails, and therefore it's not possible to alter the state of <span class="in">`*this`</span>. The assignment operator guarantees that the operations call will be fully rolled back in case of an error, as if the error never happened.</span>
 <span id="cb18-509"><a href="#cb18-509" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-510"><a href="#cb18-510" aria-hidden="true" tabindex="-1"></a>In order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a <span class="in">`swap`</span> function.</span>
+<span id="cb18-510"><a href="#cb18-510" aria-hidden="true" tabindex="-1"></a>Conceptually, it works by using the copy-constructor's functionality to create a local copy of the data, then takes the copied data with a <span class="in">`swap()`</span> function swapping the old data with the new data. </span>
 <span id="cb18-511"><a href="#cb18-511" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-512"><a href="#cb18-512" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-512"><a href="#cb18-512" aria-hidden="true" tabindex="-1"></a>To summarize: in order to use the copy-and-swap idiom, we need three things: a working copy-constructor, working destructor (both are the basis of any wrapper, so should be complete anyway), and a <span class="in">`swap`</span> function.</span>
 <span id="cb18-513"><a href="#cb18-513" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb18-514"><a href="#cb18-514" aria-hidden="true" tabindex="-1"></a><span class="fu">## Value Categories</span></span>
 <span id="cb18-515"><a href="#cb18-515" aria-hidden="true" tabindex="-1"></a></span>
