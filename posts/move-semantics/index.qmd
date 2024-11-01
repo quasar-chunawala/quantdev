@@ -201,17 +201,9 @@ Vector<Vector<double>> createAndInsert()
     Vector<Vector<double>> pts;
     pts.reserve(3);
     Vector<double> x{ 1.0, 1.0 };
-    std::cout << "\nCheckpoint #1";
-    std::cout << "\npts->ptr_ = "<<pts.getRawPointer();
-    std::cout << "\nx->ptr_ = "<<x.getRawPointer();
     pts.push_back(x);
-    std::cout << "\nCheckpoint #2";
-    std::cout << "\npts[0]->ptr_ = " << pts[0].getRawPointer();
     pts.push_back(x + x);
-    std::cout << "\npts[1]->ptr_ = " << pts[1].getRawPointer();
     pts.push_back(x);
-    std::cout << "\nCheckpoint #3";
-    std::cout << "\npts[2]->ptr_ = " << pts[2].getRawPointer();
     return pts;
 }
 
@@ -222,7 +214,7 @@ int main()
 }
 ```
 
-[Compiler Explorer](https://godbolt.org/z/TTfKs4seP)
+[Compiler Explorer](https://godbolt.org/z/hEMKd99s5)
 
 Let us look at the individual steps of the program (inspecting both stack and the heap) when we compile this program with a C++ compiler.
 
@@ -481,12 +473,13 @@ Now, this is extremely efficient, it merely swaps pointers and sizes rather than
 Our assignment operator is:
 
 ```cpp
-Vector& operator=(Vector other) //(1)
+Vector& operator=(Vector other) 
 {
     std::swap(*this, other);    //(2)
     return *this;
 }
 ```
+
 
 ### Why does it work?
 
@@ -495,7 +488,7 @@ We first notice an important choice : the parameter argument is taken *by-value*
 ```cpp
 Vector& operator=(const Vector& other)
 {
-    Vector temp {other};
+    Vector temp {other}; 
     std::swap(*this, temp);
     return *this;
 }
@@ -519,17 +512,47 @@ In C++, every expression is either an `lvalue` or an `rvalue`. Consider an objec
 
 - An `rvalue` denotes an object whose resources can be reused. The object is an `rvalue`, if you can take the guts(resources) out of it and donate it to another object. `rvalue`s typically include temporary objects as they can't manipulated at the place they are created and are likely to be destroyed soon. For instance, if declare `int x = 5;`, `5` is an `rvalue`. Moreover, in the statement `double y = f(x);`, the expression `f(x)` is an `rvalue`. 
 
-## Writing a move constructor
+## Rvalue references
 
-Apart from the copy-constructor, you can provide a move constructor for your class. The purpose of the move-constructor is to steal as many resources as it can from the original object, as fast as possible, because the original is going to be destroyed (or sometimes assigned to) in a moment anyway. Note that, stealing has certain constraints. While we can steal the resources, we must leave the object in a valid (but unspecified state), such that it can correctly (without leaking resources or triggering undefined behavior) be destroyed or assigned to. How is such stealing implemented?
+As seen earlier, C++ sometimes performs unnecessary copying. 
 
 ```cpp
-
-void swap(Vector&& other)
-{
-    std::swap(size_, other.size_);
-    std::swap(capacity_,other.capacity_);
-    std::swap(ptr_, other.ptr_);
-}
+Vector<double> x;
+x = Vector<double>({
+        1.0, 2.0, 3.0, 4.0, 5.0, 
+        6.0, 7.0, 8.0, 9.0, 10.0
+    });
 ```
+
+[cppinsights](https://cppinsights.io/s/230e7f56) produces the following annotations:
+
+```
+Vector<double> x = Vector<double>();
+const double __temporary179_5[10] = {
+    1.0, 2.0, 3.0, 4.0, 5.0, 
+    6.0, 7.0, 8.0, 9.0, 10.0
+};
+const Vector<double> __temporary179_6 = Vector<double>(Vector<double>(std::initializer_list<double>{__temporary179_5, 10}));
+x.operator=(__temporary179_6);
+__temporary179_6.~Vector();
+/* __temporary179_5 // lifetime ends here */
+```
+
+In the above code snippet, the temporary vector of reals $\{1.0,2.0,3.0,\ldots,10.0\}$ is copied element-wise to `x` and then destroyed immediately after. We've wasted a lot of energy in deep-copying. 
+
+Similarly, appending to a full vector causes much copying before the append. That is not what we want to do.
+
+What we really want to do is, transfer the contents of `__temporary19_6` vector to `x` in a very simple way. Firstly, we copy the pointers; we cannot stop there, because at this point there are two `Vector<T>` objects owning the same memory resource. 
+
+![Step 1. Copy the pointers](move_semantics_11.png)
+
+The second step is, of course to set the pointers of the temporary to `nullptr`. 
+
+
+
+
+
+
+
+
 
