@@ -657,21 +657,57 @@ Vector<int> v1 {1, 2, 3, 4, 5};
 Vector<int> v2 {std::move(v1)};
 ```
 
-`std::move()` is a function that unconditionally casts its argument to an *rvalue*. `std::move(v1)` marks `v1` to be movable. It does not physically move anything. It signals, that the object `v1` may be *moved from*.  
+`std::move()` is a function that you can think of as performing an unconditional cast of its argument to an *rvalue* reference. `std::move(v1)` marks `v1` to be movable. It does not physically move anything. It signals, that the object `v1` may be *moved from*.  
 
 If you have an *lvalue*, an object for which the lifetime does not end when you use it, you can mark it with `std::move()` to express *I no longer need this object here*. `std::move` does not move; it only sets a temporary marker in the context where the expression is used:
 
 ```cpp
-void foo(const std::string& lr);    //binds to the passed object without modifying it
-void foo(std::string&& rv);         //binds to the passed object and might steal/modify its contents
+void foo1(const std::string& lr);    //binds to the passed object without modifying it
+void foo1(std::string&& rv);         //binds to the passed object and might steal/modify its contents
 
 std::string s{"hello"};
 
-foo(s);                             //calls the first foo(), s keeps its value
-foo(std::move(s));                  //calls the second foo(), s might lose its value
+foo1(s);                             //calls the first foo(), s keeps its value
+foo1(std::move(s));                  //calls the second foo(), s might lose its value
+                                     //semantically s no longer legal to access
 ```
 
-Objects marked with `std::move()` can still be passed to a function that takes an ordinary `const` *lvalue* reference:
+Objects marked with `std::move()` can still be passed to a function that takes an ordinary `const` *lvalue* reference. Consider another code snippet:
 
+```cpp
+void foo2(const std::string& lr);   //binds to the passed object without modifying it
+                                    //no other overload of foo2()
+foo2(s);                            // calls foo2(), s keeps its value
+foos(std::move(s))                  // calls foo2(), s keeps its value because we know that
+                                    // foo2() can't modify or take ownership of the contents of s.
+```
 
+Semantically, `s` is still legal to access after the execution of the last line. Because there's overload of `foo2(const std::string&&)`, there is no ways its contents can be modified or transferred. 
+
+Note that, an object marked with `std::move()` cannot be passed to a non-`const` *lvalue* reference.
+
+### Header file for `std::move()`
+
+`std::move()` is defined as a function in the C++ standard library. To use it, you have to include the header file `<utility>` where it is defined:
+
+### Implementation of `std::move()`
+
+`std::move()` is nothing but a `static_cast` to an *rvalue* reference. You can achieve the same effect by calling `static_cast` manually as follows:
+
+```cpp
+foo(static_cast<decltype(obj)&&>(obj));     //same effect foo(std::move(obj))
+```
+
+Therefore, we could also write:
+
+```cpp
+std::string s{"hello"};
+foo(static_cast<std::string&&>(s));
+```
+
+## Moved-from objects
+
+After a `std::move()`, moved-from objects are not (partially) destroyed. They are still valid objects for which at least the destructor will be called. However, they should also be valid in the sense that they have a consistent state and all operations work as expected. The only thing you do not know is their contents. 
+
+### Valid but unspecified state
 
