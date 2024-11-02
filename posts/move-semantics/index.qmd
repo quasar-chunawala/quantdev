@@ -506,13 +506,13 @@ To summarize: in order to use the copy-and-swap idiom, we need three things: a w
 
 ## Value Categories
 
-In C++, every expression is either an `lvalue` or an `rvalue`. Consider an object that owns some resources(file-descriptors, sockets, memory buffer).
+In C++, every expression is either an *lvalue* or an *rvalue*. Consider an object that owns some resources(file-descriptors, sockets, memory buffer).
 
-- An `lvalue` denotes an object whose resources cannot be reused. The object is an `lvalue`, if you can't take the guts(resources) out of this object and donate it to someone else. `lvalue`s include expressions that designate objects by their name. For example, in the expression `double y = f(x)`, `y` is an `lvalue`. Moreover, `lvalue`s have persistent storage and an identifiable memory address. For instance, if I declare `std::vector<double> v{1.0,2.0,3.0,4.0,5.0};`, then `v[0]` is an `lvalue`.
+- An *lvalue* denotes an object whose resources cannot be reused. The object is an *lvalue*, if you can't take the guts(resources) out of this object and donate it to someone else. *lvalue*s include expressions that designate objects by their name. For example, in the expression `double y = f(x)`, `y` is an *lvalue*. Moreover, *lvalue*s have persistent storage and an identifiable memory address. For instance, if I declare `std::vector<double> v{1.0,2.0,3.0,4.0,5.0};`, then `v[0]` is an *lvalue*.
 
-- An `rvalue` denotes an object whose resources can be reused. The object is an `rvalue`, if you can take the guts(resources) out of it and donate it to another object. `rvalue`s typically include temporary objects as they can't manipulated at the place they are created and are likely to be destroyed soon. For instance, if declare `int x = 5;`, `5` is an `rvalue`. Moreover, in the statement `double y = f(x);`, the expression `f(x)` is an `rvalue`. 
+- An *rvalue* denotes an object whose resources can be reused. The object is an *rvalue*, if you can take the guts(resources) out of it and donate it to another object. *rvalue*s typically include temporary objects as they can't manipulated at the place they are created and are likely to be destroyed soon. For instance, if declare `int x = 5;`, `5` is an *rvalue*. Moreover, in the statement `double y = f(x);`, the expression `f(x)` is an *rvalue*. 
 
-## Rvalue references
+## Moving data
 
 As seen earlier, C++ sometimes performs unnecessary copying. 
 
@@ -546,13 +546,109 @@ What we really want to do is, transfer the contents of `__temporary19_6` vector 
 
 ![Step 1. Copy the pointers](move_semantics_11.png)
 
-The second step is, of course to set the pointers of the temporary to `nullptr`. 
+The second step is, of course to set the pointers of the temporary vector to `nullptr`. 
 
+![Step 2. Zero out the members of __temp](move_semantics_12.png)
 
+That looks great and this is cheap! We are doing the minimum amount of work to transfer the contents of the temporary into `x`.
 
+At the end of the assignment operation, the temporary goes out of scope and the vector $\{1,2,3,\ldots,10\}$ is in `x`. How do we implement this logic programmatically?
 
+In addition to the copy-constructor, we write a move constructor. A move constuctor simply moves the data by taking ownership of the pointer that refers to the data, leaving the data itself where it resides.
 
+```cpp
+// move constructor
+Vector(Vector&& src)
+{
+    // Just swap the memory pointers
+    src.swap(*this);
+}
+```
 
+### *rvalue* references in detail
 
+The constructor takes an argument of the type *rvalue* reference. *rvalue* references are declared two ampersands. *lvalue*s bind to *lvalue* references. When taking a reference to a temporary object, an *rvalue*, you have two choices. *rvalue*s can bind to:
 
+- A `const` *lvalue* reference.
+- A mutable *rvalue* reference. 
+
+```cpp
+const std::string& r1 {"hello"};    
+std::string& r2 {"world"};
+
+const Vector<int>& r3 {1,2,3,4,5};
+Vector<int>&& r4{6,7,8,9,10};
+```
+
+All these references have the semantics of - *we can steal/modify the resources of the object we refer to, provided the state of the object remains a valid state*. Technically, these semantics are not checked by compilers, so we can modify an *rvalue* reference as we can do with any non-`const` object of the type. We might also decide not to  modify the value.
+
+```cpp
+std::string&& r1 = "hello";    
+r1 += "world"; 
+
+Vector<int>&& r2 {1,2,3,4,5};
+r2.push_back(6);
+```
+
+And it's a logic error to take a mutable *lvalue* reference to a temporary, so this is disallowed in the language:
+
+```cpp
+// std::string& r1 = "hello";    //error: this is not possible
+// r1 += "world"; 
+// Vector<int>& r2 {1,2,3,4,5};
+// r2.push_back(6);
+```
+
+Assigning a temporary to a reference extends the lifetime of the temporary so that it matches the lifetime of the reference. So, this is legal:
+
+```cpp
+int main()
+{
+    {
+        const std::string& s = foo();
+        std::cout << s << std::endl;    //the temporary to which s refers is still alive
+    }
+    //but now it's destroyed
+    return 0;    
+}
+
+```
+
+And so is this:
+
+```cpp
+std::string foo(){ return "foo";};      //function that returns a string
+
+void bar(std::string&& s){              // extends the lifetime as before
+    std::cout << s; 
+}    
+
+int main()
+{
+    bar(foo());     
+    return 0;
+}
+```
+
+### *rvalue* references as parameters
+
+Hey, this is cool! Why don't we apply this idea to the below example?
+
+```cpp
+Vector<int> v1 {1, 2, 3, 4, 5};
+Vector<int> v2 {v1};
+```
+
+Well, in this case, we would have a problem. `v1` has a name, it has a persistent storage location and a memory address, it is an *lvalue*. You can't steal the contents of `v1`.  
+
+But, we can do something about this. If indeed you are interested to transfer the contents of `v1` into `v2`, then all we need to do is use `std::move`. 
+
+```cpp
+Vector<int> v1 {1, 2, 3, 4, 5};
+Vector<int> v2 {std::move(v1)};
+```
+
+`std::move()` is a function that unconditionally casts its argument to an *rvalue*. `std::move(v1)` marks `v1` to be movable. It does not physically move anything. It signals, that the object `v1` may be *moved from*.  
+
+It allows the implementation of the call to benefit from this mark, by performing some optimization when copying the value, such as stealing the memory. Whether the memory/resource is stolen, is something the caller does not know.
 
