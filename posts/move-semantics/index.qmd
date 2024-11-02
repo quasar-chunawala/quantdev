@@ -558,10 +558,10 @@ In addition to the copy-constructor, we write a move constructor. A move constuc
 
 ```cpp
 // move constructor
-Vector(Vector&& src)
+Vector(Vector&& src) noexcept
 {
     // Just swap the memory pointers
-    src.swap(*this);
+    std::swap(src, *this);
 }
 ```
 
@@ -711,3 +711,168 @@ After a `std::move()`, moved-from objects are not (partially) destroyed. They ar
 
 ### Valid but unspecified state
 
+The C++ standard library guarantees that moved-from objects are in a *valid but unspecified state*. Consider the following code:
+
+```cpp
+std::string s{"hello"};
+std::vector<std::string> coll{};
+coll.push_back(std::move(s));
+```
+
+After passing `s` with `std::move()` you can ask for the number of characters, print out the value, or even assign a new value. However, you cannot print the first character or any other character without checking the number of characters first:
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <string>
+#include <utility>
+
+int main()
+{
+    std::string s{"hello"};
+    std::vector<std::string> coll{};
+    coll.push_back(std::move(s));   //keeps in a valid but unclear state
+    std::cout << "Contents of s : " << s << "\n";     //ok (don't know which value is written)
+    std::cout << "size : " << s.size() << "\n"; //ok (rites the number of characters)
+    // std::cout << "[0] = " << s[0] << "\n"; //error (potentially undefined behavior)
+    s = "new value";    // ok
+    return 0;
+}
+```
+[Compiler Explorer](https://godbolt.org/z/MY4Y576n1)
+
+stdout
+```
+Contents of s : 
+size : 0
+```
+
+### Reusing moved-from objects
+
+We might wonder why moved-from objects are still valid objects and are not (partially) destroyed. The reason is that there are useful applications of move semantics, where it makes sense to use moved-from objects again.
+
+For example, consider code where we read chunks of data from a network socket or read strings line-by-line from a file stream and move them into a vector:
+
+```cpp
+std::vector<std::string> allRows;
+std::string row;
+
+while(std::getline(myStream, row)){ //read next line into row
+    allRows.push_back(std::move(row));  //and move it to somewhere
+}
+```
+
+Each time after we read a line into `row`, we use `std::move()` to move the value of `row` into the vector of all rows. Then, `std::getline()` uses the moved-from object `row` again to read the next line into it.
+
+As a second example, consider a generic function that swaps two values:
+
+```cpp
+template <typename T>
+void swap(T& a, T& b)
+{
+    T tmp{std::move(a)};
+    a = std::move(b);       //assign new value to moved-from a
+    b = std::move(temp);    //assign new value to moved-from b
+}
+```
+
+Here, we move the value of `a` into a temporary object to be able t move-assign the value of `b` afterwards. The moved-from object `b` then receives the value of `tmp`, which is the former value of `a`. 
+
+Code like this is used in sorting algorithms for example, sorting a vector of buy/sell orders in the order book by the bid/ask prices. 
+
+### Move assignments of objects to themselves
+
+The rule that moved-from objects are in a *valid but unspecified state* usually also applies to objects after a direct or indirect self-move.
+
+For example, after the following statement, the object `x` is usually valid without its value being known:
+
+```cpp
+x = std::move(x);   //afterwards x is valid but has an unclear value
+```
+
+## The canonical move constructor and move assignment operator
+
+Consider the below `Widget` class as an example. The canonical move constructor and move assignment operators are written as follows:
+
+```cpp
+class Widget{
+    private:
+        int i;
+        std::string s{};
+        int* resource;            // Owning pointer
+
+    public:
+    // Move constructor
+    Widget(Widget&& rhs) noexcept //Phase 1: member-wise swap
+        : i {std::move(rhs.i)}
+        , s {std::move(rhs.s)}
+        , resource{std::move(rhs.resource)}
+    {
+        rhs.resource = nullptr; // Phase 2: reset the move-from object
+    }
+
+    // Move assignment operator
+    Widget& operator=(Widget&& src)
+    {
+        delete resource;            //Phase 1: Cleanup
+        std::swap(src, *this);      //Phase 2: Member-wise move
+        src->resource = nullptr;    //Phase 3: Reset
+        return *this;
+    }
+
+    Widget::Widget& operator=(Widget src);
+}
+```
+
+An owning-pointer such `int*` is special, and it has to be dealt with separately. 
+
+Raw pointers are bad (especially owning raw pointers). In this case, the declaration doesn't indicate whether it points to an element or an array. 
+
+If instead, we have a smart-pointer, then what I can do is omit is phase 2. 
+
+```cpp
+class Widget{
+    private:
+        int i;
+        std::string s{};
+        int* resource;      
+
+    public:
+    // Move constructor
+    Widget(Widget&& rhs) noexcept //Phase 1: member-wise swap
+        : i {std::move(rhs.i)}
+        , s {std::move(rhs.s)}
+        , resource{std::move(rhs.resource)}
+    {}
+
+    // Move assignment operator
+    Widget& operator=(Widget&& src)
+    {
+        std::swap(src, *this); 
+        return *this;
+    }
+
+    Widget::Widget& operator=(Widget src);
+}
+```
+
+I would like to show you one more thing. The canonical copy assignment operator also doubles up as a move-assignment operator. 
+
+```cpp
+// Copy/Move assignment operator
+Widget::Widget& operator=(Widget src)  //Copy/move constructor called 
+{
+    std::swap(src, *this); 
+    return *this;
+}
+
+int main()
+{
+    Widget w1(5,"hello", new int(10)),
+    Widget w2 = w1;     //copy/move assignment operator called
+    Widget w3 = std::move(w1);  //copy/move assignment operator called
+}
+
+```
+
+In the assignment statement `Widget w2 = w1;`, first the copy constructor is called and the contents of `w1` are copied to `src`, before the control enters the body of `operator=(Widget)`. Whereas the assignment statement `Widget w3 = std::move(w1)` results in the invocation of the move constructor and the contents of `w1` are transferred to `w3` before we execute the body of the assignment operator.
