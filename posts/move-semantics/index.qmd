@@ -1,5 +1,5 @@
 ---
-title: "A hitchhiker's guide to Move Semantics"
+title: "A hitchhiker's guide to move semantics and perfect forwarding"
 author: "Quasar"
 date: "2024-10-26"
 categories: [C++]      
@@ -632,7 +632,16 @@ int main()
 
 ### *rvalue* references as parameters
 
-Hey, this is cool! Why don't we apply this idea to the below example?
+When we declare a parameter to be an *rvalue* reference, it has exactly the behavior and semantics as introduced above:
+
+- The parameter can only bind to a temporary object or an *rvalue*.
+- According to the semantics of *rvalue* references:
+  - The caller claims that it is no longer interested in the object. Therefore, you can steal the guts of object, take ownership of its resources.
+  - However, the caller might still be interested in using the object. Therefore, any modification should keep the referenced object in a valid state.
+
+## `std::move()`
+
+Hey, this is cool! Why don't we apply these ideas to the below example?
 
 ```cpp
 Vector<int> v1 {1, 2, 3, 4, 5};
@@ -650,5 +659,19 @@ Vector<int> v2 {std::move(v1)};
 
 `std::move()` is a function that unconditionally casts its argument to an *rvalue*. `std::move(v1)` marks `v1` to be movable. It does not physically move anything. It signals, that the object `v1` may be *moved from*.  
 
-It allows the implementation of the call to benefit from this mark, by performing some optimization when copying the value, such as stealing the memory. Whether the memory/resource is stolen, is something the caller does not know.
+If you have an *lvalue*, an object for which the lifetime does not end when you use it, you can mark it with `std::move()` to express *I no longer need this object here*. `std::move` does not move; it only sets a temporary marker in the context where the expression is used:
+
+```cpp
+void foo(const std::string& lr);    //binds to the passed object without modifying it
+void foo(std::string&& rv);         //binds to the passed object and might steal/modify its contents
+
+std::string s{"hello"};
+
+foo(s);                             //calls the first foo(), s keeps its value
+foo(std::move(s));                  //calls the second foo(), s might lose its value
+```
+
+Objects marked with `std::move()` can still be passed to a function that takes an ordinary `const` *lvalue* reference:
+
+
 
