@@ -955,8 +955,6 @@ C++17 added mandates to the standard, formally known as :
 - Guraranteed return value optimization
 - Copy evasion
 
-### Guaranteed Copy Elison
-
 If, in an initialization of an object, when the initializer expression is *prvalue* of the same class type as the variable type, copy elison is guaranteed.
 
 ```cpp
@@ -968,13 +966,55 @@ class T{
     T(const T& t){ std::cout << "c'tor T(const T& t)\n";}
     T(T&& t){ std::cout << "c'tor T(T&& t)\n";}
 };
+```
 
-int main()
+```cpp
+T x{T{}};
+```
+In C++17, this is equivalent to `T x{};`. The default constructor is invoked only once.
+
+Similarly, if, in a `return` statement the operand is a *prvalue* of the same class type as the function return type, copy elison is guaranteed.
+
+```cpp
+T func()
 {
-    T x{T{}};
+    return T{};
+}
+
+T x{func()}; //Only one default construction of T allowed here
+```
+
+Under the rules of C++17, under the hood, a *prvalue* will be used only as *unmaterialized* recipe of an object, until actual materialization is required. 
+
+A *prvalue* is an expression whose evaluation *initializes/materializes* an object. This is called as *temporary materialization conversion*.
+
+```cpp
+class  T{
+    public:
+    T(){
+        std::cout << "c'tor T()\n";
+    }
+    //delete move and copy constructors
+    T(const T& other) = delete;
+    T(T&& other) = delete;
+}
+
+T make(){
+    //Creates the first temporary (pre C++17)
+    return T{};
+}
+
+int main(){
+    // Construct the second temporary (pre C++17)
+    // Copy/move temporary into N using the = operator (pre C++17)
+    T t = make();
     return 0;
 }
 ```
+
+Pre C++17, the function `make()` would construct a temporary within its scope. This temporary would then be copied/moved into another temporary within the `main` scope. Finally, the `operator=` would build `t` via copy/move construction. All of this temporary business would be elided by (RVO) by any decent compiler resulting in `make()` constructing a single object within `t`. However, this elison is somewhat optional, so the compiler must also demand that copy and move constructors exist, just in case. The above code does not compile with any pre C++17 compiler.
+
+Post C++17, `make()` creates an object of type `T` within `t`. Avoiding excessive use of temporary objects is now a language feature and the reliance on compiler optimization is removed. The above code does compiler with a post C++17 compiler. 
 
 ### Value Categories since C++17
 
@@ -988,6 +1028,7 @@ The key approach for explaining value categories now is that in general, we have
 An *xvalue* is then considered a special location, representing a (long-living) object, whose resources/values are no longer needed. 
 
 Loosely speaking, *prvalues* themselves do not exist somewhere in memory, they do not denote objects. They are used for initialization. In C++17, *prvalues* are not moved from. It doesn't make sense to talk about whether you can steal it's resources. 
+
 
 ## Perfect Forwarding
 
@@ -1106,3 +1147,39 @@ Remember that an *rvalue* passed to an *rvalue* reference becomes an *lvalue* wh
 For *perfect forwarding* in generic code, we would always need all these overloads for each parameter. To support all combinations, this means having $3^2 = 9$ overloads for $2$ generic arguments and $3^3 = 27$ overloads for $3$ generic arguments.
 
 Therefore, C++11 introduced a special way to *perfectly forward* without any overloads but still keeping the type and the value category.
+
+### Implementing perfect forwarding
+
+To avoid overloading functions for parameters with different value categories, C++ introduced the mechanism of perfect forwarding. You need three things:
+
+1. Take the call parameter as a pure *rvalue* reference (delcared with `&&` but without `const` or `volatile`)
+2. The type of the parameter has to be a template parameter of the function. 
+3. When forwarding the parameter to another function, use a helper function called `std::forward<>()` which is declared in `<utility>`.
+
+You have to implement a function that perfectly forwards an argument as follows:
+
+```cpp
+template<typename T>
+void callFoo(T&& arg)
+{
+    foo(std::forward<T>(arg));
+}
+```
+
+`std::forward<>()` is defined as a conditional `std::move()`, so that we get the same behavior as the three (or four) overloads of `callFoo()` above:
+
+- If we pass an *rvalue* to `arg`, we have the same effect as calling `foo(std::move(arg))`.
+- If we pass an *lvalue* to `arg`, we have the same effect as calling `foo(arg)`. 
+
+What exactly is happening here, is pretty tricky and needs a careful explanation.
+
+### Universal and Forwarding references
+
+First note that we declare `arg` as an *rvalue* reference parameter:
+
+```cpp
+template<typename T>
+void callFoo(T&& arg)
+```
+
+This might give the impression that the rules of *rvalue* references apply. However, that is not the case. An *rvalue* reference (not qualified with `const` or `volatile`) of a function parameter does not follow the rules of ordinary *rvalue* references. It is a different thing. 
