@@ -1211,23 +1211,79 @@ callFoo(std::move(c));  //ok
 In addition, they preserve the `const`-ness and value category (whether we have an *rvalue* or an *lvalue*) of the object they are bound to:
 
 ```cpp
+#include <iostream>
+#include <type_traits>
+class Widget{};
+
 template <typename T>
-void callFoo(T&& arg);
-X v;
-const X c;
-callFoo(v);             //ok, arg is X&
-callFoo(c);             //ok, arg is const X&
-callFoo(X{});           //ok, arg is X&&
-callFoo(std::move(v));  //ok, arg is X&&
-callFoo(std:::move(c)); //ok, arg is const X&&
+void f(T&& arg){
+    std::cout << std::boolalpha;
+
+    if (std::is_same<T&&, Widget&>::value)
+    {
+        std::cout << "T&& = Widget&\n";
+    }
+    else if (std::is_same<T&&, const Widget&>::value)
+    {
+        std::cout << "T&& = const Widget&\n";
+    }
+    else if(std::is_same<T&&, Widget&&>::value)
+    {
+        std::cout << "T&& = Widget&&\n";
+    }
+    else if(std::is_same<T&&,const Widget&&>::value)
+    {
+        std::cout << "T&& = const Widget&&\n";
+    }
+}
+
+int main()
+{
+    Widget w;
+    const Widget cw;
+
+    std::cout << "Calling f(w)\n"; 
+    f(w);
+    std::cout << "Calling f(cw)\n"; 
+    f(cw);
+    std::cout << "Calling f(std::move(w))\n"; 
+    f(std::move(w));
+    std::cout << "Calling f(std::move(cw))\n"; 
+    f(std::move(cw));
+    return 0;
+}
+```
+[Compiler Explorer](https://godbolt.org/z/759ebbErr)
+
+stdout:
+```
+Calling f(w)
+T&& = Widget&
+Calling f(cw)
+T&& = const Widget&
+Calling f(std::move(w))
+T&& = Widget&&
+Calling f(std::move(cw))
+T&& = const Widget&&
 ```
 
-By rule, the type `T&&`, which is the type `arg`, is:
+By rule, the template parameter type `T`, is deduced to be:
 
-- An *lvalue* reference if we refer to an *lvalue*.
-- An *rvalue* reference if we refer to an *rvalue*.
+- An *lvalue* reference if we pass an *lvalue*.
+- An *rvalue* reference if we pass to an *rvalue*.
 
 Note that, a generic *rvalue* reference that is qualified with `const` (or `volatile`) is **not** a universal reference. 
+
+The rules of *reference collapsing* are now applied:
+
+- `Widget& &&` becomes `Widget&`
+- `Widget&& &` becomes `Widget&`
+- `Widget& &&` becomes `Widget &`
+- `Widget&& &&` becomes `Widget&&`
+
+In the function call `f( w )`, we are passing an *lvalue*, so the template parameter `T` is deduced to be an *lvalue reference*, `Widget&`. Therefore, `T&&` is `Widget& &&` and by the rules of reference collapsing, this collapses to `Widget&`.
+
+Similarly, in the function call `f( Widget{} )`, we are passing an *rvalue*, so the template parameter `T` is deduced to be an *rvalue reference*, `Widget&&`. Therefore, `T&&` is `Widget&& &&` which collapses to `Widget&&`. 
 
 #### `std::forward<>()`
 
@@ -1240,3 +1296,12 @@ void callFoo(T&& arg)
     foo(std::forward<T>(arg));  // becomes foo()
 }
 ```
+
+Like `std::move()`, `std::forward()` is also defined as a function template in the header file `<utility>`. The expression `std::forward<T>(arg)` is essentially implemented as follows:
+
+- If an *rvalue* of type `T` is passed to the function, the expression is equivalent to `std::move(arg)`.
+- If an *lvalue* of type `T` is passed to the function, the expression is equivalent to `arg`.
+
+That is `std::forward<>()` is a `std::move()` only for passed *rvalues*. 
+
+Just like for `std::move()`, the semantic meaning of `std::forward()` is *I no longer need this value here*, with the additional benefit that we can preserve the type (including `const`-ness) and the *value category* of the object the passed universal reference points to. 
