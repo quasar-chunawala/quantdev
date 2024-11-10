@@ -9,7 +9,7 @@
 <meta name="author" content="Quasar">
 <meta name="dcterms.date" content="2024-10-26">
 
-<title>A hitchhiker’s guide to move semantics and perfect forwarding – Quant Insights</title>
+<title>A hitchhiker’s guide to move semantics and perfect forwarding – quantdev.blog</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -153,7 +153,7 @@ window.Quarto = {
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
     <a class="navbar-brand" href="../../index.html">
-    <span class="navbar-title">Quant Insights</span>
+    <span class="navbar-title">quantdev.blog</span>
     </a>
   </div>
             <div id="quarto-search" class="" title="Search"></div>
@@ -1315,19 +1315,39 @@ T&amp;&amp; = const Widget&amp;&amp;</code></pre>
 </section>
 <section id="stdforward" class="level4">
 <h4 class="anchored" data-anchor-id="stdforward"><code>std::forward&lt;&gt;()</code></h4>
-<p>Inside <code>callFoo()</code>, we then use the universal reference as follows:</p>
-<div class="sourceCode" id="cb60"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> callFoo<span class="op">(</span>T<span class="op">&amp;&amp;</span> arg<span class="op">)</span></span>
-<span id="cb60-3"><a href="#cb60-3" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb60-4"><a href="#cb60-4" aria-hidden="true" tabindex="-1"></a>    foo<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>T<span class="op">&gt;(</span>arg<span class="op">));</span>  <span class="co">// becomes foo()</span></span>
-<span id="cb60-5"><a href="#cb60-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Like <code>std::move()</code>, <code>std::forward()</code> is also defined as a function template in the header file <code>&lt;utility&gt;</code>. The expression <code>std::forward&lt;T&gt;(arg)</code> is essentially implemented as follows:</p>
+<p><code>std::forward&lt;&gt;()</code> conditionally casts its input into an <em>rvalue</em> reference.</p>
 <ul>
-<li>If an <em>rvalue</em> of type <code>T</code> is passed to the function, the expression is equivalent to <code>std::move(arg)</code>.</li>
-<li>If an <em>lvalue</em> of type <code>T</code> is passed to the function, the expression is equivalent to <code>arg</code>.</li>
+<li>If the given input expression is an <em>lvalue</em>, it is cast to an <em>lvalue</em> reference.</li>
+<li>If the given input expression is an <em>rvalue</em>, it is cast to an <em>rvalue</em> reference.</li>
 </ul>
-<p>That is <code>std::forward&lt;&gt;()</code> is a <code>std::move()</code> only for passed <em>rvalues</em>.</p>
-<p>Just like for <code>std::move()</code>, the semantic meaning of <code>std::forward()</code> is <em>I no longer need this value here</em>, with the additional benefit that we can preserve the type (including <code>const</code>-ness) and the <em>value category</em> of the object the passed universal reference points to.</p>
+<p><code>std::forward</code> does not forward anything.</p>
+<div class="sourceCode" id="cb60"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Let's say that we would like to implement the make_unique()</span></span>
+<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a><span class="co">// function that invokes the underlying constructor - either move</span></span>
+<span id="cb60-3"><a href="#cb60-3" aria-hidden="true" tabindex="-1"></a><span class="co">// or copy based on the arguments</span></span>
+<span id="cb60-4"><a href="#cb60-4" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb60-5"><a href="#cb60-5" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb60-6"><a href="#cb60-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb60-7"><a href="#cb60-7" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> X<span class="op">{</span></span>
+<span id="cb60-8"><a href="#cb60-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb60-9"><a href="#cb60-9" aria-hidden="true" tabindex="-1"></a>        X<span class="op">(){}</span></span>
+<span id="cb60-10"><a href="#cb60-10" aria-hidden="true" tabindex="-1"></a>        X<span class="op">(</span><span class="at">const</span> X<span class="op">&amp;</span> x<span class="op">){</span> <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"copy c'tor</span><span class="sc">\n</span><span class="st">"</span><span class="op">;}</span></span>
+<span id="cb60-11"><a href="#cb60-11" aria-hidden="true" tabindex="-1"></a>        X<span class="op">(</span>X<span class="op">&amp;&amp;</span> x<span class="op">)</span> <span class="op">{</span> <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"move c'tor</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb60-12"><a href="#cb60-12" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb60-13"><a href="#cb60-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb60-14"><a href="#cb60-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb60-15"><a href="#cb60-15" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Args<span class="op">&gt;</span></span>
+<span id="cb60-16"><a href="#cb60-16" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> make_unique<span class="op">(</span>Args<span class="op">&amp;&amp;...</span> args<span class="op">){</span></span>
+<span id="cb60-17"><a href="#cb60-17" aria-hidden="true" tabindex="-1"></a>    T<span class="op">*</span> <span class="dt">ptr_t</span> <span class="op">=</span> <span class="kw">new</span> T<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Args<span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb60-18"><a href="#cb60-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;(</span><span class="dt">ptr_t</span><span class="op">);</span></span>
+<span id="cb60-19"><a href="#cb60-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb60-20"><a href="#cb60-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb60-21"><a href="#cb60-21" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb60-22"><a href="#cb60-22" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb60-23"><a href="#cb60-23" aria-hidden="true" tabindex="-1"></a>    X x1<span class="op">{};</span></span>
+<span id="cb60-24"><a href="#cb60-24" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>X<span class="op">&gt;</span> x2<span class="op">{</span>make_unique<span class="op">&lt;</span>X<span class="op">&gt;(</span>x1<span class="op">)};</span>  <span class="co">//calls X(const X&amp;)</span></span>
+<span id="cb60-25"><a href="#cb60-25" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>X<span class="op">&gt;</span> x3<span class="op">{</span>make_unique<span class="op">&lt;</span>X<span class="op">&gt;(</span>X<span class="op">{})};</span> <span class="co">//calls X(X&amp;&amp;)</span></span>
+<span id="cb60-26"><a href="#cb60-26" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb60-27"><a href="#cb60-27" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 <!-- -->
@@ -3097,24 +3117,42 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb61-1287"><a href="#cb61-1287" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-1288"><a href="#cb61-1288" aria-hidden="true" tabindex="-1"></a><span class="fu">#### `std::forward&lt;&gt;()`</span></span>
 <span id="cb61-1289"><a href="#cb61-1289" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-1290"><a href="#cb61-1290" aria-hidden="true" tabindex="-1"></a>Inside <span class="in">`callFoo()`</span>, we then use the universal reference as follows:</span>
+<span id="cb61-1290"><a href="#cb61-1290" aria-hidden="true" tabindex="-1"></a><span class="in">`std::forward&lt;&gt;()`</span> conditionally casts its input into an *rvalue* reference. </span>
 <span id="cb61-1291"><a href="#cb61-1291" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-1292"><a href="#cb61-1292" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb61-1293"><a href="#cb61-1293" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb61-1294"><a href="#cb61-1294" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> callFoo<span class="op">(</span>T<span class="op">&amp;&amp;</span> arg<span class="op">)</span></span>
-<span id="cb61-1295"><a href="#cb61-1295" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb61-1296"><a href="#cb61-1296" aria-hidden="true" tabindex="-1"></a>    foo<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>T<span class="op">&gt;(</span>arg<span class="op">));</span>  <span class="co">// becomes foo()</span></span>
-<span id="cb61-1297"><a href="#cb61-1297" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb61-1298"><a href="#cb61-1298" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb61-1299"><a href="#cb61-1299" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-1300"><a href="#cb61-1300" aria-hidden="true" tabindex="-1"></a>Like <span class="in">`std::move()`</span>, <span class="in">`std::forward()`</span> is also defined as a function template in the header file <span class="in">`&lt;utility&gt;`</span>. The expression <span class="in">`std::forward&lt;T&gt;(arg)`</span> is essentially implemented as follows:</span>
-<span id="cb61-1301"><a href="#cb61-1301" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-1302"><a href="#cb61-1302" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>If an *rvalue* of type <span class="in">`T`</span> is passed to the function, the expression is equivalent to <span class="in">`std::move(arg)`</span>.</span>
-<span id="cb61-1303"><a href="#cb61-1303" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>If an *lvalue* of type <span class="in">`T`</span> is passed to the function, the expression is equivalent to <span class="in">`arg`</span>.</span>
-<span id="cb61-1304"><a href="#cb61-1304" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-1305"><a href="#cb61-1305" aria-hidden="true" tabindex="-1"></a>That is <span class="in">`std::forward&lt;&gt;()`</span> is a <span class="in">`std::move()`</span> only for passed *rvalues*. </span>
-<span id="cb61-1306"><a href="#cb61-1306" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-1307"><a href="#cb61-1307" aria-hidden="true" tabindex="-1"></a>Just like for <span class="in">`std::move()`</span>, the semantic meaning of <span class="in">`std::forward()`</span> is *I no longer need this value here*, with the additional benefit that we can preserve the type (including `const`-ness) and the *value category* of the object the passed universal reference points to. </span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
+<span id="cb61-1292"><a href="#cb61-1292" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>If the given input expression is an *lvalue*, it is cast to an *lvalue* reference.</span>
+<span id="cb61-1293"><a href="#cb61-1293" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>If the given input expression is an *rvalue*, it is cast to an *rvalue* reference.</span>
+<span id="cb61-1294"><a href="#cb61-1294" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb61-1295"><a href="#cb61-1295" aria-hidden="true" tabindex="-1"></a><span class="in">`std::forward`</span> does not forward anything. </span>
+<span id="cb61-1296"><a href="#cb61-1296" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb61-1297"><a href="#cb61-1297" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb61-1298"><a href="#cb61-1298" aria-hidden="true" tabindex="-1"></a><span class="co">// Let's say that we would like to implement the make_unique()</span></span>
+<span id="cb61-1299"><a href="#cb61-1299" aria-hidden="true" tabindex="-1"></a><span class="co">// function that invokes the underlying constructor - either move</span></span>
+<span id="cb61-1300"><a href="#cb61-1300" aria-hidden="true" tabindex="-1"></a><span class="co">// or copy based on the arguments</span></span>
+<span id="cb61-1301"><a href="#cb61-1301" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb61-1302"><a href="#cb61-1302" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb61-1303"><a href="#cb61-1303" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb61-1304"><a href="#cb61-1304" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> X<span class="op">{</span></span>
+<span id="cb61-1305"><a href="#cb61-1305" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb61-1306"><a href="#cb61-1306" aria-hidden="true" tabindex="-1"></a>        X<span class="op">(){}</span></span>
+<span id="cb61-1307"><a href="#cb61-1307" aria-hidden="true" tabindex="-1"></a>        X<span class="op">(</span><span class="at">const</span> X<span class="op">&amp;</span> x<span class="op">){</span> <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"copy c'tor</span><span class="sc">\n</span><span class="st">"</span><span class="op">;}</span></span>
+<span id="cb61-1308"><a href="#cb61-1308" aria-hidden="true" tabindex="-1"></a>        X<span class="op">(</span>X<span class="op">&amp;&amp;</span> x<span class="op">)</span> <span class="op">{</span> <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"move c'tor</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb61-1309"><a href="#cb61-1309" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb61-1310"><a href="#cb61-1310" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb61-1311"><a href="#cb61-1311" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb61-1312"><a href="#cb61-1312" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Args<span class="op">&gt;</span></span>
+<span id="cb61-1313"><a href="#cb61-1313" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> make_unique<span class="op">(</span>Args<span class="op">&amp;&amp;...</span> args<span class="op">){</span></span>
+<span id="cb61-1314"><a href="#cb61-1314" aria-hidden="true" tabindex="-1"></a>    T<span class="op">*</span> <span class="dt">ptr_t</span> <span class="op">=</span> <span class="kw">new</span> T<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Args<span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb61-1315"><a href="#cb61-1315" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;(</span><span class="dt">ptr_t</span><span class="op">);</span></span>
+<span id="cb61-1316"><a href="#cb61-1316" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb61-1317"><a href="#cb61-1317" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb61-1318"><a href="#cb61-1318" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb61-1319"><a href="#cb61-1319" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb61-1320"><a href="#cb61-1320" aria-hidden="true" tabindex="-1"></a>    X x1<span class="op">{};</span></span>
+<span id="cb61-1321"><a href="#cb61-1321" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>X<span class="op">&gt;</span> x2<span class="op">{</span>make_unique<span class="op">&lt;</span>X<span class="op">&gt;(</span>x1<span class="op">)};</span>  <span class="co">//calls X(const X&amp;)</span></span>
+<span id="cb61-1322"><a href="#cb61-1322" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>X<span class="op">&gt;</span> x3<span class="op">{</span>make_unique<span class="op">&lt;</span>X<span class="op">&gt;(</span>X<span class="op">{})};</span> <span class="co">//calls X(X&amp;&amp;)</span></span>
+<span id="cb61-1323"><a href="#cb61-1323" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb61-1324"><a href="#cb61-1324" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb61-1325"><a href="#cb61-1325" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 

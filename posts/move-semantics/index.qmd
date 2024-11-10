@@ -1287,21 +1287,43 @@ Similarly, in the function call `f( Widget{} )`, we are passing an *rvalue*, so 
 
 #### `std::forward<>()`
 
-Inside `callFoo()`, we then use the universal reference as follows:
+`std::forward<>()` conditionally casts its input into an *rvalue* reference. 
+
+- If the given input expression is an *lvalue*, it is cast to an *lvalue* reference.
+- If the given input expression is an *rvalue*, it is cast to an *rvalue* reference.
+
+`std::forward` does not forward anything. 
+
+A really cool use-case of perfect forwarding is the `std::make_unique()` function. `std::make_unique<T>()` must invoke the underlying constructor. However, whilst doing so, it must preserve the const-ness and the value category of the arguments passed to the constructor. 
+
+Here is a quick code snippet:
 
 ```cpp
-template<typename T>
-void callFoo(T&& arg)
+// Let's say that we would like to implement the make_unique()
+// function that invokes the underlying constructor - either move
+// or copy based on the arguments
+#include <memory>
+#include <iostream>
+
+class X{
+    public:
+        X(){}
+        X(const X& x){ std::cout << "copy c'tor\n";}
+        X(X&& x) { std::cout << "move c'tor\n"; }
+};
+
+
+template<typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args&&... args){
+    T* ptr_t = new T(std::forward<Args>(args)...);
+    return std::unique_ptr<T>(ptr_t);
+}
+
+int main()
 {
-    foo(std::forward<T>(arg));  // becomes foo()
+    X x1{};
+    std::unique_ptr<X> x2{make_unique<X>(x1)};  //calls X(const X&)
+    std::unique_ptr<X> x3{make_unique<X>(X{})}; //calls X(X&&)
+    return 0;
 }
 ```
-
-Like `std::move()`, `std::forward()` is also defined as a function template in the header file `<utility>`. The expression `std::forward<T>(arg)` is essentially implemented as follows:
-
-- If an *rvalue* of type `T` is passed to the function, the expression is equivalent to `std::move(arg)`.
-- If an *lvalue* of type `T` is passed to the function, the expression is equivalent to `arg`.
-
-That is `std::forward<>()` is a `std::move()` only for passed *rvalues*. 
-
-Just like for `std::move()`, the semantic meaning of `std::forward()` is *I no longer need this value here*, with the additional benefit that we can preserve the type (including `const`-ness) and the *value category* of the object the passed universal reference points to. 
