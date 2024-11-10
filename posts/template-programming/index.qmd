@@ -20,4 +20,73 @@ Between C++11 and C++20, the language gained several improvements to variadic te
 
 ## An overview of variadic templates
 
-A *template parameter pack* is a template parameter that accepts zero or more template arguments. A *function parameter pack* is a function parameter that accepts zero or more function arguments. A variadic template is template that captures a parameter pack in its template arguments or function arguments. A parameter pack is captured by introducing an identifier prefixed by an ellipsis, as in `...X`. Once captured, a parameter pack can later be used in a *pattern* expanded by an ellipsis (`...`), generally to the right of the pattern, as in `X...`. Pack expansion is conceptually equivalent to having one copy of the pattern for each element of the parameter pack.
+A *template parameter pack* is a template parameter that accepts zero or more template arguments. A *function parameter pack* is a function parameter that accepts zero or more function arguments. A variadic template is template that captures a *parameter pack* in its template arguments or function arguments. A parameter pack is captured by introducing an identifier prefixed by an ellipsis, as in `...X`. Once captured, a parameter pack can later be used in a *pattern* expanded by an ellipsis (`...`), generally to the right of the pattern, as in `X...`. Pack expansion is conceptually equivalent to having one copy of the pattern for each element of the parameter pack.
+
+```cpp
+#include <iostream>
+
+template <typename T>
+T sum(T x){
+    return x;
+}
+
+template <typename T, typename... Args>
+T sum(T x, Args... args){
+    return x + sum<Args...>(args...);
+}
+
+int main()
+{   
+    double result = sum(1.0, 2.0, 3.0, 4.0, 5.0);
+    std::cout << "result = " <<  result;
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/v1cM4anWY)
+
+The `sum()` function takes one or more arguments. The first argument is always captured by the parameter `x` and the rest of the arguments are captured by the pack `...args` on line 9.
+
+## Expanding parameter packs
+
+When using a variadic template, we often use a recursive logic with two overloads : one for the general case and one for ending the recursion. 
+
+The below code snip is a minimalistic example of tuple. The first class is the primary template. The primary template tuple has two member variables : `first` of type `Type` and `rest` of type `Types...` . This means that a template of `N` elements will contain the first element, and another tuple; this second tuple in turn contains the second element and yet another tuple; so on and so forth. 
+
+A captured parameter pack must be used in a *pattern* that is expanded with an ellipsis (`...`). A *pattern* is a set of tokens containing the identifiers of one or more parameter packs. On line 11, we capture a parameter pack `rest` consisting of a sequence of values `rest[i]` each of type `Types[i]` for the i-th position in parameter pack `Types`. On line 13, we expand the pattern `rest`. 
+
+```cpp
+// Variadic class templates and parameter pack expansion
+#include <functional>
+#include <utility>
+#include <iostream>
+
+template <typename Type, typename... Types>
+struct tuple{
+    Type first_;
+    tuple<Types...> rest_;
+
+    tuple(Type first, Types... rest) 
+        : first_(first)
+        , rest_(rest...)
+        {}
+};
+
+template <typename T>
+struct tuple<T>{
+    T first_;
+
+    tuple(T first) : first_(first) {}
+};
+
+int main()
+{   
+    tuple<double, double, double> x1(3.0, 4.0, 5.0);
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/cqsYjrYT8)
+
+When a pattern contains more than one parameter pack, all packs must have the same length. This length determines the number of times the pattern is conceptually replicated in the expansion, once for each position in the expanded pack(s). Consider the following code snippet:
+
