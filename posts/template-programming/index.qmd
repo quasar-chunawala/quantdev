@@ -49,7 +49,34 @@ The `sum()` function takes one or more arguments. The first argument is always c
 
 ## Expanding parameter packs
 
-When using a variadic template, we often use a recursive logic with two overloads : one for the general case and one for ending the recursion. 
+When using a variadic template, we often use a recursive logic with two overloads : one for the general case and one for ending the recursion. For instance:
+
+```cpp
+#include <iostream>
+
+template <typename T>
+T min(T a, T b)
+{
+    return a < b ? a : b;
+}
+
+template <typename T, typename... Args>
+T min(T first, Args... rest){
+    return min(first, min(rest...));
+}
+
+int main()
+{
+    int a = 2, b = 3, c = 4, d = 5;
+    int minValue {0};
+    minValue = min(a, b);
+    minValue = min(a, b, c);
+    minValue = min(a, b, c, d);
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/qv8KfY7jr)
 
 The below code snip is a minimalistic example of tuple. The first class is the primary template. The primary template tuple has two member variables : `first` of type `Type` and `rest` of type `Types...` . This means that a template of `N` elements will contain the first element, and another tuple; this second tuple in turn contains the second element and yet another tuple; so on and so forth. 
 
@@ -115,7 +142,49 @@ On line 7, `tuple<C...>` expands the pack `C` in the *template-argument list*, w
 
 On line 9, we expand the pattern `C(std::toupper(c))` in another initializer list. This is an example of a pattern with two packs, `C` and `c`, both of which have the same length and are expanded in lockstep. (`std::toupper()` returns an `int` rather than a `char` so requires a cast). 
 
+### `sizeof...` operator
+
+The number of arguments in a parameter pack can be retrieved at compile-time with the `sizeof...` operator. This operator returns a `constexpr` value of the `std::size_t` type. Let's see this in action:
+
+```cpp
+#include <iostream>
+#include <array>
+template <typename... Args>
+constexpr auto get_type_sizes(Args... args){
+    return std::array<std::size_t, sizeof...(Args)>{sizeof(args)...};
+}
+
+int main()
+{
+    auto sizes = get_type_sizes<char, int, long, double>('a', 2, 3L, 3.14);
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/h44x8KbMr)
+
+In this snippet, `sizeof...(Args)` evaluates to $4$ at compile-time, while `sizeof(args)...` is expanded to the following comma-separated pack of arguments: `sizeof(char)`, `sizeof(int)`, `sizeof(long)` and `sizeof(double)`. 
+
 In most cases, an expanded pattern is conceptually equivalent to the number of copies of the pattern equal to the size of the parameter pack. Unless otherwise noted, a pattern is expanded by appending an ellipsis (`...`). Here is a list of [contexts](https://timsong-cpp.github.io/cppwp/n4868/temp.variadic#5) in which a pattern can be expanded:
 
-- In *initializer-lists* (as shown above), including pack expansion in the arguments to a function call. Conceptually, such a pack expansion is equivalent to a comma-separated list of instances of the pattern. 
+- *Template parameter list*, to specify the parameters of a template.
+
+```cpp
+template <typename... T>
+struct outer{
+    template <T... args>
+    struct inner{};
+};
+
+outer<int, double, char[5]> a{};
+```
+
+- *Template argument list*, to specify the arguments for a template.
+
+```cpp
+template <typename T>
+struct tag{};
+
+
+```
 - In *base specifier lists*, to specify one base class for each member of a type parameter pack e.g.:
