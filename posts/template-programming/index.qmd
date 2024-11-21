@@ -142,9 +142,9 @@ On line 7, `tuple<C...>` expands the pack `C` in the *template-argument list*, w
 
 On line 9, we expand the pattern `C(std::toupper(c))` in another initializer list. This is an example of a pattern with two packs, `C` and `c`, both of which have the same length and are expanded in lockstep. (`std::toupper()` returns an `int` rather than a `char` so requires a cast). 
 
-### `sizeof...` operator
+### `sizeof...(pack)` 
 
-The number of arguments in a parameter pack can be retrieved at compile-time with the `sizeof...` operator. This operator returns a `constexpr` value of the `std::size_t` type. Let's see this in action:
+The number of arguments in a parameter pack can be retrieved at compile-time with the [`sizeof...`](https://timsong-cpp.github.io/cppwp/n4868/expr.sizeof#4) operator. This operator returns a `constexpr` value of the `std::size_t` type. Let's see this in action:
 
 ```cpp
 #include <iostream>
@@ -167,7 +167,7 @@ In this snippet, `sizeof...(Args)` evaluates to $4$ at compile-time, while `size
 
 In most cases, an expanded pattern is conceptually equivalent to the number of copies of the pattern equal to the size of the parameter pack. Unless otherwise noted, a pattern is expanded by appending an ellipsis (`...`). Here is a list of [contexts](https://timsong-cpp.github.io/cppwp/n4868/temp.variadic#5) in which a pattern can be expanded:
 
-- *Template parameter list*, to specify the parameters of a template.
+- Inside *template parameters* and *function parameters*, a pack expansion behaves like a comma separated list of patterns. An example in template parameters is the expansion of `T` in `inner` here:  
 
 ```cpp
 template <typename... T>
@@ -179,12 +179,69 @@ struct outer{
 outer<int, double, char[5]> a{};
 ```
 
-- *Template argument list*, to specify the arguments for a template.
+An example in function parameters is the expansion of `Args...`, when you call `foo`:
 
 ```cpp
-template <typename T>
-struct tag{};
+template <typename... Args>
+void foo(Args... args){}
 
-
+foo(42);
+foo(42, 'a');
 ```
+
+- In *template argument lists* as in `std::tuple<C...>`, the pack expands to the equivalent of a comma separated list of template arguments. 
+
+- In *function argument lists* when a captured parameter pack appears inside the parenthesis of a function call. The largest expression to the left of the ellipsis (`...`) is the pattern that is expanded.
+
+```cpp
+template<typename T>
+T step_it(T value){
+    return value + 1;
+}
+T sum(T x){
+    return x;
+}
+
+T sum(T first, T... args){
+    return (first + sum(args...));
+}
+
+template <typename... T>
+void do_sums(T... args)
+{
+    auto s1 = sum(args...); 
+    // sum(1, 2, 3, 4)
+
+    auto s2 = sum(42, args...);
+    // sum(42, 1, 2, 3, 4)
+
+    auto s3 = sum(step_it(args)...);
+    // sum(2, 3, 4, 5)
+}
+
+do_sums(1, 2, 3, 4);
+```
+
 - In *base specifier lists*, to specify one base class for each member of a type parameter pack e.g.:
+
+```cpp
+template <typename Base...>
+struct MyStruct : Base...{
+    MyStruct();
+};
+```
+
+- When initializing base classes in a **mem-initializer list** in a class constructor, the pack expansion initializes a list of base classes based on a type parameter pack:
+
+```cpp
+template<typename... Base>
+struct MyStruct: Base...{
+    /* Default c'ctor */
+    MyStruct() : Base...() {}
+
+    MyStruct(const Base&... args) : Base{args}... {}
+};
+```
+
+- In initializer lists, the pack exmpansion is conceptually equivlent to a comma-separated list of instances of the pattern.
+
