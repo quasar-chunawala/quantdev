@@ -280,4 +280,107 @@ int main()
 
 - In the context of deriving from a pack of base classes, it is useful to introduce names from the base classes into the definition of the derived class. Therefore, a pack expansion may also appear in a `using` declaration.
 
+```cpp
+#include <iostream>
+#include <array>
 
+struct A{
+    void execute() { std::cout << "A::execute()\n"; }
+};
+
+struct B{
+    void execute() { std::cout << "B::execute()\n"; }
+};
+
+struct C{
+    void execute() { std::cout << "C::execute()\n"; }
+};
+
+template<typename... Bases>
+struct X : public Bases...
+{
+    X(Bases const& ... args) : Bases(args)... {}
+    using Bases::execute...;
+    // Conceptually equivalent to
+    // using A::f;
+    // using B::f;
+    // using C::f;
+};
+
+int main()
+{
+    A a; B b; C c; X x(a, b, c);
+    x.A::execute();
+    x.B::execute();
+    x.C::execute();
+
+    
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/KMTjxonG5)
+
+- *Lambda Captures* - The capture clause of a lambda expression may contain a pack expansion.
+
+```cpp
+#include <iostream>
+
+template<typename... Args>
+std::common_type_t<Args...> add(Args... args){
+    return (... + args);
+}
+
+template<typename... T>
+void captures(T... args){
+    auto l = [args...]{
+        return add(args...);
+    };
+
+    l();
+}
+
+int main()
+{
+    captures(1, 2, 3, 4);
+    return 0;
+}
+```
+
+- *Fold expressions* - These are similar to left fold and right fold in functional programming.
+
+```cpp
+template<typename... T>
+int sum(T... args){
+    return (args + ...);
+}
+```
+
+A pattern may itself contain an expanded parameter pack, in which case there is no need for the inner and outer packs to contain the same number of elements. The expanded inner pack simply becomes a part of the pattern around the outer pack. For example:
+
+```cpp
+#include <iostream>
+
+template<typename... Args>
+std::common_type_t<Args...> sum(Args... il){
+    return (... + il);
+}
+
+template<int... N>
+struct Nested_sum{
+
+    template<typename... Args>
+    int nested_sum(Args... args){
+        return sum(sum(N...,args)...);
+    }
+};
+int main()
+{
+    Nested_sum<1,2> ns{};
+    int result = ns.nested_sum(100, 200);
+    // Equivalent to : sum(sum(1, 2, 100), sum(1, 2, 200))
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/eT6xdq667)
