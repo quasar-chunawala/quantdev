@@ -397,15 +397,12 @@ typename nth_type<n, Ts...>::value_type& get(tuple<Ts...>& t);
 The template arguments are the index and a parameter pack of the tuple types. Its implementation, however, requires some helper types. First, we need to know what the type of the element is at the `n`-th index. This can be done with the help of the following `nth_type` variadic class template:
 
 ```cpp
-template <int n, typename T, typename... Ts>
-struct nth_type : nth_type<N-1, Ts...>
-{
-    static_assert(n < sizeof...(Ts) + 1, "Index out of bounds!");
+template<int n, typename T, typename... Ts>
+struct nth_type : nth_type<n-1,Ts...>{
 };
 
-template <typename T, typename... Ts>
-struct nth_type : n_type<0,T,Ts...>
-{
+template<typename T, typename... Ts>
+struct nth_type<0,T,Ts...>{
     using value_type = T;
 };
 ```
@@ -413,11 +410,162 @@ struct nth_type : n_type<0,T,Ts...>
 Again, we have a primary template that uses recursive inheritance, and the specialization for the index `0` (which is the head of the list of templates). This type is only used as a mechanism for determining the type of a tuple element. We need another variadic class template for retrieving the value. 
 
 ```cpp
-template <int N>
-struct getter
-{
-    template <typename... Ts>
-    static typename nth_type<N, Ts...>::value_type& 
+template<int n>
+struct getter{
+    template<typename... Ts>
+    static typename nth_type<n, Ts...>::value_type&
+    get(tuple<Ts...>& t){
+        return getter<n-1>::get(t.rest_);
+    }
+};
+
+template<>
+struct getter<0>{
+    template<typename T, typename... Ts>
+    static T& get(tuple<T, Ts...>& t){
+        return t.first_;
+    }
+};
+```
+
+With all these defined, we can now provide an implementation for the helper variadic function template `get`. This implementation relies on the `getter` class template and calls the `get` variadic function template. 
+
+```cpp
+template<int n, typename... Ts>
+typename nth_type<n, Ts...>::value_type &
+get(tuple<Ts...>& t){
+    return getter<n>::get(t);
 }
 ```
+
+[Compiler Explorer](https://godbolt.org/z/bGq8E85Kv)
+
+Analysing the example above in [cppinsights.io](https://cppinsights.io/s/36b02d29) will be very illuminating. Here's the listing:
+
+```cpp
+/*************************************************************************************
+ * NOTE: This an educational hand-rolled transformation. Things can be incorrect or  *
+ * buggy.                                                                            *
+ *************************************************************************************/
+#include <iostream>
+
+template<typename T, typename ... Ts>
+struct tuple
+{
+  T first_;
+  tuple<Ts...> rest_;
+  inline tuple(T first, Ts... rest)
+  : first_{first}
+  , rest_{tuple<Ts...>(rest... )}
+  {
+  }
+  
+};
+
+/* First instantiated from: insights.cpp:6 */
+#ifdef INSIGHTS_USE_TEMPLATE
+template<>
+struct tuple<int, double>
+{
+  int first_;
+  tuple<double> rest_;
+  inline tuple(int first, double __rest1)
+  : first_{first}
+  , rest_{tuple<double>(__rest1)}
+  {
+  }
+  
+};
+
+#endif
+/* First instantiated from: insights.cpp:6 */
+#ifdef INSIGHTS_USE_TEMPLATE
+template<>
+struct tuple<double>
+{
+  double first_;
+  inline tuple(double first)
+  : first_{first}
+  {
+  }
+  
+};
+
+#endif
+/* First instantiated from: insights.cpp:53 */
+#ifdef INSIGHTS_USE_TEMPLATE
+template<>
+struct tuple<char, int, double>
+{
+  char first_;
+  tuple<int, double> rest_;
+  inline tuple(char first, int __rest1, double __rest2)
+  : first_{first}
+  , rest_{tuple<int, double>(__rest1, __rest2)}
+  {
+  }
+  
+};
+
+#endif
+
+template<typename T>
+struct tuple<T>
+{
+  T first_;
+  inline tuple(T first)
+  : first_(first)
+  {
+  }
+  
+};
+```
+
+The `tuple<char, int, double>` contains an `int` and a `tuple<int, double>`, which contains a `int` and `tuple<double>`, which in turn contains a `double` value.
+
+Next, we have the `nth_type` class template, for which, again, we have a primary template and several specializations, as follows:
+
+```cpp
+
+template<int n, typename T, typename ... Ts>
+struct nth_type : public nth_type<n - 1, Ts...>
+{
+};
+
+/* First instantiated from: insights.cpp:19 */
+#ifdef INSIGHTS_USE_TEMPLATE
+template<>
+struct nth_type<1, int, double> : public nth_type<0, double>
+{
+};
+
+#endif
+/* First instantiated from: insights.cpp:19 */
+#ifdef INSIGHTS_USE_TEMPLATE
+template<>
+struct nth_type<0, double>
+{
+  using value_type = double;
+};
+
+#endif
+/* First instantiated from: insights.cpp:45 */
+#ifdef INSIGHTS_USE_TEMPLATE
+template<>
+struct nth_type<2, char, int, double> : public nth_type<1, int, double>
+{
+};
+
+#endif
+
+template<typename T, typename ... Ts>
+struct nth_type<0, T, Ts...>
+{
+  using value_type = T;
+};
+```
+
+The `nth_type<2, char, int, double>` specialization is derived from `nth_type<1, int, double>` which in turn is derived from `nth_type<0, double>`, which is the last class in the base hierarchy.
+
+The `nth_type` structure is used as the return type in the `getter` helper class template, which is instantiated as follows:
 
