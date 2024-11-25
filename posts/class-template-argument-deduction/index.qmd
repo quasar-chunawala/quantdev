@@ -1,0 +1,715 @@
+---
+title: "Class Template Argument Deduction(CTAD)"
+author: "Quasar"
+date: "2024-11-10"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+format:
+    html:
+        code-tools: true
+        code-block-border-left: true
+        code-annotations: below
+        highlight-style: pygments
+---
+
+## Function Template Argument Deduction.
+
+Its super-helpful to have a good low-level hang of the template argument deduction rules (more on deduction guides in another post). Essentially, since C++17, you can just declare, `std::vector{1.0, 2.0, 3.0, 4.0, 5.0}` - clean and nice instead of `std::vector<double>{1.0, 2.0, 3.0, 4.0, 5.0}`.
+
+When the compiler tries to deduce the template arguments, it performs matching of the type template parameters with the types of arguments used to invoke the function. 
+
+Very succinctly, the compiler can match:
+- Types of the form 𝚃, 𝚃 𝚌𝚘𝚗𝚜𝚝, 𝚃 𝚟𝚘𝚕𝚊𝚝𝚒𝚕𝚎
+- Pointers 𝚃*, lvalue references 𝚃& and universal references 𝚃&&
+- Arrays such as 𝚃[𝟻]
+- Pointers to functions 
+- Pointers to member-functions and data-members.
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <chrono>
+#include <tuple>
+
+using namespace std::chrono;
+
+template<typename T>
+std::ostream& operator<<(std::ostream& out, const std::vector<T> vec){
+    for(int i{0}; i < vec.size(); ++ i){
+        out << "\n[" << i << "] = " << vec[i];
+    }
+    return out;
+}
+
+struct BondDiscountingCurve{
+    std::vector<std::pair<year_month_day,double>> discountFactorCurve;
+};
+
+struct CustomBond{
+    std::vector<double> cashflows;
+    std::vector<std::chrono::year_month_day> cashflow_dates;
+
+    double pv(BondDiscountingCurve disc){
+        double result{0.0};
+        for(int i{0};i < cashflows.size(); ++i)
+        {
+            double df = std::get<1>(disc.discountFactorCurve[i]);
+            result += cashflows[i] * df;
+        }
+        return result;
+    }
+};
+
+struct Leg{
+    // A cashflow is a 4-tuple (Cashflow date, Cashflow amount, Cap, Floor)
+    using flow = std::tuple<year_month_day, double, double, double>;
+    std::vector<flow> flows;
+};
+
+struct AssetSwap{
+    Leg bondLeg;
+    Leg fundingLeg;
+
+    Leg getBondLeg() { return bondLeg; }
+    Leg getFundingLeg() { return fundingLeg; }
+};
+
+template<typename T>
+void process01(T bond){ std::cout << "T\n"; }
+
+template<typename T>
+void process02(T const){ std::cout << "T const\n"; }
+
+template<typename T>
+void process03(T volatile) { std::cout << "T volatile\n"; }
+
+template<typename T>
+void process04(T*) { std::cout << "T*\n"; }
+
+template<typename T>
+void process04(T&) { std::cout << "T&\n"; }
+
+// Universal reference
+template<typename T>
+void process05(T&&) { std::cout << "T&&\n"; }
+
+template<typename T>
+void process06(T[5]) { std::cout << "T[5]\n"; }
+
+template<typename T>
+void process07(T[3][5]) { std::cout << "T[3][5]\n"; }
+
+template<typename T>
+void process08(T(*)()) { std::cout << "T (*)()\n"; }
+
+template<typename T>
+void process08(CustomBond (*)(T)) { std::cout << "C (*)(T)\n"; }
+
+template<typename T, typename U>
+void process08(T(*)(U)) { std::cout << "T (*)(U)\n"; }
+
+template<typename T>
+void process09(T(CustomBond::*)()) { std::cout << "T (C::*)()\n"; }
+
+template<typename T, typename U>
+void process09(T(CustomBond::*)(U)) { std::cout << "T (C::*)(U)\n"; }
+
+template<typename T, typename U>
+void process09(T(U::*)()) { std::cout << "T (U::*)()\n"; }
+
+template<typename T, typename U, typename V>
+void process09(T(U::*)(V)) { std::cout << "T (U::*)(V)\n"; }
+
+template<typename T>
+void process09(Leg(T::*)()) { std::cout << "C (T::*)()\n"; }
+
+template<typename T, typename U>
+void process09(Leg(T::*)(U)) { std::cout << "C (T::*)(U)\n"; }
+
+template<typename T>
+void process09(Leg(AssetSwap::*)(T)) { std::cout << "D (C::*)(T)\n"; }
+
+template<typename T>
+void process10(T CustomBond::*) { std::cout << "T C::*\n"; }
+
+template<typename T>
+void process10(Leg T::*) { std::cout << "C T::*\n"; }
+
+template<typename T, typename U>
+void process10(T U::*) { std::cout << "T U::*\n"; }
+
+int main()
+{
+    CustomBond bond(
+        {0.05, 0.05, 0.05, 1.05},
+        {2024y/June/20d, 2024y/December/20d, 2025y/June/20d, 2025y/December/20d}
+    );
+
+    AssetSwap assetSwap;
+
+    process01(bond);    // T
+    process02(bond);    // T const
+    process03(bond);    // T volatile
+    process04(&bond);   // T*
+    process04(bond);    // T&
+    process05(bond);    // T&&; deduced as CustomBond& 
+
+    CustomBond bondsArray[5] {};  //Create an array of custom bonds
+    process06(bondsArray);  // T[5]
+    process06(&bond);       // T[5]
+
+    CustomBond bondsByMaturityAndRating[3][5] {}; 
+    process07(bondsByMaturityAndRating);    //C[5][n]
+
+    CustomBond (*funcptr1)() = nullptr;
+    CustomBond (*funcptr2)(int) = nullptr;
+    double     (*funcptr3)(int) = nullptr;
+
+    process08(funcptr1);    //T(*)()
+    process08(funcptr2);    //C(*)(T)
+    process08(funcptr3);    //T(*)(U)
+
+    double (CustomBond::*ptrmemfunc1) () = nullptr;
+    double (CustomBond::*ptrmemfunc2)(BondDiscountingCurve) = &CustomBond::pv;
+    std::vector<double> (Leg::*ptrmemfunc3)() = nullptr;
+    double(AssetSwap::*getLegPv)(Leg) = nullptr;
+    Leg(AssetSwap::*ptrmemfunc4)() = &AssetSwap::getFundingLeg;
+    Leg(Leg::*applyScaleToAllCoupons)(double) = nullptr;
+    Leg(AssetSwap::*applyFixedSpreadToAllCoupons)(double) = nullptr;
+    //Leg(AssetSwap::*)()
+
+    process09(ptrmemfunc1);     // T(C::*)()
+    process09(ptrmemfunc2);     // T(C::*)(U)
+    process09(ptrmemfunc3);     // T(U::*)()
+    process09(getLegPv);        // T(U::*)(V)
+    process09(ptrmemfunc4);     // C(T::*)()
+    process09(applyScaleToAllCoupons);          //C(T::*)(U)
+    process09(applyFixedSpreadToAllCoupons);    //D(C::*)(T)
+
+    process10(&CustomBond::cashflows);
+    process10(&AssetSwap::bondLeg);
+    process10(&Leg::flows);
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/6zsxEchcv)
+
+
+## CTAD (Class Template Argument Deduction).
+
+### The basic mechanics.
+
+CTAD(Class Template Argument Deduction) has $2$ phases:
+
+1.  Deduction (CTAD) - The first step is, the compiler is going to
+    deduce the types that you didn't write.
+
+2.  Initialization - The second step is, it's going to initialize the
+    object.
+
+Let's take a templated class `pair`, this is just a fictional class, it
+is not actually how `std::pair<>` looks like:
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+template<typename T, typename U>
+struct pair{
+    T first;
+    U second;
+
+    pair(const T& _first, const U& _second) 
+    : first(_first)
+    , second(_second)
+    {}
+
+    pair(T&& _first, U&& _second) 
+    : first(std::move<T>(_first))
+    , second(std::move<U>(_second))
+    {}
+
+    //other stuff
+};
+```
+:::
+
+This is an oversimplification that is enough for our purposes. So, you
+have a templated class with two template parameters `T` and `U` and then
+you have a bunch of constructors. Now, we want to instantiate one of
+these things:
+
+``` {.cpp breaklines=""}
+pair p1{"OptionVolQuote"s, 0.50};
+```
+
+You want to construct an object of type `pair`. The next thing the
+compiler sees is, `pair` is a template. And we didn't specify any
+template arguments. Probably, you *wanna* do class template argument
+deduction.
+
+The next thing happens. `pair` has a bunch of constructors. Probably,
+you *wanna* call one of those constructors. And this where step 1 kicks
+in, which is the actual *Class Template Argument Deduction*(CTAD).
+
+So, how does the compiler figure out, what you actually want to
+instantiate? So, it's going to look at those constructors. Let's pretend
+for a minute, that those constructors are ordinary functions - just
+free-standing functions. Now, these functions use class template
+parameters. Let's pretend for a moment, that those template parameters
+are template parameters for the function.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+template<typename T, typename U>
+struct pair{
+    T first;
+    U second;
+
+    // Imagine this to be a function template
+    template<typename T, typename U>  
+    pair(const T& _first, const T& _second) 
+    : first(_first)
+    , second(_second)
+    {}
+
+    // Imagine this to be a function template
+    template<typename T, typename U>
+    pair(T&& _first, U&& _second) 
+    : first(std::move<T>(_first))
+    , second(std::move<U>(_second))
+    {}
+
+    //other stuff
+};
+```
+:::
+
+So, this code doesn't exist. It's just what the compiler temporarily
+does for you. And it generates these template functions from the
+constructors and they are called the *deduction candidates*.
+
+And now, if we have a call like this:
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+pair p1{"OptionVolQuote"s, 0.50};
+```
+:::
+
+we know, how to deal with functions right. So, it's going to look at
+these functions and apply the usual template arguments deduction and the
+usual overload resolution.
+
+`"OptionVolQuote"s` is a *lvalue* that gets converted to an *xvalue* (by
+the `std::string()` constructor) and `0.50` is a *prvalue*. these
+arguments bind to universal references. So, the `pair(T&&, U&&)` version
+is chosen by the compiler from the overload set, during overload
+resolution. Further, `T` is deduced as `std::string` and `U` is deduced
+as `double`. The compiler literally inserts them as:
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+pair<std::string,double> p1{"OptionVolQuote"s, 0.50};
+```
+:::
+
+Then, its going to do, what it would have done, if you would have
+written `pair<std::string,double>`. So, now we know, that this `pair` is
+actually `pair<std::string,int>`. So, the step 1 is done.
+
+Now, what we can do is, we can actually instantiate the function
+template! That's step 2. So, you have an actual constructor and it will
+be called by the run-time to create an object of
+`pair<std::string,int>`. And we are done.
+
+If we write:
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+const auto s{"5YSwapRate"s};
+const auto rate{0.0125};
+pair p2{s,rate};
+```
+:::
+
+Here, `s` and `rate` are identifiers, so these are *glvalues* and can
+bind to `const T&`. So, the compiler instantiates the first overload of
+the constructor as `pair(const std::string&, const double&)`.
+
+There's no need to use `std::make_pair` anymore. This `make_pair` thing
+is a basically a work-around for the fact that up until C++14, you could
+only do this with functions. So, you had to use a function to deduce the
+class template arguments. So, it was kind of hacky. And now we don't
+need to use that anymore.
+
+The same goes for `std::tuple`, you can instantiate a `std::tuple` with
+a bunch of arguments and it's going to deduce the correct types for you,
+so you don't need to use `std::make_tuple` anymore.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+std::tuple point{1.00, -1.00}
+```
+:::
+
+Let's look at `std::vector`. So, for example, if you just give it an
+`std::initializer_list` of `int`s, its gonna correctly deduce back to
+`std::vector<int>`.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+std::vector v{3, 5, 7, 11, 13};
+// deduces std::vector<int>
+```
+:::
+
+Of course, with `std::vector`, there's a trap. `std::vector` has this
+other constructor which takes a `std::size_t`, and it initializes a
+vector with that many elements in it.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+std::vector<int> v1{3};
+// content is {3}
+
+std::vector<int> v2(3);
+// content is {0,0,0}
+```
+:::
+
+So, in C++14, if you write `std::vector<int> v{3}` with curly braces,
+it's going to be an initializer list, so its going to initialize the
+vector with one `int`, which is `3`. If you `std::vector<int> v(3)` with
+parenthesis, it's going to call the `size_t` constructor, and you're
+gonna have 3 `int`s, which are initialized to `0.0`.
+
+Now, what happens if you omit the `int` and use class-template argument
+deduction? Then if you write the curlies, its going to do the deduction.
+But if you use round parenthesis, it says, well you're calling the
+constructor that takes a `size_t`, so you are going to have 3 elements,
+but 3 elements of what type? You didn't specify! So, you get a compiler
+error.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+std::vector v1{3};
+// Ok- deduces std::vector<int>, content is {3}
+
+// std::vector v2(3);
+// Error : 3 elements of what?
+```
+:::
+
+`std::vector` has another constructor, which is really cool! Now, some
+real magic happens here! So, if you have a range of `int`s, any range,
+then there's this constructor that takes a pair of iterators like
+`begin()` and `end()` and if you don't specify the `int`, it is still
+going to figure out, that those iterators are iterators to `int` range
+and it is going correctly deduce `std::vector<int>` for you.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+std::vector range{2, 3, 5, 7, 11};
+std::vector v(range.begin(), range.end());
+// deduces std::vector<int>
+```
+:::
+
+How does that work? It has this constructor which looks like the below.
+It takes two iterators.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+template<typename T>
+struct vector
+{
+    // range c'tor
+    template<typename Iter>
+    vector<Iter begin, Iter end> { /* ... */ }
+
+    // other stuff
+};
+```
+:::
+
+If you have a constructor that also has template arguments, the compiler
+is going to pretend that this is a function and it's going to take the
+template argument of the class and concatenate it with the constructor's
+template argument. It's going to put them one after the other.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+// This is magic code, generated by the compiler
+template<typename T>
+struct vector
+{
+    // range c'tor
+    template<typename T, typename Iter>
+    vector<Iter begin, Iter end> { /* ... */ }
+
+    // other stuff
+};
+```
+:::
+
+Now, if you call it like this:
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+std::vector range{2, 3, 5, 7, 11};
+std::vector v(range.begin(), range.end());
+```
+:::
+
+it's going to say, well okay, you are giving me two iterators, so I can
+deduce the type of iterators as `std::vector<>::iterator`. But, you
+didn't specify `T`, so I still don't know what `T` is. So, how is it
+able to figure this out?
+
+# Deduction Guides.
+
+This is another feature called deduction guides. When the compiler can't
+figure out, with this machinery, what the type is, but it is kind of
+obvious to you, what the type should be, you can write a deduction
+guide.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+template<typename T>
+struct vector
+{
+    // range c'tor
+    template<typename Iter>
+    vector<Iter begin, Iter end> { /* ... */ }
+
+    // other stuff
+};
+
+// deduction guide:
+template <typename Iter>
+vector(Iter begin, Iter end) 
+    -> vector<typename Iter::iterator_traits<Iter>::value_type>;
+
+std::vector range{2, 3, 5, 7, 11};
+std::vector v(range.begin(), range.end());
+```
+:::
+
+It starts with something that looks like a constructor signature, and
+then you have this arrow `->` and after the arrow, you put like a
+specialization of the same class. So, you are gonna say, well, if you
+have this constructor signature (which will be added to the deduction
+candidates), and if this is the one that is going to be selected by the
+compiler, then deduce the type after the arrow (`->`). So, this is like
+a new entity in C++17. It's not a class, it's not a function, it's a
+*deduction guide*.
+
+With that deduction guide, basically you're saying, well, if I get two
+iterators, then take the iterator traits, figure out the value type
+which this iterator points to and initialize the vector with that type.
+And that works and compiles.
+
+So, this compiles, but actually the order matters. Deductions guides are
+only considered for the code that is below the deduction guide.
+
+So, if you flip around the order:
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+template<typename T>
+struct vector
+{
+    // range c'tor
+    template<typename Iter>
+    vector<Iter begin, Iter end> { /* ... */ }
+
+    // other stuff
+};
+
+std::vector range{2, 3, 5, 7, 11};
+//std::vector v(range.begin(), range.end());
+// Error: deduction failed
+
+// deduction guide:
+template <typename Iter>
+vector(Iter begin, Iter end) 
+    -> vector<typename Iter::iterator_traits<Iter>::value_type>;
+```
+:::
+
+then it's not going to work anymore.
+
+One thing that's really a good recommendation, is that these deduction
+guides are really part of the class interface. Because they tell you,
+you can instantiate this class template like this, so *deduction guides
+should be defined immediately after the class definition*.
+
+## List initialization has priority
+
+You really have to be careful with the parenthesis and the curlies.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+std::vector range{2, 3, 5, 7, 11};
+std::vector v(range.begin(), range.end());
+// deduces std::vector<int>
+
+std::vector v{range.begin(), range.end()};
+// list initialization has a priority, so the compiler deduces it
+// as std::vector<std::vector<int>::iterator>, which is 
+// probably not what we want
+```
+:::
+
+# Sequence Containers
+
+CTAD works the same with all the other sequence containers.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+#include <iostream>
+#include <vector>
+#include <list>
+#include <deque>
+#include <array>
+#include <forward_list>
+
+int main()
+{
+    std::list l{2, 3, 5, 7, 11};
+    //deduces std::list<int>
+
+    std::forward_list fl{2, 3, 5, 7, 11};
+    //deduces std::forward_list<int>
+
+    std::deque d{2, 3, 5, 7, 11};
+    //deduces std::deque<int>
+
+    std::array a{2, 3, 5, 7, 11};
+    //deduces std::array<int,5>
+    return 0;
+}
+```
+:::
+
+[Compiler Explorer](https://godbolt.org/z/d74a8c4f5)
+
+With `std::array<T,N>` it also deduces the size for you. We are going to
+see later, how that works. They also have these range constructors
+except for `std::array<T,N>`.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+std::vector range{2, 3, 5, 7, 11};
+
+std::list l(range.begin(), range.end());
+// deduces std::list<int>
+
+std::forward_list fl(range.begin(), range.end());
+// deduces std::foward_list<int>
+
+std::deque d(range.begin(), range.end());
+// deduces std::deque<int>
+
+// also, the same pitfall - don't use curly braces
+```
+:::
+
+Then, there is `std::set`. `std::set` also has both of these
+constructors. But, `std::set` also has more stuff. You know, `std::set`
+has this external template parameter which is the comparison function,
+so you can specify your own comparator lambda. And that's a template
+argument. But, the cool thing is, `std::set` also has a constructor,
+that takes this comparator as a template argument and it can deduce that
+as well. So, we can actually write something like this:
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+std::set s({2, 3, 5, 7, 11}, [](int a, int b){return a > b;});
+```
+:::
+
+Notice that you don't have to pass the type of the lambda
+`bool (int,int)`, the compiler will automatically deduce it for you.
+
+# Locks and Mutexes.
+
+One of the most popular use-cases for CTAD is mutexes. When you have
+long type names like `std::shared_timed_mutex mtx` and then if you had
+to lock it, you had to specify this thing:
+`std::lock_guard<std::shared_timed_mutex> lock(mtx)`. With C++17, you
+don't have to do that anymore:
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+std::shared_timed_mutex mtx;
+std::lock_guard lock(mtx);
+// deduced as std::lock_guard<std::shared_timed_mutex>
+```
+:::
+
+# Smart Pointers.
+
+This is one of the prime examples, where class template argument
+deduction can be dangerous and damaging. Let's say you have a
+`struct Citizen` with some constructor. And, then you want to create a
+`Citizen` instance dynamically on the heap. You would maybe expect to
+write:
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+struct Citizen{
+    //c'tor
+    Citizen(std::string prefix, int serial_number);
+};
+
+// std::shared_ptr sptr(new Citizen("THX",1138);
+// Error! No CTAD
+
+auto sptr = std::make_shared<Citizen>("THX",1138);
+```
+:::
+
+You give it a pointer to this dynamically allocated `Citizen` object,
+and then you think it's going to work. But, that fails and for good
+reason! It's specifically disabled. So, you're back to using
+`make_shared<T>` again. The same with `std::unique_ptr<T>`.
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+// std::unique_ptr sptr(new Citizen("THX",1138);
+// Error! No CTAD
+
+auto uptr = std::make_unique<Citizen>("THX",1138);
+```
+:::
+
+It's not going to the deduce the type `T`; you have to use
+`make_unique<T>`.
+
+There's good reasons for this. First of all, `make_shared<T>` has
+exception safety built in. If for some reason, the constructor fails and
+`throw`s, then you are not going to leak memory.
+
+Secondly, if you have an array, and you pass it to a constructor, it
+decays into a pointer. If you had class-template argument deduction
+smart-pointers, you could write like that:
+
+::: tcolorbox
+``` {.cpp breaklines=""}
+// std::unique_ptr uptr(new int[10]);
+// if that would compile, uh-oh!
+```
+:::
+
+A pointer to an array would decay to a pointer to an `int` for you. When
+the pointer goes out of scope, the destructor of `std::shared_ptr` calls
+`delete` on `sptr` and not `delete[]`.
+
+This is definitely a bug! We don't want people to be able to use CTAD
+here.
+
+We would like to disable CTAD. Now, the question is how do we disable
+it? How do we make sure that it doesn't work.
