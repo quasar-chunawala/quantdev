@@ -208,6 +208,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul class="collapse">
   <li><a href="#calling-type-metafunctions" id="toc-calling-type-metafunctions" class="nav-link" data-scroll-target="#calling-type-metafunctions">Calling Type Metafunctions</a></li>
   </ul></li>
+  <li><a href="#understanding-name-binding-and-dependent-types" id="toc-understanding-name-binding-and-dependent-types" class="nav-link" data-scroll-target="#understanding-name-binding-and-dependent-types">Understanding name binding and dependent types</a>
+  <ul class="collapse">
+  <li><a href="#two-phase-name-lookup" id="toc-two-phase-name-lookup" class="nav-link" data-scroll-target="#two-phase-name-lookup">Two-phase name lookup</a></li>
+  <li><a href="#dependent-type-names" id="toc-dependent-type-names" class="nav-link" data-scroll-target="#dependent-type-names">Dependent type names</a></li>
+  </ul></li>
+  <li><a href="#convenience-calling-functions" id="toc-convenience-calling-functions" class="nav-link" data-scroll-target="#convenience-calling-functions">Convenience calling functions</a></li>
+  <li><a href="#stdintegral_constant---a-very-useful-metafunction" id="toc-stdintegral_constant---a-very-useful-metafunction" class="nav-link" data-scroll-target="#stdintegral_constant---a-very-useful-metafunction"><code>std::integral_constant</code> - a very useful metafunction</a></li>
   </ul>
 </nav>
     </div>
@@ -329,12 +336,194 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>C++20 actually introduces <code>std::type_identity</code>, which is pretty much what we see above.</p>
 <section id="calling-type-metafunctions" class="level3">
 <h3 class="anchored" data-anchor-id="calling-type-metafunctions">Calling Type Metafunctions</h3>
-<p>When we call a value <em>metafunction</em>,</p>
+<p>When we call a value <em>metafunction</em>, we can easily call the function:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>ValueIdentity<span class="op">&lt;</span><span class="dv">42</span><span class="op">&gt;::</span>value</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><code>ValueIdentity</code> is the <em>metafunction</em>, it’s passed the parameter <code>42</code> in the angle brackets (just like parentheses for a regular value function) and <code>::value</code> is how I get it’s value back.</p>
+<p>When I call a type <em>metafunction</em>, it’s the same way. The function call consists of the <em>metafunction</em> name <code>std::type_identity</code>, the parameters to the <em>metafunction</em> in angle brackets (<code>&lt;42&gt;</code>) and <code>::type</code> is how I get it’s value back.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> T <span class="op">=</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;::</span>type<span class="op">;</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://godbolt.org/z/YaddrePGK">Compiler Explorer</a></p>
+</section>
+</section>
+<section id="understanding-name-binding-and-dependent-types" class="level2">
+<h2 class="anchored" data-anchor-id="understanding-name-binding-and-dependent-types">Understanding name binding and dependent types</h2>
+<p><em>Name binding</em> is the process of establishing, determining explicitly the type of each name (declaration) in a template. There are two kinds of names used within a template: <em>dependent</em> and <em>non-dependent</em> names. Names that depend on a template parameter are called <em>dependent</em> names.</p>
+<ul>
+<li>For dependent names, name binding is performed at the point of template instantiation.</li>
+<li>For non-dependent names, name binding is performed at the point of template definition.</li>
+</ul>
+<p>Consider the following C++ code:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Ref: Template metaprogramming with C++</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="co">// Mariusz Bancilla, pages 123 </span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> handler<span class="op">{</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> handle<span class="op">(</span>T value<span class="op">)</span>    <span class="co">//[1] handle is a dependent name</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"handler&lt;T&gt;: "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="ch">'</span><span class="sc">\n</span><span class="ch">'</span><span class="op">;</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> parser<span class="op">{</span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> parse<span class="op">(</span>T arg<span class="op">){</span>      <span class="co">//[2] parse is a dependent name</span></span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a>        arg<span class="op">.</span>handle<span class="op">(</span>x<span class="op">);</span></span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">double</span> x<span class="op">;</span>                  <span class="co">//[3] x is a non-dependent name</span></span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a>    handler<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> doubleHandler<span class="op">;</span>                <span class="co">//[5] template instantiation</span></span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a>    parser<span class="op">&lt;</span>handler<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;&gt;</span> doubleParser<span class="op">(</span><span class="fl">3.14</span><span class="op">);</span>   <span class="co">//[6] template instantiation</span></span>
+<span id="cb14-25"><a href="#cb14-25" aria-hidden="true" tabindex="-1"></a>    doubleParser<span class="op">.</span>parse<span class="op">(</span>doubleHandler<span class="op">);</span></span>
+<span id="cb14-26"><a href="#cb14-26" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-27"><a href="#cb14-27" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>When the compiler sees dependent names, e.g.&nbsp;at points <code>[1]</code> and <code>[2]</code>, it cannot determine the type-signature of these functions. So, <code>parse()</code> and <code>handle()</code> are not bound at this point.</p>
+<p>The declaration <code>double x</code> at point <code>[3]</code> declares a non-dependent type. So, the type of the variable <code>x</code> is known and bound.</p>
+<p>Continuing with the code, at point <code>[4]</code>, there is a template specialization for the <code>handler</code> class template for the type <code>int</code>.</p>
+<p>Template instantiation happens at points <code>[5]</code> and <code>[6]</code>. At point <code>[5]</code>, <code>handler&lt;double&gt;::handle</code> is bound to <code>handle</code> and at point <code>[6]</code>, <code>parser&lt;handler&lt;double&gt;&gt;::parse</code> is bound to <code>parse</code>.</p>
+<section id="two-phase-name-lookup" class="level3">
+<h3 class="anchored" data-anchor-id="two-phase-name-lookup">Two-phase name lookup</h3>
+<p>Name binding happens differently for dependent names (those that depend on a template parameter) and non-dependent names. When the compiler passes throuh the definition of a template, it needs to figure out whether a name is dependent or non-dependent. Further, name binding depends upon this categorization. Thus, <strong>the instantiation of a template happens in 2-phases</strong>.</p>
+<ul>
+<li>The first phase occurs at the point of the definition when the template syntax is checked and the names are categorized as <em>dependent</em> or <em>non-dependent</em>.</li>
+<li>The second phase occurs at the point of template instantiation when the template arguments are substituted for the template parameters. Name binding for dependent names happens at this point.</li>
+</ul>
+<p>This process in two steps is called the <strong>two-phase name lookup</strong>.</p>
+<p>Consider the following C++ code:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Ref: Template metaprogramming with C++</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="co">// Mariusz Bancilla, pages 125</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> base_parser</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> init<span class="op">()</span>                     <span class="co">// [1] non-dependent name</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"init</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> parser<span class="op">::</span><span class="kw">public</span> base_parser<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> parse<span class="op">(){</span>                  <span class="co">// [2] non-dependent name</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>        <span class="co">// The compiler at [3] will try to bind init(), as it's a non-dependent name.</span></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>        <span class="co">// However, base_parser has not yet been instantiated. This will result in a </span></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>        <span class="co">// compile-error</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>        <span class="co">//init();                  // [3] non-dependent name</span></span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"parse</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a>    parser<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> p<span class="op">;</span></span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a>    p<span class="op">.</span>parse<span class="op">();</span></span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The call to <code>init()</code> inside the <code>parse()</code> member function has been commented out. Uncommenting it will cause a compile error.</p>
+<p>The intention here is to call the base-class <code>init()</code> function. However, the compiler will issue an error, because it’s not able to find <code>init()</code>. The reason is that <code>init()</code> is a non-dependent name. Therefore, it must be bound at the time of the definition of the <code>parser</code> template. Although, <code>base_parser&lt;T&gt;::init()</code> exists, this template has still not been instantiated. The compiler cannot assume its what we want to call, because the primary template <code>base_parser</code> can always be specialized and <code>init()</code> can be defined as something else.</p>
+<p>This problem can be fixed, by making <code>init</code> a dependent name. This can be done by either prefixing it with <code>this-&gt;</code> or with <code>base_parser&lt;T&gt;::</code>.</p>
+</section>
+<section id="dependent-type-names" class="level3">
+<h3 class="anchored" data-anchor-id="dependent-type-names">Dependent type names</h3>
+<p>There are cases where a dependent name is a type. Consider the following C++ code:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> base_parser<span class="op">{</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> parser<span class="op">:</span> base_parser<span class="op">&lt;</span>T<span class="op">&gt;{</span></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> parse<span class="op">(){</span></span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>        <span class="co">// value_type v{};  // [1] : Error</span></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>        <span class="co">// base_parser&lt;T&gt;::value_type v{};  //[2] :Error</span></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"parse</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>    parser<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> p<span class="op">;</span></span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a>    p<span class="op">.</span>parse<span class="op">();</span></span>
+<span id="cb16-21"><a href="#cb16-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb16-22"><a href="#cb16-22" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://godbolt.org/z/dr6cM9G3h">Compiler Explorer</a></p>
+<p>In this code snippet, the <em>metafunction</em> <code>base_parser</code> is an <strong>identity</strong> metafunction and returns back the type you give it. <code>base_parser&lt;T&gt;::value_type</code> is actually a dependent type, which depends on the template parameter <code>T</code>. At point <code>[1]</code> and <code>[2]</code>, the compiler does not know what <code>T</code> will be. If it attempts to bind the name <code>v</code>, it will fail. We need to tell the compiler explicitly <code>base_parser&lt;T&gt;::value_type</code> is a dependent type. You do that using the <code>typename</code> keyword.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> base_parser<span class="op">{</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> parser<span class="op">:</span> base_parser<span class="op">&lt;</span>T<span class="op">&gt;{</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> parse<span class="op">(){</span></span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>        <span class="co">// value_type v{};  // [1] : Error</span></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>        <span class="co">// base_parser&lt;T&gt;::value_type v{};  //[2] :Error</span></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>        <span class="kw">typename</span> base_parser<span class="op">&lt;</span>T<span class="op">&gt;::</span><span class="dt">value_type</span> v<span class="op">{};</span>  <span class="co">//[3] :Ok</span></span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"parse</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb17-19"><a href="#cb17-19" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb17-20"><a href="#cb17-20" aria-hidden="true" tabindex="-1"></a>    parser<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> p<span class="op">;</span></span>
+<span id="cb17-21"><a href="#cb17-21" aria-hidden="true" tabindex="-1"></a>    p<span class="op">.</span>parse<span class="op">();</span></span>
+<span id="cb17-22"><a href="#cb17-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb17-23"><a href="#cb17-23" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>So, any time, when calling a <em>type metafunction</em>, if the compiler does not know what <code>::type</code> is, you must prefix it using the <code>typename</code> keyword, if we want to treat it as a type.</p>
+</section>
+</section>
+<section id="convenience-calling-functions" class="level2">
+<h2 class="anchored" data-anchor-id="convenience-calling-functions">Convenience calling functions</h2>
+<p>Value <em>metafunctions</em> often use helper functions (variable templates) ending with <code>_v</code>. For example, we often define the helper function:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">auto</span> X<span class="op">&gt;</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="kw">inline</span> <span class="kw">constexpr</span> <span class="kw">auto</span> ValueIdentity_v <span class="op">=</span> ValueIdentity<span class="op">&lt;</span>X<span class="op">&gt;::</span>value<span class="op">;</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> ValueIdentity<span class="op">&lt;</span><span class="dv">42</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> ValueIdentity_v<span class="op">&lt;</span><span class="dv">42</span><span class="op">&gt;)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>We are just calling the <code>ValueIdentity&lt;&gt;</code> metafunction, grabbing its value and storing it into this variable <code>ValueIdentity_v</code>. This is a convenient way of calling value <em>metafunctions</em>. It does require you to instantiate an extra variable template.</p>
+<p>It’s really helpful when we start using it with types. Type <em>metafunctions</em> use alias templates ending with <code>_t</code>. It helps us get rid of the entire <code>typename</code> dance.</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="kw">using</span> <span class="dt">TypeIdentity_t</span> <span class="op">=</span> <span class="kw">typename</span> TypeIdentity<span class="op">&lt;</span>T<span class="op">&gt;::</span>type<span class="op">;</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">TypeIdentity_t</span><span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Instead of calling the <code>TypeIdentity</code> <em>metafunction</em> with the parameter <code>int</code> and writing <code>::type</code> to get its value, I can just call the metafunction with <code>_t</code> and with its parameters in angle brackets(<code>&lt;&gt;</code>).</p>
+<p>These calling conventions are easier to use. But each one must be explicitly hand-written. So, every time you write a metafunction, if you want to provide convenience capabilities, you also have to write the convenience variable template or alias template.</p>
+</section>
+<section id="stdintegral_constant---a-very-useful-metafunction" class="level2">
+<h2 class="anchored" data-anchor-id="stdintegral_constant---a-very-useful-metafunction"><code>std::integral_constant</code> - a very useful metafunction</h2>
+<p>This is probably the most useful metafunction. This is what <code>std::integral_constant</code> looks like:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">class</span> T<span class="op">,</span> T v<span class="op">&gt;</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> integral_constant<span class="op">{</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> T value <span class="op">=</span> v<span class="op">;</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> type <span class="op">=</span> integral_constant<span class="op">&lt;</span>T<span class="op">,</span> v<span class="op">&gt;</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">constexpr</span> <span class="kw">operator</span> <span class="dt">value_type</span><span class="op">()</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{</span>     <span class="co">//[1] : Implicit integral cast</span></span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> value<span class="op">;</span></span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">constexpr</span> <span class="kw">operator</span> <span class="dt">value_type</span><span class="op">()()</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> value<span class="op">;</span></span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>It’s got a <code>value</code>, so its a value metafunction. But, it’s also got <code>type</code>, so its a type metafunction as well. In fact, its a type metafunction which is an identity metafunction. It will tell exactly what the <code>integral_constant</code> thing is. It also has the <code>value_type</code>.</p>
+<p><code>integral_constant</code> is just a class, it has no data.</p>
 
 
 <!-- -->
 
-</section>
 </section>
 
 </main> <!-- /main -->
@@ -809,183 +998,412 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
   }
 });
 </script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
-<div class="sourceCode" id="cb12" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Type Traits"</span></span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="an">date:</span><span class="co"> "2024-11-25"</span></span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
-<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="an">toc:</span><span class="co"> true</span></span>
-<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
-<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
-<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="co">    html:</span></span>
-<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a><span class="co">        code-tools: true</span></span>
-<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a><span class="co">        code-block-border-left: true</span></span>
-<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a><span class="co">        code-annotations: below</span></span>
-<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a><span class="co">        highlight-style: pygments</span></span>
-<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>*Meta-programs* are programs that treat other programs as data. They could be other programs or itself. A *meta-function* is not a function, but a `class` or `struct`. *Metafunctions* are not part of the language and have no formal language support. They exist purely as an idiomatic use of the existing language features. Now, since their use is not enforced by the language, their used has to be dictated by a convention. Over the years, the C++ community has created common set of standard conventions. Actually this work goes back all the way to <span class="co">[</span><span class="ot">Boost `type_traits`</span><span class="co">](https://www.boost.org/doc/libs/1_79_0/libs/type_traits/doc/html/index.html)</span>.</span>
-<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>*Metafunctions* are not functions. Technically, they are a class with zero or more template parameters and zero+ return types and values. The convention is that a *metafunction* should return just one thing, like a regular function. The convention was developed over time, so there are plenty of existing examples that do not follow this convention. More modern *metafunctions* do follow this convention. </span>
-<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a><span class="fu">## How do we `return` from a metafunction</span></span>
-<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a>If we have to return a value, basically, we are going to expose a <span class="in">`public`</span> field named <span class="in">`value`</span>.</span>
-<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> TheAnswer<span class="op">{</span></span>
-<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="dt">int</span> value <span class="op">=</span> <span class="dv">42</span><span class="op">;</span></span>
-<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a>And if we are going to return a type, we are going to expose a <span class="in">`public`</span> field named <span class="in">`type`</span>.</span>
-<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-36"><a href="#cb12-36" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Echo<span class="op">{</span></span>
-<span id="cb12-37"><a href="#cb12-37" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> type <span class="op">=</span> T<span class="op">;</span></span>
-<span id="cb12-38"><a href="#cb12-38" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb12-39"><a href="#cb12-39" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-40"><a href="#cb12-40" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-41"><a href="#cb12-41" aria-hidden="true" tabindex="-1"></a>Now, here's kind of the difference between regular functions and *metafunctions*. A regular function in C++ always works on some form of data and it's always going to return to you some piece of data as well. Amongst *metafunctions*, we have value *metafunctions* that work on values like we are used to and then we have *metafunctions* that work entirely on types and they yield back some type to you. And so in the both of the examples above, we return something by exposing the public members of a class.</span>
-<span id="cb12-42"><a href="#cb12-42" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-43"><a href="#cb12-43" aria-hidden="true" tabindex="-1"></a><span class="fu">## Value metafunctions</span></span>
-<span id="cb12-44"><a href="#cb12-44" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-45"><a href="#cb12-45" aria-hidden="true" tabindex="-1"></a>A value *metafunction* is kind of like a simple regular function. Let's look at a simple regular function - the integer identity function. </span>
-<span id="cb12-46"><a href="#cb12-46" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-47"><a href="#cb12-47" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-48"><a href="#cb12-48" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> int_identity<span class="op">(</span><span class="dt">int</span> x<span class="op">)</span></span>
-<span id="cb12-49"><a href="#cb12-49" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb12-50"><a href="#cb12-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x<span class="op">;</span></span>
-<span id="cb12-51"><a href="#cb12-51" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-52"><a href="#cb12-52" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-53"><a href="#cb12-53" aria-hidden="true" tabindex="-1"></a><span class="ot">assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> int_identity<span class="op">(</span><span class="dv">42</span><span class="op">));</span></span>
-<span id="cb12-54"><a href="#cb12-54" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-55"><a href="#cb12-55" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-56"><a href="#cb12-56" aria-hidden="true" tabindex="-1"></a>This function just applies the identity transformation on any integer passed to it, and spits out the same number. A simple *metafunction* for identity - we can call it the <span class="in">`intIdentity`</span> metafunction would look like this:</span>
-<span id="cb12-57"><a href="#cb12-57" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-58"><a href="#cb12-58" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-59"><a href="#cb12-59" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="dt">int</span> X<span class="op">&gt;</span></span>
-<span id="cb12-60"><a href="#cb12-60" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> intIdentity<span class="op">{</span></span>
-<span id="cb12-61"><a href="#cb12-61" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="dt">int</span> value <span class="op">=</span> X<span class="op">;</span></span>
-<span id="cb12-62"><a href="#cb12-62" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb12-63"><a href="#cb12-63" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-64"><a href="#cb12-64" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> IntIdentity<span class="op">&lt;</span><span class="dv">42</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
-<span id="cb12-65"><a href="#cb12-65" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-66"><a href="#cb12-66" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-67"><a href="#cb12-67" aria-hidden="true" tabindex="-1"></a>We see that it's not that much different. You return a value by having a <span class="in">`static`</span> data-member called <span class="in">`value`</span> and it has the *metafunction*'s return value. `IntIdentity&lt;42&gt;::value` is where we are calling the *metafunction*. Now, this convention needs to be adhered to, because if you give your *metafunction* some other name such as <span class="in">`my_value`</span>, for example, if you write:</span>
-<span id="cb12-68"><a href="#cb12-68" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-69"><a href="#cb12-69" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-70"><a href="#cb12-70" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="dt">int</span> X<span class="op">&gt;</span></span>
-<span id="cb12-71"><a href="#cb12-71" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> intIdentity<span class="op">{</span></span>
-<span id="cb12-72"><a href="#cb12-72" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="dt">int</span> my_value <span class="op">=</span> X<span class="op">;</span></span>
-<span id="cb12-73"><a href="#cb12-73" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb12-74"><a href="#cb12-74" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-75"><a href="#cb12-75" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> IntIdentity<span class="op">&lt;</span><span class="dv">42</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
-<span id="cb12-76"><a href="#cb12-76" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-77"><a href="#cb12-77" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-78"><a href="#cb12-78" aria-hidden="true" tabindex="-1"></a>it's not going to work well with other things. </span>
-<span id="cb12-79"><a href="#cb12-79" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-80"><a href="#cb12-80" aria-hidden="true" tabindex="-1"></a><span class="fu">### Generic Identity Function </span></span>
-<span id="cb12-81"><a href="#cb12-81" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-82"><a href="#cb12-82" aria-hidden="true" tabindex="-1"></a>Let's look at the generic identity function.</span>
-<span id="cb12-83"><a href="#cb12-83" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-84"><a href="#cb12-84" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-85"><a href="#cb12-85" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-86"><a href="#cb12-86" aria-hidden="true" tabindex="-1"></a>T identity<span class="op">(</span>T x<span class="op">){</span></span>
-<span id="cb12-87"><a href="#cb12-87" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x<span class="op">;</span></span>
-<span id="cb12-88"><a href="#cb12-88" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-89"><a href="#cb12-89" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-90"><a href="#cb12-90" aria-hidden="true" tabindex="-1"></a><span class="co">//Returned type will be 42</span></span>
-<span id="cb12-91"><a href="#cb12-91" aria-hidden="true" tabindex="-1"></a><span class="ot">assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> identity<span class="op">(</span><span class="dv">42</span><span class="op">));</span></span>
-<span id="cb12-92"><a href="#cb12-92" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-93"><a href="#cb12-93" aria-hidden="true" tabindex="-1"></a><span class="co">// Returned type will be unsigned long long</span></span>
-<span id="cb12-94"><a href="#cb12-94" aria-hidden="true" tabindex="-1"></a><span class="ot">assert</span><span class="op">(</span><span class="dv">42</span><span class="bu">ul</span> <span class="op">==</span> identity<span class="op">(</span><span class="dv">42</span><span class="bu">ul</span><span class="op">))</span></span>
-<span id="cb12-95"><a href="#cb12-95" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-96"><a href="#cb12-96" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-97"><a href="#cb12-97" aria-hidden="true" tabindex="-1"></a>This is just a function that will be an identity for any type. You give me a value of any type and I will give you that value back. Now we can create a generic identity *metafunction* as well:</span>
-<span id="cb12-98"><a href="#cb12-98" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-99"><a href="#cb12-99" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-100"><a href="#cb12-100" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> T x<span class="op">&gt;</span></span>
-<span id="cb12-101"><a href="#cb12-101" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> ValueIdentity<span class="op">{</span></span>
-<span id="cb12-102"><a href="#cb12-102" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> T value <span class="op">=</span> x<span class="op">;</span></span>
-<span id="cb12-103"><a href="#cb12-103" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb12-104"><a href="#cb12-104" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-105"><a href="#cb12-105" aria-hidden="true" tabindex="-1"></a><span class="co">// The type of value will be int</span></span>
-<span id="cb12-106"><a href="#cb12-106" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> identity<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span><span class="dv">42</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
-<span id="cb12-107"><a href="#cb12-107" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-108"><a href="#cb12-108" aria-hidden="true" tabindex="-1"></a><span class="co">// The type of value will unsigned long long</span></span>
-<span id="cb12-109"><a href="#cb12-109" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span><span class="bu">ull</span> <span class="op">==</span> identity<span class="op">&lt;</span><span class="dt">unsigned</span> <span class="dt">long</span> <span class="dt">long</span><span class="op">,</span><span class="dv">42</span><span class="bu">ull</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
-<span id="cb12-110"><a href="#cb12-110" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-111"><a href="#cb12-111" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-112"><a href="#cb12-112" aria-hidden="true" tabindex="-1"></a><span class="in">`ValueIdentity`</span> is a generic metafunction, so we have to first feed it the type <span class="in">`int`</span> and then the value <span class="in">`42`</span>. It's a little cumbersome, but you get used to it after a while.</span>
-<span id="cb12-113"><a href="#cb12-113" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-114"><a href="#cb12-114" aria-hidden="true" tabindex="-1"></a>In C++17, things get a little bit easier with generic *metafunctions*, because we have this cool keyword called <span class="in">`auto`</span>. I won't go into all the details of <span class="in">`auto`</span>. For now, it basically means that the template will accept and deduce the type of any non-type template parameter.</span>
-<span id="cb12-115"><a href="#cb12-115" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-116"><a href="#cb12-116" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-117"><a href="#cb12-117" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">auto</span> X<span class="op">&gt;</span></span>
-<span id="cb12-118"><a href="#cb12-118" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> ValueIdentity<span class="op">{</span></span>
-<span id="cb12-119"><a href="#cb12-119" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="kw">auto</span> value <span class="op">=</span> X<span class="op">;</span></span>
-<span id="cb12-120"><a href="#cb12-120" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb12-121"><a href="#cb12-121" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-122"><a href="#cb12-122" aria-hidden="true" tabindex="-1"></a><span class="co">// The type of value will be int</span></span>
-<span id="cb12-123"><a href="#cb12-123" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> identity<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span><span class="dv">42</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
-<span id="cb12-124"><a href="#cb12-124" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-125"><a href="#cb12-125" aria-hidden="true" tabindex="-1"></a><span class="co">// The type of value will unsigned long long</span></span>
-<span id="cb12-126"><a href="#cb12-126" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span><span class="bu">ull</span> <span class="op">==</span> identity<span class="op">&lt;</span><span class="dt">unsigned</span> <span class="dt">long</span> <span class="dt">long</span><span class="op">,</span><span class="dv">42</span><span class="bu">ull</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
-<span id="cb12-127"><a href="#cb12-127" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-128"><a href="#cb12-128" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-129"><a href="#cb12-129" aria-hidden="true" tabindex="-1"></a>Let's look at another function <span class="in">`sum()`</span>. We can do this in a regular function, and we can do this in a *metafunction* as well.</span>
-<span id="cb12-130"><a href="#cb12-130" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-131"><a href="#cb12-131" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-132"><a href="#cb12-132" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> sum<span class="op">(</span><span class="dt">int</span> x<span class="op">,</span> <span class="dt">int</span> y<span class="op">){</span></span>
-<span id="cb12-133"><a href="#cb12-133" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x <span class="op">+</span> y<span class="op">;</span></span>
-<span id="cb12-134"><a href="#cb12-134" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-135"><a href="#cb12-135" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-136"><a href="#cb12-136" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="dt">int</span> X<span class="op">,</span> <span class="dt">int</span> Y<span class="op">&gt;</span></span>
-<span id="cb12-137"><a href="#cb12-137" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> intSum<span class="op">{</span></span>
-<span id="cb12-138"><a href="#cb12-138" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="dt">int</span> value <span class="op">=</span> X <span class="op">+</span> Y<span class="op">;</span></span>
-<span id="cb12-139"><a href="#cb12-139" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb12-140"><a href="#cb12-140" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-141"><a href="#cb12-141" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> IntSum<span class="op">&lt;</span><span class="dv">30</span><span class="op">,</span><span class="dv">12</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
-<span id="cb12-142"><a href="#cb12-142" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-143"><a href="#cb12-143" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-144"><a href="#cb12-144" aria-hidden="true" tabindex="-1"></a>So, we can also create a generic version of this:</span>
-<span id="cb12-145"><a href="#cb12-145" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-146"><a href="#cb12-146" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-147"><a href="#cb12-147" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> X<span class="op">,</span> <span class="kw">typename</span> Y<span class="op">&gt;</span></span>
-<span id="cb12-148"><a href="#cb12-148" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> sum<span class="op">(</span>T x<span class="op">,</span> Ty<span class="op">){</span></span>
-<span id="cb12-149"><a href="#cb12-149" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x <span class="op">+</span> y<span class="op">;</span></span>
-<span id="cb12-150"><a href="#cb12-150" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-151"><a href="#cb12-151" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-152"><a href="#cb12-152" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">auto</span> X<span class="op">,</span> <span class="kw">auto</span> Y<span class="op">&gt;</span></span>
-<span id="cb12-153"><a href="#cb12-153" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Sum<span class="op">{</span></span>
-<span id="cb12-154"><a href="#cb12-154" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="kw">auto</span> value <span class="op">=</span> X <span class="op">+</span> Y<span class="op">;</span></span>
-<span id="cb12-155"><a href="#cb12-155" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb12-156"><a href="#cb12-156" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-157"><a href="#cb12-157" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-158"><a href="#cb12-158" aria-hidden="true" tabindex="-1"></a><span class="fu">## Type metafunctions</span></span>
-<span id="cb12-159"><a href="#cb12-159" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-160"><a href="#cb12-160" aria-hidden="true" tabindex="-1"></a>Type metafunctions are the workhorse of doing type transformations. You can manipulate types through type *metafunctions*. Type *metafunctions are going to return just a type.</span>
-<span id="cb12-161"><a href="#cb12-161" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-162"><a href="#cb12-162" aria-hidden="true" tabindex="-1"></a>Here's our <span class="in">`TypeIdentity`</span> function:</span>
-<span id="cb12-163"><a href="#cb12-163" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-164"><a href="#cb12-164" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-165"><a href="#cb12-165" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-166"><a href="#cb12-166" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> TypeIdentity<span class="op">{</span></span>
-<span id="cb12-167"><a href="#cb12-167" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> type <span class="op">=</span> T<span class="op">;</span></span>
-<span id="cb12-168"><a href="#cb12-168" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-169"><a href="#cb12-169" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-170"><a href="#cb12-170" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-171"><a href="#cb12-171" aria-hidden="true" tabindex="-1"></a>Just like we have <span class="in">`ValueIdentity`</span>, where given any value, it's going you the value back; we have <span class="in">`TypeIdentity`</span>, where you give it any type, and it's going to give you the type back.</span>
-<span id="cb12-172"><a href="#cb12-172" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-173"><a href="#cb12-173" aria-hidden="true" tabindex="-1"></a>C++20 actually introduces <span class="in">`std::type_identity`</span>, which is pretty much what we see above.</span>
-<span id="cb12-174"><a href="#cb12-174" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-175"><a href="#cb12-175" aria-hidden="true" tabindex="-1"></a><span class="fu">### Calling Type Metafunctions</span></span>
-<span id="cb12-176"><a href="#cb12-176" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-177"><a href="#cb12-177" aria-hidden="true" tabindex="-1"></a>When we call a value *metafunction*, </span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb21" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Type Traits"</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="an">date:</span><span class="co"> "2024-11-25"</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a><span class="an">toc:</span><span class="co"> true</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a><span class="co">    html:</span></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a><span class="co">        code-tools: true</span></span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a><span class="co">        code-block-border-left: true</span></span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a><span class="co">        code-annotations: below</span></span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a><span class="co">        highlight-style: pygments</span></span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a>*Meta-programs* are programs that treat other programs as data. They could be other programs or itself. A *meta-function* is not a function, but a `class` or `struct`. *Metafunctions* are not part of the language and have no formal language support. They exist purely as an idiomatic use of the existing language features. Now, since their use is not enforced by the language, their used has to be dictated by a convention. Over the years, the C++ community has created common set of standard conventions. Actually this work goes back all the way to <span class="co">[</span><span class="ot">Boost `type_traits`</span><span class="co">](https://www.boost.org/doc/libs/1_79_0/libs/type_traits/doc/html/index.html)</span>.</span>
+<span id="cb21-18"><a href="#cb21-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-19"><a href="#cb21-19" aria-hidden="true" tabindex="-1"></a>*Metafunctions* are not functions. Technically, they are a class with zero or more template parameters and zero+ return types and values. The convention is that a *metafunction* should return just one thing, like a regular function. The convention was developed over time, so there are plenty of existing examples that do not follow this convention. More modern *metafunctions* do follow this convention. </span>
+<span id="cb21-20"><a href="#cb21-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-21"><a href="#cb21-21" aria-hidden="true" tabindex="-1"></a><span class="fu">## How do we `return` from a metafunction</span></span>
+<span id="cb21-22"><a href="#cb21-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-23"><a href="#cb21-23" aria-hidden="true" tabindex="-1"></a>If we have to return a value, basically, we are going to expose a <span class="in">`public`</span> field named <span class="in">`value`</span>.</span>
+<span id="cb21-24"><a href="#cb21-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-25"><a href="#cb21-25" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-26"><a href="#cb21-26" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-27"><a href="#cb21-27" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> TheAnswer<span class="op">{</span></span>
+<span id="cb21-28"><a href="#cb21-28" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="dt">int</span> value <span class="op">=</span> <span class="dv">42</span><span class="op">;</span></span>
+<span id="cb21-29"><a href="#cb21-29" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-30"><a href="#cb21-30" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-31"><a href="#cb21-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-32"><a href="#cb21-32" aria-hidden="true" tabindex="-1"></a>And if we are going to return a type, we are going to expose a <span class="in">`public`</span> field named <span class="in">`type`</span>.</span>
+<span id="cb21-33"><a href="#cb21-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-34"><a href="#cb21-34" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-35"><a href="#cb21-35" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-36"><a href="#cb21-36" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Echo<span class="op">{</span></span>
+<span id="cb21-37"><a href="#cb21-37" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> type <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb21-38"><a href="#cb21-38" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-39"><a href="#cb21-39" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-40"><a href="#cb21-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-41"><a href="#cb21-41" aria-hidden="true" tabindex="-1"></a>Now, here's kind of the difference between regular functions and *metafunctions*. A regular function in C++ always works on some form of data and it's always going to return to you some piece of data as well. Amongst *metafunctions*, we have value *metafunctions* that work on values like we are used to and then we have *metafunctions* that work entirely on types and they yield back some type to you. And so in the both of the examples above, we return something by exposing the public members of a class.</span>
+<span id="cb21-42"><a href="#cb21-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-43"><a href="#cb21-43" aria-hidden="true" tabindex="-1"></a><span class="fu">## Value metafunctions</span></span>
+<span id="cb21-44"><a href="#cb21-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-45"><a href="#cb21-45" aria-hidden="true" tabindex="-1"></a>A value *metafunction* is kind of like a simple regular function. Let's look at a simple regular function - the integer identity function. </span>
+<span id="cb21-46"><a href="#cb21-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-47"><a href="#cb21-47" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-48"><a href="#cb21-48" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> int_identity<span class="op">(</span><span class="dt">int</span> x<span class="op">)</span></span>
+<span id="cb21-49"><a href="#cb21-49" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb21-50"><a href="#cb21-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x<span class="op">;</span></span>
+<span id="cb21-51"><a href="#cb21-51" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-52"><a href="#cb21-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-53"><a href="#cb21-53" aria-hidden="true" tabindex="-1"></a><span class="ot">assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> int_identity<span class="op">(</span><span class="dv">42</span><span class="op">));</span></span>
+<span id="cb21-54"><a href="#cb21-54" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-55"><a href="#cb21-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-56"><a href="#cb21-56" aria-hidden="true" tabindex="-1"></a>This function just applies the identity transformation on any integer passed to it, and spits out the same number. A simple *metafunction* for identity - we can call it the <span class="in">`intIdentity`</span> metafunction would look like this:</span>
+<span id="cb21-57"><a href="#cb21-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-58"><a href="#cb21-58" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-59"><a href="#cb21-59" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="dt">int</span> X<span class="op">&gt;</span></span>
+<span id="cb21-60"><a href="#cb21-60" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> intIdentity<span class="op">{</span></span>
+<span id="cb21-61"><a href="#cb21-61" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="dt">int</span> value <span class="op">=</span> X<span class="op">;</span></span>
+<span id="cb21-62"><a href="#cb21-62" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-63"><a href="#cb21-63" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-64"><a href="#cb21-64" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> IntIdentity<span class="op">&lt;</span><span class="dv">42</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
+<span id="cb21-65"><a href="#cb21-65" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-66"><a href="#cb21-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-67"><a href="#cb21-67" aria-hidden="true" tabindex="-1"></a>We see that it's not that much different. You return a value by having a <span class="in">`static`</span> data-member called <span class="in">`value`</span> and it has the *metafunction*'s return value. `IntIdentity&lt;42&gt;::value` is where we are calling the *metafunction*. Now, this convention needs to be adhered to, because if you give your *metafunction* some other name such as <span class="in">`my_value`</span>, for example, if you write:</span>
+<span id="cb21-68"><a href="#cb21-68" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-69"><a href="#cb21-69" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-70"><a href="#cb21-70" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="dt">int</span> X<span class="op">&gt;</span></span>
+<span id="cb21-71"><a href="#cb21-71" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> intIdentity<span class="op">{</span></span>
+<span id="cb21-72"><a href="#cb21-72" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="dt">int</span> my_value <span class="op">=</span> X<span class="op">;</span></span>
+<span id="cb21-73"><a href="#cb21-73" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-74"><a href="#cb21-74" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-75"><a href="#cb21-75" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> IntIdentity<span class="op">&lt;</span><span class="dv">42</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
+<span id="cb21-76"><a href="#cb21-76" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-77"><a href="#cb21-77" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-78"><a href="#cb21-78" aria-hidden="true" tabindex="-1"></a>it's not going to work well with other things. </span>
+<span id="cb21-79"><a href="#cb21-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-80"><a href="#cb21-80" aria-hidden="true" tabindex="-1"></a><span class="fu">### Generic Identity Function </span></span>
+<span id="cb21-81"><a href="#cb21-81" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-82"><a href="#cb21-82" aria-hidden="true" tabindex="-1"></a>Let's look at the generic identity function.</span>
+<span id="cb21-83"><a href="#cb21-83" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-84"><a href="#cb21-84" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-85"><a href="#cb21-85" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-86"><a href="#cb21-86" aria-hidden="true" tabindex="-1"></a>T identity<span class="op">(</span>T x<span class="op">){</span></span>
+<span id="cb21-87"><a href="#cb21-87" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x<span class="op">;</span></span>
+<span id="cb21-88"><a href="#cb21-88" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-89"><a href="#cb21-89" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-90"><a href="#cb21-90" aria-hidden="true" tabindex="-1"></a><span class="co">//Returned type will be 42</span></span>
+<span id="cb21-91"><a href="#cb21-91" aria-hidden="true" tabindex="-1"></a><span class="ot">assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> identity<span class="op">(</span><span class="dv">42</span><span class="op">));</span></span>
+<span id="cb21-92"><a href="#cb21-92" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-93"><a href="#cb21-93" aria-hidden="true" tabindex="-1"></a><span class="co">// Returned type will be unsigned long long</span></span>
+<span id="cb21-94"><a href="#cb21-94" aria-hidden="true" tabindex="-1"></a><span class="ot">assert</span><span class="op">(</span><span class="dv">42</span><span class="bu">ul</span> <span class="op">==</span> identity<span class="op">(</span><span class="dv">42</span><span class="bu">ul</span><span class="op">))</span></span>
+<span id="cb21-95"><a href="#cb21-95" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-96"><a href="#cb21-96" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-97"><a href="#cb21-97" aria-hidden="true" tabindex="-1"></a>This is just a function that will be an identity for any type. You give me a value of any type and I will give you that value back. Now we can create a generic identity *metafunction* as well:</span>
+<span id="cb21-98"><a href="#cb21-98" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-99"><a href="#cb21-99" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-100"><a href="#cb21-100" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> T x<span class="op">&gt;</span></span>
+<span id="cb21-101"><a href="#cb21-101" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> ValueIdentity<span class="op">{</span></span>
+<span id="cb21-102"><a href="#cb21-102" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> T value <span class="op">=</span> x<span class="op">;</span></span>
+<span id="cb21-103"><a href="#cb21-103" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-104"><a href="#cb21-104" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-105"><a href="#cb21-105" aria-hidden="true" tabindex="-1"></a><span class="co">// The type of value will be int</span></span>
+<span id="cb21-106"><a href="#cb21-106" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> identity<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span><span class="dv">42</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
+<span id="cb21-107"><a href="#cb21-107" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-108"><a href="#cb21-108" aria-hidden="true" tabindex="-1"></a><span class="co">// The type of value will unsigned long long</span></span>
+<span id="cb21-109"><a href="#cb21-109" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span><span class="bu">ull</span> <span class="op">==</span> identity<span class="op">&lt;</span><span class="dt">unsigned</span> <span class="dt">long</span> <span class="dt">long</span><span class="op">,</span><span class="dv">42</span><span class="bu">ull</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
+<span id="cb21-110"><a href="#cb21-110" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-111"><a href="#cb21-111" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-112"><a href="#cb21-112" aria-hidden="true" tabindex="-1"></a><span class="in">`ValueIdentity`</span> is a generic metafunction, so we have to first feed it the type <span class="in">`int`</span> and then the value <span class="in">`42`</span>. It's a little cumbersome, but you get used to it after a while.</span>
+<span id="cb21-113"><a href="#cb21-113" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-114"><a href="#cb21-114" aria-hidden="true" tabindex="-1"></a>In C++17, things get a little bit easier with generic *metafunctions*, because we have this cool keyword called <span class="in">`auto`</span>. I won't go into all the details of <span class="in">`auto`</span>. For now, it basically means that the template will accept and deduce the type of any non-type template parameter.</span>
+<span id="cb21-115"><a href="#cb21-115" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-116"><a href="#cb21-116" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-117"><a href="#cb21-117" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">auto</span> X<span class="op">&gt;</span></span>
+<span id="cb21-118"><a href="#cb21-118" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> ValueIdentity<span class="op">{</span></span>
+<span id="cb21-119"><a href="#cb21-119" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="kw">auto</span> value <span class="op">=</span> X<span class="op">;</span></span>
+<span id="cb21-120"><a href="#cb21-120" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-121"><a href="#cb21-121" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-122"><a href="#cb21-122" aria-hidden="true" tabindex="-1"></a><span class="co">// The type of value will be int</span></span>
+<span id="cb21-123"><a href="#cb21-123" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> identity<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span><span class="dv">42</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
+<span id="cb21-124"><a href="#cb21-124" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-125"><a href="#cb21-125" aria-hidden="true" tabindex="-1"></a><span class="co">// The type of value will unsigned long long</span></span>
+<span id="cb21-126"><a href="#cb21-126" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span><span class="bu">ull</span> <span class="op">==</span> identity<span class="op">&lt;</span><span class="dt">unsigned</span> <span class="dt">long</span> <span class="dt">long</span><span class="op">,</span><span class="dv">42</span><span class="bu">ull</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
+<span id="cb21-127"><a href="#cb21-127" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-128"><a href="#cb21-128" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-129"><a href="#cb21-129" aria-hidden="true" tabindex="-1"></a>Let's look at another function <span class="in">`sum()`</span>. We can do this in a regular function, and we can do this in a *metafunction* as well.</span>
+<span id="cb21-130"><a href="#cb21-130" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-131"><a href="#cb21-131" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-132"><a href="#cb21-132" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> sum<span class="op">(</span><span class="dt">int</span> x<span class="op">,</span> <span class="dt">int</span> y<span class="op">){</span></span>
+<span id="cb21-133"><a href="#cb21-133" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x <span class="op">+</span> y<span class="op">;</span></span>
+<span id="cb21-134"><a href="#cb21-134" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-135"><a href="#cb21-135" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-136"><a href="#cb21-136" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="dt">int</span> X<span class="op">,</span> <span class="dt">int</span> Y<span class="op">&gt;</span></span>
+<span id="cb21-137"><a href="#cb21-137" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> intSum<span class="op">{</span></span>
+<span id="cb21-138"><a href="#cb21-138" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="dt">int</span> value <span class="op">=</span> X <span class="op">+</span> Y<span class="op">;</span></span>
+<span id="cb21-139"><a href="#cb21-139" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-140"><a href="#cb21-140" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-141"><a href="#cb21-141" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> IntSum<span class="op">&lt;</span><span class="dv">30</span><span class="op">,</span><span class="dv">12</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
+<span id="cb21-142"><a href="#cb21-142" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-143"><a href="#cb21-143" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-144"><a href="#cb21-144" aria-hidden="true" tabindex="-1"></a>So, we can also create a generic version of this:</span>
+<span id="cb21-145"><a href="#cb21-145" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-146"><a href="#cb21-146" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-147"><a href="#cb21-147" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> X<span class="op">,</span> <span class="kw">typename</span> Y<span class="op">&gt;</span></span>
+<span id="cb21-148"><a href="#cb21-148" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> sum<span class="op">(</span>T x<span class="op">,</span> Ty<span class="op">){</span></span>
+<span id="cb21-149"><a href="#cb21-149" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x <span class="op">+</span> y<span class="op">;</span></span>
+<span id="cb21-150"><a href="#cb21-150" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-151"><a href="#cb21-151" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-152"><a href="#cb21-152" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">auto</span> X<span class="op">,</span> <span class="kw">auto</span> Y<span class="op">&gt;</span></span>
+<span id="cb21-153"><a href="#cb21-153" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Sum<span class="op">{</span></span>
+<span id="cb21-154"><a href="#cb21-154" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="kw">auto</span> value <span class="op">=</span> X <span class="op">+</span> Y<span class="op">;</span></span>
+<span id="cb21-155"><a href="#cb21-155" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-156"><a href="#cb21-156" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-157"><a href="#cb21-157" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-158"><a href="#cb21-158" aria-hidden="true" tabindex="-1"></a><span class="fu">## Type metafunctions</span></span>
+<span id="cb21-159"><a href="#cb21-159" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-160"><a href="#cb21-160" aria-hidden="true" tabindex="-1"></a>Type metafunctions are the workhorse of doing type transformations. You can manipulate types through type *metafunctions*. Type *metafunctions are going to return just a type.</span>
+<span id="cb21-161"><a href="#cb21-161" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-162"><a href="#cb21-162" aria-hidden="true" tabindex="-1"></a>Here's our <span class="in">`TypeIdentity`</span> function:</span>
+<span id="cb21-163"><a href="#cb21-163" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-164"><a href="#cb21-164" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-165"><a href="#cb21-165" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-166"><a href="#cb21-166" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> TypeIdentity<span class="op">{</span></span>
+<span id="cb21-167"><a href="#cb21-167" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> type <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb21-168"><a href="#cb21-168" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-169"><a href="#cb21-169" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-170"><a href="#cb21-170" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-171"><a href="#cb21-171" aria-hidden="true" tabindex="-1"></a>Just like we have <span class="in">`ValueIdentity`</span>, where given any value, it's going you the value back; we have <span class="in">`TypeIdentity`</span>, where you give it any type, and it's going to give you the type back.</span>
+<span id="cb21-172"><a href="#cb21-172" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-173"><a href="#cb21-173" aria-hidden="true" tabindex="-1"></a>C++20 actually introduces <span class="in">`std::type_identity`</span>, which is pretty much what we see above.</span>
+<span id="cb21-174"><a href="#cb21-174" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-175"><a href="#cb21-175" aria-hidden="true" tabindex="-1"></a><span class="fu">### Calling Type Metafunctions</span></span>
+<span id="cb21-176"><a href="#cb21-176" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-177"><a href="#cb21-177" aria-hidden="true" tabindex="-1"></a>When we call a value *metafunction*, we can easily call the function:</span>
+<span id="cb21-178"><a href="#cb21-178" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-179"><a href="#cb21-179" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-180"><a href="#cb21-180" aria-hidden="true" tabindex="-1"></a>ValueIdentity<span class="op">&lt;</span><span class="dv">42</span><span class="op">&gt;::</span>value</span>
+<span id="cb21-181"><a href="#cb21-181" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-182"><a href="#cb21-182" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-183"><a href="#cb21-183" aria-hidden="true" tabindex="-1"></a><span class="in">`ValueIdentity`</span> is the *metafunction*, it's passed the parameter <span class="in">`42`</span> in the angle brackets (just like parentheses for a regular value function) and <span class="in">`::value`</span> is how I get it's value back.</span>
+<span id="cb21-184"><a href="#cb21-184" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-185"><a href="#cb21-185" aria-hidden="true" tabindex="-1"></a>When I call a type *metafunction*, it's the same way. The function call consists of the *metafunction* name `std::type_identity`, the parameters to the *metafunction* in angle brackets (<span class="in">`&lt;42&gt;`</span>) and <span class="in">`::type`</span> is how I get it's value back.</span>
+<span id="cb21-186"><a href="#cb21-186" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-187"><a href="#cb21-187" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-188"><a href="#cb21-188" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb21-189"><a href="#cb21-189" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
+<span id="cb21-190"><a href="#cb21-190" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-191"><a href="#cb21-191" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb21-192"><a href="#cb21-192" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb21-193"><a href="#cb21-193" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> T <span class="op">=</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;::</span>type<span class="op">;</span></span>
+<span id="cb21-194"><a href="#cb21-194" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb21-195"><a href="#cb21-195" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-196"><a href="#cb21-196" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-197"><a href="#cb21-197" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-198"><a href="#cb21-198" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/YaddrePGK)</span></span>
+<span id="cb21-199"><a href="#cb21-199" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-200"><a href="#cb21-200" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-201"><a href="#cb21-201" aria-hidden="true" tabindex="-1"></a><span class="fu">## Understanding name binding and dependent types</span></span>
+<span id="cb21-202"><a href="#cb21-202" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-203"><a href="#cb21-203" aria-hidden="true" tabindex="-1"></a>*Name binding* is the process of establishing, determining explicitly the type of each name (declaration) in a template. There are two kinds of names used within a template: *dependent* and *non-dependent* names. Names that depend on a template parameter are called *dependent* names. </span>
+<span id="cb21-204"><a href="#cb21-204" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-205"><a href="#cb21-205" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>For dependent names, name binding is performed at the point of template instantiation.</span>
+<span id="cb21-206"><a href="#cb21-206" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>For non-dependent names, name binding is performed at the point of template definition.</span>
+<span id="cb21-207"><a href="#cb21-207" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-208"><a href="#cb21-208" aria-hidden="true" tabindex="-1"></a>Consider the following C++ code:</span>
+<span id="cb21-209"><a href="#cb21-209" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-210"><a href="#cb21-210" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-211"><a href="#cb21-211" aria-hidden="true" tabindex="-1"></a><span class="co">// Ref: Template metaprogramming with C++</span></span>
+<span id="cb21-212"><a href="#cb21-212" aria-hidden="true" tabindex="-1"></a><span class="co">// Mariusz Bancilla, pages 123 </span></span>
+<span id="cb21-213"><a href="#cb21-213" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb21-214"><a href="#cb21-214" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-215"><a href="#cb21-215" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-216"><a href="#cb21-216" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> handler<span class="op">{</span></span>
+<span id="cb21-217"><a href="#cb21-217" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> handle<span class="op">(</span>T value<span class="op">)</span>    <span class="co">//[1] handle is a dependent name</span></span>
+<span id="cb21-218"><a href="#cb21-218" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb21-219"><a href="#cb21-219" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"handler&lt;T&gt;: "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="ch">'</span><span class="sc">\n</span><span class="ch">'</span><span class="op">;</span></span>
+<span id="cb21-220"><a href="#cb21-220" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb21-221"><a href="#cb21-221" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-222"><a href="#cb21-222" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-223"><a href="#cb21-223" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-224"><a href="#cb21-224" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> parser<span class="op">{</span></span>
+<span id="cb21-225"><a href="#cb21-225" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> parse<span class="op">(</span>T arg<span class="op">){</span>      <span class="co">//[2] parse is a dependent name</span></span>
+<span id="cb21-226"><a href="#cb21-226" aria-hidden="true" tabindex="-1"></a>        arg<span class="op">.</span>handle<span class="op">(</span>x<span class="op">);</span></span>
+<span id="cb21-227"><a href="#cb21-227" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb21-228"><a href="#cb21-228" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-229"><a href="#cb21-229" aria-hidden="true" tabindex="-1"></a>    <span class="dt">double</span> x<span class="op">;</span>                  <span class="co">//[3] x is a non-dependent name</span></span>
+<span id="cb21-230"><a href="#cb21-230" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-231"><a href="#cb21-231" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-232"><a href="#cb21-232" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb21-233"><a href="#cb21-233" aria-hidden="true" tabindex="-1"></a>    handler<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> doubleHandler<span class="op">;</span>                <span class="co">//[5] template instantiation</span></span>
+<span id="cb21-234"><a href="#cb21-234" aria-hidden="true" tabindex="-1"></a>    parser<span class="op">&lt;</span>handler<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;&gt;</span> doubleParser<span class="op">(</span><span class="fl">3.14</span><span class="op">);</span>   <span class="co">//[6] template instantiation</span></span>
+<span id="cb21-235"><a href="#cb21-235" aria-hidden="true" tabindex="-1"></a>    doubleParser<span class="op">.</span>parse<span class="op">(</span>doubleHandler<span class="op">);</span></span>
+<span id="cb21-236"><a href="#cb21-236" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb21-237"><a href="#cb21-237" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-238"><a href="#cb21-238" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-239"><a href="#cb21-239" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-240"><a href="#cb21-240" aria-hidden="true" tabindex="-1"></a>When the compiler sees dependent names, e.g. at points <span class="in">`[1]`</span> and <span class="in">`[2]`</span>, it cannot determine the type-signature of these functions. So, <span class="in">`parse()`</span> and <span class="in">`handle()`</span> are not bound at this point.</span>
+<span id="cb21-241"><a href="#cb21-241" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-242"><a href="#cb21-242" aria-hidden="true" tabindex="-1"></a>The declaration <span class="in">`double x`</span> at point <span class="in">`[3]`</span> declares a non-dependent type. So, the type of the variable <span class="in">`x`</span> is known and bound.</span>
+<span id="cb21-243"><a href="#cb21-243" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-244"><a href="#cb21-244" aria-hidden="true" tabindex="-1"></a>Continuing with the code, at point <span class="in">`[4]`</span>, there is a template specialization for the <span class="in">`handler`</span> class template for the type <span class="in">`int`</span>. </span>
+<span id="cb21-245"><a href="#cb21-245" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-246"><a href="#cb21-246" aria-hidden="true" tabindex="-1"></a>Template instantiation happens at points <span class="in">`[5]`</span> and <span class="in">`[6]`</span>. At point <span class="in">`[5]`</span>, <span class="in">`handler&lt;double&gt;::handle`</span> is bound to <span class="in">`handle`</span> and at point <span class="in">`[6]`</span>, <span class="in">`parser&lt;handler&lt;double&gt;&gt;::parse`</span> is bound to <span class="in">`parse`</span>. </span>
+<span id="cb21-247"><a href="#cb21-247" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-248"><a href="#cb21-248" aria-hidden="true" tabindex="-1"></a><span class="fu">### Two-phase name lookup</span></span>
+<span id="cb21-249"><a href="#cb21-249" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-250"><a href="#cb21-250" aria-hidden="true" tabindex="-1"></a>Name binding happens differently for dependent names (those that depend on a template parameter) and non-dependent names. When the compiler passes throuh the definition of a template, it needs to figure out whether a name is dependent or non-dependent. Further, name binding depends upon this categorization. Thus, **the instantiation of a template happens in 2-phases**. </span>
+<span id="cb21-251"><a href="#cb21-251" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-252"><a href="#cb21-252" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>The first phase occurs at the point of the definition when the template syntax is checked and the names are categorized as *dependent* or *non-dependent*.</span>
+<span id="cb21-253"><a href="#cb21-253" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>The second phase occurs at the point of template instantiation when the template arguments are substituted for the template parameters. Name binding for dependent names happens at this point.</span>
+<span id="cb21-254"><a href="#cb21-254" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-255"><a href="#cb21-255" aria-hidden="true" tabindex="-1"></a>This process in two steps is called the **two-phase name lookup**. </span>
+<span id="cb21-256"><a href="#cb21-256" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-257"><a href="#cb21-257" aria-hidden="true" tabindex="-1"></a>Consider the following C++ code:</span>
+<span id="cb21-258"><a href="#cb21-258" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-259"><a href="#cb21-259" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-260"><a href="#cb21-260" aria-hidden="true" tabindex="-1"></a><span class="co">// Ref: Template metaprogramming with C++</span></span>
+<span id="cb21-261"><a href="#cb21-261" aria-hidden="true" tabindex="-1"></a><span class="co">// Mariusz Bancilla, pages 125</span></span>
+<span id="cb21-262"><a href="#cb21-262" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-263"><a href="#cb21-263" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> base_parser</span>
+<span id="cb21-264"><a href="#cb21-264" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb21-265"><a href="#cb21-265" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> init<span class="op">()</span>                     <span class="co">// [1] non-dependent name</span></span>
+<span id="cb21-266"><a href="#cb21-266" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb21-267"><a href="#cb21-267" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"init</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb21-268"><a href="#cb21-268" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb21-269"><a href="#cb21-269" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-270"><a href="#cb21-270" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-271"><a href="#cb21-271" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-272"><a href="#cb21-272" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> parser<span class="op">::</span><span class="kw">public</span> base_parser<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
+<span id="cb21-273"><a href="#cb21-273" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb21-274"><a href="#cb21-274" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> parse<span class="op">(){</span>                  <span class="co">// [2] non-dependent name</span></span>
+<span id="cb21-275"><a href="#cb21-275" aria-hidden="true" tabindex="-1"></a>        <span class="co">// The compiler at [3] will try to bind init(), as it's a non-dependent name.</span></span>
+<span id="cb21-276"><a href="#cb21-276" aria-hidden="true" tabindex="-1"></a>        <span class="co">// However, base_parser has not yet been instantiated. This will result in a </span></span>
+<span id="cb21-277"><a href="#cb21-277" aria-hidden="true" tabindex="-1"></a>        <span class="co">// compile-error</span></span>
+<span id="cb21-278"><a href="#cb21-278" aria-hidden="true" tabindex="-1"></a>        <span class="co">//init();                  // [3] non-dependent name</span></span>
+<span id="cb21-279"><a href="#cb21-279" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"parse</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb21-280"><a href="#cb21-280" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb21-281"><a href="#cb21-281" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-282"><a href="#cb21-282" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-283"><a href="#cb21-283" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb21-284"><a href="#cb21-284" aria-hidden="true" tabindex="-1"></a>    parser<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> p<span class="op">;</span></span>
+<span id="cb21-285"><a href="#cb21-285" aria-hidden="true" tabindex="-1"></a>    p<span class="op">.</span>parse<span class="op">();</span></span>
+<span id="cb21-286"><a href="#cb21-286" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-287"><a href="#cb21-287" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-288"><a href="#cb21-288" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-289"><a href="#cb21-289" aria-hidden="true" tabindex="-1"></a>The call to <span class="in">`init()`</span> inside the <span class="in">`parse()`</span> member function has been commented out. Uncommenting it will cause a compile error.</span>
+<span id="cb21-290"><a href="#cb21-290" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-291"><a href="#cb21-291" aria-hidden="true" tabindex="-1"></a>The intention here is to call the base-class <span class="in">`init()`</span> function. However, the compiler will issue an error, because it's not able to find <span class="in">`init()`</span>. The reason is that <span class="in">`init()`</span> is a non-dependent name. Therefore, it must be bound at the time of the definition of the <span class="in">`parser`</span> template. Although, <span class="in">`base_parser&lt;T&gt;::init()`</span> exists, this template has still not been instantiated. The compiler cannot assume its what we want to call, because the primary template <span class="in">`base_parser`</span> can always be specialized and <span class="in">`init()`</span> can be defined as something else.</span>
+<span id="cb21-292"><a href="#cb21-292" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-293"><a href="#cb21-293" aria-hidden="true" tabindex="-1"></a>This problem can be fixed, by making <span class="in">`init`</span> a dependent name. This can be done by either prefixing it with <span class="in">`this-&gt;`</span> or with <span class="in">`base_parser&lt;T&gt;::`</span>. </span>
+<span id="cb21-294"><a href="#cb21-294" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-295"><a href="#cb21-295" aria-hidden="true" tabindex="-1"></a><span class="fu">### Dependent type names</span></span>
+<span id="cb21-296"><a href="#cb21-296" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-297"><a href="#cb21-297" aria-hidden="true" tabindex="-1"></a>There are cases where a dependent name is a type. Consider the following C++ code:</span>
+<span id="cb21-298"><a href="#cb21-298" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-299"><a href="#cb21-299" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-300"><a href="#cb21-300" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb21-301"><a href="#cb21-301" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-302"><a href="#cb21-302" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-303"><a href="#cb21-303" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> base_parser<span class="op">{</span></span>
+<span id="cb21-304"><a href="#cb21-304" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb21-305"><a href="#cb21-305" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-306"><a href="#cb21-306" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-307"><a href="#cb21-307" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-308"><a href="#cb21-308" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> parser<span class="op">:</span> base_parser<span class="op">&lt;</span>T<span class="op">&gt;{</span></span>
+<span id="cb21-309"><a href="#cb21-309" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> parse<span class="op">(){</span></span>
+<span id="cb21-310"><a href="#cb21-310" aria-hidden="true" tabindex="-1"></a>        <span class="co">// value_type v{};  // [1] : Error</span></span>
+<span id="cb21-311"><a href="#cb21-311" aria-hidden="true" tabindex="-1"></a>        <span class="co">// base_parser&lt;T&gt;::value_type v{};  //[2] :Error</span></span>
+<span id="cb21-312"><a href="#cb21-312" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"parse</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb21-313"><a href="#cb21-313" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb21-314"><a href="#cb21-314" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-315"><a href="#cb21-315" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-316"><a href="#cb21-316" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb21-317"><a href="#cb21-317" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb21-318"><a href="#cb21-318" aria-hidden="true" tabindex="-1"></a>    parser<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> p<span class="op">;</span></span>
+<span id="cb21-319"><a href="#cb21-319" aria-hidden="true" tabindex="-1"></a>    p<span class="op">.</span>parse<span class="op">();</span></span>
+<span id="cb21-320"><a href="#cb21-320" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb21-321"><a href="#cb21-321" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-322"><a href="#cb21-322" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-323"><a href="#cb21-323" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-324"><a href="#cb21-324" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/dr6cM9G3h)</span></span>
+<span id="cb21-325"><a href="#cb21-325" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-326"><a href="#cb21-326" aria-hidden="true" tabindex="-1"></a>In this code snippet, the *metafunction* `base_parser` is an **identity** metafunction and returns back the type you give it. <span class="in">`base_parser&lt;T&gt;::value_type`</span> is actually a dependent type, which depends on the template parameter <span class="in">`T`</span>. At point <span class="in">`[1]`</span> and <span class="in">`[2]`</span>, the compiler does not know what <span class="in">`T`</span> will be. If it attempts to bind the name <span class="in">`v`</span>, it will fail. We need to tell the compiler explicitly <span class="in">`base_parser&lt;T&gt;::value_type`</span> is a dependent type. You do that using the <span class="in">`typename`</span> keyword.</span>
+<span id="cb21-327"><a href="#cb21-327" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-328"><a href="#cb21-328" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-329"><a href="#cb21-329" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb21-330"><a href="#cb21-330" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-331"><a href="#cb21-331" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-332"><a href="#cb21-332" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> base_parser<span class="op">{</span></span>
+<span id="cb21-333"><a href="#cb21-333" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb21-334"><a href="#cb21-334" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-335"><a href="#cb21-335" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-336"><a href="#cb21-336" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-337"><a href="#cb21-337" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> parser<span class="op">:</span> base_parser<span class="op">&lt;</span>T<span class="op">&gt;{</span></span>
+<span id="cb21-338"><a href="#cb21-338" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> parse<span class="op">(){</span></span>
+<span id="cb21-339"><a href="#cb21-339" aria-hidden="true" tabindex="-1"></a>        <span class="co">// value_type v{};  // [1] : Error</span></span>
+<span id="cb21-340"><a href="#cb21-340" aria-hidden="true" tabindex="-1"></a>        <span class="co">// base_parser&lt;T&gt;::value_type v{};  //[2] :Error</span></span>
+<span id="cb21-341"><a href="#cb21-341" aria-hidden="true" tabindex="-1"></a>        <span class="kw">typename</span> base_parser<span class="op">&lt;</span>T<span class="op">&gt;::</span><span class="dt">value_type</span> v<span class="op">{};</span>  <span class="co">//[3] :Ok</span></span>
+<span id="cb21-342"><a href="#cb21-342" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"parse</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb21-343"><a href="#cb21-343" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb21-344"><a href="#cb21-344" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-345"><a href="#cb21-345" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-346"><a href="#cb21-346" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb21-347"><a href="#cb21-347" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb21-348"><a href="#cb21-348" aria-hidden="true" tabindex="-1"></a>    parser<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> p<span class="op">;</span></span>
+<span id="cb21-349"><a href="#cb21-349" aria-hidden="true" tabindex="-1"></a>    p<span class="op">.</span>parse<span class="op">();</span></span>
+<span id="cb21-350"><a href="#cb21-350" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb21-351"><a href="#cb21-351" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-352"><a href="#cb21-352" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-353"><a href="#cb21-353" aria-hidden="true" tabindex="-1"></a>So, any time, when calling a *type metafunction*, if the compiler does not know what <span class="in">`::type`</span> is, you must prefix it using the <span class="in">`typename`</span> keyword, if we want to treat it as a type.</span>
+<span id="cb21-354"><a href="#cb21-354" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-355"><a href="#cb21-355" aria-hidden="true" tabindex="-1"></a><span class="fu">## Convenience calling functions</span></span>
+<span id="cb21-356"><a href="#cb21-356" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-357"><a href="#cb21-357" aria-hidden="true" tabindex="-1"></a>Value *metafunctions* often use helper functions (variable templates) ending with <span class="in">`_v`</span>. For example, we often define the helper function:</span>
+<span id="cb21-358"><a href="#cb21-358" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-359"><a href="#cb21-359" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-360"><a href="#cb21-360" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">auto</span> X<span class="op">&gt;</span></span>
+<span id="cb21-361"><a href="#cb21-361" aria-hidden="true" tabindex="-1"></a><span class="kw">inline</span> <span class="kw">constexpr</span> <span class="kw">auto</span> ValueIdentity_v <span class="op">=</span> ValueIdentity<span class="op">&lt;</span>X<span class="op">&gt;::</span>value<span class="op">;</span></span>
+<span id="cb21-362"><a href="#cb21-362" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-363"><a href="#cb21-363" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> ValueIdentity<span class="op">&lt;</span><span class="dv">42</span><span class="op">&gt;::</span>value<span class="op">);</span></span>
+<span id="cb21-364"><a href="#cb21-364" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="dv">42</span> <span class="op">==</span> ValueIdentity_v<span class="op">&lt;</span><span class="dv">42</span><span class="op">&gt;)</span></span>
+<span id="cb21-365"><a href="#cb21-365" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-366"><a href="#cb21-366" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-367"><a href="#cb21-367" aria-hidden="true" tabindex="-1"></a>We are just calling the <span class="in">`ValueIdentity&lt;&gt;`</span> metafunction, grabbing its value and storing it into this variable <span class="in">`ValueIdentity_v`</span>. This is a convenient way of calling value *metafunctions*. It does require you to instantiate an extra variable template.</span>
+<span id="cb21-368"><a href="#cb21-368" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-369"><a href="#cb21-369" aria-hidden="true" tabindex="-1"></a>It's really helpful when we start using it with types. Type *metafunctions* use alias templates ending with <span class="in">`_t`</span>. It helps us get rid of the entire <span class="in">`typename`</span> dance.</span>
+<span id="cb21-370"><a href="#cb21-370" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-371"><a href="#cb21-371" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-372"><a href="#cb21-372" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-373"><a href="#cb21-373" aria-hidden="true" tabindex="-1"></a><span class="kw">using</span> <span class="dt">TypeIdentity_t</span> <span class="op">=</span> <span class="kw">typename</span> TypeIdentity<span class="op">&lt;</span>T<span class="op">&gt;::</span>type<span class="op">;</span></span>
+<span id="cb21-374"><a href="#cb21-374" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-375"><a href="#cb21-375" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">TypeIdentity_t</span><span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;);</span></span>
+<span id="cb21-376"><a href="#cb21-376" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-377"><a href="#cb21-377" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-378"><a href="#cb21-378" aria-hidden="true" tabindex="-1"></a>Instead of calling the <span class="in">`TypeIdentity`</span> *metafunction* with the parameter <span class="in">`int`</span> and writing <span class="in">`::type`</span> to get its value, I can just call the metafunction with <span class="in">`_t`</span> and with its parameters in angle brackets(<span class="in">`&lt;&gt;`</span>).</span>
+<span id="cb21-379"><a href="#cb21-379" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-380"><a href="#cb21-380" aria-hidden="true" tabindex="-1"></a>These calling conventions are easier to use. But each one must be explicitly hand-written. So, every time you write a metafunction, if you want to provide convenience capabilities, you also have to write the convenience variable template or alias template.</span>
+<span id="cb21-381"><a href="#cb21-381" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-382"><a href="#cb21-382" aria-hidden="true" tabindex="-1"></a><span class="fu">## `std::integral_constant` - a very useful metafunction</span></span>
+<span id="cb21-383"><a href="#cb21-383" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-384"><a href="#cb21-384" aria-hidden="true" tabindex="-1"></a>This is probably the most useful metafunction. This is what <span class="in">`std::integral_constant`</span> looks like:</span>
+<span id="cb21-385"><a href="#cb21-385" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-386"><a href="#cb21-386" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb21-387"><a href="#cb21-387" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">class</span> T<span class="op">,</span> T v<span class="op">&gt;</span></span>
+<span id="cb21-388"><a href="#cb21-388" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> integral_constant<span class="op">{</span></span>
+<span id="cb21-389"><a href="#cb21-389" aria-hidden="true" tabindex="-1"></a>    <span class="at">static</span> <span class="kw">constexpr</span> T value <span class="op">=</span> v<span class="op">;</span></span>
+<span id="cb21-390"><a href="#cb21-390" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-391"><a href="#cb21-391" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb21-392"><a href="#cb21-392" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> type <span class="op">=</span> integral_constant<span class="op">&lt;</span>T<span class="op">,</span> v<span class="op">&gt;</span></span>
+<span id="cb21-393"><a href="#cb21-393" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb21-394"><a href="#cb21-394" aria-hidden="true" tabindex="-1"></a>    <span class="kw">constexpr</span> <span class="kw">operator</span> <span class="dt">value_type</span><span class="op">()</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{</span>     <span class="co">//[1] : Implicit integral cast</span></span>
+<span id="cb21-395"><a href="#cb21-395" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> value<span class="op">;</span></span>
+<span id="cb21-396"><a href="#cb21-396" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb21-397"><a href="#cb21-397" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-398"><a href="#cb21-398" aria-hidden="true" tabindex="-1"></a>    <span class="kw">constexpr</span> <span class="kw">operator</span> <span class="dt">value_type</span><span class="op">()()</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb21-399"><a href="#cb21-399" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> value<span class="op">;</span></span>
+<span id="cb21-400"><a href="#cb21-400" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb21-401"><a href="#cb21-401" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-402"><a href="#cb21-402" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb21-403"><a href="#cb21-403" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-404"><a href="#cb21-404" aria-hidden="true" tabindex="-1"></a>It's got a <span class="in">`value`</span>, so its a value metafunction. But, it's also got <span class="in">`type`</span>, so its a type metafunction as well. In fact, its a type metafunction which is an identity metafunction. It will tell exactly what the <span class="in">`integral_constant`</span> thing is. It also has the <span class="in">`value_type`</span>. </span>
+<span id="cb21-405"><a href="#cb21-405" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-406"><a href="#cb21-406" aria-hidden="true" tabindex="-1"></a><span class="in">`integral_constant`</span> is just a class, it has no data. </span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 

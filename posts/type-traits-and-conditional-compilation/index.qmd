@@ -174,4 +174,233 @@ C++20 actually introduces `std::type_identity`, which is pretty much what we see
 
 ### Calling Type Metafunctions
 
-When we call a value *metafunction*, 
+When we call a value *metafunction*, we can easily call the function:
+
+```cpp
+ValueIdentity<42>::value
+```
+
+`ValueIdentity` is the *metafunction*, it's passed the parameter `42` in the angle brackets (just like parentheses for a regular value function) and `::value` is how I get it's value back.
+
+When I call a type *metafunction*, it's the same way. The function call consists of the *metafunction* name `std::type_identity`, the parameters to the *metafunction* in angle brackets (`<42>`) and `::type` is how I get it's value back.
+
+```cpp
+#include <iostream>
+#include <type_traits>
+
+int main()
+{
+    using T = std::type_identity<int>::type;
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/YaddrePGK)
+
+
+## Understanding name binding and dependent types
+
+*Name binding* is the process of establishing, determining explicitly the type of each name (declaration) in a template. There are two kinds of names used within a template: *dependent* and *non-dependent* names. Names that depend on a template parameter are called *dependent* names. 
+
+- For dependent names, name binding is performed at the point of template instantiation.
+- For non-dependent names, name binding is performed at the point of template definition.
+
+Consider the following C++ code:
+
+```cpp
+// Ref: Template metaprogramming with C++
+// Mariusz Bancilla, pages 123 
+#include <iostream>
+
+template<typename T>
+struct handler{
+    void handle(T value)    //[1] handle is a dependent name
+    {
+        std::cout << "handler<T>: " << value << '\n';
+    }
+};
+
+template<typename T>
+struct parser{
+    void parse(T arg){      //[2] parse is a dependent name
+        arg.handle(x);
+    }
+
+    double x;                  //[3] x is a non-dependent name
+};
+
+int main(){
+    handler<double> doubleHandler;                //[5] template instantiation
+    parser<handler<double>> doubleParser(3.14);   //[6] template instantiation
+    doubleParser.parse(doubleHandler);
+    return 0;
+}
+```
+
+When the compiler sees dependent names, e.g. at points `[1]` and `[2]`, it cannot determine the type-signature of these functions. So, `parse()` and `handle()` are not bound at this point.
+
+The declaration `double x` at point `[3]` declares a non-dependent type. So, the type of the variable `x` is known and bound.
+
+Continuing with the code, at point `[4]`, there is a template specialization for the `handler` class template for the type `int`. 
+
+Template instantiation happens at points `[5]` and `[6]`. At point `[5]`, `handler<double>::handle` is bound to `handle` and at point `[6]`, `parser<handler<double>>::parse` is bound to `parse`. 
+
+### Two-phase name lookup
+
+Name binding happens differently for dependent names (those that depend on a template parameter) and non-dependent names. When the compiler passes throuh the definition of a template, it needs to figure out whether a name is dependent or non-dependent. Further, name binding depends upon this categorization. Thus, **the instantiation of a template happens in 2-phases**. 
+
+- The first phase occurs at the point of the definition when the template syntax is checked and the names are categorized as *dependent* or *non-dependent*.
+- The second phase occurs at the point of template instantiation when the template arguments are substituted for the template parameters. Name binding for dependent names happens at this point.
+
+This process in two steps is called the **two-phase name lookup**. 
+
+Consider the following C++ code:
+
+```cpp
+// Ref: Template metaprogramming with C++
+// Mariusz Bancilla, pages 125
+template<typename T>
+struct base_parser
+{
+    void init()                     // [1] non-dependent name
+    {
+        std::cout << "init\n";
+    }
+};
+
+template<typename T>
+struct parser::public base_parser<T>
+{
+    void parse(){                  // [2] non-dependent name
+        // The compiler at [3] will try to bind init(), as it's a non-dependent name.
+        // However, base_parser has not yet been instantiated. This will result in a 
+        // compile-error
+        //init();                  // [3] non-dependent name
+        std::cout << "parse\n";
+    }
+};
+
+int main(){
+    parser<double> p;
+    p.parse();
+}
+```
+
+The call to `init()` inside the `parse()` member function has been commented out. Uncommenting it will cause a compile error.
+
+The intention here is to call the base-class `init()` function. However, the compiler will issue an error, because it's not able to find `init()`. The reason is that `init()` is a non-dependent name. Therefore, it must be bound at the time of the definition of the `parser` template. Although, `base_parser<T>::init()` exists, this template has still not been instantiated. The compiler cannot assume its what we want to call, because the primary template `base_parser` can always be specialized and `init()` can be defined as something else.
+
+This problem can be fixed, by making `init` a dependent name. This can be done by either prefixing it with `this->` or with `base_parser<T>::`. 
+
+### Dependent type names
+
+There are cases where a dependent name is a type. Consider the following C++ code:
+
+```cpp
+#include <iostream>
+
+template<typename T>
+struct base_parser{
+    using value_type = T;
+};
+
+template<typename T>
+struct parser: base_parser<T>{
+    void parse(){
+        // value_type v{};  // [1] : Error
+        // base_parser<T>::value_type v{};  //[2] :Error
+        std::cout << "parse\n";
+    }
+};
+
+int main()
+{
+    parser<double> p;
+    p.parse();
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/dr6cM9G3h)
+
+In this code snippet, the *metafunction* `base_parser` is an **identity** metafunction and returns back the type you give it. `base_parser<T>::value_type` is actually a dependent type, which depends on the template parameter `T`. At point `[1]` and `[2]`, the compiler does not know what `T` will be. If it attempts to bind the name `v`, it will fail. We need to tell the compiler explicitly `base_parser<T>::value_type` is a dependent type. You do that using the `typename` keyword.
+
+```cpp
+#include <iostream>
+
+template<typename T>
+struct base_parser{
+    using value_type = T;
+};
+
+template<typename T>
+struct parser: base_parser<T>{
+    void parse(){
+        // value_type v{};  // [1] : Error
+        // base_parser<T>::value_type v{};  //[2] :Error
+        typename base_parser<T>::value_type v{};  //[3] :Ok
+        std::cout << "parse\n";
+    }
+};
+
+int main()
+{
+    parser<double> p;
+    p.parse();
+    return 0;
+}
+```
+So, any time, when calling a *type metafunction*, if the compiler does not know what `::type` is, you must prefix it using the `typename` keyword, if we want to treat it as a type.
+
+## Convenience calling functions
+
+Value *metafunctions* often use helper functions (variable templates) ending with `_v`. For example, we often define the helper function:
+
+```cpp
+template <auto X>
+inline constexpr auto ValueIdentity_v = ValueIdentity<X>::value;
+
+static_assert(42 == ValueIdentity<42>::value);
+static_assert(42 == ValueIdentity_v<42>)
+```
+
+We are just calling the `ValueIdentity<>` metafunction, grabbing its value and storing it into this variable `ValueIdentity_v`. This is a convenient way of calling value *metafunctions*. It does require you to instantiate an extra variable template.
+
+It's really helpful when we start using it with types. Type *metafunctions* use alias templates ending with `_t`. It helps us get rid of the entire `typename` dance.
+
+```cpp
+template <typename T>
+using TypeIdentity_t = typename TypeIdentity<T>::type;
+
+static_assert(std::is_same_v<int, TypeIdentity_t<int>);
+```
+
+Instead of calling the `TypeIdentity` *metafunction* with the parameter `int` and writing `::type` to get its value, I can just call the metafunction with `_t` and with its parameters in angle brackets(`<>`).
+
+These calling conventions are easier to use. But each one must be explicitly hand-written. So, every time you write a metafunction, if you want to provide convenience capabilities, you also have to write the convenience variable template or alias template.
+
+## `std::integral_constant` - a very useful metafunction
+
+This is probably the most useful metafunction. This is what `std::integral_constant` looks like:
+
+```cpp
+template<class T, T v>
+struct integral_constant{
+    static constexpr T value = v;
+
+    using value_type = T;
+    using type = integral_constant<T, v>
+    
+    constexpr operator value_type() const noexcept{     //[1] : Implicit integral cast
+        return value;
+    }
+
+    constexpr operator value_type()() const noexcept{
+        return value;
+    }
+};
+```
+
+It's got a `value`, so its a value metafunction. But, it's also got `type`, so its a type metafunction as well. In fact, its a type metafunction which is an identity metafunction. It will tell exactly what the `integral_constant` thing is. It also has the `value_type`. 
+
+`integral_constant` is just a class, it has no data. 
