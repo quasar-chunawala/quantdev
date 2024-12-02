@@ -385,13 +385,13 @@ How is `std::remove_pointer` metafunction implemented? You can intuitively come 
 
 ```cpp
 template<typename T>
-struct remove_pointer{
+struct RemovePointer{
     using type = T;
 };
 
 // template specialization
 template<typename T>
-struct remove_pointer<T*>{
+struct RemovePointer<T*>{
     using type = T;
 };
 ```
@@ -412,19 +412,19 @@ How about `std::remove_reference`?
 
 ```cpp
 template<typename T>
-struct remove_reference{
+struct RemoveReference{
     using type = T;
 };
 
 // template specialization
 template<typename T>
-struct remove_reference<T&>{
+struct RemoveReference<T&>{
     using type = T;
 };
 
 // template specialization
 template<typename T>
-struct remove_reference<T&&>{
+struct RemoveReference<T&&>{
     using type = T;
 };
 ```
@@ -435,83 +435,109 @@ The type metafunction `std::enable_if` returns the type `T`, if the predicate `B
 
 ```cpp
 template <bool B, typename T>
-struct enable_if{};
+struct EnableIf{};
 
 template <typename T>
-struct enable_if<true,T>{
+struct EnableIf<true,T>{
     using type = T;
-}
+};
 ```
 
-The type metafunction `std::conditional` returns `T`, if the predicate `B` is true, otherwise returns `F`.
+The type metafunction `std::conditional` returns `T`, if the predicate `B` is true, otherwise returns `F`. It's a compile-time `if-else` operating with types.
 
 ```cpp
 template <bool B, typename T, typename F>
-struct conditional{
+struct Conditional{
     using type = T;
-}
+};
 
 template <typename T, typename F>
-struct conditional<false, T, F>{
+struct Conditional<false, T, F>{
     using type = F;
+};
+```
+
+The type metafunction `std::remove_const` removes any top-level `const` qualifier. It's a *transformation* trait. Let's look at the usage of this metafunction to ensure we handle all cases correctly.
+
+We could try to implement it from scratch as follows:
+
+```cpp
+//Primary template : do nothing if there's no const
+template<typename T>
+struct RemoveConst : std::type_identity<T> {};
+
+//Partial specialization 
+template<typename T> struct RemoveConst<T const>{
+    using type = T;
 }
 ```
 
-The type metafunction `std::remove_const` removes the `const` qualifier. It's a *transformation* trait.
+and likewise for removing `volatile`.
 
 ```cpp
-template<
+template <typename T>
+struct RemoveVolatile {
+	using Type = T;
+};
+
+// remove volatile
+template <typename T>
+struct RemoveVolatile<volatile T> {
+	using Type = T;
+};
+```
+
+`RemoveConst` and `RemoveVolatile` can be composed into `RemoveCV`.
+
+```cpp
+template <typename T>
+struct RemoveCVT : RemoveConst<RemoveVolatile<T>> {};
 ```
 
 I hope you enjoyed the warm-up. Now, let's try and implement `std::decay` from scratch.
 
 ## Implementing `std::decay`
 
-Since C++11, `std::decay` was introduced into `<type_traits>`. It is used to decay a type, or to  convert a type into it's corresponding *by-value* type. It will remove any top-level `cv`-qualifiers (`const`, `volatile`) and reference qualifiers for the specified type. For example, `int&` is turned into `int` and an array type becomes a pointer to its element types. Knowing its usage, we could try to implement our own version of `std::decay`.
+Since C++11, `std::decay` was introduced into `<type_traits>`. It is used to decay a type, or to  convert a type into it's corresponding *by-value* type. It will remove any top-level `cv`-qualifiers (`const`, `volatile`) and reference qualifiers for the specified type. For example, `int&` is turned into `int`. An array type becomes a pointer to its element types. A function type becomes a pointer to the function.
 
-## `std::integral_constant` - a very useful metafunction
+### Non-Array and Non-function case
 
-This is probably the most useful metafunction. This is what `std::integral_constant` looks like:
-
-```cpp
-template<class T, T v>
-struct integral_constant{
-    static constexpr T value = v;
-
-    using value_type = T;
-    using type = integral_constant<T, v>
-    
-    constexpr operator value_type() const noexcept{     //[1] : Implicit integral cast
-        return value;
-    }
-
-    constexpr operator value_type()() const noexcept{
-        return value;
-    }
-};
-``` 
-
-`integral_constant` is just a class, it has no data. Its just a wrapper over a compile-time constant of a specified type. 
-
-It's got a `value`, so its a value metafunction. But, it's also got `type`, so its a type metafunction as well. In fact, its a type metafunction which is an identity metafunction. It will tell exactly what the `integral_constant` thing is. It also has the `value_type`.
+We handle the non-array and non-function cases first.
 
 ```cpp
-#include <iostream>
-#include <type_traits>
-
-template<typename T>
-struct is_void{
-    using type = std::false_type;
-};
-
-template<>
-struct is_void<void>{
-    using type = std::true_type;
-};
-
-int main(){
-    static_assert(std::is_same<is_void<void>::type,std::true_type>::value);
-    static_assert(std::is_same<is_void<int>::type,std::false_type>::value);
-    return 0;
-}
+// RemoveConst and RemoveVolatile can be composed into RemoveCV
+template <typename T>
+struct DecayT : RemoveCVT<RemoveReference<T>> {};
 ```
+
+### Array-to-pointer decay
+
+Now, we take array types into account. Below are partial specialisations to convert an array type into a pointer to its element type:
+
+```cpp
+// unbounded array
+template <typename T>
+struct DecayT<T[]> {
+	using Type = T*;
+};
+
+// bounded array
+template <typename T, std::size_t N>
+struct DecayT<T[N]> {
+	using Type = T*;
+};
+```
+
+### Function-to-pointer decay
+
+We want to recognise a function regardless of its return type and parameter types, and then get its function pointer. Because there are different number of parameters, we need to employ variadic templates:
+
+```cpp
+template <typename Ret, typename...Args>
+struct DecayT<Ret(Args...)> {
+	using Type = Ret(*)(Args...);
+};
+```
+
+
+
