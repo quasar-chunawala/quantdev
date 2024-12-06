@@ -1,5 +1,5 @@
 ---
-title: "Type Traits"
+title: "Type Traits 101"
 author: "Quasar"
 date: "2024-11-25"
 categories: [C++]      
@@ -538,3 +538,72 @@ struct DecayT<Ret(Args...)> {
 	using Type = Ret(*)(Args...);
 };
 ```
+
+## `std::integral_constant` metafunction
+
+The `std:integral_constant` wraps a static constant of the specified type. It is a value meta-function. In fact, it is an identity *meta-function*, so that, `std::integral_constant<char,'a'>::value` returns `a`. It is also a type meta-function. Here's a possible implementation:
+
+```cpp
+template<class T, T v>
+struct integral_constant
+{
+    static constexpr T value = v;
+    
+    using value_type = T;
+    
+    using type = integral_constant; // using injected-class-name
+    
+    constexpr operator value_type() const noexcept { return value; }
+    
+    constexpr value_type operator()() const noexcept { return value; } // since c++14
+};
+```
+
+Now, `std::true_type` is simply the compile-time constant defined as `std::integral_constant<bool,true>`. `std::false_type` is the compile-time constant defined as `std::integral_constant<bool,false>`. 
+
+## `std::is_same`
+
+`std::is_same<T1,T2>` is a comparison metafunction for types. We have a primary template:
+
+```cpp
+// Primary template
+template<typename T1, typename T2>
+struct is_same : std::false_type {};
+```
+
+It takes two types as arguments. If the two types are the same, we have the explicit specialisation:
+
+```cpp
+template<typename T>
+struct is_same<T,T>{
+    using value = std::true_type;
+}
+
+// Convenience - variable template
+template<typename T1, typename T2>
+constexpr inline bool is_same_v = is_same<T1,T2>::value;
+```
+
+Now, we can define `is_floating_point` as an alias template:
+
+```cpp
+template<class T>
+using is_floating_point = std::bool_constant<
+         // Note: standard floating-point types
+         std::is_same<float, typename std::remove_cv<T>::type>::value
+         || std::is_same<double, typename std::remove_cv<T>::type>::value
+         || std::is_same<long double, typename std::remove_cv<T>::type>::value
+
+         // Note: extended floating-point types (C++23, if supported)
+         || std::is_same<std::float16_t, typename std::remove_cv<T>::type>::value
+         || std::is_same<std::float32_t, typename std::remove_cv<T>::type>::value
+         || std::is_same<std::float64_t, typename std::remove_cv<T>::type>::value
+         || std::is_same<std::float128_t, typename std::remove_cv<T>::type>::value
+         || std::is_same<std::bfloat16_t, typename std::remove_cv<T>::type>::value
+>;
+```
+
+
+
+
+
