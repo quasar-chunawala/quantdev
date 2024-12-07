@@ -157,3 +157,75 @@ typename std::enable_if<!use_write<T>::value>::type serialize(
 
 In all these examples, the `enable_if` type trait was used to enable SFINAE during the overload resolution for the function templates. This type metafunction can also be used to restrict instantiations of class templates. In the following example, we have a class called `integral_wrapper` that is supposed to be instantiated only with integral types, and a class called `floating_wrapper` that is supposed to be instantiated only with only with floating point types:
 
+```cpp
+#include <type_traits>
+
+template<
+    typename T,
+    typename=std::enable_if<std::is_integral_v<T>>::type>
+struct integral_wrapper{
+    T value;
+};
+
+template<
+    typename T,
+    typename=std::enable_if<std::is_floating_point_v<T>>::type>
+struct floating_point_wrapper{
+    T value;
+};
+```
+
+Both these templates have two type template parameters. The first one is called `T`, but the second one is anonymous and has a default argument. The value of this argument is defined or not with the help of the `std::enable_if<B,T>` type metafunction, based on the value of a boolean expression.
+
+We can use the wrapper class templates as follows:
+
+```cpp
+int main()
+{
+    integral_wrapper w1{ 42 };          //OK
+    //integral_wrapper w2{ 42.0 };      //error
+    //integral_wrapper w3{ "42" };      //error
+
+    //floating_point_wrapper w4{ 42 };  //error
+    floating_point_wrapper w5{ 42.0 };  //OK
+    //floating_point_wrapper w6{ "42" };//error
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/PKqK1ahE4)
+
+## C++17 `constexpr if` 
+
+The C++17 feature `if constexpr` is a compile-time version of the `if` statement and makes SFINAE much easier. It helps replace complex template code with simpler versions. Let's look at a C++17 implementation of the `serialize` function that can uniformly serialize both widgets and gadgets:
+
+```cpp
+template<typename T>
+void serialize(std::ostream& os, T const & value){
+    if constexpr (uses_write<T>::value){
+        value.write(os);
+    }else{
+        os << value;
+    }
+}
+```
+
+`constexpr if` enables us to discard a branch, at compile-time, based on the value of the expression. In our example, when the `uses_write_v` variable is `true`, the `else` branch is discarded, and the body of the first branch is retained. Otherwise, the opposite occurs. We end up with following specializations for the `widget` and `gadget` classes:
+
+```cpp
+template<>
+void serialize<widget>(std::ostream&& os, widget const & value){
+    if constexpr(true)
+    {
+        value.write(os);
+    }
+}
+
+void serialize<widget>(std::ostream&& os, widget const & value){
+    if constexpr(false)
+    {
+        os << write;
+    }
+}
+```
+
