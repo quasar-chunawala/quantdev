@@ -574,6 +574,8 @@ struct is_same : std::false_type {};
 It takes two types as arguments. If the two types are the same, we have the explicit specialisation:
 
 ```cpp
+// Template metaprogramming 
+// Mariusz Bancila 
 template<typename T>
 struct is_same<T,T>{
     using value = std::true_type;
@@ -603,7 +605,112 @@ using is_floating_point = std::bool_constant<
 >;
 ```
 
+## Examples of using type traits
 
+Consider the below `widget` and `gadget` classes:
 
+```cpp
+#include <array>
+#include <iterator>
+#include <iostream>
+#include <string>
 
+struct widget{
+    int id;
+    std::string name;
 
+    std::ostream& write(std::ostream& os) const{
+        os << id << std::endl;
+        return os;
+    }
+};
+
+struct gadget{
+    int id;
+    std::string name;
+
+    friend std::ostream& operator<<(std::ostream& os, gadget const & g);
+};
+
+std::ostream& operator<<(std::ostream& os, gadget const & g){
+    os << g.id << "," << g.name << "\n";
+    return os;
+}
+
+int main(){
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/KWGesx34K)
+
+The `widget` class contains a member function `write`. However, for the `gadget` class, the stream operator `<<` is overloaded for the same purpose. We can write the following code using these classes:
+
+```cpp
+widget w{1, "one"};
+w.write(std::cout);
+
+gagdet g{2, "two"}
+std::cout << g
+```
+
+However, we want to write a function template that enables us to treat them the same way. In other words, instead of using either `write` or the `<<` operator, we should be able to write the following:
+
+```cpp
+serialize(std::cout, w);
+serialize(std::cout, g);
+```
+
+How would such a function template look? How can we know whether a type provides a `write` method or has the `<<` operator overloaded? In other words, we need to query if a type supports `write`. We can write our own type trait.
+
+Let's write a type metafunction `uses_write<T>` which returns `true`, if `T` is `widget` and `false` otherwise.
+
+```cpp
+template<typename T>
+struct uses_write {
+    static inline constexpr bool value = false;
+};
+
+template<>
+struct uses_write<widget>{
+    static inline constexpr bool value = true;
+};
+```
+
+Next, let's assume for simplicity that types that don't provide a `write()` member function always overload the output stream operator `<<`. 
+
+I can write a primary template to handle the default case.
+
+```cpp
+template<bool B>
+struct serializer{
+
+    template<typename T>
+    static void serialize(std::ostream& os, T const & obj){
+        os << obj;
+    }
+};
+```
+
+I can specialize this template to handle the case where `T` supports `write`.
+
+```cpp
+struct serializer<true>{
+
+    template<typename T>
+    static void serialize(std::ostream& os, T const & obj){
+        obj.write(os);
+    }
+};
+```
+
+We can now write a free-standing function `serialize` function, that calls the type-metafunction `use_write<T>` to determine which function to dispatch at compile-time.
+
+```cpp
+template <typename T>
+void serialize(std::ostream& os, T const & obj){
+    serializer<uses_write<T>::value>::serialize(os, obj);
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/x7885z6ME)
