@@ -1,0 +1,86 @@
+---
+title: "SFINAE"
+author: "Quasar"
+date: "2024-12-07"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+comments:
+  giscus: 
+    repo: quasar-chunawala/quantdev
+format:
+    html:
+        code-tools: true
+        code-block-border-left: true
+        code-annotations: below
+        highlight-style: pygments
+---
+
+# Introduction
+
+When we write templates, we sometimes need to restrict the template arguments. For instance, we have a function that should work for any numeric type, therefore integral and floating point, but should not work with anything else. Or we may have a class template that should only accept trivial types for an argument. 
+
+There are also cases where we have overloaded function templates that should work with some types only. For instance, one overload should work with integral types and the other for floating-point types only. There are different ways to achieve that goal.
+
+Type traits are, however, involved in one way or the other. The first one that will be discussed in this chapter is called SFINAE. C++20 concepts are an approach superior to SFINAE, that I am going to blog about in another post.
+
+[SFINAE](https://en.cppreference.com/w/cpp/language/sfinae) stands for **Substitution Failure Is Not An Error**. When the compiler encounters the use of a function template, it substitutes the arguments in order to instantiate the template. If an error occurs at this point, it is not regarded as ill-informed code, only as a deduction failure. The function is removed from the overload set instead of causing an error. Only if there is no match in the overload set does an error occur.
+
+## An example of implementing the `begin()` method
+
+In C++11, there are free-standing functions `std::begin()` and `std::end()` that return iterators to the first and the one-past-last elements of the container. These functions also work with arrays. How might we implement `begin()` to work both with STL containers and arrays?
+
+We need two overloads of the function template:
+
+```cpp
+#include <array>
+#include <iterator>
+#include <iostream>
+
+template<typename T>
+auto beginIter(T& c) { return c.begin(); }      //[1]
+
+template<typename T, std::size_t N>
+T* beginIter(T(&arr)[N]){ return arr; }         //[2]
+```
+
+The first overload calls the member function `begin()` and returns the value. Therefore, this overload is restricted to types that have a member function `begin()`, otherwise a compiler error would occur. The second overload simply returns a pointer to the first element of the array. This is restricted to array types; anything else would produce a compiler error. 
+
+We can use these overloads as follows:
+
+```cpp
+int main()
+{
+    std::array<int, 5> arr1{1, 2, 3, 4, 5};     
+    std::cout << *beginIter(arr1) << "\n";          //[3] prints 1
+
+    int arr2[] {5, 4, 3, 2, 1};
+    std::cout << *beginIter(arr2) << "\n";          //[5] prints 5
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/T79Pv5Ms6)
+
+If you compile this piece of code, no error, not even a warning occurs! The reason for that is SFINAE. When resolving the call to `beginIter(arr1)`, substituting `std::array<int,5>` to the first overload at `[1]` succeeds, but the substitution for the second (at `[2]`) fails. Instead of issuing an error at this point, the compiler just ignores it, so it builds an overload set with a single instantiation, and therefore it can find a match for the invocation. Similarly, when resolving the call to `beginIter(arr2)`, the substitution of `int[5]` for the first overload fails and is ignored, but it succeeds for the second and is added to  the overload set, eventually finding a good match for the invocation. Therefore, both calls can be successfully made. Should one of the two overloads not be present, either `beginIter(arr1)` or `beginIter(arr2)` would fail to match the function template and a compiler error would occur.
+
+## Enabling SFINAE with the `enable_if` type trait
+
+There are two categories of type traits in C++:
+
+- Type traits that enable us to query properties of the type at compile-time.
+- Type traits that enable us to perform type transformations at compile-time(such as adding or removing the `const` qualifier, or adding or removing pointer or reference from a type). These type traits are also called **meta-functions**. 
+
+One important type trait is `std::enable_if`. This is used to enable SFINAE and remove candidates from a function's overload set. Recall that, `enable_if<B,T>` is a type metafunction. If `B` is `true`, it returns `T`.
+
+```cpp
+template<bool B, typename T=void>
+struct enable_if{};
+
+template<typename t>
+struct enable_if<true,T>{
+    using type = T;
+};
+```
+
+
