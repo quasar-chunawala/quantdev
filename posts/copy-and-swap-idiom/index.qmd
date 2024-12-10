@@ -1,0 +1,99 @@
+---
+title: "Copy-and-swap idiom"
+author: "Quasar"
+date: "2024-12-10"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+comments:
+  giscus: 
+    repo: quasar-chunawala/quantdev
+format:
+    html:
+        code-tools: true
+        code-block-border-left: true
+        code-annotations: below
+        highlight-style: pygments
+---
+
+
+## Introduction.
+
+The canonical way to write copy assignment operator is the following:
+
+```cpp
+struct Point3D{
+    double x;
+    double y;
+    double z;
+
+    /* Rule of five */
+    Point3D() = default;
+    Point3D(const Point3D&) = default;
+    
+    Point3D& operator=(const Point3d& p){
+        if(this != &p){
+            // Copy member variables
+            x = p.x;
+            y = p.y;
+            z = p.z;
+        }
+
+        return (*this);
+    }
+
+    Point3D(Point3D&& ) = default;
+    Point3D& operator=(Point3D&& ) = default;
+};
+```
+
+The problem is, what if the member-wise copy assignment fails? If constructing any of the members `x`, `y` or `z` fails, the object we want to assign-to remains in an inconsistent state. 
+
+## Exception Safety in C++
+
+The C++ standard library provides several levels of exception safety (in decreasing order of exception safety):
+
+1. **No-throw guarantee**, also known as **failure transparency**: Operations are guaranteed to succeed and satisfy all requirements even in exceptional situations. If an exception occurs, it will be handled internally and not observed by clients.
+
+2. **Strong exception safety**, also known as **commit or rollback semantics**: Operations can fail, but failed operations are guaranteed to have no side effects, leaving the original values intact. 
+
+3. **Basic exception safety**: Partial execution of failed operations can result in side-effects, but all **invariants** are preserved.
+
+4. **No exception safety**: No guarantees are made.
+
+## Achieving strong exception safety
+
+Our copy-assignment operator provides basic exception safety at best. If we want strong-exception safety, the copy-and-swap idiom will help us achieve that.
+
+The constructions might fail, but the destruction must not. Therefore, first, we should create a new object on its own and then swap it with old one. If the construction fails, the original object is not modified at all. We are on the safe-side. Then, we should switch the handles and we know that the destruction of the temporary object with the old data will not fail.
+
+We need 3 things to implement the copy-and-swap idiom. We need 
+
+- A copy constructor.
+- A `swap` function that swaps two objects member-by-member, without throwing an exception.
+- A destructor.
+
+We want the copy-assignment operator to look like this:
+
+```cpp
+Point3D& Point3D::operator=(const Point3D& other){
+    Point3D temp{other};
+    swap(*this, temp);
+    return (*this);
+} // temp goes out of scope, its destructor is called
+  // any memory held by it is automatically released.
+```
+
+The `swap` function should swap, or in other words, exchange the content of two objects member by member. For that, we cannot use `std::swap`, because `std::swap` requires an implementation of a the copy-constructor and a copy-assignment operator. Instead, we write it by hand:
+
+```cpp
+friend void swap(const Point3D& lhs, const Point3D& rhs){
+    using std::swap;
+    swap(lhs.x, rhs.x);
+    swap(lhs.y, rhs.y);
+    swap(lhs.z, rhs.z);
+}
+```
+
+
