@@ -194,9 +194,10 @@ namespace dev{
 
         // Move assignment operator
         unique_ptr& operator=(unique_ptr&& other){
-            if(ptr != nullptr)
-                delete ptr;
+            if(ptr == other)
+                return (*this);
 
+            delete_underlying_ptr();
             ptr = std::exchange(other.ptr,nullptr);
             return (*this);
         }
@@ -219,10 +220,10 @@ namespace dev{
 
         /* Reset the unique_ptr */
         void reset(T* other){
-            if(ptr != nullptr)
-                delete ptr;
+            if(ptr == other)
+                return;
 
-            ptr = nullptr;
+            delete_underlying_ptr();
             std::swap(ptr, other);
         }
 
@@ -233,10 +234,7 @@ namespace dev{
 
         /* Destructor */
         ~unique_ptr(){
-            if(ptr != nullptr)
-                delete ptr;
-
-            ptr = nullptr;
+            delete_underlying_ptr();
         }
 
         /* swap - Exchange the contents of ptr1 and ptr2 member-by-member */
@@ -256,7 +254,13 @@ namespace dev{
             return ptr;
         }
 
-        //auto operator->(auto func)
+        /* Helper function to invoke delete on the underlying raw pointer */
+        void delete_underlying_ptr(){
+            if(ptr != nullptr){
+                delete ptr;
+                ptr = nullptr;
+            }
+        }
         private:
         T* ptr;
     };
@@ -280,6 +284,17 @@ bool operator==(dev::unique_ptr<T1>& lhs, std::nullptr_t rhs){
     return lhs.get() == nullptr;
 }
 
+//Overload operator!=
+template<typename T1, typename T2>
+bool operator!=(dev::unique_ptr<T1>& lhs, dev::unique_ptr<T2>& rhs){
+    return !(lhs == rhs);
+}
+
+template<typename T1>
+bool operator!=(dev::unique_ptr<T1>& lhs, std::nullopt_t& rhs){
+    return !(lhs == rhs);
+}
+
 int main(){
     /* Test Cases*/
 
@@ -289,13 +304,13 @@ int main(){
         dev::unique_ptr<int> ptr1(new int(10));
         dev::unique_ptr<int> ptr2(new int(10));
         assert(ptr1 == ptr1);   
-        assert(!(ptr1 == ptr2));
+        assert(ptr1 != ptr2);
     }
 
     {
         /* Create and access */
         dev::unique_ptr<int> ptr(new int(10));
-        assert(!(ptr == nullptr));
+        assert(ptr != nullptr);
         assert(*ptr == 10);
         
     }
@@ -305,8 +320,11 @@ int main(){
            Replaces the managed object with a new one*/
         dev::unique_ptr<int> ptr(new int(10));
         ptr.reset(new int(20));
-        assert(!(ptr == nullptr));
+        assert(ptr != nullptr);
         assert(*ptr == 20);
+
+        // Self-reset test
+        ptr.reset(ptr.get());
     }
 
     {
@@ -410,4 +428,4 @@ int main(){
 }
 ```
 
-[Compiler Explorer](https://godbolt.org/z/a7rcb6aoM)
+[Compiler Explorer](https://godbolt.org/z/vMzcYzhGe)
