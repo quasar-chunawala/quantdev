@@ -1,0 +1,413 @@
+---
+title: "`unique_ptr` - A custom implementation"
+author: "Quasar"
+date: "2024-12-20"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+format:
+    html:
+        code-tools: true
+        code-block-border-left: true
+        code-annotations: below
+        highlight-style: pygments
+---
+
+# Introduction
+
+Smart pointers are a fancy wrapper over raw pointers. Smart pointers are RAII compliant. RAII(Resource Acquisition Is Initialization) is a design paradigm and its a concept very emblematic in C++. It's a simple idea - all resources used by a class should be acquired in the constructor. All resources used by a class must be released in the destructor! It turns out that by abiding by the RAII policy, we avoid half-valid states. 
+
+
+The `std::unique_ptr` in the `<memory>` header is a smart pointer that excusively owns and manages the objects created dynamically on the heap through an underlying raw pointer. It subsequently disposes off the object, when it goes out of scope and is destroyed. 
+
+```cpp
+struct X{};
+
+std::unique_ptr<X> p1 = std::make_unique<X>();  
+//std::unique_ptr<X> p2(p1);      // Error when calling copy constructor, 
+                                  // p1 is the exclusive owner
+```
+
+`std::unique_ptr` enforces exclusive ownership using the fact, that it is not *copy-constructible* or *copy-assignable*. Note however, that the below code compiles successfully and is valid code.
+
+```cpp
+int* p = new int(10);
+
+std::unique_ptr<int> p1(p);  
+std::unique_ptr<int> p2(p);      
+```
+
+The copy constructor and the copy assignment operator of `std::unique_ptr<T>` are marked `delete`.  It is however, *move constructible* and *move-assignable*.
+
+# Basic functionalities to expect out of `std::unique_ptr<T>`
+
+I skimmed through the documentation for `std::unique_ptr` on cppreference.com. A basic implementation of `unique_ptr` in less than 200 lines of code should pass the following unit tests:
+
+```cpp
+int main(){
+    /* Test Cases*/
+
+    {
+        /* Non member function operator== 
+           Comparison with another unique_ptr or nullptr 
+        dev::unique_ptr<int> ptr1(new int(10));
+        dev::unique_ptr<int> ptr2(new int(10));
+        assert(ptr1 == ptr1);   
+        assert(!(ptr1 == ptr2));
+        */ 
+    }
+
+    {
+        /* Create and access 
+        dev::unique_ptr<int> ptr(new int(10));
+        assert(!(ptr == nullptr));
+        assert(*ptr == 10);
+        */
+    }
+
+    {
+        /* Reset unique_ptr 
+           Replaces the managed object with a new one
+        dev::unique_ptr<int> ptr(new int(10));
+        ptr.reset(new int(20));
+        assert(!(ptr == nullptr));
+        assert(*ptr == 20);
+        */
+    }
+
+    {
+        /* Release unique_ptr ownership - 
+           Returns a pointer to the managed object and releases ownership 
+        dev::unique_ptr<double> ptr(new double(3.14));
+        double* rawPtr = ptr.release();
+        assert(ptr == nullptr);
+        assert(rawPtr != nullptr);
+        assert(*rawPtr == 3.14);
+        */
+    }
+
+    {
+        /* Non-member function swap
+           Swap the managed objects
+        dev::unique_ptr<int> ptr1(new int(10));
+        dev::unique_ptr<int> ptr2(new int (20));
+        swap(ptr1, ptr2);
+        assert(*ptr1 == 20);
+        assert(*ptr2 == 10);
+         */
+    }
+
+    {
+        /* Get the raw underlying pointer 
+        int* x = new int(10);
+        dev::unique_ptr<int> ptr(x);
+        int* rawPtr = ptr.get();
+        assert(*rawPtr == 10);
+        assert(rawPtr == x);
+        */
+    }
+
+    {
+        /* operator bool to test if the unique pointer owns an object 
+        dev::unique_ptr<int> ptr(new int(42));
+        assert(ptr);
+        ptr.reset(nullptr);
+        assert(!ptr);
+        */
+
+    {
+        /* indirection operator* to dereference pointer to managed object,
+           member access operator -> to call member function
+        struct X{
+            int n;
+            int foo(){ return n; }
+        };
+
+
+        dev::unique_ptr<X> ptr(new X(10));
+        assert((*ptr).n == 10);
+        assert(ptr->foo() == 10);
+        */ 
+    }
+
+    {
+        /* Constructs an object of type T and wraps it in a unique_ptr.
+        struct Point3D{
+            double x, y, z;
+
+            Point3D() {}
+
+            Point3D(double x_, double y_, double z_) : x(x_), y(y_), z(z_) {}
+
+            Point3D(const Point3D& other) : x(other.x), y(other.y), z(other.z) {}
+
+            Point3D(Point3D&& other) 
+            : x(std::move(other.x))
+            , y(std::move(other.y))
+            , z(std::move(other.z))
+            {}
+        };
+
+        // Use the default constructor. 
+        dev::unique_ptr<Point3D> v1 = dev::make_unique<Point3D>();
+        // Use the constructor that matches these arguments.
+        dev::unique_ptr<Point3D> v2 = dev::make_unique<Point3D>(0, 1, 2);
+        // Create a unique_ptr to a vector of 5 elements.
+        //dev::unique_ptr<std::vector<int>> v3 = dev::make_unique<std::vector<int>>({1,2,3,4,5});
+        */
+        
+    }
+}
+```
+
+# A custom implementation
+
+```cpp
+#include <iostream>
+#include <memory>
+#include <cassert>
+#include <utility>
+#include <vector>
+
+namespace dev{
+    // Implement unique_ptr here
+    template<typename T>
+    class unique_ptr{
+        public:
+        // Default c'tor 
+        unique_ptr() : ptr{nullptr} {}
+
+        // Copy c'tor should be deleted to enforce the concept that this is 
+        // an owning pointer
+        unique_ptr(const unique_ptr& u) = delete;
+
+        // Copy assignment should also be deleted to enforce the ownership of the 
+        // managed object
+        unique_ptr& operator=(const unique_ptr& ) = delete;
+
+        // Move constructor
+        unique_ptr(unique_ptr&& other) : ptr{nullptr}
+        {
+            std::swap(ptr, other.ptr);
+        }
+
+        // Move assignment operator
+        unique_ptr& operator=(unique_ptr&& other){
+            if(ptr != nullptr)
+                delete ptr;
+
+            ptr = std::exchange(other.ptr,nullptr);
+            return (*this);
+        }
+
+        // Parameterized construtor
+        unique_ptr(T* p) 
+        : ptr{p} 
+        {}
+
+        // Overload deferencing operator *
+        T& operator*(){
+            return (*ptr);
+        }
+
+        // get the raw pointer
+        T* get()
+        {
+            return ptr;
+        }
+
+        /* Reset the unique_ptr */
+        void reset(T* other){
+            if(ptr != nullptr)
+                delete ptr;
+
+            ptr = nullptr;
+            std::swap(ptr, other);
+        }
+
+        /* Release unique_ptr ownership */
+        T* release(){
+            return std::exchange(ptr,nullptr);
+        }
+
+        /* Destructor */
+        ~unique_ptr(){
+            if(ptr != nullptr)
+                delete ptr;
+
+            ptr = nullptr;
+        }
+
+        /* swap - Exchange the contents of ptr1 and ptr2 member-by-member */
+        friend void swap(dev::unique_ptr<T>& ptr1, dev::unique_ptr<T>& ptr2) noexcept
+        {
+            //Re-wire the raw pointers
+            std::swap(ptr1.ptr, ptr2.ptr);
+        }
+
+        /* operator bool */
+        constexpr operator bool(){
+            return (ptr != nullptr);
+        }
+
+        /* Member access operator - return the underlying pointer */
+        T* operator->(){
+            return ptr;
+        }
+
+        //auto operator->(auto func)
+        private:
+        T* ptr;
+    };
+
+    template<typename T, typename... Args>
+    T* make_unique(Args&&... args){
+        return new T(std::forward<Args>(args)...);
+    }
+}
+
+/* Non-member functions */
+//Overload operator==
+template<typename T1, typename T2>
+bool operator==(dev::unique_ptr<T1>& lhs, dev::unique_ptr<T2>& rhs){
+    return lhs.get() == rhs.get();
+}
+
+/*template<typename T1> */
+template<typename T1>
+bool operator==(dev::unique_ptr<T1>& lhs, std::nullptr_t rhs){
+    return lhs.get() == nullptr;
+}
+
+int main(){
+    /* Test Cases*/
+
+    {
+        /* Non member function operator== 
+           Comparison with another unique_ptr or nullptr */ 
+        dev::unique_ptr<int> ptr1(new int(10));
+        dev::unique_ptr<int> ptr2(new int(10));
+        assert(ptr1 == ptr1);   
+        assert(!(ptr1 == ptr2));
+    }
+
+    {
+        /* Create and access */
+        dev::unique_ptr<int> ptr(new int(10));
+        assert(!(ptr == nullptr));
+        assert(*ptr == 10);
+        
+    }
+
+    {
+        /* Reset unique_ptr 
+           Replaces the managed object with a new one*/
+        dev::unique_ptr<int> ptr(new int(10));
+        ptr.reset(new int(20));
+        assert(!(ptr == nullptr));
+        assert(*ptr == 20);
+    }
+
+    {
+        /* Release unique_ptr ownership - 
+           Returns a pointer to the managed object and releases ownership */
+        dev::unique_ptr<double> ptr(new double(3.14));
+        double* rawPtr = ptr.release();
+        assert(ptr == nullptr);
+        assert(rawPtr != nullptr);
+        assert(*rawPtr == 3.14);
+        
+    }
+
+    {
+        /* Non-member function swap
+           Swap the managed objects */
+        dev::unique_ptr<int> ptr1(new int(10));
+        dev::unique_ptr<int> ptr2(new int (20));
+        swap(ptr1, ptr2);
+        assert(*ptr1 == 20);
+        assert(*ptr2 == 10);
+        
+    }
+
+    {
+        /* Get the raw underlying pointer */
+        int* x = new int(10);
+        dev::unique_ptr<int> ptr(x);
+        int* rawPtr = ptr.get();
+        assert(*rawPtr == 10);
+        assert(rawPtr == x);
+        
+    }
+
+    {
+        /* operator bool to test if the unique pointer owns an object */
+        dev::unique_ptr<int> ptr(new int(42));
+        assert(ptr);
+        ptr.reset(nullptr);
+        assert(!ptr);
+        
+    }
+
+    {
+        /* indirection operator* to dereference pointer to managed object,
+           member access operator -> to call member function*/ 
+        struct X{
+            int n;
+            int foo(){ return n; }
+        };
+
+        dev::unique_ptr<X> ptr(new X(10));
+        assert((*ptr).n == 10);
+        assert(ptr->foo() == 10);
+        
+    }
+
+    {
+        /* operator[] is used to access a managed array
+
+        const int size = 5; 
+        dev::unique_ptr<int[]> fact(new int[size]);
+ 
+        for (int i = 0; i < size; ++i)
+            fact[i] = (i == 0) ? 1 : i * fact[i - 1];
+
+        assert(fact[0] == 1);
+        assert(fact[1] == 2);
+        assert(fact[3] == 6);
+        assert(fact[4] == 24);
+        assert(fact[5] == 120);
+        */
+    }
+
+    {
+        /* Constructs an object of type T and wraps it in a unique_ptr.*/
+        struct Point3D{
+            double x, y, z;
+
+            Point3D() {}
+
+            Point3D(double x_, double y_, double z_) : x(x_), y(y_), z(z_) {}
+
+            Point3D(const Point3D& other) : x(other.x), y(other.y), z(other.z) {}
+
+            Point3D(Point3D&& other) 
+            : x(std::move(other.x))
+            , y(std::move(other.y))
+            , z(std::move(other.z))
+            {}
+        };
+
+        // Use the default constructor. 
+        dev::unique_ptr<Point3D> v1 = dev::make_unique<Point3D>();
+        // Use the constructor that matches these arguments.
+        dev::unique_ptr<Point3D> v2 = dev::make_unique<Point3D>(0, 1, 2);
+        // Create a unique_ptr to a vector of 5 elements.
+        //dev::unique_ptr<std::vector<int>> v3 = dev::make_unique<std::vector<int>>({1,2,3,4,5});
+        
+    }
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/a7rcb6aoM)
