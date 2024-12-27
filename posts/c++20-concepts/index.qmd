@@ -123,15 +123,17 @@ The `requires` keyword introduces a clause, called the *requires* clasuse, that 
 
 # Definining Concepts
 
-Many constraints are generic and can be used in multiple places. For example, both functions below require that the type `T` be arithmetic.
+Many constraints are generic and can be used in multiple places. For example, the functions below require that the type `T` be arithmetic.
 
 ```cpp
+/* Add 2 scalars */
 template<typename T>
 requires std::is_arithmetic_v<T>
 T operator+(T const v1, T const v2){
   return (v1 + v2);
 }
 
+/* Add 2 vectors component-wise */
 template<typename T>
 requires std::is_arithmetic_v<T>
 std::vector<T> operator+(std::vector<T> const v1, std::vector<T> const v2){
@@ -144,12 +146,14 @@ std::vector<T> operator+(std::vector<T> const v1, std::vector<T> const v2){
   return result;
 }
 
+/* Multiply 2 scalars */
 template<typename T>
 requires std::is_arithmetic_v<T>
 T operator*(T const a, T const b){
   return (a * b);
 }
 
+/* Scalar multiplication of a vector v*/
 template<typename T>
 requires std::is_arithmetic_v<T>
 std::vector<T> operator*(T k, std::vector<T> v){
@@ -180,11 +184,13 @@ Even though they are assigned a boolean value, concept names should not contain 
 template<typename T>
 concept arithmetic = std::is_arithmetic_v<T>;
 
+/* Add 2 scalars */
 template<arithmetic T>
 T operator+(T const v1, T const v2){
   return (v1 + v2);
 }
 
+/* Add 2 vectors component-wise */
 template<arithmetic T>
 std::vector<T> operator+(std::vector<T> const v1, std::vector<T> const v2){
   std::vector<T> result{v1};
@@ -196,11 +202,13 @@ std::vector<T> operator+(std::vector<T> const v1, std::vector<T> const v2){
   return result;
 }
 
+/* Multiply 2 scalars */
 template<arithmetic T>
 T operator*(T const a, T const b){
   return (a * b);
 }
 
+/* Scalar multiplication of a vector v*/
 template<arithmetic T>
 std::vector<T> operator*(T k, std::vector<T> v){
   std::vector<T> result{v};
@@ -222,3 +230,41 @@ int main()
 ```
 
 [Compiler Explorer](https://godbolt.org/z/47P1Wbv9q)
+
+The `arithmetic` concept can also be defined using a *requires expression*. A *requires expression* uses curly braces `{}` and it contains a sequence of requirements.
+
+Consider the case where we want to define a template that only takes container types as an argument. A container type is not easy to define formally. We can do this based on some properties of standard [containers](https://en.cppreference.com/w/cpp/named_req/Container).
+
+- They have the member types `value_type`, `size_type`,  `allocator_type`, `iterator` and `const_iterator`.
+
+- They have the member function `size()` that returns the elements of the container.
+
+- They have the member functions `begin()`, `end()`, `cbegin()` and `cend()` that return iterators and constant iterators to the first and one-past-the-last element in the container. 
+
+We can define as `is_container` type trait as follows:
+
+```cpp
+#include <type_traits>
+
+template<typename T, typename U = void>
+struct is_container : std::false_type {};
+
+template<typename >
+struct is_container<T, 
+  std::void_t<typename T::value_type,
+              typename T::size_type,
+              typename T::allocator_type,
+              typename T::iterator,
+              typename T::const_iterator,
+              decltype(std::declvalue<T>().size()),
+              decltype(std::declvalue<T>().begin()),
+              decltype(std::declvalue<T>().end()),
+              decltype(std::declvalue<T>().cbegin()),
+              decltype(std::declvalue<T>().cend())
+            >> : std::true_type {};
+
+template<typename T, typename U=void>
+constexpr bool is_container_v<T,U> = is_container<T>::value;
+```
+
+Note, that `std::void_t<B1,B2,...,BN>` is a utility type metafunction that maps a sequence of any types to `void`. It is a convenient way to leverage SFINAE prior to C++20's concepts. 
