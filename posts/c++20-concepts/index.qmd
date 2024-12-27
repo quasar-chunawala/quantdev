@@ -19,7 +19,7 @@ format:
 
 # Introduction
 
-A class template, function template (include lambdas) may be associated with a **constraint**, which specifies requirements on the template arguments. This can be used to select the most appropriate function overload or template specialization.
+A class template, function template (including lambdas) may be associated with a **constraint**, which specifies requirements on the template arguments. This can be used to select the most appropriate function overload or template specialization.
 
 A **concept** is a named set of such constraints. A **concept** is ultimately a logical predicate $P(x)$, evaluated at compile-time, where $x$ represents template parameters. A function or class template constrained by the concept $P$, will work only for template arguments that satisfy $P$.
 
@@ -27,22 +27,100 @@ Consider the templated function:
 
 ```cpp
 #include <iostream>
+#include <complex>
 
-template <typename T>
-T sum(T const a, T const b)
+template<typename T>
+T sum(T const a, T const b){
+    return (a + b);
+}
+
+int main()
 {
-  return (a + b);
+    using namespace std::literals::complex_literals;
+
+    int x{2}, y{3};
+
+    sum(x, y);
+    sum(2.71828, 3.14159);
+    sum(std::complex{1.0 + 1.0i}, std::complex{1.0 - 1.0i});
+    //sum("42", "1");       //Error cannot add two strings
+
+    return 0;
 }
 ```
+
+[Compiler Explorer](https://godbolt.org/z/fboM8dK13)
 
 The `sum` function returns the result of applying the binary `operator+(T,T)` on its arguments. The `sum` function only makes sense when we discuss mathematical types such as integers, floating-point numbers, `std::complex<double>`, vectors and matrices. For most types, overloading the operator `+` makes no sense at all. 
 
-We can call this function as follows:
+Therefore, just by looking at the declaration of this function, without inspecting its body, we cannot really say what this function may accept as input and what it does.
+
+The intention for our `sum` function template is to allow passing only types that support arithmetic operations. One way is to use `std::enable_if`:
 
 ```cpp
+#include <iostream>
+#include <complex>
+#include <type_traits>
+
+template<typename T, 
+        typename = typename std::enable_if<std::is_arithmetic_v<T>,T>>
+T sum(T const a, T const b){
+    return (a + b);
+}
+
 int main()
 {
+    using namespace std::literals::complex_literals;
 
+    int x{2}, y{3};
+
+    sum(x, y);
+    sum(2.71828, 3.14159);
+    sum(std::complex{1.0 + 1.0i}, std::complex{1.0 - 1.0i});
+    sum("42", "1");    
+
+    return 0;
 }
 ```
 
+[Compiler Explorer](https://godbolt.org/z/YEGvo7Yx1)
+
+We added an anonymous template parameter which calls the *type metafunction* `std::enable_if<C,T>` from the `type_traits` library. If the condition `C` evaluates to `std::true_type`, then `std::enable_if<C,T>` returns `T`. Since `std::is_arithmetic_v<const char*>` returns `false_type`, `enable_if` meta-function doesn't return anything and the code will not build.
+
+With this implementation, the code readability has decreased. The second type template parameter is difficult to read and certainly requires good TMP knowledge. The compiler error message is also cryptic.
+
+We can improve these two aspects (code readability and compiler error messages) in C++ 20 by using constraints. These are introduced with the `requires` keyword as follows:
+
+```cpp
+#include <iostream>
+#include <complex>
+#include <type_traits>
+#include <concepts>
+
+template<typename T>
+requires std::is_arithmetic_v<T>
+T sum(T const a, T const b){
+    return (a + b);
+}
+
+int main()
+{
+    using namespace std::literals::complex_literals;
+
+    int x{2}, y{3};
+
+    sum(x, y);
+    sum(2.71828, 3.14159);
+    sum("42", "1");    
+
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/Tz84aM834)
+
+The compiler error message is more meaningful and states that the constraint `is_arithmetic_v<const char*>` evaluates to `false`. 
+
+The `requires` keyword introduces a clause, called the *requires* clasuse, that defines constraints on the template parameters. A constraint is a predicate that evaluates to `true` or `false` at compile-time. The expression used in the previous example, `std::is_arithmetic_v<T>` is simply using a standard type-trait. 
+
+# Definining Concepts
