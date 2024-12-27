@@ -105,8 +105,6 @@ T sum(T const a, T const b){
 
 int main()
 {
-    using namespace std::literals::complex_literals;
-
     int x{2}, y{3};
 
     sum(x, y);
@@ -124,3 +122,103 @@ The compiler error message is more meaningful and states that the constraint `is
 The `requires` keyword introduces a clause, called the *requires* clasuse, that defines constraints on the template parameters. A constraint is a predicate that evaluates to `true` or `false` at compile-time. The expression used in the previous example, `std::is_arithmetic_v<T>` is simply using a standard type-trait. 
 
 # Definining Concepts
+
+Many constraints are generic and can be used in multiple places. For example, both functions below require that the type `T` be arithmetic.
+
+```cpp
+template<typename T>
+requires std::is_arithmetic_v<T>
+T operator+(T const v1, T const v2){
+  return (v1 + v2);
+}
+
+template<typename T>
+requires std::is_arithmetic_v<T>
+std::vector<T> operator+(std::vector<T> const v1, std::vector<T> const v2){
+  std::vector<T> result{v1};
+
+  for(int i{0};i<v1.size();++i){
+    result[i] = v1[i] + v2[i];
+  }
+
+  return result;
+}
+
+template<typename T>
+requires std::is_arithmetic_v<T>
+T operator*(T const a, T const b){
+  return (a * b);
+}
+
+template<typename T>
+requires std::is_arithmetic_v<T>
+std::vector<T> operator*(T k, std::vector<T> v){
+  std::vector<T> result{v};
+  std::transform(std::begin(v), std::end(v), std::begin(result), [&](auto element){
+    return (k * element);
+  });
+
+  return result;
+}
+```
+
+To avoid this repetitive code, we can defined a named constraint that can be reused in multiple places. A named constraint is called a concept. A concept is defined with the `concept` keyword. Here is an example:
+
+```cpp
+template<typename T>
+concept arithmetic = std::is_arithmetic_v<T>;
+```
+
+Even though they are assigned a boolean value, concept names should not contain verbs. They represent requirements and are used as attributes or qualifiers on template parameters. So, prefer names like *arithmetic*, *copyable*, *serializable*, *container* and not `is_arithmetic`, `is_copyable`, `is_serializable` and `is_container`. The `arithmetic` concept can be used as follows:
+
+```cpp
+#include<iostream>
+#include<type_traits>
+#include<concepts>
+#include<vector>
+
+template<typename T>
+concept arithmetic = std::is_arithmetic_v<T>;
+
+template<arithmetic T>
+T operator+(T const v1, T const v2){
+  return (v1 + v2);
+}
+
+template<arithmetic T>
+std::vector<T> operator+(std::vector<T> const v1, std::vector<T> const v2){
+  std::vector<T> result{v1};
+
+  for(int i{0};i<v1.size();++i){
+    result[i] = v1[i] + v2[i];
+  }
+
+  return result;
+}
+
+template<arithmetic T>
+T operator*(T const a, T const b){
+  return (a * b);
+}
+
+template<arithmetic T>
+std::vector<T> operator*(T k, std::vector<T> v){
+  std::vector<T> result{v};
+  std::transform(std::begin(v), std::end(v), std::begin(result), [&](auto element){
+    return (k * element);
+  });
+
+  return result;
+}
+
+int main()
+{
+    2 + 3;
+    std::vector{1.0,2.0} + std::vector{3.0,4.0};
+    2 * 3;
+    2.0 * std::vector{1.0,-1.0};
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/47P1Wbv9q)
