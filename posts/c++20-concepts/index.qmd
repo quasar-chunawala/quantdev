@@ -121,7 +121,7 @@ The compiler error message is more meaningful and states that the constraint `is
 
 The `requires` keyword introduces a clause, called the *requires* clasuse, that defines constraints on the template parameters. A constraint is a predicate that evaluates to `true` or `false` at compile-time. The expression used in the previous example, `std::is_arithmetic_v<T>` is simply using a standard type-trait. 
 
-# Definining Concepts
+# Defining Concepts
 
 Many constraints are generic and can be used in multiple places. For example, the functions below require that the type `T` be arithmetic.
 
@@ -267,4 +267,59 @@ template<typename T, typename U=void>
 constexpr bool is_container_v<T,U> = is_container<T>::value;
 ```
 
-Note, that `std::void_t<B1,B2,...,BN>` is a utility type metafunction that maps a sequence of any types to `void`. It is a convenient way to leverage SFINAE prior to C++20's concepts. 
+Note, that `std::void_t<Args...>` is a utility type metafunction that maps a sequence of any types to `void`. It is a convenient way to leverage SFINAE prior to C++20's concepts. 
+
+Concepts make writing such a template constraint much easier. We can employ the concept syntax and requires expressions to define the following:
+
+```cpp
+template<typename T>
+concept container = requires(T cont)
+{
+  typename T::value_type;
+  typename T::size_type;
+  typename T::allocator_type;
+  typename T::iterator;
+  typename T::const_iterator;
+  cont.size();
+  cont.begin();
+  cont.end();
+  cont.cbegin();
+  cont.cend();
+};
+```
+
+This definition is both shorter and more readable. It uses both simple requirements such as `t.size()` as well as type requirements such as `T::value_type`. It can be used to constrain template parameters in the manner seen previously.
+
+# `requires` expressions
+
+The `requires` expression in the body of a concept has a function-like syntax.
+
+```
+requires(parameter-list){
+  requirement-seq;
+}
+```
+
+## Simple requirements
+
+A **simple requirement** is an expression that is not evaluated but only checked for correctness. The expression must be valid for the requirement to be evaluated to `true`. 
+
+```cpp
+template<typename T>
+concept arithmetic requires(T a){
+  std::is_arithmetic_v<T>;
+};
+```
+
+## Type requirements
+
+**Type requirements** are introduced with the `typename` keyword followed by the name of a type. The type must be valid for the requirement to be true. Let's code up an example:
+
+
+```cpp
+template<typename T>
+concept KeyValuePair = requires{
+  typename T::key_type;
+  typename T::value_type;
+}
+```
