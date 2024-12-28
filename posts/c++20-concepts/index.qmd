@@ -445,5 +445,94 @@ It is introduced by the `requires` keyword. Suppose we want to define a function
 
 We define a concept called `HomogenousRange` as follows:
 
+```cpp
+/* 
+Template Metaprogramming 
+Mariusz Bancila  
+*/
+template<typename T, typename... Ts>
+inline constexpr bool are_same_v = 
+  std::conjunction_v<std::is_same<T,Ts>...>;
 
+template <typename... T>
+concept HomogenousRange = requires(T... t)
+{
+  (... + t);
+  requires are_same_v<T...>;
+  requires sizeof...(T) > 1;
+}
+```
 
+This concept contains one simple requirement and two nested requirements. `std::conjunction_v<B1,...,BN>` is a type metafunction that forms the logical conjunction of conditions `B1`,...,`BN`, effectively performing a logical AND on the sequence. It works as follows:
+
+- If `sizeof...(B)==0`, `std::true_type` otherwise
+- The first type `Bi` in `B1,...,BN` for which `Bi` is `false` or `BN` if there is no such type.
+
+The pattern `std::is_same<T,Ts>...` is expanded as 
+
+```
+std::is_same<T,T1>,std::is_same<T,T2>,...,std::is_same<T,Tn>
+```
+
+Akin to the logical AND operation, if all of them evaluate to `std::true_type`, the type metafunction `std::conjunction_v<B1,...,Bn` returns `std::true_type`. 
+
+The simple requirement `(... + t)` specifies that left fold expression (adding all the arguments) is a valid operation.
+
+Using this concept, we can define the variadic function template:
+
+```cpp
+#include<iostream>
+#include<type_traits>
+#include<concepts>
+
+/* 
+Template Metaprogramming 
+Mariusz Bancila  
+*/
+template<typename T, typename... Ts>
+inline constexpr bool are_same_v = 
+  std::conjunction_v<std::is_same<T,Ts>...>;
+
+template <typename... T>
+concept HomogenousRange = requires(T... t)
+{
+  (... + t);
+  requires are_same_v<T...>;
+  requires sizeof...(T) > 1;
+};
+
+template<typename... T>
+requires HomogenousRange<T...>
+std::common_type_t<T...> sum(T&&... args){
+    return (... + args);
+}
+
+int main()
+{
+    auto result = sum(1, 2, 3, 4, 5);
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/G1jdxT54e)
+
+# Composing constraints
+
+Constraints can be composed using `&&` and `||` operators. A composition of two constraints using the `&&` operator is called a conjunction and the composition of two constraints using the `||` operator is called a disjunction.
+
+For a conjunction to be true, both constraints must be true. For a disjunction to be true, atleast one of the constraints must be true.
+
+```cpp
+template<typename T, typename U>
+concept signed_integral = std::integral<T> && std::is_signed_v<T>;
+
+template<typename T>
+requires std::is_integral_v<T> || std::is_floating_point_v<T>
+T add(T a, T b){
+  return (a + b)
+}
+```
+
+# The standard concepts library
+
+The standard library provides a set of fundamental concepts that can be used to define requirements on template arguments, class templates, variable templates and aliast templates. The standard concepts in C++20 are spread across several headers and namespaces. The main set of concepts is in the `<concepts>` header and the `std` namespace. Most of the concepts are equivalent to one or more existing type-traits. 
