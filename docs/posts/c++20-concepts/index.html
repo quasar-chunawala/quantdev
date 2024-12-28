@@ -234,6 +234,7 @@ window.Quarto = {
   <ul class="collapse">
   <li><a href="#simple-requirements" id="toc-simple-requirements" class="nav-link" data-scroll-target="#simple-requirements">Simple requirements</a></li>
   <li><a href="#type-requirements" id="toc-type-requirements" class="nav-link" data-scroll-target="#type-requirements">Type requirements</a></li>
+  <li><a href="#compound-requirements" id="toc-compound-requirements" class="nav-link" data-scroll-target="#compound-requirements">Compound requirements</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -477,6 +478,8 @@ window.Quarto = {
 <pre><code>requires(parameter-list){
   requirement-seq;
 }</code></pre>
+<p>It is a <em>prvalue expression</em> of type <code>bool</code> that describes the constraints on some template arguments. Such an expression is <code>true</code> if the constraints are satisfied and <code>false</code> otherwise.</p>
+<p>The substitution of template arguments into a <code>requires</code> expression used in the declaration of a templated entity may result in the formation of invalid types or expressions, or the violation of the semantic constraints of the requirements. In such cases, the <code>requires</code>-expression evaluates to <code>false</code> and does not cause the program to be ill-formed.</p>
 <section id="simple-requirements" class="level2">
 <h2 class="anchored" data-anchor-id="simple-requirements">Simple requirements</h2>
 <p>A <strong>simple requirement</strong> is an expression that is not evaluated but only checked for correctness. The expression must be valid for the requirement to be evaluated to <code>true</code>.</p>
@@ -487,12 +490,59 @@ window.Quarto = {
 </section>
 <section id="type-requirements" class="level2">
 <h2 class="anchored" data-anchor-id="type-requirements">Type requirements</h2>
-<p><strong>Type requirements</strong> are introduced with the <code>typename</code> keyword followed by the name of a type. The type must be valid for the requirement to be true. Let’s code up an example:</p>
+<p><strong>Type requirements</strong> are introduced with the <code>typename</code> keyword followed by the name of a type. We can use it verify if :</p>
+<ul>
+<li>A nested type exists(such as in <code>typename T::value_type</code>).</li>
+<li>A class template specialization names a type.</li>
+<li>An alias template specialization names a type.</li>
+</ul>
+<p>Let’s code up a few examples.</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> KeyValuePair <span class="op">=</span> <span class="kw">requires</span><span class="op">{</span></span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">key_type</span><span class="op">;</span></span>
 <span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">value_type</span><span class="op">;</span></span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span> U<span class="op">&gt;</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Pair<span class="op">{</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>  <span class="kw">using</span> <span class="dt">key_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>  <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> U<span class="op">;</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">key_type</span> key<span class="op">;</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value_type</span> value<span class="op">;</span></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><code>Pair</code> satisfies the concept <code>KeyValuePair</code>, as it has inner types <code>key_type</code> and <code>value_type</code>. To verify this is indeed the case, we can use <code>KeyValuePair</code> as a compile-time metafunction.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span>KeyValuePair<span class="op">&lt;</span>Pair<span class="op">&gt;);</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(!</span>KeyValuePair<span class="op">&lt;</span><span class="bu">std::</span>pair<span class="op">&gt;);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><code>std::pair&lt;T,U&gt;</code> does have inner types, but they are called <code>first_type</code> and <code>second_type</code>.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;type_traits&gt;</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;concepts&gt;</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> arithmetic <span class="op">=</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;;</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span>arithmetic T<span class="op">&gt;</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Point2D<span class="op">{</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>    T x<span class="op">;</span></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>    T y<span class="op">;</span></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a><span class="kw">using</span> Ref <span class="op">=</span> T<span class="op">&amp;;</span></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> C <span class="op">=</span> <span class="kw">requires</span><span class="op">(</span>T t<span class="op">){</span></span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">typename</span> T<span class="op">::</span>inner<span class="op">;</span> <span class="co">// required nested member name</span></span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a>    <span class="kw">typename</span> Point2D<span class="op">&lt;</span>T<span class="op">&gt;;</span> <span class="co">// required class template specialization</span></span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a>    <span class="kw">typename</span> Ref<span class="op">&lt;</span>T<span class="op">&gt;;</span>     <span class="co">// required alias template specialization</span></span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="compound-requirements" class="level2">
+<h2 class="anchored" data-anchor-id="compound-requirements">Compound requirements</h2>
+<p>Simple requirements allow us to verify that an expression is valid. Sometimes, we need to verify some properties of an expression not just that it is valid. This can include if an expression does not throw exceptions or requirements on the result type. The general form is the following:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span>expression<span class="op">}</span> <span class="kw">noexcept</span> <span class="op">-&gt;</span> type_constraint</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 <!-- -->
@@ -973,331 +1023,391 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 </script>
 <input type="hidden" id="giscus-base-theme" value="light">
 <input type="hidden" id="giscus-alt-theme" value="dark"><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
-<div class="sourceCode" id="cb12" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "C++20 concepts"</span></span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="an">date:</span><span class="co"> "2024-12-07"</span></span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
-<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="an">toc:</span><span class="co"> true</span></span>
-<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
-<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="an">comments:</span></span>
-<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="co">  giscus: </span></span>
-<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a><span class="co">    repo: quasar-chunawala/quantdev</span></span>
-<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
-<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a><span class="co">    html:</span></span>
-<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a><span class="co">        code-tools: true</span></span>
-<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a><span class="co">        code-block-border-left: true</span></span>
-<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a><span class="co">        code-annotations: below</span></span>
-<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a><span class="co">        highlight-style: pygments</span></span>
-<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a><span class="fu"># Introduction</span></span>
-<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>A class template, function template (including lambdas) may be associated with a **constraint**, which specifies requirements on the template arguments. This can be used to select the most appropriate function overload or template specialization.</span>
-<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a>A **concept** is a named set of such constraints. A **concept** is ultimately a logical predicate $P(x)$, evaluated at compile-time, where $x$ represents template parameters. A function or class template constrained by the concept $P$, will work only for template arguments that satisfy $P$.</span>
-<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a>Consider the templated function:</span>
-<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;complex&gt;</span></span>
-<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a>T sum<span class="op">(</span>T <span class="at">const</span> a<span class="op">,</span> T <span class="at">const</span> b<span class="op">){</span></span>
-<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">(</span>a <span class="op">+</span> b<span class="op">);</span></span>
-<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-36"><a href="#cb12-36" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-37"><a href="#cb12-37" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb12-38"><a href="#cb12-38" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb12-39"><a href="#cb12-39" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> <span class="kw">namespace</span> <span class="bu">std::</span>literals::complex_literals<span class="op">;</span></span>
-<span id="cb12-40"><a href="#cb12-40" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-41"><a href="#cb12-41" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> x<span class="op">{</span><span class="dv">2</span><span class="op">},</span> y<span class="op">{</span><span class="dv">3</span><span class="op">};</span></span>
-<span id="cb12-42"><a href="#cb12-42" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-43"><a href="#cb12-43" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span>x<span class="op">,</span> y<span class="op">);</span></span>
-<span id="cb12-44"><a href="#cb12-44" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="fl">2.71828</span><span class="op">,</span> <span class="fl">3.14159</span><span class="op">);</span></span>
-<span id="cb12-45"><a href="#cb12-45" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="bu">std::</span>complex<span class="op">{</span><span class="fl">1.0</span> <span class="op">+</span> <span class="fl">1.0</span><span class="bu">i</span><span class="op">},</span> <span class="bu">std::</span>complex<span class="op">{</span><span class="fl">1.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="bu">i</span><span class="op">});</span></span>
-<span id="cb12-46"><a href="#cb12-46" aria-hidden="true" tabindex="-1"></a>    <span class="co">//sum("42", "1");       //Error cannot add two strings</span></span>
-<span id="cb12-47"><a href="#cb12-47" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-48"><a href="#cb12-48" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb12-49"><a href="#cb12-49" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-50"><a href="#cb12-50" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-51"><a href="#cb12-51" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-52"><a href="#cb12-52" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/fboM8dK13)</span></span>
-<span id="cb12-53"><a href="#cb12-53" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-54"><a href="#cb12-54" aria-hidden="true" tabindex="-1"></a>The <span class="in">`sum`</span> function returns the result of applying the binary <span class="in">`operator+(T,T)`</span> on its arguments. The <span class="in">`sum`</span> function only makes sense when we discuss mathematical types such as integers, floating-point numbers, <span class="in">`std::complex&lt;double&gt;`</span>, vectors and matrices. For most types, overloading the operator <span class="in">`+`</span> makes no sense at all. </span>
-<span id="cb12-55"><a href="#cb12-55" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-56"><a href="#cb12-56" aria-hidden="true" tabindex="-1"></a>Therefore, just by looking at the declaration of this function, without inspecting its body, we cannot really say what this function may accept as input and what it does.</span>
-<span id="cb12-57"><a href="#cb12-57" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-58"><a href="#cb12-58" aria-hidden="true" tabindex="-1"></a>The intention for our <span class="in">`sum`</span> function template is to allow passing only types that support arithmetic operations. One way is to use <span class="in">`std::enable_if`</span>:</span>
-<span id="cb12-59"><a href="#cb12-59" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-60"><a href="#cb12-60" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-61"><a href="#cb12-61" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb12-62"><a href="#cb12-62" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;complex&gt;</span></span>
-<span id="cb12-63"><a href="#cb12-63" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
-<span id="cb12-64"><a href="#cb12-64" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-65"><a href="#cb12-65" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> </span>
-<span id="cb12-66"><a href="#cb12-66" aria-hidden="true" tabindex="-1"></a>        <span class="kw">typename</span> <span class="op">=</span> <span class="kw">typename</span> <span class="bu">std::</span>enable_if<span class="op">&lt;</span><span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;,</span>T<span class="op">&gt;&gt;</span></span>
-<span id="cb12-67"><a href="#cb12-67" aria-hidden="true" tabindex="-1"></a>T sum<span class="op">(</span>T <span class="at">const</span> a<span class="op">,</span> T <span class="at">const</span> b<span class="op">){</span></span>
-<span id="cb12-68"><a href="#cb12-68" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">(</span>a <span class="op">+</span> b<span class="op">);</span></span>
-<span id="cb12-69"><a href="#cb12-69" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-70"><a href="#cb12-70" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-71"><a href="#cb12-71" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb12-72"><a href="#cb12-72" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb12-73"><a href="#cb12-73" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> <span class="kw">namespace</span> <span class="bu">std::</span>literals::complex_literals<span class="op">;</span></span>
-<span id="cb12-74"><a href="#cb12-74" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-75"><a href="#cb12-75" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> x<span class="op">{</span><span class="dv">2</span><span class="op">},</span> y<span class="op">{</span><span class="dv">3</span><span class="op">};</span></span>
-<span id="cb12-76"><a href="#cb12-76" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-77"><a href="#cb12-77" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span>x<span class="op">,</span> y<span class="op">);</span></span>
-<span id="cb12-78"><a href="#cb12-78" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="fl">2.71828</span><span class="op">,</span> <span class="fl">3.14159</span><span class="op">);</span></span>
-<span id="cb12-79"><a href="#cb12-79" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="bu">std::</span>complex<span class="op">{</span><span class="fl">1.0</span> <span class="op">+</span> <span class="fl">1.0</span><span class="bu">i</span><span class="op">},</span> <span class="bu">std::</span>complex<span class="op">{</span><span class="fl">1.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="bu">i</span><span class="op">});</span></span>
-<span id="cb12-80"><a href="#cb12-80" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="st">"42"</span><span class="op">,</span> <span class="st">"1"</span><span class="op">);</span>    </span>
-<span id="cb12-81"><a href="#cb12-81" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-82"><a href="#cb12-82" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb12-83"><a href="#cb12-83" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-84"><a href="#cb12-84" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-85"><a href="#cb12-85" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-86"><a href="#cb12-86" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/YEGvo7Yx1)</span></span>
-<span id="cb12-87"><a href="#cb12-87" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-88"><a href="#cb12-88" aria-hidden="true" tabindex="-1"></a>We added an anonymous template parameter which calls the *type metafunction* `std::enable_if&lt;C,T&gt;` from the `type_traits` library. If the condition `C` evaluates to `std::true_type`, then `std::enable_if&lt;C,T&gt;` returns `T`. Since `std::is_arithmetic_v&lt;const char*&gt;<span class="in">` returns `</span>false_type<span class="in">`, `</span>enable_if` meta-function doesn't return anything and the code will not build.</span>
-<span id="cb12-89"><a href="#cb12-89" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-90"><a href="#cb12-90" aria-hidden="true" tabindex="-1"></a>With this implementation, the code readability has decreased. The second type template parameter is difficult to read and certainly requires good TMP knowledge. The compiler error message is also cryptic.</span>
-<span id="cb12-91"><a href="#cb12-91" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-92"><a href="#cb12-92" aria-hidden="true" tabindex="-1"></a>We can improve these two aspects (code readability and compiler error messages) in C++ 20 by using constraints. These are introduced with the <span class="in">`requires`</span> keyword as follows:</span>
-<span id="cb12-93"><a href="#cb12-93" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-94"><a href="#cb12-94" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-95"><a href="#cb12-95" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb12-96"><a href="#cb12-96" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;complex&gt;</span></span>
-<span id="cb12-97"><a href="#cb12-97" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
-<span id="cb12-98"><a href="#cb12-98" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;concepts&gt;</span></span>
-<span id="cb12-99"><a href="#cb12-99" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-100"><a href="#cb12-100" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-101"><a href="#cb12-101" aria-hidden="true" tabindex="-1"></a><span class="kw">requires</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
-<span id="cb12-102"><a href="#cb12-102" aria-hidden="true" tabindex="-1"></a>T sum<span class="op">(</span>T <span class="at">const</span> a<span class="op">,</span> T <span class="at">const</span> b<span class="op">){</span></span>
-<span id="cb12-103"><a href="#cb12-103" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">(</span>a <span class="op">+</span> b<span class="op">);</span></span>
-<span id="cb12-104"><a href="#cb12-104" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-105"><a href="#cb12-105" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-106"><a href="#cb12-106" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb12-107"><a href="#cb12-107" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb12-108"><a href="#cb12-108" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> x<span class="op">{</span><span class="dv">2</span><span class="op">},</span> y<span class="op">{</span><span class="dv">3</span><span class="op">};</span></span>
-<span id="cb12-109"><a href="#cb12-109" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-110"><a href="#cb12-110" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span>x<span class="op">,</span> y<span class="op">);</span></span>
-<span id="cb12-111"><a href="#cb12-111" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="fl">2.71828</span><span class="op">,</span> <span class="fl">3.14159</span><span class="op">);</span></span>
-<span id="cb12-112"><a href="#cb12-112" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="st">"42"</span><span class="op">,</span> <span class="st">"1"</span><span class="op">);</span>    </span>
-<span id="cb12-113"><a href="#cb12-113" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-114"><a href="#cb12-114" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb12-115"><a href="#cb12-115" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-116"><a href="#cb12-116" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-117"><a href="#cb12-117" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-118"><a href="#cb12-118" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/Tz84aM834)</span></span>
-<span id="cb12-119"><a href="#cb12-119" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-120"><a href="#cb12-120" aria-hidden="true" tabindex="-1"></a>The compiler error message is more meaningful and states that the constraint <span class="in">`is_arithmetic_v&lt;const char*&gt;`</span> evaluates to <span class="in">`false`</span>. </span>
-<span id="cb12-121"><a href="#cb12-121" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-122"><a href="#cb12-122" aria-hidden="true" tabindex="-1"></a>The <span class="in">`requires`</span> keyword introduces a clause, called the *requires* clasuse, that defines constraints on the template parameters. A constraint is a predicate that evaluates to <span class="in">`true`</span> or <span class="in">`false`</span> at compile-time. The expression used in the previous example, <span class="in">`std::is_arithmetic_v&lt;T&gt;`</span> is simply using a standard type-trait. </span>
-<span id="cb12-123"><a href="#cb12-123" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-124"><a href="#cb12-124" aria-hidden="true" tabindex="-1"></a><span class="fu"># Defining Concepts</span></span>
-<span id="cb12-125"><a href="#cb12-125" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-126"><a href="#cb12-126" aria-hidden="true" tabindex="-1"></a>Many constraints are generic and can be used in multiple places. For example, the functions below require that the type <span class="in">`T`</span> be arithmetic.</span>
-<span id="cb12-127"><a href="#cb12-127" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-128"><a href="#cb12-128" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-129"><a href="#cb12-129" aria-hidden="true" tabindex="-1"></a><span class="co">/* Add 2 scalars */</span></span>
-<span id="cb12-130"><a href="#cb12-130" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-131"><a href="#cb12-131" aria-hidden="true" tabindex="-1"></a><span class="kw">requires</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
-<span id="cb12-132"><a href="#cb12-132" aria-hidden="true" tabindex="-1"></a>T <span class="kw">operator</span><span class="op">+(</span>T <span class="at">const</span> v1<span class="op">,</span> T <span class="at">const</span> v2<span class="op">){</span></span>
-<span id="cb12-133"><a href="#cb12-133" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="op">(</span>v1 <span class="op">+</span> v2<span class="op">);</span></span>
-<span id="cb12-134"><a href="#cb12-134" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-135"><a href="#cb12-135" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-136"><a href="#cb12-136" aria-hidden="true" tabindex="-1"></a><span class="co">/* Add 2 vectors component-wise */</span></span>
-<span id="cb12-137"><a href="#cb12-137" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-138"><a href="#cb12-138" aria-hidden="true" tabindex="-1"></a><span class="kw">requires</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
-<span id="cb12-139"><a href="#cb12-139" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="kw">operator</span><span class="op">+(</span><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="at">const</span> v1<span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="at">const</span> v2<span class="op">){</span></span>
-<span id="cb12-140"><a href="#cb12-140" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span>v1<span class="op">};</span></span>
-<span id="cb12-141"><a href="#cb12-141" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-142"><a href="#cb12-142" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span><span class="op">(</span><span class="dt">int</span> i<span class="op">{</span><span class="dv">0</span><span class="op">};</span>i<span class="op">&lt;</span>v1<span class="op">.</span>size<span class="op">();++</span>i<span class="op">){</span></span>
-<span id="cb12-143"><a href="#cb12-143" aria-hidden="true" tabindex="-1"></a>    result<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v1<span class="op">[</span>i<span class="op">]</span> <span class="op">+</span> v2<span class="op">[</span>i<span class="op">];</span></span>
-<span id="cb12-144"><a href="#cb12-144" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
-<span id="cb12-145"><a href="#cb12-145" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-146"><a href="#cb12-146" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> result<span class="op">;</span></span>
-<span id="cb12-147"><a href="#cb12-147" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-148"><a href="#cb12-148" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-149"><a href="#cb12-149" aria-hidden="true" tabindex="-1"></a><span class="co">/* Multiply 2 scalars */</span></span>
-<span id="cb12-150"><a href="#cb12-150" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-151"><a href="#cb12-151" aria-hidden="true" tabindex="-1"></a><span class="kw">requires</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
-<span id="cb12-152"><a href="#cb12-152" aria-hidden="true" tabindex="-1"></a>T <span class="kw">operator</span><span class="op">*(</span>T <span class="at">const</span> a<span class="op">,</span> T <span class="at">const</span> b<span class="op">){</span></span>
-<span id="cb12-153"><a href="#cb12-153" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="op">(</span>a <span class="op">*</span> b<span class="op">);</span></span>
-<span id="cb12-154"><a href="#cb12-154" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-155"><a href="#cb12-155" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-156"><a href="#cb12-156" aria-hidden="true" tabindex="-1"></a><span class="co">/* Scalar multiplication of a vector v*/</span></span>
-<span id="cb12-157"><a href="#cb12-157" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-158"><a href="#cb12-158" aria-hidden="true" tabindex="-1"></a><span class="kw">requires</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
-<span id="cb12-159"><a href="#cb12-159" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="kw">operator</span><span class="op">*(</span>T k<span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> v<span class="op">){</span></span>
-<span id="cb12-160"><a href="#cb12-160" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span>v<span class="op">};</span></span>
-<span id="cb12-161"><a href="#cb12-161" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>transform<span class="op">(</span><span class="bu">std::</span>begin<span class="op">(</span>v<span class="op">),</span> <span class="bu">std::</span>end<span class="op">(</span>v<span class="op">),</span> <span class="bu">std::</span>begin<span class="op">(</span>result<span class="op">),</span> <span class="op">[&amp;](</span><span class="kw">auto</span> element<span class="op">){</span></span>
-<span id="cb12-162"><a href="#cb12-162" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">(</span>k <span class="op">*</span> element<span class="op">);</span></span>
-<span id="cb12-163"><a href="#cb12-163" aria-hidden="true" tabindex="-1"></a>  <span class="op">});</span></span>
-<span id="cb12-164"><a href="#cb12-164" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-165"><a href="#cb12-165" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> result<span class="op">;</span></span>
-<span id="cb12-166"><a href="#cb12-166" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-167"><a href="#cb12-167" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-168"><a href="#cb12-168" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-169"><a href="#cb12-169" aria-hidden="true" tabindex="-1"></a>To avoid this repetitive code, we can defined a named constraint that can be reused in multiple places. A named constraint is called a concept. A concept is defined with the <span class="in">`concept`</span> keyword. Here is an example:</span>
-<span id="cb12-170"><a href="#cb12-170" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-171"><a href="#cb12-171" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-172"><a href="#cb12-172" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-173"><a href="#cb12-173" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> arithmetic <span class="op">=</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;;</span></span>
-<span id="cb12-174"><a href="#cb12-174" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-175"><a href="#cb12-175" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-176"><a href="#cb12-176" aria-hidden="true" tabindex="-1"></a>Even though they are assigned a boolean value, concept names should not contain verbs. They represent requirements and are used as attributes or qualifiers on template parameters. So, prefer names like *arithmetic*, *copyable*, *serializable*, *container* and not <span class="in">`is_arithmetic`</span>, <span class="in">`is_copyable`</span>, <span class="in">`is_serializable`</span> and <span class="in">`is_container`</span>. The <span class="in">`arithmetic`</span> concept can be used as follows:</span>
-<span id="cb12-177"><a href="#cb12-177" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-178"><a href="#cb12-178" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-179"><a href="#cb12-179" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb12-180"><a href="#cb12-180" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;type_traits&gt;</span></span>
-<span id="cb12-181"><a href="#cb12-181" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;concepts&gt;</span></span>
-<span id="cb12-182"><a href="#cb12-182" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;vector&gt;</span></span>
-<span id="cb12-183"><a href="#cb12-183" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-184"><a href="#cb12-184" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-185"><a href="#cb12-185" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> arithmetic <span class="op">=</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;;</span></span>
-<span id="cb12-186"><a href="#cb12-186" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-187"><a href="#cb12-187" aria-hidden="true" tabindex="-1"></a><span class="co">/* Add 2 scalars */</span></span>
-<span id="cb12-188"><a href="#cb12-188" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span>arithmetic T<span class="op">&gt;</span></span>
-<span id="cb12-189"><a href="#cb12-189" aria-hidden="true" tabindex="-1"></a>T <span class="kw">operator</span><span class="op">+(</span>T <span class="at">const</span> v1<span class="op">,</span> T <span class="at">const</span> v2<span class="op">){</span></span>
-<span id="cb12-190"><a href="#cb12-190" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="op">(</span>v1 <span class="op">+</span> v2<span class="op">);</span></span>
-<span id="cb12-191"><a href="#cb12-191" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-192"><a href="#cb12-192" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-193"><a href="#cb12-193" aria-hidden="true" tabindex="-1"></a><span class="co">/* Add 2 vectors component-wise */</span></span>
-<span id="cb12-194"><a href="#cb12-194" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span>arithmetic T<span class="op">&gt;</span></span>
-<span id="cb12-195"><a href="#cb12-195" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="kw">operator</span><span class="op">+(</span><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="at">const</span> v1<span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="at">const</span> v2<span class="op">){</span></span>
-<span id="cb12-196"><a href="#cb12-196" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span>v1<span class="op">};</span></span>
-<span id="cb12-197"><a href="#cb12-197" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-198"><a href="#cb12-198" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span><span class="op">(</span><span class="dt">int</span> i<span class="op">{</span><span class="dv">0</span><span class="op">};</span>i<span class="op">&lt;</span>v1<span class="op">.</span>size<span class="op">();++</span>i<span class="op">){</span></span>
-<span id="cb12-199"><a href="#cb12-199" aria-hidden="true" tabindex="-1"></a>    result<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v1<span class="op">[</span>i<span class="op">]</span> <span class="op">+</span> v2<span class="op">[</span>i<span class="op">];</span></span>
-<span id="cb12-200"><a href="#cb12-200" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
-<span id="cb12-201"><a href="#cb12-201" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-202"><a href="#cb12-202" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> result<span class="op">;</span></span>
-<span id="cb12-203"><a href="#cb12-203" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-204"><a href="#cb12-204" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-205"><a href="#cb12-205" aria-hidden="true" tabindex="-1"></a><span class="co">/* Multiply 2 scalars */</span></span>
-<span id="cb12-206"><a href="#cb12-206" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span>arithmetic T<span class="op">&gt;</span></span>
-<span id="cb12-207"><a href="#cb12-207" aria-hidden="true" tabindex="-1"></a>T <span class="kw">operator</span><span class="op">*(</span>T <span class="at">const</span> a<span class="op">,</span> T <span class="at">const</span> b<span class="op">){</span></span>
-<span id="cb12-208"><a href="#cb12-208" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="op">(</span>a <span class="op">*</span> b<span class="op">);</span></span>
-<span id="cb12-209"><a href="#cb12-209" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-210"><a href="#cb12-210" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-211"><a href="#cb12-211" aria-hidden="true" tabindex="-1"></a><span class="co">/* Scalar multiplication of a vector v*/</span></span>
-<span id="cb12-212"><a href="#cb12-212" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span>arithmetic T<span class="op">&gt;</span></span>
-<span id="cb12-213"><a href="#cb12-213" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="kw">operator</span><span class="op">*(</span>T k<span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> v<span class="op">){</span></span>
-<span id="cb12-214"><a href="#cb12-214" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span>v<span class="op">};</span></span>
-<span id="cb12-215"><a href="#cb12-215" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>transform<span class="op">(</span><span class="bu">std::</span>begin<span class="op">(</span>v<span class="op">),</span> <span class="bu">std::</span>end<span class="op">(</span>v<span class="op">),</span> <span class="bu">std::</span>begin<span class="op">(</span>result<span class="op">),</span> <span class="op">[&amp;](</span><span class="kw">auto</span> element<span class="op">){</span></span>
-<span id="cb12-216"><a href="#cb12-216" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">(</span>k <span class="op">*</span> element<span class="op">);</span></span>
-<span id="cb12-217"><a href="#cb12-217" aria-hidden="true" tabindex="-1"></a>  <span class="op">});</span></span>
-<span id="cb12-218"><a href="#cb12-218" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-219"><a href="#cb12-219" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> result<span class="op">;</span></span>
-<span id="cb12-220"><a href="#cb12-220" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-221"><a href="#cb12-221" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-222"><a href="#cb12-222" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb12-223"><a href="#cb12-223" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb12-224"><a href="#cb12-224" aria-hidden="true" tabindex="-1"></a>    <span class="dv">2</span> <span class="op">+</span> <span class="dv">3</span><span class="op">;</span></span>
-<span id="cb12-225"><a href="#cb12-225" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>vector<span class="op">{</span><span class="fl">1.0</span><span class="op">,</span><span class="fl">2.0</span><span class="op">}</span> <span class="op">+</span> <span class="bu">std::</span>vector<span class="op">{</span><span class="fl">3.0</span><span class="op">,</span><span class="fl">4.0</span><span class="op">};</span></span>
-<span id="cb12-226"><a href="#cb12-226" aria-hidden="true" tabindex="-1"></a>    <span class="dv">2</span> <span class="op">*</span> <span class="dv">3</span><span class="op">;</span></span>
-<span id="cb12-227"><a href="#cb12-227" aria-hidden="true" tabindex="-1"></a>    <span class="fl">2.0</span> <span class="op">*</span> <span class="bu">std::</span>vector<span class="op">{</span><span class="fl">1.0</span><span class="op">,-</span><span class="fl">1.0</span><span class="op">};</span></span>
-<span id="cb12-228"><a href="#cb12-228" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb12-229"><a href="#cb12-229" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-230"><a href="#cb12-230" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-231"><a href="#cb12-231" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-232"><a href="#cb12-232" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/47P1Wbv9q)</span></span>
-<span id="cb12-233"><a href="#cb12-233" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-234"><a href="#cb12-234" aria-hidden="true" tabindex="-1"></a>The <span class="in">`arithmetic`</span> concept can also be defined using a *requires expression*. A *requires expression* uses curly braces <span class="in">`{}`</span> and it contains a sequence of requirements.</span>
-<span id="cb12-235"><a href="#cb12-235" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-236"><a href="#cb12-236" aria-hidden="true" tabindex="-1"></a>Consider the case where we want to define a template that only takes container types as an argument. A container type is not easy to define formally. We can do this based on some properties of standard <span class="co">[</span><span class="ot">containers</span><span class="co">](https://en.cppreference.com/w/cpp/named_req/Container)</span>.</span>
-<span id="cb12-237"><a href="#cb12-237" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-238"><a href="#cb12-238" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>They have the member types <span class="in">`value_type`</span>, <span class="in">`size_type`</span>,  <span class="in">`allocator_type`</span>, <span class="in">`iterator`</span> and <span class="in">`const_iterator`</span>.</span>
-<span id="cb12-239"><a href="#cb12-239" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-240"><a href="#cb12-240" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>They have the member function <span class="in">`size()`</span> that returns the elements of the container.</span>
-<span id="cb12-241"><a href="#cb12-241" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-242"><a href="#cb12-242" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>They have the member functions <span class="in">`begin()`</span>, <span class="in">`end()`</span>, <span class="in">`cbegin()`</span> and <span class="in">`cend()`</span> that return iterators and constant iterators to the first and one-past-the-last element in the container. </span>
-<span id="cb12-243"><a href="#cb12-243" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-244"><a href="#cb12-244" aria-hidden="true" tabindex="-1"></a>We can define as <span class="in">`is_container`</span> type trait as follows:</span>
-<span id="cb12-245"><a href="#cb12-245" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-246"><a href="#cb12-246" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-247"><a href="#cb12-247" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
-<span id="cb12-248"><a href="#cb12-248" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-249"><a href="#cb12-249" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span> U <span class="op">=</span> <span class="dt">void</span><span class="op">&gt;</span></span>
-<span id="cb12-250"><a href="#cb12-250" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> is_container <span class="op">:</span> <span class="bu">std::</span>false_type <span class="op">{};</span></span>
-<span id="cb12-251"><a href="#cb12-251" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-252"><a href="#cb12-252" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> <span class="op">&gt;</span></span>
-<span id="cb12-253"><a href="#cb12-253" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> is_container<span class="op">&lt;</span>T<span class="op">,</span> </span>
-<span id="cb12-254"><a href="#cb12-254" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>void_t<span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">::</span><span class="dt">value_type</span><span class="op">,</span></span>
-<span id="cb12-255"><a href="#cb12-255" aria-hidden="true" tabindex="-1"></a>              <span class="kw">typename</span> T<span class="op">::</span><span class="dt">size_type</span><span class="op">,</span></span>
-<span id="cb12-256"><a href="#cb12-256" aria-hidden="true" tabindex="-1"></a>              <span class="kw">typename</span> T<span class="op">::</span><span class="dt">allocator_type</span><span class="op">,</span></span>
-<span id="cb12-257"><a href="#cb12-257" aria-hidden="true" tabindex="-1"></a>              <span class="kw">typename</span> T<span class="op">::</span>iterator<span class="op">,</span></span>
-<span id="cb12-258"><a href="#cb12-258" aria-hidden="true" tabindex="-1"></a>              <span class="kw">typename</span> T<span class="op">::</span>const_iterator<span class="op">,</span></span>
-<span id="cb12-259"><a href="#cb12-259" aria-hidden="true" tabindex="-1"></a>              <span class="kw">decltype</span><span class="op">(</span><span class="bu">std::</span>declvalue<span class="op">&lt;</span>T<span class="op">&gt;().</span>size<span class="op">()),</span></span>
-<span id="cb12-260"><a href="#cb12-260" aria-hidden="true" tabindex="-1"></a>              <span class="kw">decltype</span><span class="op">(</span><span class="bu">std::</span>declvalue<span class="op">&lt;</span>T<span class="op">&gt;().</span>begin<span class="op">()),</span></span>
-<span id="cb12-261"><a href="#cb12-261" aria-hidden="true" tabindex="-1"></a>              <span class="kw">decltype</span><span class="op">(</span><span class="bu">std::</span>declvalue<span class="op">&lt;</span>T<span class="op">&gt;().</span>end<span class="op">()),</span></span>
-<span id="cb12-262"><a href="#cb12-262" aria-hidden="true" tabindex="-1"></a>              <span class="kw">decltype</span><span class="op">(</span><span class="bu">std::</span>declvalue<span class="op">&lt;</span>T<span class="op">&gt;().</span>cbegin<span class="op">()),</span></span>
-<span id="cb12-263"><a href="#cb12-263" aria-hidden="true" tabindex="-1"></a>              <span class="kw">decltype</span><span class="op">(</span><span class="bu">std::</span>declvalue<span class="op">&lt;</span>T<span class="op">&gt;().</span>cend<span class="op">())</span></span>
-<span id="cb12-264"><a href="#cb12-264" aria-hidden="true" tabindex="-1"></a>            <span class="op">&gt;&gt;</span> <span class="op">:</span> <span class="bu">std::</span>true_type <span class="op">{};</span></span>
-<span id="cb12-265"><a href="#cb12-265" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-266"><a href="#cb12-266" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span> U<span class="op">=</span><span class="dt">void</span><span class="op">&gt;</span></span>
-<span id="cb12-267"><a href="#cb12-267" aria-hidden="true" tabindex="-1"></a><span class="kw">constexpr</span> <span class="dt">bool</span> is_container_v<span class="op">&lt;</span>T<span class="op">,</span>U<span class="op">&gt;</span> <span class="op">=</span> is_container<span class="op">&lt;</span>T<span class="op">&gt;::</span>value<span class="op">;</span></span>
-<span id="cb12-268"><a href="#cb12-268" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-269"><a href="#cb12-269" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-270"><a href="#cb12-270" aria-hidden="true" tabindex="-1"></a>Note, that <span class="in">`std::void_t&lt;Args...&gt;`</span> is a utility type metafunction that maps a sequence of any types to <span class="in">`void`</span>. It is a convenient way to leverage SFINAE prior to C++20's concepts. </span>
-<span id="cb12-271"><a href="#cb12-271" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-272"><a href="#cb12-272" aria-hidden="true" tabindex="-1"></a>Concepts make writing such a template constraint much easier. We can employ the concept syntax and requires expressions to define the following:</span>
-<span id="cb12-273"><a href="#cb12-273" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-274"><a href="#cb12-274" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-275"><a href="#cb12-275" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-276"><a href="#cb12-276" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> container <span class="op">=</span> <span class="kw">requires</span><span class="op">(</span>T cont<span class="op">)</span></span>
-<span id="cb12-277"><a href="#cb12-277" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb12-278"><a href="#cb12-278" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">value_type</span><span class="op">;</span></span>
-<span id="cb12-279"><a href="#cb12-279" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">size_type</span><span class="op">;</span></span>
-<span id="cb12-280"><a href="#cb12-280" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">allocator_type</span><span class="op">;</span></span>
-<span id="cb12-281"><a href="#cb12-281" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span>iterator<span class="op">;</span></span>
-<span id="cb12-282"><a href="#cb12-282" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span>const_iterator<span class="op">;</span></span>
-<span id="cb12-283"><a href="#cb12-283" aria-hidden="true" tabindex="-1"></a>  cont<span class="op">.</span>size<span class="op">();</span></span>
-<span id="cb12-284"><a href="#cb12-284" aria-hidden="true" tabindex="-1"></a>  cont<span class="op">.</span>begin<span class="op">();</span></span>
-<span id="cb12-285"><a href="#cb12-285" aria-hidden="true" tabindex="-1"></a>  cont<span class="op">.</span>end<span class="op">();</span></span>
-<span id="cb12-286"><a href="#cb12-286" aria-hidden="true" tabindex="-1"></a>  cont<span class="op">.</span>cbegin<span class="op">();</span></span>
-<span id="cb12-287"><a href="#cb12-287" aria-hidden="true" tabindex="-1"></a>  cont<span class="op">.</span>cend<span class="op">();</span></span>
-<span id="cb12-288"><a href="#cb12-288" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb12-289"><a href="#cb12-289" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-290"><a href="#cb12-290" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-291"><a href="#cb12-291" aria-hidden="true" tabindex="-1"></a>This definition is both shorter and more readable. It uses both simple requirements such as <span class="in">`t.size()`</span> as well as type requirements such as <span class="in">`T::value_type`</span>. It can be used to constrain template parameters in the manner seen previously.</span>
-<span id="cb12-292"><a href="#cb12-292" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-293"><a href="#cb12-293" aria-hidden="true" tabindex="-1"></a><span class="fu"># `requires` expressions</span></span>
-<span id="cb12-294"><a href="#cb12-294" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-295"><a href="#cb12-295" aria-hidden="true" tabindex="-1"></a>The <span class="in">`requires`</span> expression in the body of a concept has a function-like syntax.</span>
-<span id="cb12-296"><a href="#cb12-296" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-297"><a href="#cb12-297" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-298"><a href="#cb12-298" aria-hidden="true" tabindex="-1"></a><span class="in">requires(parameter-list){</span></span>
-<span id="cb12-299"><a href="#cb12-299" aria-hidden="true" tabindex="-1"></a><span class="in">  requirement-seq;</span></span>
-<span id="cb12-300"><a href="#cb12-300" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
-<span id="cb12-301"><a href="#cb12-301" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-302"><a href="#cb12-302" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-303"><a href="#cb12-303" aria-hidden="true" tabindex="-1"></a><span class="fu">## Simple requirements</span></span>
-<span id="cb12-304"><a href="#cb12-304" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-305"><a href="#cb12-305" aria-hidden="true" tabindex="-1"></a>A **simple requirement** is an expression that is not evaluated but only checked for correctness. The expression must be valid for the requirement to be evaluated to <span class="in">`true`</span>. </span>
-<span id="cb12-306"><a href="#cb12-306" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-307"><a href="#cb12-307" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-308"><a href="#cb12-308" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-309"><a href="#cb12-309" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> arithmetic <span class="kw">requires</span><span class="op">(</span>T a<span class="op">){</span></span>
-<span id="cb12-310"><a href="#cb12-310" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;;</span></span>
-<span id="cb12-311"><a href="#cb12-311" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb12-312"><a href="#cb12-312" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb12-313"><a href="#cb12-313" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-314"><a href="#cb12-314" aria-hidden="true" tabindex="-1"></a><span class="fu">## Type requirements</span></span>
-<span id="cb12-315"><a href="#cb12-315" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-316"><a href="#cb12-316" aria-hidden="true" tabindex="-1"></a>**Type requirements** are introduced with the <span class="in">`typename`</span> keyword followed by the name of a type. The type must be valid for the requirement to be true. Let's code up an example:</span>
-<span id="cb12-317"><a href="#cb12-317" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-318"><a href="#cb12-318" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-319"><a href="#cb12-319" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb12-320"><a href="#cb12-320" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb12-321"><a href="#cb12-321" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> KeyValuePair <span class="op">=</span> <span class="kw">requires</span><span class="op">{</span></span>
-<span id="cb12-322"><a href="#cb12-322" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">key_type</span><span class="op">;</span></span>
-<span id="cb12-323"><a href="#cb12-323" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">value_type</span><span class="op">;</span></span>
-<span id="cb12-324"><a href="#cb12-324" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb12-325"><a href="#cb12-325" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb15" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "C++20 concepts"</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="an">date:</span><span class="co"> "2024-12-07"</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="an">toc:</span><span class="co"> true</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="an">comments:</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="co">  giscus: </span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="co">    repo: quasar-chunawala/quantdev</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a><span class="co">    html:</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a><span class="co">        code-tools: true</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a><span class="co">        code-block-border-left: true</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a><span class="co">        code-annotations: below</span></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a><span class="co">        highlight-style: pygments</span></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a><span class="fu"># Introduction</span></span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>A class template, function template (including lambdas) may be associated with a **constraint**, which specifies requirements on the template arguments. This can be used to select the most appropriate function overload or template specialization.</span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>A **concept** is a named set of such constraints. A **concept** is ultimately a logical predicate $P(x)$, evaluated at compile-time, where $x$ represents template parameters. A function or class template constrained by the concept $P$, will work only for template arguments that satisfy $P$.</span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a>Consider the templated function:</span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb15-30"><a href="#cb15-30" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;complex&gt;</span></span>
+<span id="cb15-31"><a href="#cb15-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-32"><a href="#cb15-32" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-33"><a href="#cb15-33" aria-hidden="true" tabindex="-1"></a>T sum<span class="op">(</span>T <span class="at">const</span> a<span class="op">,</span> T <span class="at">const</span> b<span class="op">){</span></span>
+<span id="cb15-34"><a href="#cb15-34" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">(</span>a <span class="op">+</span> b<span class="op">);</span></span>
+<span id="cb15-35"><a href="#cb15-35" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-36"><a href="#cb15-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-37"><a href="#cb15-37" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb15-38"><a href="#cb15-38" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb15-39"><a href="#cb15-39" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> <span class="kw">namespace</span> <span class="bu">std::</span>literals::complex_literals<span class="op">;</span></span>
+<span id="cb15-40"><a href="#cb15-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-41"><a href="#cb15-41" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> x<span class="op">{</span><span class="dv">2</span><span class="op">},</span> y<span class="op">{</span><span class="dv">3</span><span class="op">};</span></span>
+<span id="cb15-42"><a href="#cb15-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-43"><a href="#cb15-43" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span>x<span class="op">,</span> y<span class="op">);</span></span>
+<span id="cb15-44"><a href="#cb15-44" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="fl">2.71828</span><span class="op">,</span> <span class="fl">3.14159</span><span class="op">);</span></span>
+<span id="cb15-45"><a href="#cb15-45" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="bu">std::</span>complex<span class="op">{</span><span class="fl">1.0</span> <span class="op">+</span> <span class="fl">1.0</span><span class="bu">i</span><span class="op">},</span> <span class="bu">std::</span>complex<span class="op">{</span><span class="fl">1.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="bu">i</span><span class="op">});</span></span>
+<span id="cb15-46"><a href="#cb15-46" aria-hidden="true" tabindex="-1"></a>    <span class="co">//sum("42", "1");       //Error cannot add two strings</span></span>
+<span id="cb15-47"><a href="#cb15-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-48"><a href="#cb15-48" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb15-49"><a href="#cb15-49" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-50"><a href="#cb15-50" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-51"><a href="#cb15-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-52"><a href="#cb15-52" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/fboM8dK13)</span></span>
+<span id="cb15-53"><a href="#cb15-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-54"><a href="#cb15-54" aria-hidden="true" tabindex="-1"></a>The <span class="in">`sum`</span> function returns the result of applying the binary <span class="in">`operator+(T,T)`</span> on its arguments. The <span class="in">`sum`</span> function only makes sense when we discuss mathematical types such as integers, floating-point numbers, <span class="in">`std::complex&lt;double&gt;`</span>, vectors and matrices. For most types, overloading the operator <span class="in">`+`</span> makes no sense at all. </span>
+<span id="cb15-55"><a href="#cb15-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-56"><a href="#cb15-56" aria-hidden="true" tabindex="-1"></a>Therefore, just by looking at the declaration of this function, without inspecting its body, we cannot really say what this function may accept as input and what it does.</span>
+<span id="cb15-57"><a href="#cb15-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-58"><a href="#cb15-58" aria-hidden="true" tabindex="-1"></a>The intention for our <span class="in">`sum`</span> function template is to allow passing only types that support arithmetic operations. One way is to use <span class="in">`std::enable_if`</span>:</span>
+<span id="cb15-59"><a href="#cb15-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-60"><a href="#cb15-60" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-61"><a href="#cb15-61" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb15-62"><a href="#cb15-62" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;complex&gt;</span></span>
+<span id="cb15-63"><a href="#cb15-63" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
+<span id="cb15-64"><a href="#cb15-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-65"><a href="#cb15-65" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> </span>
+<span id="cb15-66"><a href="#cb15-66" aria-hidden="true" tabindex="-1"></a>        <span class="kw">typename</span> <span class="op">=</span> <span class="kw">typename</span> <span class="bu">std::</span>enable_if<span class="op">&lt;</span><span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;,</span>T<span class="op">&gt;&gt;</span></span>
+<span id="cb15-67"><a href="#cb15-67" aria-hidden="true" tabindex="-1"></a>T sum<span class="op">(</span>T <span class="at">const</span> a<span class="op">,</span> T <span class="at">const</span> b<span class="op">){</span></span>
+<span id="cb15-68"><a href="#cb15-68" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">(</span>a <span class="op">+</span> b<span class="op">);</span></span>
+<span id="cb15-69"><a href="#cb15-69" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-70"><a href="#cb15-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-71"><a href="#cb15-71" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb15-72"><a href="#cb15-72" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb15-73"><a href="#cb15-73" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> <span class="kw">namespace</span> <span class="bu">std::</span>literals::complex_literals<span class="op">;</span></span>
+<span id="cb15-74"><a href="#cb15-74" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-75"><a href="#cb15-75" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> x<span class="op">{</span><span class="dv">2</span><span class="op">},</span> y<span class="op">{</span><span class="dv">3</span><span class="op">};</span></span>
+<span id="cb15-76"><a href="#cb15-76" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-77"><a href="#cb15-77" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span>x<span class="op">,</span> y<span class="op">);</span></span>
+<span id="cb15-78"><a href="#cb15-78" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="fl">2.71828</span><span class="op">,</span> <span class="fl">3.14159</span><span class="op">);</span></span>
+<span id="cb15-79"><a href="#cb15-79" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="bu">std::</span>complex<span class="op">{</span><span class="fl">1.0</span> <span class="op">+</span> <span class="fl">1.0</span><span class="bu">i</span><span class="op">},</span> <span class="bu">std::</span>complex<span class="op">{</span><span class="fl">1.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="bu">i</span><span class="op">});</span></span>
+<span id="cb15-80"><a href="#cb15-80" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="st">"42"</span><span class="op">,</span> <span class="st">"1"</span><span class="op">);</span>    </span>
+<span id="cb15-81"><a href="#cb15-81" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-82"><a href="#cb15-82" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb15-83"><a href="#cb15-83" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-84"><a href="#cb15-84" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-85"><a href="#cb15-85" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-86"><a href="#cb15-86" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/YEGvo7Yx1)</span></span>
+<span id="cb15-87"><a href="#cb15-87" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-88"><a href="#cb15-88" aria-hidden="true" tabindex="-1"></a>We added an anonymous template parameter which calls the *type metafunction* `std::enable_if&lt;C,T&gt;` from the `type_traits` library. If the condition `C` evaluates to `std::true_type`, then `std::enable_if&lt;C,T&gt;` returns `T`. Since `std::is_arithmetic_v&lt;const char*&gt;<span class="in">` returns `</span>false_type<span class="in">`, `</span>enable_if` meta-function doesn't return anything and the code will not build.</span>
+<span id="cb15-89"><a href="#cb15-89" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-90"><a href="#cb15-90" aria-hidden="true" tabindex="-1"></a>With this implementation, the code readability has decreased. The second type template parameter is difficult to read and certainly requires good TMP knowledge. The compiler error message is also cryptic.</span>
+<span id="cb15-91"><a href="#cb15-91" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-92"><a href="#cb15-92" aria-hidden="true" tabindex="-1"></a>We can improve these two aspects (code readability and compiler error messages) in C++ 20 by using constraints. These are introduced with the <span class="in">`requires`</span> keyword as follows:</span>
+<span id="cb15-93"><a href="#cb15-93" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-94"><a href="#cb15-94" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-95"><a href="#cb15-95" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb15-96"><a href="#cb15-96" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;complex&gt;</span></span>
+<span id="cb15-97"><a href="#cb15-97" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
+<span id="cb15-98"><a href="#cb15-98" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;concepts&gt;</span></span>
+<span id="cb15-99"><a href="#cb15-99" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-100"><a href="#cb15-100" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-101"><a href="#cb15-101" aria-hidden="true" tabindex="-1"></a><span class="kw">requires</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
+<span id="cb15-102"><a href="#cb15-102" aria-hidden="true" tabindex="-1"></a>T sum<span class="op">(</span>T <span class="at">const</span> a<span class="op">,</span> T <span class="at">const</span> b<span class="op">){</span></span>
+<span id="cb15-103"><a href="#cb15-103" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">(</span>a <span class="op">+</span> b<span class="op">);</span></span>
+<span id="cb15-104"><a href="#cb15-104" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-105"><a href="#cb15-105" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-106"><a href="#cb15-106" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb15-107"><a href="#cb15-107" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb15-108"><a href="#cb15-108" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> x<span class="op">{</span><span class="dv">2</span><span class="op">},</span> y<span class="op">{</span><span class="dv">3</span><span class="op">};</span></span>
+<span id="cb15-109"><a href="#cb15-109" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-110"><a href="#cb15-110" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span>x<span class="op">,</span> y<span class="op">);</span></span>
+<span id="cb15-111"><a href="#cb15-111" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="fl">2.71828</span><span class="op">,</span> <span class="fl">3.14159</span><span class="op">);</span></span>
+<span id="cb15-112"><a href="#cb15-112" aria-hidden="true" tabindex="-1"></a>    sum<span class="op">(</span><span class="st">"42"</span><span class="op">,</span> <span class="st">"1"</span><span class="op">);</span>    </span>
+<span id="cb15-113"><a href="#cb15-113" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-114"><a href="#cb15-114" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb15-115"><a href="#cb15-115" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-116"><a href="#cb15-116" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-117"><a href="#cb15-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-118"><a href="#cb15-118" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/Tz84aM834)</span></span>
+<span id="cb15-119"><a href="#cb15-119" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-120"><a href="#cb15-120" aria-hidden="true" tabindex="-1"></a>The compiler error message is more meaningful and states that the constraint <span class="in">`is_arithmetic_v&lt;const char*&gt;`</span> evaluates to <span class="in">`false`</span>. </span>
+<span id="cb15-121"><a href="#cb15-121" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-122"><a href="#cb15-122" aria-hidden="true" tabindex="-1"></a>The <span class="in">`requires`</span> keyword introduces a clause, called the *requires* clasuse, that defines constraints on the template parameters. A constraint is a predicate that evaluates to <span class="in">`true`</span> or <span class="in">`false`</span> at compile-time. The expression used in the previous example, <span class="in">`std::is_arithmetic_v&lt;T&gt;`</span> is simply using a standard type-trait. </span>
+<span id="cb15-123"><a href="#cb15-123" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-124"><a href="#cb15-124" aria-hidden="true" tabindex="-1"></a><span class="fu"># Defining Concepts</span></span>
+<span id="cb15-125"><a href="#cb15-125" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-126"><a href="#cb15-126" aria-hidden="true" tabindex="-1"></a>Many constraints are generic and can be used in multiple places. For example, the functions below require that the type <span class="in">`T`</span> be arithmetic.</span>
+<span id="cb15-127"><a href="#cb15-127" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-128"><a href="#cb15-128" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-129"><a href="#cb15-129" aria-hidden="true" tabindex="-1"></a><span class="co">/* Add 2 scalars */</span></span>
+<span id="cb15-130"><a href="#cb15-130" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-131"><a href="#cb15-131" aria-hidden="true" tabindex="-1"></a><span class="kw">requires</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
+<span id="cb15-132"><a href="#cb15-132" aria-hidden="true" tabindex="-1"></a>T <span class="kw">operator</span><span class="op">+(</span>T <span class="at">const</span> v1<span class="op">,</span> T <span class="at">const</span> v2<span class="op">){</span></span>
+<span id="cb15-133"><a href="#cb15-133" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="op">(</span>v1 <span class="op">+</span> v2<span class="op">);</span></span>
+<span id="cb15-134"><a href="#cb15-134" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-135"><a href="#cb15-135" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-136"><a href="#cb15-136" aria-hidden="true" tabindex="-1"></a><span class="co">/* Add 2 vectors component-wise */</span></span>
+<span id="cb15-137"><a href="#cb15-137" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-138"><a href="#cb15-138" aria-hidden="true" tabindex="-1"></a><span class="kw">requires</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
+<span id="cb15-139"><a href="#cb15-139" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="kw">operator</span><span class="op">+(</span><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="at">const</span> v1<span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="at">const</span> v2<span class="op">){</span></span>
+<span id="cb15-140"><a href="#cb15-140" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span>v1<span class="op">};</span></span>
+<span id="cb15-141"><a href="#cb15-141" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-142"><a href="#cb15-142" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span><span class="op">(</span><span class="dt">int</span> i<span class="op">{</span><span class="dv">0</span><span class="op">};</span>i<span class="op">&lt;</span>v1<span class="op">.</span>size<span class="op">();++</span>i<span class="op">){</span></span>
+<span id="cb15-143"><a href="#cb15-143" aria-hidden="true" tabindex="-1"></a>    result<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v1<span class="op">[</span>i<span class="op">]</span> <span class="op">+</span> v2<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb15-144"><a href="#cb15-144" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb15-145"><a href="#cb15-145" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-146"><a href="#cb15-146" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb15-147"><a href="#cb15-147" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-148"><a href="#cb15-148" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-149"><a href="#cb15-149" aria-hidden="true" tabindex="-1"></a><span class="co">/* Multiply 2 scalars */</span></span>
+<span id="cb15-150"><a href="#cb15-150" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-151"><a href="#cb15-151" aria-hidden="true" tabindex="-1"></a><span class="kw">requires</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
+<span id="cb15-152"><a href="#cb15-152" aria-hidden="true" tabindex="-1"></a>T <span class="kw">operator</span><span class="op">*(</span>T <span class="at">const</span> a<span class="op">,</span> T <span class="at">const</span> b<span class="op">){</span></span>
+<span id="cb15-153"><a href="#cb15-153" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="op">(</span>a <span class="op">*</span> b<span class="op">);</span></span>
+<span id="cb15-154"><a href="#cb15-154" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-155"><a href="#cb15-155" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-156"><a href="#cb15-156" aria-hidden="true" tabindex="-1"></a><span class="co">/* Scalar multiplication of a vector v*/</span></span>
+<span id="cb15-157"><a href="#cb15-157" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-158"><a href="#cb15-158" aria-hidden="true" tabindex="-1"></a><span class="kw">requires</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;</span></span>
+<span id="cb15-159"><a href="#cb15-159" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="kw">operator</span><span class="op">*(</span>T k<span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> v<span class="op">){</span></span>
+<span id="cb15-160"><a href="#cb15-160" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span>v<span class="op">};</span></span>
+<span id="cb15-161"><a href="#cb15-161" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>transform<span class="op">(</span><span class="bu">std::</span>begin<span class="op">(</span>v<span class="op">),</span> <span class="bu">std::</span>end<span class="op">(</span>v<span class="op">),</span> <span class="bu">std::</span>begin<span class="op">(</span>result<span class="op">),</span> <span class="op">[&amp;](</span><span class="kw">auto</span> element<span class="op">){</span></span>
+<span id="cb15-162"><a href="#cb15-162" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">(</span>k <span class="op">*</span> element<span class="op">);</span></span>
+<span id="cb15-163"><a href="#cb15-163" aria-hidden="true" tabindex="-1"></a>  <span class="op">});</span></span>
+<span id="cb15-164"><a href="#cb15-164" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-165"><a href="#cb15-165" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb15-166"><a href="#cb15-166" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-167"><a href="#cb15-167" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-168"><a href="#cb15-168" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-169"><a href="#cb15-169" aria-hidden="true" tabindex="-1"></a>To avoid this repetitive code, we can defined a named constraint that can be reused in multiple places. A named constraint is called a concept. A concept is defined with the <span class="in">`concept`</span> keyword. Here is an example:</span>
+<span id="cb15-170"><a href="#cb15-170" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-171"><a href="#cb15-171" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-172"><a href="#cb15-172" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-173"><a href="#cb15-173" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> arithmetic <span class="op">=</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;;</span></span>
+<span id="cb15-174"><a href="#cb15-174" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-175"><a href="#cb15-175" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-176"><a href="#cb15-176" aria-hidden="true" tabindex="-1"></a>Even though they are assigned a boolean value, concept names should not contain verbs. They represent requirements and are used as attributes or qualifiers on template parameters. So, prefer names like *arithmetic*, *copyable*, *serializable*, *container* and not <span class="in">`is_arithmetic`</span>, <span class="in">`is_copyable`</span>, <span class="in">`is_serializable`</span> and <span class="in">`is_container`</span>. The <span class="in">`arithmetic`</span> concept can be used as follows:</span>
+<span id="cb15-177"><a href="#cb15-177" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-178"><a href="#cb15-178" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-179"><a href="#cb15-179" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb15-180"><a href="#cb15-180" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;type_traits&gt;</span></span>
+<span id="cb15-181"><a href="#cb15-181" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;concepts&gt;</span></span>
+<span id="cb15-182"><a href="#cb15-182" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb15-183"><a href="#cb15-183" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-184"><a href="#cb15-184" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-185"><a href="#cb15-185" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> arithmetic <span class="op">=</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;;</span></span>
+<span id="cb15-186"><a href="#cb15-186" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-187"><a href="#cb15-187" aria-hidden="true" tabindex="-1"></a><span class="co">/* Add 2 scalars */</span></span>
+<span id="cb15-188"><a href="#cb15-188" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span>arithmetic T<span class="op">&gt;</span></span>
+<span id="cb15-189"><a href="#cb15-189" aria-hidden="true" tabindex="-1"></a>T <span class="kw">operator</span><span class="op">+(</span>T <span class="at">const</span> v1<span class="op">,</span> T <span class="at">const</span> v2<span class="op">){</span></span>
+<span id="cb15-190"><a href="#cb15-190" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="op">(</span>v1 <span class="op">+</span> v2<span class="op">);</span></span>
+<span id="cb15-191"><a href="#cb15-191" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-192"><a href="#cb15-192" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-193"><a href="#cb15-193" aria-hidden="true" tabindex="-1"></a><span class="co">/* Add 2 vectors component-wise */</span></span>
+<span id="cb15-194"><a href="#cb15-194" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span>arithmetic T<span class="op">&gt;</span></span>
+<span id="cb15-195"><a href="#cb15-195" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="kw">operator</span><span class="op">+(</span><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="at">const</span> v1<span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="at">const</span> v2<span class="op">){</span></span>
+<span id="cb15-196"><a href="#cb15-196" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span>v1<span class="op">};</span></span>
+<span id="cb15-197"><a href="#cb15-197" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-198"><a href="#cb15-198" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span><span class="op">(</span><span class="dt">int</span> i<span class="op">{</span><span class="dv">0</span><span class="op">};</span>i<span class="op">&lt;</span>v1<span class="op">.</span>size<span class="op">();++</span>i<span class="op">){</span></span>
+<span id="cb15-199"><a href="#cb15-199" aria-hidden="true" tabindex="-1"></a>    result<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> v1<span class="op">[</span>i<span class="op">]</span> <span class="op">+</span> v2<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb15-200"><a href="#cb15-200" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb15-201"><a href="#cb15-201" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-202"><a href="#cb15-202" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb15-203"><a href="#cb15-203" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-204"><a href="#cb15-204" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-205"><a href="#cb15-205" aria-hidden="true" tabindex="-1"></a><span class="co">/* Multiply 2 scalars */</span></span>
+<span id="cb15-206"><a href="#cb15-206" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span>arithmetic T<span class="op">&gt;</span></span>
+<span id="cb15-207"><a href="#cb15-207" aria-hidden="true" tabindex="-1"></a>T <span class="kw">operator</span><span class="op">*(</span>T <span class="at">const</span> a<span class="op">,</span> T <span class="at">const</span> b<span class="op">){</span></span>
+<span id="cb15-208"><a href="#cb15-208" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="op">(</span>a <span class="op">*</span> b<span class="op">);</span></span>
+<span id="cb15-209"><a href="#cb15-209" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-210"><a href="#cb15-210" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-211"><a href="#cb15-211" aria-hidden="true" tabindex="-1"></a><span class="co">/* Scalar multiplication of a vector v*/</span></span>
+<span id="cb15-212"><a href="#cb15-212" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span>arithmetic T<span class="op">&gt;</span></span>
+<span id="cb15-213"><a href="#cb15-213" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="kw">operator</span><span class="op">*(</span>T k<span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> v<span class="op">){</span></span>
+<span id="cb15-214"><a href="#cb15-214" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span>v<span class="op">};</span></span>
+<span id="cb15-215"><a href="#cb15-215" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>transform<span class="op">(</span><span class="bu">std::</span>begin<span class="op">(</span>v<span class="op">),</span> <span class="bu">std::</span>end<span class="op">(</span>v<span class="op">),</span> <span class="bu">std::</span>begin<span class="op">(</span>result<span class="op">),</span> <span class="op">[&amp;](</span><span class="kw">auto</span> element<span class="op">){</span></span>
+<span id="cb15-216"><a href="#cb15-216" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">(</span>k <span class="op">*</span> element<span class="op">);</span></span>
+<span id="cb15-217"><a href="#cb15-217" aria-hidden="true" tabindex="-1"></a>  <span class="op">});</span></span>
+<span id="cb15-218"><a href="#cb15-218" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-219"><a href="#cb15-219" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb15-220"><a href="#cb15-220" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-221"><a href="#cb15-221" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-222"><a href="#cb15-222" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb15-223"><a href="#cb15-223" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb15-224"><a href="#cb15-224" aria-hidden="true" tabindex="-1"></a>    <span class="dv">2</span> <span class="op">+</span> <span class="dv">3</span><span class="op">;</span></span>
+<span id="cb15-225"><a href="#cb15-225" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>vector<span class="op">{</span><span class="fl">1.0</span><span class="op">,</span><span class="fl">2.0</span><span class="op">}</span> <span class="op">+</span> <span class="bu">std::</span>vector<span class="op">{</span><span class="fl">3.0</span><span class="op">,</span><span class="fl">4.0</span><span class="op">};</span></span>
+<span id="cb15-226"><a href="#cb15-226" aria-hidden="true" tabindex="-1"></a>    <span class="dv">2</span> <span class="op">*</span> <span class="dv">3</span><span class="op">;</span></span>
+<span id="cb15-227"><a href="#cb15-227" aria-hidden="true" tabindex="-1"></a>    <span class="fl">2.0</span> <span class="op">*</span> <span class="bu">std::</span>vector<span class="op">{</span><span class="fl">1.0</span><span class="op">,-</span><span class="fl">1.0</span><span class="op">};</span></span>
+<span id="cb15-228"><a href="#cb15-228" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb15-229"><a href="#cb15-229" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-230"><a href="#cb15-230" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-231"><a href="#cb15-231" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-232"><a href="#cb15-232" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">Compiler Explorer</span><span class="co">](https://godbolt.org/z/47P1Wbv9q)</span></span>
+<span id="cb15-233"><a href="#cb15-233" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-234"><a href="#cb15-234" aria-hidden="true" tabindex="-1"></a>The <span class="in">`arithmetic`</span> concept can also be defined using a *requires expression*. A *requires expression* uses curly braces <span class="in">`{}`</span> and it contains a sequence of requirements.</span>
+<span id="cb15-235"><a href="#cb15-235" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-236"><a href="#cb15-236" aria-hidden="true" tabindex="-1"></a>Consider the case where we want to define a template that only takes container types as an argument. A container type is not easy to define formally. We can do this based on some properties of standard <span class="co">[</span><span class="ot">containers</span><span class="co">](https://en.cppreference.com/w/cpp/named_req/Container)</span>.</span>
+<span id="cb15-237"><a href="#cb15-237" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-238"><a href="#cb15-238" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>They have the member types <span class="in">`value_type`</span>, <span class="in">`size_type`</span>,  <span class="in">`allocator_type`</span>, <span class="in">`iterator`</span> and <span class="in">`const_iterator`</span>.</span>
+<span id="cb15-239"><a href="#cb15-239" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-240"><a href="#cb15-240" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>They have the member function <span class="in">`size()`</span> that returns the elements of the container.</span>
+<span id="cb15-241"><a href="#cb15-241" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-242"><a href="#cb15-242" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>They have the member functions <span class="in">`begin()`</span>, <span class="in">`end()`</span>, <span class="in">`cbegin()`</span> and <span class="in">`cend()`</span> that return iterators and constant iterators to the first and one-past-the-last element in the container. </span>
+<span id="cb15-243"><a href="#cb15-243" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-244"><a href="#cb15-244" aria-hidden="true" tabindex="-1"></a>We can define as <span class="in">`is_container`</span> type trait as follows:</span>
+<span id="cb15-245"><a href="#cb15-245" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-246"><a href="#cb15-246" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-247"><a href="#cb15-247" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
+<span id="cb15-248"><a href="#cb15-248" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-249"><a href="#cb15-249" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span> U <span class="op">=</span> <span class="dt">void</span><span class="op">&gt;</span></span>
+<span id="cb15-250"><a href="#cb15-250" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> is_container <span class="op">:</span> <span class="bu">std::</span>false_type <span class="op">{};</span></span>
+<span id="cb15-251"><a href="#cb15-251" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-252"><a href="#cb15-252" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> <span class="op">&gt;</span></span>
+<span id="cb15-253"><a href="#cb15-253" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> is_container<span class="op">&lt;</span>T<span class="op">,</span> </span>
+<span id="cb15-254"><a href="#cb15-254" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>void_t<span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">::</span><span class="dt">value_type</span><span class="op">,</span></span>
+<span id="cb15-255"><a href="#cb15-255" aria-hidden="true" tabindex="-1"></a>              <span class="kw">typename</span> T<span class="op">::</span><span class="dt">size_type</span><span class="op">,</span></span>
+<span id="cb15-256"><a href="#cb15-256" aria-hidden="true" tabindex="-1"></a>              <span class="kw">typename</span> T<span class="op">::</span><span class="dt">allocator_type</span><span class="op">,</span></span>
+<span id="cb15-257"><a href="#cb15-257" aria-hidden="true" tabindex="-1"></a>              <span class="kw">typename</span> T<span class="op">::</span>iterator<span class="op">,</span></span>
+<span id="cb15-258"><a href="#cb15-258" aria-hidden="true" tabindex="-1"></a>              <span class="kw">typename</span> T<span class="op">::</span>const_iterator<span class="op">,</span></span>
+<span id="cb15-259"><a href="#cb15-259" aria-hidden="true" tabindex="-1"></a>              <span class="kw">decltype</span><span class="op">(</span><span class="bu">std::</span>declvalue<span class="op">&lt;</span>T<span class="op">&gt;().</span>size<span class="op">()),</span></span>
+<span id="cb15-260"><a href="#cb15-260" aria-hidden="true" tabindex="-1"></a>              <span class="kw">decltype</span><span class="op">(</span><span class="bu">std::</span>declvalue<span class="op">&lt;</span>T<span class="op">&gt;().</span>begin<span class="op">()),</span></span>
+<span id="cb15-261"><a href="#cb15-261" aria-hidden="true" tabindex="-1"></a>              <span class="kw">decltype</span><span class="op">(</span><span class="bu">std::</span>declvalue<span class="op">&lt;</span>T<span class="op">&gt;().</span>end<span class="op">()),</span></span>
+<span id="cb15-262"><a href="#cb15-262" aria-hidden="true" tabindex="-1"></a>              <span class="kw">decltype</span><span class="op">(</span><span class="bu">std::</span>declvalue<span class="op">&lt;</span>T<span class="op">&gt;().</span>cbegin<span class="op">()),</span></span>
+<span id="cb15-263"><a href="#cb15-263" aria-hidden="true" tabindex="-1"></a>              <span class="kw">decltype</span><span class="op">(</span><span class="bu">std::</span>declvalue<span class="op">&lt;</span>T<span class="op">&gt;().</span>cend<span class="op">())</span></span>
+<span id="cb15-264"><a href="#cb15-264" aria-hidden="true" tabindex="-1"></a>            <span class="op">&gt;&gt;</span> <span class="op">:</span> <span class="bu">std::</span>true_type <span class="op">{};</span></span>
+<span id="cb15-265"><a href="#cb15-265" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-266"><a href="#cb15-266" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span> U<span class="op">=</span><span class="dt">void</span><span class="op">&gt;</span></span>
+<span id="cb15-267"><a href="#cb15-267" aria-hidden="true" tabindex="-1"></a><span class="kw">constexpr</span> <span class="dt">bool</span> is_container_v<span class="op">&lt;</span>T<span class="op">,</span>U<span class="op">&gt;</span> <span class="op">=</span> is_container<span class="op">&lt;</span>T<span class="op">&gt;::</span>value<span class="op">;</span></span>
+<span id="cb15-268"><a href="#cb15-268" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-269"><a href="#cb15-269" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-270"><a href="#cb15-270" aria-hidden="true" tabindex="-1"></a>Note, that <span class="in">`std::void_t&lt;Args...&gt;`</span> is a utility type metafunction that maps a sequence of any types to <span class="in">`void`</span>. It is a convenient way to leverage SFINAE prior to C++20's concepts. </span>
+<span id="cb15-271"><a href="#cb15-271" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-272"><a href="#cb15-272" aria-hidden="true" tabindex="-1"></a>Concepts make writing such a template constraint much easier. We can employ the concept syntax and requires expressions to define the following:</span>
+<span id="cb15-273"><a href="#cb15-273" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-274"><a href="#cb15-274" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-275"><a href="#cb15-275" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-276"><a href="#cb15-276" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> container <span class="op">=</span> <span class="kw">requires</span><span class="op">(</span>T cont<span class="op">)</span></span>
+<span id="cb15-277"><a href="#cb15-277" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb15-278"><a href="#cb15-278" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">value_type</span><span class="op">;</span></span>
+<span id="cb15-279"><a href="#cb15-279" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">size_type</span><span class="op">;</span></span>
+<span id="cb15-280"><a href="#cb15-280" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">allocator_type</span><span class="op">;</span></span>
+<span id="cb15-281"><a href="#cb15-281" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span>iterator<span class="op">;</span></span>
+<span id="cb15-282"><a href="#cb15-282" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span>const_iterator<span class="op">;</span></span>
+<span id="cb15-283"><a href="#cb15-283" aria-hidden="true" tabindex="-1"></a>  cont<span class="op">.</span>size<span class="op">();</span></span>
+<span id="cb15-284"><a href="#cb15-284" aria-hidden="true" tabindex="-1"></a>  cont<span class="op">.</span>begin<span class="op">();</span></span>
+<span id="cb15-285"><a href="#cb15-285" aria-hidden="true" tabindex="-1"></a>  cont<span class="op">.</span>end<span class="op">();</span></span>
+<span id="cb15-286"><a href="#cb15-286" aria-hidden="true" tabindex="-1"></a>  cont<span class="op">.</span>cbegin<span class="op">();</span></span>
+<span id="cb15-287"><a href="#cb15-287" aria-hidden="true" tabindex="-1"></a>  cont<span class="op">.</span>cend<span class="op">();</span></span>
+<span id="cb15-288"><a href="#cb15-288" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb15-289"><a href="#cb15-289" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-290"><a href="#cb15-290" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-291"><a href="#cb15-291" aria-hidden="true" tabindex="-1"></a>This definition is both shorter and more readable. It uses both simple requirements such as <span class="in">`t.size()`</span> as well as type requirements such as <span class="in">`T::value_type`</span>. It can be used to constrain template parameters in the manner seen previously.</span>
+<span id="cb15-292"><a href="#cb15-292" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-293"><a href="#cb15-293" aria-hidden="true" tabindex="-1"></a><span class="fu"># `requires` expressions</span></span>
+<span id="cb15-294"><a href="#cb15-294" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-295"><a href="#cb15-295" aria-hidden="true" tabindex="-1"></a>The <span class="in">`requires`</span> expression in the body of a concept has a function-like syntax.</span>
+<span id="cb15-296"><a href="#cb15-296" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-297"><a href="#cb15-297" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-298"><a href="#cb15-298" aria-hidden="true" tabindex="-1"></a><span class="in">requires(parameter-list){</span></span>
+<span id="cb15-299"><a href="#cb15-299" aria-hidden="true" tabindex="-1"></a><span class="in">  requirement-seq;</span></span>
+<span id="cb15-300"><a href="#cb15-300" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
+<span id="cb15-301"><a href="#cb15-301" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-302"><a href="#cb15-302" aria-hidden="true" tabindex="-1"></a>It is a *prvalue expression* of type <span class="in">`bool`</span> that describes the constraints on some template arguments. Such an expression is <span class="in">`true`</span> if the constraints are satisfied and <span class="in">`false`</span> otherwise.</span>
+<span id="cb15-303"><a href="#cb15-303" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-304"><a href="#cb15-304" aria-hidden="true" tabindex="-1"></a>The substitution of template arguments into a <span class="in">`requires`</span> expression used in the declaration of a templated entity may result in the formation of invalid types or expressions, or the violation of the semantic constraints of the requirements. In such cases, the <span class="in">`requires`</span>-expression evaluates to <span class="in">`false`</span> and does not cause the program to be ill-formed.</span>
+<span id="cb15-305"><a href="#cb15-305" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-306"><a href="#cb15-306" aria-hidden="true" tabindex="-1"></a><span class="fu">## Simple requirements</span></span>
+<span id="cb15-307"><a href="#cb15-307" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-308"><a href="#cb15-308" aria-hidden="true" tabindex="-1"></a>A **simple requirement** is an expression that is not evaluated but only checked for correctness. The expression must be valid for the requirement to be evaluated to <span class="in">`true`</span>. </span>
+<span id="cb15-309"><a href="#cb15-309" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-310"><a href="#cb15-310" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-311"><a href="#cb15-311" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-312"><a href="#cb15-312" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> arithmetic <span class="kw">requires</span><span class="op">(</span>T a<span class="op">){</span></span>
+<span id="cb15-313"><a href="#cb15-313" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;;</span></span>
+<span id="cb15-314"><a href="#cb15-314" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb15-315"><a href="#cb15-315" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-316"><a href="#cb15-316" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-317"><a href="#cb15-317" aria-hidden="true" tabindex="-1"></a><span class="fu">## Type requirements</span></span>
+<span id="cb15-318"><a href="#cb15-318" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-319"><a href="#cb15-319" aria-hidden="true" tabindex="-1"></a>**Type requirements** are introduced with the <span class="in">`typename`</span> keyword followed by the name of a type. We can use it verify if :</span>
+<span id="cb15-320"><a href="#cb15-320" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-321"><a href="#cb15-321" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>A nested type exists(such as in <span class="in">`typename T::value_type`</span>).</span>
+<span id="cb15-322"><a href="#cb15-322" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>A class template specialization names a type.</span>
+<span id="cb15-323"><a href="#cb15-323" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>An alias template specialization names a type. </span>
+<span id="cb15-324"><a href="#cb15-324" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-325"><a href="#cb15-325" aria-hidden="true" tabindex="-1"></a>Let's code up a few examples.</span>
+<span id="cb15-326"><a href="#cb15-326" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-327"><a href="#cb15-327" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-328"><a href="#cb15-328" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-329"><a href="#cb15-329" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> KeyValuePair <span class="op">=</span> <span class="kw">requires</span><span class="op">{</span></span>
+<span id="cb15-330"><a href="#cb15-330" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">key_type</span><span class="op">;</span></span>
+<span id="cb15-331"><a href="#cb15-331" aria-hidden="true" tabindex="-1"></a>  <span class="kw">typename</span> T<span class="op">::</span><span class="dt">value_type</span><span class="op">;</span></span>
+<span id="cb15-332"><a href="#cb15-332" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb15-333"><a href="#cb15-333" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-334"><a href="#cb15-334" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span> U<span class="op">&gt;</span></span>
+<span id="cb15-335"><a href="#cb15-335" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Pair<span class="op">{</span></span>
+<span id="cb15-336"><a href="#cb15-336" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-337"><a href="#cb15-337" aria-hidden="true" tabindex="-1"></a>  <span class="kw">using</span> <span class="dt">key_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb15-338"><a href="#cb15-338" aria-hidden="true" tabindex="-1"></a>  <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> U<span class="op">;</span></span>
+<span id="cb15-339"><a href="#cb15-339" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-340"><a href="#cb15-340" aria-hidden="true" tabindex="-1"></a>  <span class="dt">key_type</span> key<span class="op">;</span></span>
+<span id="cb15-341"><a href="#cb15-341" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value_type</span> value<span class="op">;</span></span>
+<span id="cb15-342"><a href="#cb15-342" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb15-343"><a href="#cb15-343" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-344"><a href="#cb15-344" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-345"><a href="#cb15-345" aria-hidden="true" tabindex="-1"></a><span class="in">`Pair`</span> satisfies the concept <span class="in">`KeyValuePair`</span>, as it has inner types <span class="in">`key_type`</span> and <span class="in">`value_type`</span>. To verify this is indeed the case, we can use <span class="in">`KeyValuePair`</span> as a compile-time metafunction.</span>
+<span id="cb15-346"><a href="#cb15-346" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-347"><a href="#cb15-347" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-348"><a href="#cb15-348" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span>KeyValuePair<span class="op">&lt;</span>Pair<span class="op">&gt;);</span></span>
+<span id="cb15-349"><a href="#cb15-349" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(!</span>KeyValuePair<span class="op">&lt;</span><span class="bu">std::</span>pair<span class="op">&gt;);</span></span>
+<span id="cb15-350"><a href="#cb15-350" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-351"><a href="#cb15-351" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-352"><a href="#cb15-352" aria-hidden="true" tabindex="-1"></a><span class="in">`std::pair&lt;T,U&gt;`</span> does have inner types, but they are called <span class="in">`first_type`</span> and <span class="in">`second_type`</span>. </span>
+<span id="cb15-353"><a href="#cb15-353" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-354"><a href="#cb15-354" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-355"><a href="#cb15-355" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb15-356"><a href="#cb15-356" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;type_traits&gt;</span></span>
+<span id="cb15-357"><a href="#cb15-357" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;concepts&gt;</span></span>
+<span id="cb15-358"><a href="#cb15-358" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-359"><a href="#cb15-359" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-360"><a href="#cb15-360" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> arithmetic <span class="op">=</span> <span class="bu">std::</span>is_arithmetic_v<span class="op">&lt;</span>T<span class="op">&gt;;</span></span>
+<span id="cb15-361"><a href="#cb15-361" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-362"><a href="#cb15-362" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span>arithmetic T<span class="op">&gt;</span></span>
+<span id="cb15-363"><a href="#cb15-363" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Point2D<span class="op">{</span></span>
+<span id="cb15-364"><a href="#cb15-364" aria-hidden="true" tabindex="-1"></a>    T x<span class="op">;</span></span>
+<span id="cb15-365"><a href="#cb15-365" aria-hidden="true" tabindex="-1"></a>    T y<span class="op">;</span></span>
+<span id="cb15-366"><a href="#cb15-366" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb15-367"><a href="#cb15-367" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-368"><a href="#cb15-368" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-369"><a href="#cb15-369" aria-hidden="true" tabindex="-1"></a><span class="kw">using</span> Ref <span class="op">=</span> T<span class="op">&amp;;</span></span>
+<span id="cb15-370"><a href="#cb15-370" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-371"><a href="#cb15-371" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-372"><a href="#cb15-372" aria-hidden="true" tabindex="-1"></a><span class="kw">concept</span> C <span class="op">=</span> <span class="kw">requires</span><span class="op">(</span>T t<span class="op">){</span></span>
+<span id="cb15-373"><a href="#cb15-373" aria-hidden="true" tabindex="-1"></a>    <span class="kw">typename</span> T<span class="op">::</span>inner<span class="op">;</span> <span class="co">// required nested member name</span></span>
+<span id="cb15-374"><a href="#cb15-374" aria-hidden="true" tabindex="-1"></a>    <span class="kw">typename</span> Point2D<span class="op">&lt;</span>T<span class="op">&gt;;</span> <span class="co">// required class template specialization</span></span>
+<span id="cb15-375"><a href="#cb15-375" aria-hidden="true" tabindex="-1"></a>    <span class="kw">typename</span> Ref<span class="op">&lt;</span>T<span class="op">&gt;;</span>     <span class="co">// required alias template specialization</span></span>
+<span id="cb15-376"><a href="#cb15-376" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb15-377"><a href="#cb15-377" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb15-378"><a href="#cb15-378" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-379"><a href="#cb15-379" aria-hidden="true" tabindex="-1"></a><span class="fu">## Compound requirements</span></span>
+<span id="cb15-380"><a href="#cb15-380" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-381"><a href="#cb15-381" aria-hidden="true" tabindex="-1"></a>Simple requirements allow us to verify that an expression is valid. Sometimes, we need to verify some properties of an expression not just that it is valid. This can include if an expression does not throw exceptions or requirements on the result type. The general form is the following:</span>
+<span id="cb15-382"><a href="#cb15-382" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-383"><a href="#cb15-383" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb15-384"><a href="#cb15-384" aria-hidden="true" tabindex="-1"></a><span class="op">{</span>expression<span class="op">}</span> <span class="kw">noexcept</span> <span class="op">-&gt;</span> type_constraint</span>
+<span id="cb15-385"><a href="#cb15-385" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 

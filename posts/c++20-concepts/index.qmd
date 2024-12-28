@@ -299,6 +299,9 @@ requires(parameter-list){
   requirement-seq;
 }
 ```
+It is a *prvalue expression* of type `bool` that describes the constraints on some template arguments. Such an expression is `true` if the constraints are satisfied and `false` otherwise.
+
+The substitution of template arguments into a `requires` expression used in the declaration of a templated entity may result in the formation of invalid types or expressions, or the violation of the semantic constraints of the requirements. In such cases, the `requires`-expression evaluates to `false` and does not cause the program to be ill-formed.
 
 ## Simple requirements
 
@@ -313,8 +316,13 @@ concept arithmetic requires(T a){
 
 ## Type requirements
 
-**Type requirements** are introduced with the `typename` keyword followed by the name of a type. The type must be valid for the requirement to be true. Let's code up an example:
+**Type requirements** are introduced with the `typename` keyword followed by the name of a type. We can use it verify if :
 
+- A nested type exists(such as in `typename T::value_type`).
+- A class template specialization names a type.
+- An alias template specialization names a type. 
+
+Let's code up a few examples.
 
 ```cpp
 template<typename T>
@@ -322,4 +330,57 @@ concept KeyValuePair = requires{
   typename T::key_type;
   typename T::value_type;
 }
+
+template<typename T, typename U>
+struct Pair{
+
+  using key_type = T;
+  using value_type = U;
+
+  key_type key;
+  value_type value;
+};
 ```
+
+`Pair` satisfies the concept `KeyValuePair`, as it has inner types `key_type` and `value_type`. To verify this is indeed the case, we can use `KeyValuePair` as a compile-time metafunction.
+
+```cpp
+static_assert(KeyValuePair<Pair>);
+static_assert(!KeyValuePair<std::pair>);
+```
+
+`std::pair<T,U>` does have inner types, but they are called `first_type` and `second_type`. 
+
+```cpp
+#include<iostream>
+#include<type_traits>
+#include<concepts>
+
+template<typename T>
+concept arithmetic = std::is_arithmetic_v<T>;
+
+template<arithmetic T>
+struct Point2D{
+    T x;
+    T y;
+};
+
+template<typename T>
+using Ref = T&;
+
+template<typename T>
+concept C = requires(T t){
+    typename T::inner; // required nested member name
+    typename Point2D<T>; // required class template specialization
+    typename Ref<T>;     // required alias template specialization
+};
+```
+
+## Compound requirements
+
+Simple requirements allow us to verify that an expression is valid. Sometimes, we need to verify some properties of an expression not just that it is valid. This can include if an expression does not throw exceptions or requirements on the result type. The general form is the following:
+
+```cpp
+{expression} noexcept -> type_constraint
+```
+
