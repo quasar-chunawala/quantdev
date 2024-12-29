@@ -334,4 +334,65 @@ int main(int argc, const char * argv[]) {
 
 [Compiler Explorer](https://godbolt.org/z/9Ms95T41c)
 
-CRTP is useful for few things.
+# Limiting the object count with CRTP
+
+One scenario in which the CRTP idiom could be applied is to limit the object count. We code up a `limit_instances` class template and have our user-declared classes specialize from it. The `limit_instances` class has a class(static) member variable called `count` that keeps track of the number instances of the user-objects. Each time the user-object constructor(and thus `limit_instances` base class constructor) is invoked, we are to increment `count` and every destructor call decrements the count.
+
+```cpp
+#include <iostream>
+#include <exception>
+#include <atomic>
+
+template<typename T, int N>
+struct limit_instances{
+    static int count;
+
+    limit_instances(){
+        if(count >= N)
+            throw std::logic_error("Too many instances.");
+        ++count;
+    }
+
+    ~limit_instances(){
+        --count;
+    }
+};
+
+template<typename T, int N>
+int limit_instances<T,N>::count = 0;
+
+struct X : public limit_instances<X,3>{
+    /*
+        User-defined private member fields
+        and public methods.
+    */
+};
+
+struct Y : public limit_instances<Y,5>{
+    /*
+        ...
+    */
+};
+
+int main()
+{
+    X x1,x2,x3;   // okay
+    try{
+        X x4;         
+    }
+    catch(std::exception& e){
+        std::cout << e.what() << "\n";
+    }
+    
+    Y y[5];       // okay
+     try{
+        Y anotherInstance;         
+    }
+    catch(std::exception& e){
+        std::cout << e.what() << "\n";
+    } 
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/5599f3q8v)
