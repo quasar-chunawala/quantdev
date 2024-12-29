@@ -232,6 +232,8 @@ int main(){
 }
 ```
 
+The `do_work` method in the base class performs an upcast of the `this` pointer to the derived class pointer `T*`.
+
 [Compiler Explorer](https://godbolt.org/z/s4cMWfccd)
 
 We have move the runtime polymorphism to compile-time. Therefore, the `perform_work` function cannot treat `X` and `Y` objects polymorphically. Instead, we get two different overloads, one that can handle `X` objects and one that can handle `Y` objeccts. This is static polymorphism. 
@@ -334,6 +336,50 @@ int main(int argc, const char * argv[]) {
 
 [Compiler Explorer](https://godbolt.org/z/9Ms95T41c)
 
+# CRTP in QuantLib
+
+It's always interesting to  learn design patterns not in some theoretical project or a textbook or something, but actually find them working in a real-life library and [QuantLib](https://www.quantlib.org/) is certainly a big enough and an interesting enough library to give us a few examples of design patterns for our pleasure. 
+
+```cpp
+#ifndef quantlib_curiously_recurring_h
+#define quantlib_curiously_recurring_h
+ 
+#include <ql/qldefines.hpp>
+ 
+namespace QuantLib {
+ 
+    //! Support for the curiously recurring template pattern
+    /*! See James O. Coplien. A Curiously Recurring Template Pattern.
+        In Stanley B. Lippman, editor, C++ Gems, 135-144.
+        Cambridge University Press, New York, New York, 1996.
+ 
+        \ingroup patterns
+    */
+    template <class Impl>
+    class CuriouslyRecurringTemplate {
+      protected:
+        // not meant to be instantiated as such
+        CuriouslyRecurringTemplate() = default;
+        ~CuriouslyRecurringTemplate() = default;
+        // support for the curiously recurring template pattern
+        Impl& impl() {
+            return static_cast<Impl&>(*this);
+        }
+        const Impl& impl() const {
+            return static_cast<const Impl&>(*this);
+        }
+    };
+ 
+}
+#endif
+```
+
+Essentially, all that this pattern does is, it takes the template argument `Impl` and then it performs a cast of the current object `*this` to whatever type is implemented.
+
+Let's look at the derived classes [`Solver1D`](https://rkapl123.github.io/QLAnnotatedSource/d0/d9a/solver1d_8hpp_source.html) and `Bisection`. 
+
+
+
 # Limiting the object count with CRTP
 
 One scenario in which the CRTP idiom could be applied is to limit the object count. We code up a `limit_instances` class template and have our user-declared classes specialize from it. The `limit_instances` class has a class(static) member variable called `count` that keeps track of the number instances of the user-objects. Each time the user-object constructor(and thus `limit_instances` base class constructor) is invoked, we are to increment `count` and every destructor call decrements the count.
@@ -396,3 +442,9 @@ int main()
 ```
 
 [Compiler Explorer](https://godbolt.org/z/5599f3q8v)
+
+The class template `limit_instances` takes the user-class `T` and the maximum number of allowable instances `N` as template parameters. So, the user-class when inheriting from `limit_instances` and while invoking the base-class constructor should supply appropriate template arguments.
+
+# Implementing the Composite design pattern
+
+
