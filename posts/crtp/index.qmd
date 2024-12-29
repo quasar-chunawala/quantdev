@@ -30,7 +30,6 @@ Imagine you have an inheritance hierarchy to implement mathematical interpolatio
 #include <algorithm>
 #include <stdexcept>
 #include <iostream>
-#include <memory>
 
 template<typename I1, typename I2>
 class LinearInterpolatorBase{
@@ -147,34 +146,37 @@ int main(int argc, const char * argv[]) {
     
     double result{0.0};
 
-    using VectorOfRealsIterator = std::vector<double>::iterator;
+    using I = std::vector<double>::iterator;
 
-    std::shared_ptr<LinearInterpolatorBase<VectorOfRealsIterator,VectorOfRealsIterator>> interpolator{};
-
-    interpolator = std::make_shared<LinearInterpolator<VectorOfRealsIterator,VectorOfRealsIterator>>(
+    LinearInterpolatorBase<I,I>* p;
+    
+    LinearInterpolator linearInterp(
         times.begin(),
         times.end(),
         discountFactors.begin(),
         discountFactors.end()
     );
 
-    result = interpolator->value(2.5);
+    p = &linearInterp;
+
+    result = p->value(2.5);
     std::cout << "\nResult of linear interpolation y-value = " << result;
 
-    interpolator = std::make_shared<LogLinearInterpolator<VectorOfRealsIterator, VectorOfRealsIterator>>(
+    LogLinearInterpolator logLinearInterp(
         times.begin(),
         times.end(),
         discountFactors.begin(),
         discountFactors.end()
     );
 
-    result = interpolator->value(2.5);
+    p = &logLinearInterp;
+    result = p->value(2.5);
     std::cout << "\nResult of log-linear interpolation y-value = " << result;
     return 0;
 }
 ```
 
-[Compiler Explorer](https://godbolt.org/z/orPG3ETdn)
+[Compiler Explorer](https://godbolt.org/z/Evdn6x48c)
 
 The base class `LinearInterpolationBase` has a pure virtual function `value` and the child classes `LinearInterpolation` and `LogLinearInterpolation` will override this virtual function doing different things. This is called **dynamic polymorphism**. 
 
@@ -236,3 +238,160 @@ We have move the runtime polymorphism to compile-time. Therefore, the `perform_w
 
 We could do this for our numerical routines as well:
 
+```cpp
+#include <concepts>
+#include <exception>
+#include <vector>
+#include <cmath>
+#include <string>
+#include <algorithm>
+#include <stdexcept>
+#include <iostream>
+#include <memory>
+
+template<typename I1, typename I2, typename Derived>
+class LinearInterpolatorBase{
+    public:
+    std::vector<double> xValues(){
+        return std::vector<double>(m_xBegin, m_xEnd);
+    }
+    std::vector<double> yValues(){
+        return std::vector<double>(m_yBegin, m_yEnd);
+    }
+
+    void safetyCheck(){
+        if(!(static_cast<int>(m_xEnd - m_xBegin) >= 2)){
+            std::string errorMessage = "not enough points to interpolate : at least ";
+            errorMessage += m_requiredPoints + " required, ";
+            throw std::logic_error(errorMessage);
+        }
+        
+        for(I1 i{m_xBegin}, j{m_xBegin + 1}; j!=m_xEnd; ++i, ++j){
+            if(*i > *j){
+                throw std::logic_error("unsorted x values");
+            }
+        }
+    }
+    
+    int locate(double x){
+        safetyCheck();
+        return std::distance(m_xBegin, std::upper_bound(m_xBegin, m_xEnd, x));
+    }
+
+    double computeValue(double x){
+        return static_cast<Derived*>(this)->value(x);
+    }
+    
+    void determineBracket(double& x1, double& x2, double &y1, double& y2, double x){
+        int N = static_cast<int>(this->m_xEnd - this->m_xBegin);
+        int j = this->locate(x);
+
+        if(j == 0)
+        {
+            x1 = *(this->m_xBegin);
+            y1 = *(this->m_yBegin);
+            x2 = *(this->m_xBegin + 1);
+            y2 = *(this->m_yBegin + 1);
+        }else if(j == N){
+            x1 = *(this->m_xEnd - 2);
+            y1 = *(this->m_yEnd - 2);
+            x2 = *(this->m_xEnd - 1);
+            y2 = *(this->m_yEnd - 1);
+        }else{
+            x1 = *(this->m_xBegin + j - 1);
+            y1 = *(this->m_yBegin + j - 1);
+            x2 = *(this->m_xBegin + j);
+            y2 = *(this->m_yBegin + j);
+        }
+    }
+    
+    LinearInterpolatorBase(I1 xBegin, I1 xEnd, I2 yBegin, I2 yEnd)
+    : m_xBegin(xBegin)
+    , m_xEnd(xEnd)
+    , m_yBegin(yBegin)
+    , m_yEnd(yEnd)
+    {}
+    
+    protected:
+    I1 m_xBegin;
+    I1 m_xEnd;
+    I2 m_yBegin;
+    I2 m_yEnd;
+    const int m_requiredPoints {2};
+};
+
+template<typename I1, typename I2>
+class LinearInterpolator : public LinearInterpolatorBase<I1, I2, LinearInterpolator<I1,I2>>{
+public:
+    double value(double x){
+        double x1{0.0}, x2{0.0}, y1{0.0}, y2{0.0}, y{0.0};
+        this->determineBracket(x1, x2, y1, y2, x);
+        
+        double t {(x - x1)/(x2 - x1)};
+        
+        return (1 - t) * y1 + t * y2;
+    }
+
+    LinearInterpolator(I1 xBegin, I1 xEnd, I2 yBegin, I2 yEnd)
+    : LinearInterpolatorBase<I1,I2,LinearInterpolator>(xBegin, xEnd, yBegin, yEnd) {}
+};
+
+template<typename I1, typename I2>
+class LogLinearInterpolator : public LinearInterpolatorBase<I1, I2, LogLinearInterpolator<I1,I2>>{
+public:
+    double value(double x){
+        double x1{0.0}, x2{0.0}, y1{0.0}, y2{0.0}, y{0.0};
+        this->determineBracket(x1, x2, y1, y2, x);
+        
+        double t {(x - x1)/(x2 - x1)};
+        
+        return exp((1 - t) * log(y1) + t * log(y2));
+    }
+    
+    LogLinearInterpolator(I1 xBegin, I1 xEnd, I2 yBegin, I2 yEnd)
+    : LinearInterpolatorBase<I1,I2,LogLinearInterpolator>(xBegin, xEnd, yBegin, yEnd) {}
+};
+
+template<typename I1, typename I2, typename T>
+double computeValueHelper(LinearInterpolatorBase<I1,I2,T>* interpolator, double x){
+    return interpolator->computeValue(x);
+}
+
+int main(int argc, const char * argv[]) {
+    std::vector<double> discountFactors{
+        1, 0.9523, 0.9070, 0.8683, 0.8227,0.7835,
+        0.7462, 0.7106, 0.6768, 0.6446, 0.6139
+    };
+    
+    std::vector<double> times{
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+    };
+    
+    double result{0.0};
+
+
+    LinearInterpolator linearInterp(
+        times.begin(),
+        times.end(),
+        discountFactors.begin(),
+        discountFactors.end()
+    );
+
+    result = computeValueHelper(&linearInterp, 2.5);
+    std::cout << "\nResult of linear interpolation y-value = " << result;
+
+    LogLinearInterpolator logLinearInterp(
+        times.begin(),
+        times.end(),
+        discountFactors.begin(),
+        discountFactors.end()
+    );
+
+    result = computeValueHelper(&logLinearInterp, 2.5);
+
+    std::cout << "\nResult of log-linear interpolation y-value = " << result;
+    return 0;
+}
+```
+
+[Compiler Explorer](https://godbolt.org/z/9Ms95T41c)
