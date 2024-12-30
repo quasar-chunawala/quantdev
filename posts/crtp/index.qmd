@@ -341,11 +341,6 @@ int main(int argc, const char * argv[]) {
 It's always interesting to  learn design patterns not in some theoretical project or a textbook or something, but actually find them working in a real-life library and [QuantLib](https://www.quantlib.org/) is certainly a big enough and an interesting enough library to give us a few examples of design patterns for our pleasure. 
 
 ```cpp
-#ifndef quantlib_curiously_recurring_h
-#define quantlib_curiously_recurring_h
- 
-#include <ql/qldefines.hpp>
- 
 namespace QuantLib {
  
     //! Support for the curiously recurring template pattern
@@ -376,8 +371,58 @@ namespace QuantLib {
 
 Essentially, all that this pattern does is, it takes the template argument `Impl` and then it performs a cast of the current object `*this` to whatever type is implemented.
 
-Let's look at the derived classes [`Solver1D`](https://rkapl123.github.io/QLAnnotatedSource/d0/d9a/solver1d_8hpp_source.html) and `Bisection`. 
+The `impl()` methods are actually `protected`, so they are not meant to be used within client code, but are internal to the framework. 
 
+Let's look at the derived classes [`Solver1D`](https://rkapl123.github.io/QLAnnotatedSource/d0/d9a/solver1d_8hpp_source.html) and [`Bisection`](https://rkapl123.github.io/QLAnnotatedSource/d8/d70/bisection_8hpp_source.html).
+
+`Solver1D` is a general-purpose one-dimension numerical solver and the class header has the signature:
+
+```cpp
+template<typename Impl>
+class Solver1D : CuriouslyRecurringTemplate<Impl>
+{
+    public:
+    template <class F>
+        Real solve(const F& f,
+                   Real accuracy,
+                   Real guess,
+                   Real xMin,
+                   Real xMax) const {
+ 
+            /*
+                ...
+            */
+ 
+            root_ = guess;
+ 
+            return this->impl().solveImpl(f, accuracy);
+        }
+};
+```
+
+The class header for `Bisection` is typically saying that I am a one-dimensional solver `Solver1D` and I am going to feed by own type `Bisection` as a template argument to `Solver1D<Impl>`. 
+
+```cpp
+namespace QuantLib {
+ 
+    //! %Bisection 1-D solver
+    class Bisection : public Solver1D<Bisection> {
+      public:
+        template <class F>
+        Real solveImpl(const F& f,
+                       Real xAccuracy) const {
+ 
+            /* 
+                ...
+            */
+        }
+    };
+}
+```
+
+This results in the compiler instantiating the class templates and defining `CuriousRecurringTemplate<Bisection>` and `Solver1D<Bisection>` classes.
+
+So, if you go back to `Solver1D`, it doesn't know the actual implementation. It says, whatever the implementation(`Impl` template parameter) is, I want to call `solveImpl()` on it. 
 
 
 # Limiting the object count with CRTP
