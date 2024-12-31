@@ -491,46 +491,77 @@ The class template `limit_instances` takes the user-class `T` and the maximum nu
 
 The [composite](https://refactoring.guru/design-patterns/composite/cpp/example#lang-features) design pattern lets you compose objects into tree structures. 
 
-We have a generic base class `Component` 
+CRTP can be used to implement the composite design pattern. We can quickly code it up:
 
 ```cpp
+#include <vector>
+#include <iostream>
+#include <string>
+
+template<typename T>
 struct Component{
-    void connect(Component& component){
-        connections.push_back(&component);
-        component.connections.push_back(this);
-    }
+    template<typename U>
+    void connect(U& other);
 
-    private:
-    std::string name_;
-    std::vector<Component*> connections;
+    std::string name;
+    Component(){}
+    Component(std::string name_) : name(name_) {}
+
 };
 
-struct Leaf;
+struct Node : Component<Node>{
+    Node* begin(){
+        return this;
+    }    
 
-struct Composite : std::vector<Component*>{
-    void connect(Leaf& other){
-        for(auto i = std::begin(*this); i!=std::end(*this); ++i){
-            Leaf node = *i;
-            node.connections.push_back(&other);
-            other.connections.push_back(&node);
-        }
+    Node* end(){
+        return (this + 1);
     }
 
-    void connect(Composite& other){
-        for(auto i = std::begin(other); i!=std::end(other); ++i){
-            Leaf otherNode = *i; 
-            connect(otherNode);
-        }
-    }
+    Node(std::string name_) : Component<Node>(name_) {}
+    std::vector<Node*> connections;
 };
 
-struct Leaf : public Component{
-    void connect(Composite& composite){
-        for(auto i = std::begin(composite); i!=std::end(composite); ++i){
-            Leaf node = *i;
-            connections.push_back(&node);
-            node.connections.push_back(this);
+struct Composite : std::vector<Node>, Component<Composite>{
+    Composite() : Component<Composite>(){}
+    Composite(std::string name_) : Component<Composite>(name_){}
+};
+
+template<typename T>
+template<typename U>
+void Component<T>::connect(U& other){
+    for(Node& from : *static_cast<T*>(this)){
+        for(Node& to : other){
+            from.connections.push_back(&to);
+            to.connections.push_back(&from);
         }
     }
-};
+}
+
+int main(){
+    
+    Node a("Gregory Peck");
+    
+    Node b("Marlon Brando");
+    Node c("Audrey Hepburn");
+    Node d("Charles Chaplin");
+
+    Node guitarist("Jimmy Hendrix");
+    Node artistParExcellence("Elvis Presley");
+    
+    Composite actorsTroupe;
+    actorsTroupe.push_back(a);
+    actorsTroupe.push_back(b);
+    actorsTroupe.push_back(c);
+    actorsTroupe.push_back(d);
+
+    guitarist.connect(actorsTroupe);
+    actorsTroupe.connect(artistParExcellence);
+    
+    return 0;
+}
 ```
+
+This helps avoid the explosion of state-space and writing methods such as `Node::connect(Node&)`, `Node::connect(Composite&)`, `Composite::connect(Node&)` and `Node::connect(Node&)`.
+
+
