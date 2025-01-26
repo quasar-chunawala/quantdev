@@ -980,6 +980,7 @@ $$
 
 Let $p(x,t|x_0,0)$ be the transition probability density function for a fixed $x_0$. Then, the function $f(t,y) = p(y,t|x_0,0)$ is a solution of the PDE 
 
+
 $$
 \frac{\partial f}{\partial t} = A^* f
 $$
@@ -1219,51 +1220,97 @@ $$
 M_t = f(t,X_t)\exp\left(-\int_0^t r(X_u) du\right)
 $$
 
+:::{#thm-generalized-feynman-kac}
 
+### Generalized version. 
+Let $(X_t,t\leq T)$ be a diffusion in $\mathbb{R}$ with the SDE:
 
-## Numerical Projects
+$$
+dX_t = \sigma(t,X_t) dB_t + \mu(t,X_t)dt
+$$
 
-### Temperature of a rod 
+Let $V\in C^2(\mathbb{R})$ be the payout function. Then, the solution of the PDE 
 
-Consider the initial function $g(x) = 1 - |x|$ for $|x| \leq 1$ and $0$ if $|x| > 1$. This function may represent the temperature of a rod at time $0$. 
+$$
+\begin{align*}
+\left(\frac{\partial}{\partial t} + \mu(t,x)\frac{\partial}{\partial x} + \frac{1}{2}\sigma^2(t,x)\frac{\partial^2}{\partial x^2}\right)f = r(t,x)f(t,x) + B(t,x)
+\end{align*}
+$$
 
-(a) Approximate the solution $f(t,x)$ to the heat equation at time $t=0.25$ at every $0.01$ in $x$ using the representation @eq-stochastic-representation-of-the-solution-to-the-heat-equation. Use a sample of $100$ paths for each $x$.
+with the boundary condition:
 
-*Solution.*
+$$
+f(T,x) = V(x)
+$$
 
-```{python}
-import numpy as np
+has the stochastic representation:
 
+$$
+f(t,x)=\mathbb{E}_t\left[\exp\left(-\int_t^T r(u,X_u) du\right)V(X_T)\right] - \mathbb{E}_t\left[\int_{t}^T \exp\left(-\int_t^s r(u,X_u) du\right)B(s,X_s)ds\right]
+$$
 
-# initial temperature of the rod as a function of position x
-def g(x):
-    if x >= -1.0 and x <= 1.0:
-        return 1.0 - np.abs(x)
-    else:
-        return 0.0
+:::
 
+*Proof*
 
-# helper function to generate brownian paths starting at B_0 = x_0
-def brownian_paths(num_paths, step_size, t_0, t_n, x_0):
-    num_steps = int((t_n - t_0) / step_size)
-    db_t = np.sqrt(step_size) * np.random.standard_normal(size=(num_paths, num_steps))
-    db_t = np.concatenate([np.full((num_paths, 1), x_0), db_t], axis=1)
-    b_t = np.cumsum(db_t, axis=1)
-    return b_t
+For brevity, I drop the space coordinates in the below derivations.
 
+Define $Z_s = \exp\left(-\int_t^s r_u du\right)$. Consider the process
 
-x = np.linspace(-5.0, 5.0, 1001)  # space variable
-t = np.linspace(0.0, 1.0, 101)  # time variable
-```
+$$
+Y(s) = Z_s f(s,X_s) - \int_t^s Z_s B_s ds
+$$
 
-Now, let's use the data from the problem to compute the specific space average.
+By Ito's product rule:
 
-```{python}
-# generate sample paths
-paths = brownian_paths(num_paths=100, step_size=0.01, t_0=0.0, t_n=1.0, x_0=0.0)
+$$
+\begin{align*}
+dY_s &= dZ_s f + Z_s df + dZ_s df - Z_s B_s ds
+\end{align*}
+$$
 
-# look at the value of B(t) at t=0.25 and average them
-```
+Since $dZ_s df = O(dt dt)$ it can be dropped. We have:
+
+$$
+\begin{align*}
+dY_s &= -r_s Z_s f ds + Z_s \left(f_s ds + f_x dX_s + \frac{1}{2}f_{xx}(dX_s)^2\right) - Z_s B_s ds\\
+&= -r_s Z_s f ds + Z_s \left[f_s ds + f_x (\mu ds + \sigma dW_s) + \frac{1}{2}\sigma^2f_{xx}ds\right] - Z_s B_s ds \\
+&= -r_s Z_s f ds + Z_s \left[\left(f_s + \mu f_x  + \frac{1}{2}\sigma^2f_{xx}\right)ds + \sigma f_x dW_s \right]  - Z_s B_s ds
+\end{align*}
+$$
+
+We can substitute the term in the round brackets $\left(f_s + \mu f_x  + \frac{1}{2}\sigma^2f_{xx}\right) = r_s f + B_s$, since $f$ satisfies the PDE. So, we have:
+
+$$
+\begin{align*}
+dY_s 
+&= -r_s Z_s f ds + Z_s \left[\left(r_s f + B_s\right)ds + \sigma f_x dW_s \right]  - Z_s B_s ds\\
+&= Z_s \sigma f_x dW_s
+\end{align*}
+$$
+
+So, the process $(Y_s,s\leq T)$ is a martingale. Integrating the above equation from $t$ to $T$, we have:
+
+$$
+Y(T) - Y(t) = \int_t^T Z_s \sigma f_x dW_s
+$$
+
+Upon taking expectations, conditioned on $X_t = x$ and observing that the RHS is an Ito integral, which has zero expectation, it follows that:
+
+$$
+\mathbb{E}_t[Y_T|X_t = x] =  \mathbb{E}_t[Y_t|X_t = x]
+$$
+
+On the right hand side, $Y_t = f(t,X_t) =f(t,x)$. It follows that:
+
+$$
+\begin{align*}
+f(t,x) &= \mathbb{E}_t\left[Z_T f(T,X_T) - \int_{t}^T Z_s B_s ds \right]\\
+&= \mathbb{E}_t\left[Z_T V(X_T)\right] - \mathbb{E}_t\left[\int_{t}^T Z_s B_s ds \right]
+\end{align*}
+$$
+
+This closes the proof. $\blacksquare$
 
 ## Exercises
 
