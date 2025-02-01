@@ -1,0 +1,127 @@
+---
+title: "C++ Ranges"
+author: "Quasar"
+date: "2025-01-31"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+format:
+    html:
+        code-tools: true
+        code-block-border-left: true
+        code-annotations: below
+        highlight-style: pygments
+---
+
+# C++ Ranges
+
+## What is a range?
+
+C++ ranges are a programmatic abstraction for any container/type `T` that allows iteration over its elements by providing `begin` and `end` iterators. A `std::ranges::range` is defined as a `concept` that requires a container type `T` satisfy 2 constraints: it has a `begin` and an `end`. 
+
+```cpp
+template< class T >
+concept range = requires( T& t ) {
+    ranges::begin(t); // equality-preserving for forward iterators
+    ranges::end (t);
+
+};
+```
+
+The C++ ranges library also includes rangified algorithms which are applied to ranges eagerly, and range adaptors that are applied to views lazily. 
+
+We can use ranges to implement numerical sequences, dynamical systems and numerical algorithms. The range becomes a proxy for the algorithm. 
+
+## Custom views
+
+Consider the newton's root-finding algorithm. The Newton's algorithm is:
+
+- Choose $x_0$.
+- Iterate $x_{n+1} = x_n - \frac{f(x_n)}}{f'(x_n)}$
+
+We can hand roll-out a custom range called `map_range`. A `map_range` represents the fixed-point iteration algorithm. Given an initial-value $x_0$ and a function $f$, `map_range` represents the recursive sequence 
+
+$$x_{n+1} = f(x_n)$$
+
+that is 
+
+$$
+\{x_0, f(x_0), f(f(x_0)), \ldots, \}
+$$
+
+From basic analysis, it is a well-known fact, that if $f$ is a contraction, then the sequence $(y_n)_{n=0}^{\infty}$, where $y_{n+1} = f(x_n)$ converges to a finite value. 
+
+`map_range` holds three member-variables : the current state `m_x`, the function `m_f` and the break condition `m_break_condition`.  `map_range` must satisfy the `std::ranges::range` concept.  
+
+```cpp
+#include<iostream>
+#include<type_traits>
+#include<concepts>
+#include<vector>
+#include<ranges>
+#include<cmath>
+#include<numbers>
+#include<functional>
+/* 
+We write a new type map_range that will be used to implement fixed-point iteration in C++.
+Beginning with the initial value x[0], map_range represents the recursive sequence
+
+x[n+1] = F(x[n])
+
+that is {x[0], F(x[0]), F(F(x[0])), F(F(F(x[0]))), ...
+*/
+template<typename T, typename Func, typename Cond>
+class map_range{
+private:
+    T m_x;
+    Func m_f;
+    Cond m_break_condition;
+
+    struct iterator {
+        map_range* r;
+
+        iterator(map_range * r_) : r{r_} {}
+
+        /* Compute the next iterate x[n+1] = f(x[n]) */
+        iterator& operator++() {
+            r->m_x = r->m_f(r->m_x);
+            if (r->m_break_condition(r->m_x))
+                r = nullptr;
+            return (*this);
+        }
+
+        /* Dereference the iterator and return the current state x[n]*/
+        T operator*() {
+            return r->m_x;
+        }
+
+        bool operator==(iterator & o) {
+            return (o.r == r);
+        }
+
+        bool operator!=(iterator & o)  {
+            return !(o == *this);
+        }
+    };
+public:
+    map_range(T x, Func func, Cond cond )
+    : m_x {x}
+    , m_f {func}
+    , m_break_condition{cond}
+    { }
+
+    // begin() and end() methods which return iterators
+    iterator begin() { return iterator{ this }; }
+    iterator end()  { return iterator{ nullptr }; }
+    T value() { return m_x; }
+};
+
+template<typename T, typename Func, typename Cond>
+auto make_range_map(T value, Func func, Cond cond) {
+    return map_range(value, func, cond);
+}
+```
+[Play on Compiler Explorer](https://godbolt.org/z/dnd1czvjv)
+
+# References {.appendix}
