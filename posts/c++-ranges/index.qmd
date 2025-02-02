@@ -31,7 +31,93 @@ concept range = requires( T& t ) {
 
 The C++ ranges library also includes rangified algorithms which are applied to ranges eagerly, and range adaptors that are applied to views lazily. 
 
-We can use ranges to implement numerical sequences, dynamical systems and numerical algorithms. The range becomes a proxy for the algorithm. 
+There are three kind of ranges : they can be an abstraction on 
+
+- a pair of iterators
+- an iterator and a count
+- an iterator and a predicate
+
+## Numerical sequences
+
+In numerical algorithms, one needs often sequences of numerical values. We can use ranges to implement numerical sequences, dynamical systems and numerical algorithms. The range becomes a proxy for the algorithm. 
+
+```cpp
+#include<iostream>
+#include<type_traits>
+#include<concepts>
+#include<vector>
+#include<ranges>
+#include<cmath>
+#include<numbers>
+#include<functional>
+
+void printSequence(auto seq) {
+    std::cout << "\n";
+    for (auto x : seq)
+        std::cout << x << " ";
+}
+int main()
+{
+    /* Generating numerical sequences */
+    int n{ 1024 };
+    
+    // 0, 1, 2, 3, ...
+    auto seq = std::ranges::iota_view(0, n);
+    printSequence(seq | std::views::take(5));
+
+    // Let's say we are interested to sample a continuous function F
+    // at x_0 = 0.0, x_1 = 0.1, x_2 = 0.2, x_3 = 0.3, ....
+    // We can generate the sampling domain as:
+    double sampling = 0.1;
+    auto seq2 = seq | std::views::transform([sampling](double i) {
+        return sampling * i;
+        });
+
+    printSequence(seq2 | std::views::take(5));
+
+    // f_n = sin(2x_n) + 0.1
+    auto seq3 = seq2 | std::views::transform([](double x_n) {
+        return sin(2 * x_n) + 0.1;
+        });
+
+    printSequence(seq3 | std::views::take(5));
+
+    // We can wrap this logic into a lambda that accepts a sampling (frequency),
+    // an arbitrary function F and generates the sequence F(x[0]), F(x[1]), ...
+    auto sequence = [](int n, double sampling, auto&& F) {
+        auto seq = std::ranges::iota_view(0, n);
+        return seq | std::views::transform([sampling, F](double i) {
+            return F(sampling * i);
+            });
+    };
+
+    /* Great for scientific computing! */
+    printSequence(sequence(1024, 0.1, [](double x) {return sin(2 * x) + 0.1;})
+        | std::views::take(5));
+
+    /* Custom break conditions */
+    auto identity = [](double x) { return x;};
+    auto seq4 = std::views::take_while(sequence(1024, 0.1, identity),
+        [](double x) { return x < 0.5;}
+    );
+
+    printSequence(seq4);
+
+    /* Combine sequences : You get a sequence of tuples */
+    auto result = std::ranges::zip_view(sequence(1024, 0.1, identity), sequence(1024, 0.1, identity));
+
+    return 0;
+}
+```
+[Play on Compiler Explorer](https://godbolt.org/z/nEcjYzv97)
+
+```
+0 1 2 3 4 
+0 0.1 0.2 0.3 0.4 
+0.1 0.298669 0.489418 0.664642 0.817356 
+0.1 0.298669 0.489418 0.664642 0.817356 
+0 0.1 0.2 0.3 0.4 
+```
 
 ## Custom Ranges
 
