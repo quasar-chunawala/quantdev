@@ -25,7 +25,6 @@ template< class T >
 concept range = requires( T& t ) {
     ranges::begin(t); // equality-preserving for forward iterators
     ranges::end (t);
-
 };
 ```
 
@@ -36,6 +35,70 @@ There are three kind of ranges : they can be an abstraction on
 - a pair of iterators
 - an iterator and a count
 - an iterator and a predicate
+
+Here's a quick code example:
+
+```cpp
+#include<iostream>
+#include<vector>
+#include<ranges>
+#include<type_traits>
+
+template<std::ranges::input_range Rng>
+auto sum(Rng&& rng){
+    Rng result{};
+    for(auto&e : rng){
+        result += e;
+    }
+    return result;
+}
+
+int main()
+{
+    std::vector v{1, 2, 3, 4, 5};
+    auto result = sum(v);
+}
+```
+
+[Play on Compiler Explorer](https://godbolt.org/z/xan8K49Ej)
+
+## Using universal references to accept ranges
+
+You always accept ranges using universal references. The motivation for this is as follows. Consider the function `find_second_occurrence` that finds the second occurrence of a character in the string.
+
+The function call `find_second_occurrence( std::string("Hello World"), 'l')` invokes `find_second_occurrence` with a temporary `std::string` instance. We can bind this to the `const` *lvalue* reference `str`. All good so far. In this instance, we even find the second occurrence of the character `l`  at the index `3`. We return `str[3]`. Except, that once we return, the temporary goes out of scope and is destroyed. So, we have a dangling reference.
+
+```cpp
+#include<string>
+const char& find_second_occurrence(const std::string& str, char c){
+    static char not_found = '\0';
+
+    std::size_t idx = str.find(c);
+    if(idx == std::string::npos) return not_found;
+
+    idx = str.find(c, idx+1);
+    if(idx == std::string::npos) return not_found;
+
+    return str[idx];
+}
+```
+
+Something very interesting happens if we change the signature of the function to take a `string_view`.
+
+```cpp
+#include<string>
+const char& find_second_occurrence(const std::string_view& str, char c){
+    static char not_found = '\0';
+
+    std::size_t idx = str.find(c);
+    if(idx == std::string::npos) return not_found;
+
+    idx = str.find(c, idx+1);
+    if(idx == std::string::npos) return not_found;
+
+    return str[idx];
+}
+```
 
 ## Numerical sequences
 
