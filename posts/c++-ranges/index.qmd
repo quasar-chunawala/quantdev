@@ -66,7 +66,7 @@ int main()
 
 You always accept ranges using universal references. The motivation for this is as follows. Consider the function `find_second_occurrence` that finds the second occurrence of a character in the string.
 
-The function call `find_second_occurrence( std::string("Hello World"), 'l')` invokes `find_second_occurrence` with a temporary `std::string` instance. We can bind this to the `const` *lvalue* reference `str`. All good so far. In this instance, we even find the second occurrence of the character `l`  at the index `3`. We return `str[3]`. Except, that once we return, the temporary goes out of scope and is destroyed. So, we have a dangling reference.
+The function call `find_second_occurrence( "Hello World", 'l')` invokes `find_second_occurrence` with a string literal. The string literal is copied to a temporary `std::string` instance. We can bind this to the `const` *lvalue* reference `str`. All good so far. In this instance, we even find the second occurrence of the character `l`  at the index `3`. We return `str[3]`. Except, that once we return, the temporary goes out of scope and is destroyed. So, we have a dangling reference.
 
 ```cpp
 #include<string>
@@ -83,7 +83,7 @@ const char& find_second_occurrence(const std::string& str, char c){
 }
 ```
 
-Something very interesting happens if we change the signature of the function to take a `string_view`.
+Something very interesting happens if we change the signature of the function to take a `string_view`. This function is no longer broken. We are kind of doing the same thing. We call the function with the string literal `Hello World`. We construct the temporary instance of the `string_view`. We bind the temporary instance of a `string` to a `const` reference. Then, we find the second instance of `l`. We return reference to that. We destroy the `string_view`. But, the important difference is that `string_view` doesn't hold it's own data. It just points to some place else. That some place else in this case is a global object - a string literal. Recall, string literals are *lvalue*s. So, we have a reference into a string literal. 
 
 ```cpp
 #include<string>
@@ -98,6 +98,65 @@ const char& find_second_occurrence(const std::string_view& str, char c){
 
     return str[idx];
 }
+```
+
+This difference is something that is captured under the name `borrowed_range`. You probably know `std::string_view` and `std::span`. These are ranges that don't hold their own data, but simply point to some place else. They are called *borrowed ranges*.
+
+If you use range algorithms, they actually take this into account.
+
+If you call `ranges_find()` with a `std::string_view`, it will work absolutely fine. You will get an iterator back.
+
+```cpp
+auto it1 = std::ranges::find(std::string_view("Hello World!"), 'o');
+
+// decltype(it1) == std::string_view::iterator
+```
+
+If you call `ranges_find()` with a temporary `std::string` instance, you will get `std::ranges::dangling`, which is a special type and this is just a empty type, meaning if you try to do anything with it, you will get a compilation error, because it doesn't support any operations.
+
+But, importantly, if you call `ranges_find` with an *lvalue*, meaning that the lifetime of the argument is outside of the function call, well, then the type of the range in the function signature actually doesn't matter; it would not lead to a dangling reference. It would be considered that the function is borrowing from the outside.
+
+```cpp
+std::string str1("Hello World");
+auto it3 = std::ranges::find(str1, 'o');
+// decltype(it3) == std::string::iterator
+
+std::string_view str2("Hello World!");
+auto it4 = std::ranges::find(str2, 'o');
+// decltype(it4) == std::string_view::iterator
+```
+
+This is precisely when `const` references break down, because we cannot actually distinguish which of these two situations we are actually in:
+
+```cpp
+void fun(const std::string& rng) {}
+
+fun(std::string(""));   // passing a temporary - we are taking ownership
+
+std::string str;
+fun(str);               // passing an lvalue - we are borrowing
+```
+
+If we switch to universal references, we can actually interrogate our argument inside of the function, to see if we are actually borrowing the data, and therefore it's safe to return references and iterators from it without the danger of dangling or if you are actually taking ownership of the data, in which case, you better not.
+
+```cpp
+template<typename Rng>
+void fun(Rng&& rng) {
+    if constexpr(std::ranges::borrowed_range<decltype(rng)>)
+    {
+        //borrowed range
+    }
+    else{
+        //taking ownership
+    }
+}
+
+fun(std::string(""));       // taking ownership
+
+std::string str;
+fun(str);                   // borrowing
+fun("");                    // borrowing
+fun(std::string_view(""));  // borrowing
 ```
 
 ## Numerical sequences
@@ -276,3 +335,5 @@ auto make_range_map(T value, Func func, Cond cond) {
 # References {.appendix}
 
 - *[Ranges and Iterators for numerical Problems](https://youtu.be/qXdPFj-FTcA?si=3xX3r8eIF4TlWXwr), Karsten Ahnert at Meeting C++ 2014*
+
+- *[What is a range in C++](https://www.youtube.com/watch?v=UsyA7zEC0DE&t=989s), Simon Toth, C++ on the Sea, 2024*
