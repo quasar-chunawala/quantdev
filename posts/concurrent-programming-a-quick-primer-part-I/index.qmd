@@ -1,5 +1,5 @@
 ---
-title: "Concurrent programming Primer (Part I)"
+title: "Concurrent programming - Implementation Notes"
 author: "Quasar"
 date: "2024-09-28"
 categories: [C++]      
@@ -14,394 +14,61 @@ format:
         highlight-style: pygments
 ---
 
+## Data Races
 
+There is a somewhat technical definition of a data race in C++:
 
-A thread `std::thread` represents an executable unit. This executable unit, which the thread immediately starts, gets its work-package as a *callable unit*. A thread is not copy-constructible or copy-assignable, but move-constructible and move-assignable. A *callable unit* is any entity that behaves like a function, so this could be a function, a function pointer, a lambda function or `std::function` (function) object. 
+1. Two or more threads access the same memory.
+2. Atleast one access is a write
+3. The threads do not synchronize with each other.
 
-For example:
+A data-race is undefined behavior according to the standard. In practice, a data-race results in an incorrectl, possibly random value of an object being read or written depending on how that object is used in your program. 
 
-```cpp
-#include <iostream>
-#include <thread>
-
-void do_some_work()
-{
-    std::cout << "\nPerforming some work in a separate thread...";
-}
-
-int main()
-{
-    std::cout << "\nmain() thread";
-    std::thread t(do_some_work);      // Spawn a new thread
-    t.join();
-    std::cout << "\nExiting main() thread";
-    return 0;
-}
-```
-
-stdout:
-```
-main() thread
-Performing some work in a separate thread...
-Exiting main() thread
-```
-
-Once you've started your thread, you need to explicitly decide whether to wait for it to finish(by joining with it) or leave it to run on its own (by detaching it). If you don't decide before the `std::thread` object goes out of scope and is destroyed, then your program is terminated (the `std::thread` destructor calls `std::terminate()`). So, ensure that the thread is correctly joined or detached. You only have to make this decision before the `std::thread` object is destroyed - the thread itself may well have finished before you join with it or detach it, and if you detach it, then if the thread is still running, it will continue to do so, and may continue running long after the `std::thread` object is destroyed; it will only stop running when it finally returns from the thread function. 
-
-Passing arguments is easy. If the function signature is `void func(int arg1, std::vector<double> arg2, char arg3)`, you just specify the comma separated list in the `std::thread()` constructor, as `std::thread my_thread(func, arg1, arg2, arg3)`. This copies the value of the parameters `arg1`, `arg2` and `arg3` onto the thread stack. It's a *pass-by-value*. To pass by reference, you `std::ref()` the arguments, so for example, if the function signature is `void func(int arg1, std::vector<double>& arg2, char arg3)`, while spawning a new thread, you'd write `std::thread my_thread(func, arg1, std::ref(arg2), arg3)`.
-
-If you don't wait for the thread to finish in the `main()` thread, you need to ensure that the data accessed by the thread is valid until the thread is finished with it. This isn't a new problem - even in single threaded code it's undefined behavior to access an object after it's been destroyed - but the use of threads provides another opportunity to encounter such lifetime issues. 
-
-One situation in which you can encounter such problems is when the thread function holds pointers or references to local variables and the thread hasn't finished when the function exits. 
+Avoiding data-races is all about the visibility of memory and the changes made to that memory. When two threads synchronize with each other, the programmer has some guarantees about which memory changes made by one thread are visible to the other thread. The memory for a process is not a monolithic thing, such that all threads in the process see the same thing. 
 
 ```cpp
 #include <iostream>
 #include <thread>
-
-void do_some_work(int& i)
-{
-    std::cout << "\nThe value of i is = " << i; //Potential access to dangling reference
-    std::cout << "\nIncrementing the value of i";
-    ++i;
-    std::cout << "\nThe new value of i = " << i;
-}
-
-int main()
-{
-    std::cout << "\nmain() thread";
-    int i{1};
-    std::thread my_thread(do_some_work, std::ref(i)); // Spawn a new thread
-    my_thread.detach(); // Don't wait for the thread to finish
-    std::cout << "\nExiting main() thread"; //New thread might still be running
-    return 0;
-}
-```
-
-stdout:
-```
-main() thread
-Exiting main() thread
-```
-
-In this case, the new thread associated with `my_thread` is still running when `main()` exits, because you explicitly decided not to wait for it by calling `detach()`. If the thread is still running, the statements in `do_some_work(int& )`  will access an already destroyed variable `i`. This is like normal single-threaded code - allowing a pointer or reference to a local variable to persist beyond the function exit, which is never a good idea. But, it's easier to make this mistake with multi-threaded code, because it isn't immediately apparent that this has happened.
-
-### Waiting for a thread to complete
-
-If you need to wait for a thread to complete, you do this by calling `join()` on the associated `std::thread` instance. In the previous listing, replacing the call to `my_thread.detach()` by `my_thread.join()` would therefore be sufficient to ensure that the thead was finished before the function was exited and thus before the local variables were destroyed. In real code, the original thread would either have work to do or would have launched several threads to do useful work before waiting for them to complete. 
-
-`join()` is a simple and brute-force technique - either you wait for a thread to finish or you don't. If you need more fine-grained control over waiting for a thread, such as to check whether a thread is finished, or wait only a certain period of time, then you have to use alternative mechanisms such as condition variables and futures. 
-
-### Waiting in exceptional circumstances
-
-You need to ensure that you've called either `join()` or `detach()` before a `std::thread` object is destroyed. If you're detaching a thread, you can usually call `detach()` immediately after the thread has been started, so this isn't a problem. But, if you're intending to wait for a thread, you need to carefully pick the place in the code where you call `join()`. This means that the call to `join()` is liable to be skipped if an exception is thrown after the thread has been started but before the call to `join()`. 
-
-To avoid your application being terminated when an exception is thrown, you need to make a decision about what to do in this case. In general, if you were intending to call `join()` in a non-exceptional case, you also need to call `join()` in the presence of an exception to avoid accidental lifetime problems.
-
-```cpp
-#include <iostream>
-#include <thread>
-#include <stdexcept>
-#include <string>
-
-int main()
-{
-    int i {1};
-
-    auto my_func = [&i](){
-        for(int j{0};j<10000000;++j)
-        {
-            ++i;
-        }
-        std::cout << "\nt's work package is complete." << std::flush;
-
-    };
-
-    std::cout << "main thread" << std::flush;
-    std::thread t(my_func);
-    try
-    {
-        std::string("abc").substr(10); // throws std::out_of_range
-    }
-    catch (const std::exception& e)
-    {
-        std::cout << "\n" << e.what();
-        t.join();
-        throw e; // copy-initializes a new exception object of type std::exception
-    }
-
-    t.join();
-    return 0;
-}
-```
-
-stdout:
-```
-main thread
-invalid string position
-t's work package is complete.
-```
-
-The code in the listing above uses `try/catch` block to ensure that a thread with access to the local state is finished before the main thread exits normally, or by an exception. 
-
-A more structured way of doing is to use the standard Resource Aquisition is Initialization(RAII) idiom and provide a wrapper class that does the `join()` in its destructor, as in the following listing:
-
-```cpp
-//thread_guard.cpp
-
-#include <iostream>
-#include <thread>
-#include <stdexcept>
-#include <string>
-
-class thread_guard
-{
-    private:
-    std::thread& m_t;
-
-    public:
-    explicit thread_guard(std::thread& t) : m_t{t} {}
-    ~thread_guard()
-    {
-        if(m_t.joinable()){
-            m_t.join();
-        }
-    }
-
-    thread_guard(const thread_guard& _tg) = delete;
-    thread_guard& operator=(thread_guard& _tg) = delete;
-};
-
-int main()
-{
-    int i {1};
-
-    auto my_func = [&i](){
-        for(int j{0};j<10000000;++j)
-        {
-            ++i;
-        }
-        std::cout << "\nt's work package is complete." << std::flush;
-
-    };
-
-    std::cout << "main thread" << std::flush;
-    std::thread t(my_func);
-    thread_guard g(t);
-    try
-    {
-        std::string("abc").substr(10); // throws std::out_of_range
-    }
-    catch (const std::exception& e)
-    {
-        std::cout << "\n" << e.what();
-        throw e; // copy-initializes a new exception object of type std::exception
-    }
-
-    return 0;
-}
-```
-
-When the execution of the main thread reaches the end, the local objects are destroyed in the reverse order of their construction. Consequently, the `thread_guard` object id object `g` is destroyed first, and the thread is joined with, which is a blocking call in the destructor. This happens even if there is an exception in the main thread. 
-
-The copy constructor and copy-assignment operators are marked `=delete` to ensure that they're not automatically provided by the compiler. Copying or assigning such an object would be dangerous, because it might outlive the scope of the thread it was joining. By declaring them as as deleted, any attempt to copy a `thread_guard` object will generate a compilation error. 
-
-
-If you don't need to wait for a thread to finish, you can avoid this exception-safety by detaching from it. This breaks the association of the thread with the `std::thread` object and ensures that `std::terminate()` won't be called when the `std::thread` object is destroyed, even though the thread is still running in the background. Note that, the `std::thread` destructor checks if the thread is joinable, and if this condition is true, it invokes `std::terminate`. 
-
-### Running threads in background
-
-Calling `detach()` on a `std::thread` object leaves the thread to run in the background with no direct means of communicating with it. It's no longer possible to wait for that thread to complete; if a thread becomes detached, it isn't possible to obtain a `std::thread` object that references it, so it can no longer be joined. Detached threads truly run in the background; ownership and control are passed over to the C++ runtime library, which ensures that the resources associated with the thread are correctly reclaimed when the thread exits.
-
-Detached threads are often called *daemon threads* after the UNIX concept of a *daemon process* that runs in the background without any explicit user interface. Such threads are typically long-running; they run for almost the entire lifetime of the application, performing a background task such as monitoring the filesystem, clearing unused entries out of object caches, or optimizing data-structures. At the other extreme, it may make sense to use a detached thread where there's another mechanism for identifying when the thread has completed or where the thread is used for a fire-and-forget task. 
-
-As we've seen earlier, we detach a thread by calling `detach()` member function of the `std::thread` object. After the call completes, the `std::thread` object is no longer associated with the actual thread of execution and is therefore no longer joinable. 
-
-In order to detach the thread from a `std::thread` object, there must be a thread to detach: you can't call `detach()` on a `std::thread` object with no associated thread of execution. This is exactly the same requirement for `join()`, and you can check it in the same way - you can call `t.detach()` for a `std::thread` object `t` when `t.joinable()` returns `true`.
-
-Consider an application such as a word-processor that can edit multiple documents at once. There are many ways to handle this, both at the UI level and internally. One way that's increasingly common at the moment is to have multiple, independent, top-level windows, one for each document being edited. Although these windows appear to be completely independent, each with its own menus, they're running within the same instance of the application. One way to handle this internally is to run each document-editing window in its own thread; each thread runs the same code but with different data relating to the document being edited. Opening a new document therefore requires starting a new thread. The thread handling the request isn't going to care about waiting for that other thread to finish, because it's working on an unrelated document, so this makes it a prime candidate for running a detached thread. 
-
-### Passing arguments to a thread function
-
-Passing arguments to the callable object or function is fundamentally as simple as passing additional arguments to the `std::thread` constructor. But, its important to bear in mind that the arguments are copied into internal storage, where they can be accessed by the newly created thread of execution and then passed to the callable function or object as `rvalue`s as if they were temporaries. 
-
-Therefore, if you want to pass an object's member function as a work-package to a thread, you pass the member-function pointer as the function, and an object pointer as the first argument:
-
-```cpp
-#include <thread>
-
-class X{
-    public do_lengthy_work();
-};
-
-int main()
-{
-    X x;
-    std::thread t(&X::do_length_work, &x);
-    t.join();
-    return 0;
-}
-```
-
-You can also supply arguments to such a member-function call: the third argument to the `std::thread` constructor will be the first argument to the function, and so forth. `std::thread` is a variadic template.
-
-Another interesting scenario for supplying arguments is where the arguments cannot be copied but can only be moved: the data held within one object is transferred over to another, leaving the original object empty. An example of such a type is `std::unique_ptr<T>`, which provides automatic memory management for dynamically allocated objects. Only one `std::unique_ptr<T>` instance can point to a given object at a time, and when that instance is destroyed, the pointed-to-object is also deleted. The *move constructor* and the *move assignment* operator allow the ownership of an object to be transferred around between `std::unique_ptr<T>` instances. Such a transfer leaves the source object with a `nullptr`. This moving of values allows objects of this type to be accepted as function parameters or returned from functions. When the source object is temporary, the move is automatic, but where the source is a named value, the transfer must be requested directly by invoking `std::move()`. 
-
-Several of the classes in the C++ standard library exhibit the same ownership semantics as `std::unique_ptr<T>`, and `std::thread` is one of them. Though `std::thread` instances don't own a dynamic object in the same way as the `std::unique_ptr<T>` does, they do own a resource: each instance is responsible for managing a thread of execution. This ownership can be transferred between instances, because instances of `std::thread` are moveable, even though they aren't copyable. This ensures, that only one object is associated with a particular thread of execution at any time while allowing programmers the option of transferring ownership between objects. 
-
-## Transferring the ownership of a thread
-
-Suppose you want to write a function that creates a thread to run in the background, but passes ownership of the new thread back to the calling function rather than waiting for it to complete; or maybe you want to do the reverse: create a thread and pass the ownership in to some function that should wait for it to complete. In either case, you need to transfer the ownership from one place to another.
-
-This is where the move support of `std::thread` comes in. Many resource-owing types in the C++ standard library, such as `std::ifstream` and `std::unique_ptr<T>` are movable but not copyable, and `std::thread` is one of them. This means that the ownership of a particular thread of execution can be moved between `std::thread` instances, as in the following example. The example shows the creation of two threads of execution and the transfer of ownership of those threads among three `std::thread` instances `t1`, `t2` and `t3`:
-
-```cpp
-
-#include <thread>
-#include <iostream>
-
-void some_function(){
-    std::cout<< "\nSome function";
-}
-
-void some_other_function()
-{
-    std::cout<<"\nSome other function";
-}
-
-int main()
-{
-    std::thread t1(some_function);
-    std::thread t2 = std::move(t1);
-    t1 = std::thread(some_other_function);
-    std::thread t3 = std::move(t2);
-    //t1 = std::move(t3)    //this assignment will terminate the program
-    t1.join();
-    t3.join();
-    return 0;
-}
-```
-[Compiler Explorer](https://godbolt.org/z/fdrq5YTnP){target="_blank"}
-
-
-stdout:
-```
-Some other function
-Some function
-```
-
-First, a new thread is started and associated with `t1`. Ownership is then transferred over to `t2` when `t2` is constructed by invoking `std::move()` to explicitly move ownership. At this point, `t1` no longer has an associated thread of execution; the thread running `some_function` is now associated with `t2`. 
-
-Then, a new thread is started with a temporary `std::thread` object. The subsequent transfer of ownership into `t1` doesn't require a call to `std::move()` to explicitly move ownership, because the owner is a temporary object - moving from temporaries is automatic and implicit. 
-
-After all these moves, `t1` is associated with the thread running `some_other_function` and `t3` is associated with the thread running `some_function`. 
-
-The commented line transfers the ownership of the thread running `some_function` back to `t1`, where it started. But, in this case `t1` already had an associated thread (which  was running `some_other_function`) that is joinable, so `std::terminate()` will be called in this move assignment. This is done for consistency with the `std::thread` destructor.
-
-The move support in `std::thread` means that ownership can be readily transferred out of a function.
-
-### Lifetime issues of threads
-
-Let's look at an example of the erroneous moving of threads.
-
-```cpp
-//threadMoved.cpp
-
-#include<iostream>
-#include<thread>
-#include<utility>
-
-int main()
-{
-    std::thread t1([](){std::cout << "\n"<<std::this_thread::get_id();});
-    std::thread t2([](){std::cout << "\n"<<std::this_thread::get_id();});
-    t1 = std::move(t2);
-    t1.join();
-    t2.join();
-    return 0;
-}
-```
-
-[Compiler Explorer](https://godbolt.org/z/WeTndM81s){target="_blank"}
-
-Both threads `t1` and `t2` are meant to do their simple job : printing their IDs. In addition to that, thread `t2` is moved to `t1`. In the main thread takes care of its children and waits for them. But, the result is very different from my expectations:
-
-stdout:
-```
-terminate called without an active exception
-Program terminated with signal: SIGSEGV
-```
-
-What is going wrong? We have two issues:
-
-1. By moving the thread `t2`, `t1` gets a new work package and its move assignment operator calls the destructor to free up any resources it holds. As a result, `t1`'s destructor calls `std::terminate`, because it is still joinable.
-2. Thread `t2` has no associated callable unit. The invocation of join on a thread without a callable unit leads to the exception `std::system_error`.
-
-Knowing this fixing errors is straightforward:
-
-```cpp
-//threadMoveFixed.cpp
-
-#include<iostream>
-#include<thread>
-#include<utility>
-
-int main()
-{
-    std::thread t1([](){std::cout << "\nThread id="<<std::this_thread::get_id();});
-    std::thread t2([](){std::cout << "\nThread id="<<std::this_thread::get_id();});
-    t1.join();
-    t1 = std::move(t2);
-    t1.join();
-
-    std::cout << "\n";
-    std::cout << std::boolalpha << "t2.joinable() = " << t2.joinable();
-    return 0;
-}
-```
-
-[Compiler Explorer](https://godbolt.org/z/f44Mfdf3r){target="_blank"}
-
-### `scoped_thread` by Anthony Williams
-
-One benefit of the move support of `std::thread` is that you can build on the `thread_guard` class and have it take ownership of the thread. Anthony Williams in his excellent book *Concurrency in action* has written a `scoped_thread` class. This avoids any unpleasant consequences should the `thread_guard` object outlive the thread it was referencing, and it also means that no one else can join or detach the thread once ownership has been transferred into the object. Because, this would primarily be aimed at ensuring that threads are completed before a scope is exited, it's called `scoped_thread`. Here is the implementation:
-
-```cpp
-//scoped_thread.cpp
-
-#include <thread>
+#include <vector>
+#include <algorithm>
+#include <numeric>
 #include <utility>
-#include <stdexcept>
-
-class scoped_thread
-{
-    private:
-    std::thread t;
-    
-    public:
-    explicit scoped_thread(std::thread t_) : t(std::move(t_)) {
-        if(!t.joinable()) throw std::logic_error("No thread");
-    }
-
-    ~scoped_thread(){
-        t.join();
-    }
-
-    scoped_thread(scoped_thread&) = delete;
-    scoped_thread& operator=(const scoped_thread&) = delete;
-};
 
 int main()
 {
-    {
-        scoped_thread t(std::thread([]{for(int i{0};i<1000000;++i);}));
-    }
+    std::vector credits{10.0, 20.0, 30.0, 40.0, 50.0};
+    std::vector debits{ -10.0, -20.0, -30.0, -40.0, -50.0 };
+    double total_credits{ 0.0 };
+    double total_debits{ 0.0 };
+    double net_balance{ 0.0 };
+
+    std::thread credits_thread{
+        [&credits, &total_credits]() mutable {
+            total_credits = std::accumulate(credits.begin(), credits.end(), 0.0);
+        }
+    };
+
+    std::thread debits_thread{
+        [&debits, &total_debits]() mutable {
+            total_debits = std::accumulate(debits.begin(), debits.end(), 0.0);
+        }
+    };
+
+    /* Calculate the net balance */
+    for (auto credit : credits)
+        net_balance += credit;
+
+    for (auto debit : debits)
+        net_balance += debit;
+
+    credits_thread.join();
+    debits_thread.join();
+    
+    std::cout << "\n" << "Credit = " << total_credits;
+    std::cout << "\n" << "Debit = " << total_debits;
+    std::cout << "\n" << "Net Balance = " << net_balance;
     return 0;
 }
 ```
 
-[Compiler Explorer](https://godbolt.org/z/Yfsahhddx){target="_blank"}
-
-This example is similar to `thread_guard.cpp`, but the new thread is passed into the `scoped_thread` rather than having to create a separate named variable for it. When the main thread reaches its end, the `scoped_thread` object is destroyed and then joins the thread supplied to the constructor. Whereas with the `thread_guard` class, the destructor had to check that the thread was still joinable, you can do that in the constructor and throw an exception if it's not.
-
-
-
+The calculation of total credits, total debits and net balance quantities can take a while. So, we create a background thread to compute credits and debits

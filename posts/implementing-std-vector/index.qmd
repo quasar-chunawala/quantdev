@@ -1,0 +1,441 @@
+---
+title: "Custom implementation of `vector`"
+author: "Quasar"
+date: "2025-02-13"
+categories: [C++]      
+image: "image.jpg"
+toc: true
+toc-depth: 3
+format:
+    html:
+        code-tools: true
+        code-block-border-left: true
+        code-annotations: below
+        highlight-style: pygments
+---
+
+# Custom implementation of `vector`
+
+## Implementation notes
+
+```cpp
+// vector.cpp : This file contains the 'main' function. Program execution begins and ends there.
+//
+
+#include <iostream>
+#include <concepts>
+
+namespace dev {
+    template<typename T>
+    class vector {
+    public:
+        /* Default constructor */
+        vector() : m_size{ 0 }, m_capacity{ 8 }, m_raw_data{ nullptr } {}
+
+        /* Copy constructor - performs a deep-copy */
+        vector(const vector& other) : m_size{ other.size }, capacity{ other.capacity } {
+            m_raw_data = new T[m_size]();
+            for (int i{ 0 }; i < m_size; ++i)
+                m_raw_data[i] = other[i];
+        }
+
+        /* Swap the contents of the vector member-by-member. It leaves
+        any dynamically allocated buffers (and the elements contained in them)
+        in place.
+        */
+        friend void swap(vector& lhs, vector& rhs) noexcept {
+            std::swap(lhs.m_capacity, rhs.m_capacity);
+            std::swap(lhs.m_size, rhs.m_size);
+            std::swap(lhs.m_raw_data, rhs.m_raw_data);
+        }
+
+        /* Copy assignment operator */
+        vector& operator=(const vector& other) {
+            vector temp{ other };
+            return std::exchange(*this, temp);
+        }
+
+        /* Move constructor */
+        vector(const vector&& other)
+            : m_size(std::move(other.m_size))
+            , m_capacity(std::move(other.m_capacity))
+        {
+            std::swap(m_raw_data, other.m_raw_data);
+            delete[] other.m_raw_data;
+            other.m_raw_data = nullptr;
+        }
+
+        /* Move assignment operator */
+        vector& operator=(const vector&& other) {
+            vector temp(std::move(other));
+            return std::exchange(*this, temp);
+        }
+
+        /* Parameterized constructor */
+        vector(std::initializer_list<T> list) {
+            for (auto x : list)
+                push_back(x);
+        }
+
+        /* Destructor */
+        ~vector() {
+            delete_and_reset_ptr();
+        }
+
+        /*
+        * Iterator.
+        * An iterator is just a generalization of a pointer that allows us
+        * to iterate over a collection. We define a struct that meets the minimum requirements of 
+        * std::random_access_iterator concept. 
+        */
+        struct iterator {
+            iterator() : ptr{nullptr} {}
+            iterator(T* ptr_) : ptr(ptr_) {}
+
+            using category = std::random_access_iterator_tag;
+            using value_type = T;
+            using difference_type = std::ptrdiff_t;
+            using reference = T&;
+            using pointer = T*;
+
+            /* Dereferencing an iterator which points to end() is undefined behavior */
+            T operator*() {
+                return (*ptr);
+            }
+
+            iterator operator++() {
+                ++ptr;
+                return *this;
+            }
+
+            iterator operator--() {
+                --ptr;
+                return *this;
+            }
+
+            iterator& operator+=(difference_type i) {
+                ptr += i;
+                return *this;
+            }
+
+            iterator& operator-=(difference_type i) {
+                ptr -= i;
+                return *this;
+            }
+
+            bool operator==(iterator it) {
+                return (this->ptr == it.ptr);
+            }
+
+            bool operator!=(iterator it) {
+                return !(*this == it);
+            }
+
+            iterator operator+(difference_type i) {
+                ptr += i;
+                return *this;
+            }
+
+            iterator operator-(difference_type i) {
+                ptr -= i;
+                return *this;
+            }
+
+        private:
+            T* ptr;
+        };
+
+        /* Iterators */
+        iterator begin() {
+            return iterator(&m_raw_data[0]);
+        }
+
+        iterator end() {
+            return iterator(&m_raw_data[m_size]);
+        }
+
+        /* Element access */
+
+        /*
+        * operator[] returns a reference to the element at index idx.
+        * No bounds checking is performed.
+        */
+        T& operator[](std::size_t idx) {
+            return *(m_raw_data + idx);
+        }
+
+        /*
+        * at() returns a reference to the element at index idx.
+        * Returns std::out_of_range, if idx >= size
+        */
+        T& at(std::size_t idx) {
+            if (idx >= size)
+                throw std::out_of_range("Array index out of bounds!");
+
+            return *(m_raw_data + idx);
+        }
+
+        /*
+        * front() returns a reference to the first element of the container.
+        * Calling front on an empty container causes undefined behavior
+        */
+        T& front() {
+            return m_raw_data[0];
+        }
+
+        /*
+        * back() returns a reference to the last element of the container.
+        * Calling back on an empty container causes undefined behvior.
+        */
+        T& back() {
+            return m_raw_data[m_size - 1];
+        }
+
+        /* Capacity */
+
+        /* Returns the number of elements in the container*/
+        std::size_t size() const {
+            return m_size;
+        }
+
+        /*
+        Returns the storage capacity.
+        */
+        std::size_t capacity() const {
+            return m_capacity;
+        }
+
+        /* 
+        Increase the capacity of the vector. If the new_cap is greater than 
+        the current capacity(), new storage is allocated otherwise the function
+        does nothing. It does not change the size of the vector. 
+        */
+        constexpr void reserve(int new_cap) {
+            if (new_cap > capacity())
+            {
+                /*
+                * Separate the allocation from the construction.
+                * Allocation step. This can throw.
+                */
+                T* new_storage = new T[new_cap];
+                
+                try {
+                    /*
+                    * Construction step.
+                    * std::move_if_noexcept obtains an rvalue reference to its argument 
+                    * if its move constructor does not throw exceptions or if there is no
+                    * copy-constructor(move-only type), otherwise obtains an lvalue reference
+                    * to its argument.
+                    */
+                    for (int i{ 0 }; i < m_size; ++i)
+                        new_storage[i] = std::move_if_noexcept(m_raw_data[i]);
+                }
+                catch (const std::exception& e) {
+                    delete[] new_storage;
+                    throw std::bad_alloc();
+                }
+                /* 
+                * Release the memory held by m_raw_data. 
+                * Since, delete[] can throw, we first swap the pointers
+                * and then attempt to release the memory. This way, any exceptions will leave
+                * the vector in a good state.
+                */
+                std::swap(m_raw_data, new_storage);
+                m_capacity = new_cap;
+                delete[] new_storage;
+            }
+        }
+
+        /*
+        * empty() - checks whether the container is empty
+        */
+        bool empty() const {
+            return (m_size == 0);
+        }
+
+        /* Modifiers */
+
+        /*
+        * clear() - Erases all the elements from the container. After this call,
+        * size() returns zero. Leaves the capacity of the vector unchanged.
+        */
+        void clear() {
+            if (!empty()) {
+                delete_and_reset_ptr(m_raw_data);
+                m_size = 0;
+            }
+        }
+
+        /*
+        * insert() - Inserts a copy of the value before pos
+        */
+        void insert(iterator pos, const T& value) {
+            /*
+            * Allocate more memory if size == capacity
+            */
+            try {
+                allocate_more_memory_if_needed();
+            }
+            catch (std::bad_alloc& e)
+            {
+                return;
+            }
+            
+            /*
+            Calculate the offset first before any reallocations, else
+            we end up invalidating the iterators.
+            */
+            int offset = std::distance(begin(), pos);
+
+            /*
+            * Copy-construct the new object first
+            */
+            T temp = value;
+
+            for (int i{ offset };i < size;++i)
+            {
+
+            }
+        }
+
+        /*
+        * emplace(iterator pos, Args&&...)
+        * Inserts a new element into the container directly before pos. It returns
+        * an iterator pointing to the emplaced element.
+        */
+
+
+        // erase - erases elements
+
+        void allocate_more_memory_if_needed() {
+            if (m_size == m_capacity)
+            {
+                int new_capacity = m_capacity > 0 ? 2 * m_capacity : 8;
+                reserve(new_capacity);
+            }
+        }
+        /* 
+        push_back(T&) - Appends the given value to the end of the container. The new
+        element is initialized as the copy of value.
+
+        If an exception is thrown due to memory allocation failure, this function has
+        no effect.
+        */
+        void push_back(T& value) noexcept
+            requires std::copy_constructible<T>
+        {
+            /*
+            * Allocation.
+            */
+            try {
+                allocate_more_memory_if_needed();
+            }
+            catch (std::bad_alloc& e)
+            {
+                return;
+            }
+
+            /*
+            * Copy-construction
+            */
+            try {
+                m_raw_data[m_size] = value;
+            }
+            catch (std::exception& e) {
+                return;
+            }
+            ++m_size;
+        }
+
+        /*
+        * push_back(T&&) - value is moved into the new element.
+        */
+        void push_back(T&& value) noexcept
+            requires std::move_constructible<T>
+        {
+            /*
+            * Allocation
+            */
+            try {
+                allocate_more_memory_if_needed();
+            }
+            catch (std::bad_alloc& e)
+            {
+                return;
+            }
+            /*
+            * Move construction
+            */
+            try {
+                m_raw_data[m_size] = std::move(value);
+            }
+            catch (std::exception& e) {
+                return;
+            }
+            ++m_size;
+        }
+
+        /*
+        * emplace_back(Args&& args)
+        * Appends a new element to the end of the container. emplace_back()
+        * takes the constructor args of T. 
+        */
+        template <typename... Args>
+        void emplace_back(Args&&... args) noexcept 
+            requires std::copy_constructible<T> || std::move_constructible<T>
+        {
+            /*
+            * Allocation
+            */
+            try {
+                allocate_more_memory_if_needed();
+            }
+            catch (std::bad_alloc& e)
+            {
+                return;
+            }
+
+            /*
+            * Construction
+            */
+            try {
+                m_raw_data[m_size] = T(std::forward<Args>(args)...);
+            }
+            catch (std::exception& e) {
+                return;
+            }
+            ++m_size;
+        }
+
+        /*
+        * append_range - Inserts copies of the elements from the range before end
+        */
+        template<std::ranges::input_range Rng>
+        void append_range(Rng rng) {
+            for (auto x : rng)
+                push_back(x);
+        }
+
+        // pop_back - removes the last element
+
+        // resize - changes the number of elements stored
+
+        // swap - swaps the contents
+
+        void delete_and_reset_ptr(T* ptr) {
+            delete[] ptr;
+            ptr = nullptr;
+        }
+
+    private:
+        int m_size;
+        int m_capacity;
+        T* m_raw_data;    // Owning pointer
+    };
+}
+
+int main()
+{
+    std::cout << "Hello World!\n";
+}
+```
