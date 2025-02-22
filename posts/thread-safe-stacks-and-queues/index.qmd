@@ -1,0 +1,145 @@
+---
+title: "Basic thread-safe stack and queue"
+author: "Quasar"
+date: "2024-11-10"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+format:
+    html:
+        code-tools: true
+        code-block-border-left: true
+        code-annotations: below
+        highlight-style: pygments
+---
+
+# Basic thread-safe stack and queue
+
+We can use C++ synchronization primitives to implement a basic thread-safe stack and queue.
+
+## Thread-safe stack
+
+### Implementation Notes
+
+
+```cpp
+#include <iostream>
+#include <stack>
+#include <algorithm>
+#include <thread>
+#include <mutex>
+#include <memory>
+#include <type_traits>
+#include <concepts>
+#include <shared_mutex>
+
+namespace dev {
+   
+    template<typename T>
+    
+    class threadsafe_stack {
+    public:
+
+        using Mutex = std::shared_mutex;
+
+        /* Constructors */
+        
+        // Default constructor
+        threadsafe_stack() {}
+
+        /*
+        * This stack is copy-constructible. The copy constructor locks the mutex in the 
+        * source object and then copies the internal stack.
+        */
+        threadsafe_stack(const threadsafe_stack& other) {
+            std::unique_lock<Mutex> lck(other.mtx);
+            m_stack = other.m_stack;
+        }
+
+        // Copy assignment
+        threadsafe_stack& operator=(const threadsafe_stack& other) = delete;
+
+        ~threadsafe_stack() = default;
+
+        /*
+        * pop() is a wrapper over std::stack<T>::top() and std::stack<T>::pop().
+        * This interface avoids any race conditions that occur between calls to top()
+        * and pop().
+        */
+        std::shared_ptr<T> pop()
+        {
+            std::unique_lock<Mutex> lck(mtx);
+            if (m_stack.empty())
+                throw std::exception("Exception - pop() invoked on an empty stack!");
+
+            auto result = std::make_shared<T>(std::move(m_stack.top()));
+            m_stack.pop();
+            return result;
+        }
+
+        void pop(T& result)
+        {
+            std::unique_lock<Mutex> lck(mtx);
+            if (m_stack.empty())
+                throw std::exception("Exception - pop() invoked on an empty stack");
+
+            result = std::move(m_stack.top());
+            m_stack.pop();
+        }
+
+        void push(T value)
+        {
+            std::unique_lock<Mutex> lck(mtx);
+            m_stack.push(std::move(value));
+        }
+
+        int size() {
+            std::shared_lock<Mutex> lck(mtx);
+            return m_stack.size();
+        }
+
+        /* 
+        * Acquire a std::shared_lock<Mtx> on the mutex, so multiple
+        * readers can read the stack.
+        */
+        bool empty() {
+            std::shared_lock<Mutex> lck(mtx);
+            return m_stack.empty();
+        }
+
+    private:
+        std::stack<T> m_stack;
+        Mutex mtx;
+    };
+}
+
+int main()
+{
+    dev::threadsafe_stack<int> stck;
+    
+    std::thread writer1(
+        [&stck]() {
+            for (int i{ 1 };i <= 1000;++i) {
+                stck.push(i);
+            }
+        }
+    );
+
+    std::thread writer2(
+        [&stck]() {
+            for (int i{ 1001 };i <= 2000;++i) {
+                stck.push(i);
+            }
+        }
+    );
+
+    writer1.join();
+    writer2.join();
+
+    std::cout << "\n" << "Stack size = " << stck.size();
+}
+```
+
+## Producer-consumer problem
+
