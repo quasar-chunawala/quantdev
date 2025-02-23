@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Quasar">
-<meta name="dcterms.date" content="2024-11-10">
+<meta name="dcterms.date" content="2025-02-23">
 
 <title>Basic thread-safe stack and queue – quantdev.blog</title>
 <style>
@@ -112,6 +112,35 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 <script async="" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9993009899870547" crossorigin="anonymous"></script>
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN") {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 <link rel="stylesheet" href="../../styles.css">
 </head>
@@ -183,7 +212,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <div>
       <div class="quarto-title-meta-heading">Published</div>
       <div class="quarto-title-meta-contents">
-        <p class="date">November 10, 2024</p>
+        <p class="date">February 23, 2025</p>
       </div>
     </div>
     
@@ -343,6 +372,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="producer-consumer-problem" class="level2">
 <h2 class="anchored" data-anchor-id="producer-consumer-problem">Producer-consumer problem</h2>
+<p>In the <em>producer-consumer problem</em>, we have two classes of threads, producers and consumers and a buffer containing a fixed number of slots. A producer thread attempts to put something into the next empty buffer slot, a consumer thread attempts to take something out of the next occupied buffer slot. The synchronization conditions are that producers cannot proceed unless there are empty slots and consumers cannot proceed unless there are occupied slots. The problem occurs because of the different rates at which producers deposit and consumers exhaust data.</p>
+<p>This is a classic, but frequently occurring synchronization problem. For example, the heart of the implementation of UNIX pipes is an instance of this problem.</p>
+<p>Consider a single, fixed-size buffer as if it were connected end-to-end, such that the oldest entry is processed first. This is a circular FIFO queue.</p>
+<p>What do we use SPSC FIFO queues for? In the industry, you often have a pipeline of processes. For example, you have one thread reading from sockets, another thread that handles the messages from the sockets and maybe processes them and produces a result and a third thread writes a response to the network. Those can be connected by SPSC FIFO queues. There’s a couple of advantages to this. All these advantages and disadvantages are subject to measurement, so always measure. It may improve the throughput over just a single thread doing all <span class="math inline">\(3\)</span> of these operations, in fact, I’ll be surprised if it didn’t. It also should improve the resiliency of the application to spikes in message traffic. Some of the disadvantages are that you have to manage 3 threads and it probably uses more memory, because each of the FIFO queues needs place to store its messages.</p>
+<p>We all have come across circular FIFO queues. We usually have two cursors - <code>rear</code> and <code>front</code>. Items are pushed to the <code>rear</code> of the queue and popped off the <code>front</code> of the queue.</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="circular_fifo_queue.jpg" style="width:40.0%;height:40.0%" class="figure-img"></p>
+<figcaption>Circular FIFO Queue</figcaption>
+</figure>
+</div>
+<p>When we <code>push(42)</code> into the FIFO queue, the <code>rear</code> cursor is incremented and each time we <code>pop()</code>, the <code>front</code> cursor is incremented. When the <code>front</code> cursor and the <code>rear</code> cursor are no longer equal, the FIFO queue is no longer empty. Eventually, we push so many values in, that the FIFO queue fills up. At this point, the <code>rear</code> cursor is <code>capacity</code> greater than the <code>front</code> cursor.</p>
+<p>The FIFO queue empty and queue full conditions use the remainder operator <code>%</code>. Division uses <span class="math inline">\(20\)</span> to <span class="math inline">\(30\)</span> cycles so it is a bit expensive. Another approach is to constrain the buffer size to an integral power of <span class="math inline">\(2\)</span>, and use the bitwise <code>&amp;</code> operator and that’s a <span class="math inline">\(1\)</span> cycle operation.</p>
 
 
 <!-- -->
@@ -826,7 +868,7 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <div class="sourceCode" id="cb2" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Basic thread-safe stack and queue"</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="an">date:</span><span class="co"> "2024-11-10"</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="an">date:</span><span class="co"> "2025-02-23"</span></span>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
 <span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="an">toc:</span><span class="co"> true</span></span>
@@ -966,7 +1008,23 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb2-141"><a href="#cb2-141" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
 <span id="cb2-142"><a href="#cb2-142" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb2-143"><a href="#cb2-143" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-144"><a href="#cb2-144" aria-hidden="true" tabindex="-1"></a><span class="fu">## Producer-consumer problem</span></span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
+<span id="cb2-144"><a href="#cb2-144" aria-hidden="true" tabindex="-1"></a><span class="fu">## Producer-consumer problem</span></span>
+<span id="cb2-145"><a href="#cb2-145" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-146"><a href="#cb2-146" aria-hidden="true" tabindex="-1"></a>In the *producer-consumer problem*, we have two classes of threads, producers and consumers and a buffer containing a fixed number of slots. A producer thread attempts to put something into the next empty buffer slot, a consumer thread attempts to take something out of the next occupied buffer slot. The synchronization conditions are that producers cannot proceed unless there are empty slots and consumers cannot proceed unless there are occupied slots. The problem occurs because of the different rates at which producers deposit and consumers exhaust data.</span>
+<span id="cb2-147"><a href="#cb2-147" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-148"><a href="#cb2-148" aria-hidden="true" tabindex="-1"></a>This is a classic, but frequently occurring synchronization problem. For example, the heart of the implementation of UNIX pipes is an instance of this problem.</span>
+<span id="cb2-149"><a href="#cb2-149" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-150"><a href="#cb2-150" aria-hidden="true" tabindex="-1"></a>Consider a single, fixed-size buffer as if it were connected end-to-end, such that the oldest entry is processed first. This is a circular FIFO queue.</span>
+<span id="cb2-151"><a href="#cb2-151" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-152"><a href="#cb2-152" aria-hidden="true" tabindex="-1"></a>What do we use SPSC FIFO queues for? In the industry, you often have a pipeline of processes. For example, you have one thread reading from sockets, another thread that handles the messages from the sockets and maybe processes them and produces a result and a third thread writes a response to the network. Those can be connected by SPSC FIFO queues. There's a couple of advantages to this. All these advantages and disadvantages are subject to measurement, so always measure. It may improve the throughput over just a single thread doing all $3$ of these operations, in fact, I'll be surprised if it didn't. It also should improve the resiliency of the application to spikes in message traffic. Some of the disadvantages are that you have to manage 3 threads and it probably uses more memory, because each of the FIFO queues needs place to store its messages.</span>
+<span id="cb2-153"><a href="#cb2-153" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-154"><a href="#cb2-154" aria-hidden="true" tabindex="-1"></a>We all have come across circular FIFO queues. We usually have two cursors - <span class="in">`rear`</span> and <span class="in">`front`</span>. Items are pushed to the <span class="in">`rear`</span> of the queue and popped off the <span class="in">`front`</span> of the queue.</span>
+<span id="cb2-155"><a href="#cb2-155" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-156"><a href="#cb2-156" aria-hidden="true" tabindex="-1"></a><span class="al">![Circular FIFO Queue](circular_fifo_queue.jpg)</span>{fig-align="center" width=40% height=40%}</span>
+<span id="cb2-157"><a href="#cb2-157" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-158"><a href="#cb2-158" aria-hidden="true" tabindex="-1"></a>When we <span class="in">`push(42)`</span> into the FIFO queue, the <span class="in">`rear`</span> cursor is incremented and each time we <span class="in">`pop()`</span>, the <span class="in">`front`</span> cursor is incremented. When the <span class="in">`front`</span> cursor and the <span class="in">`rear`</span> cursor are no longer equal, the FIFO queue is no longer empty. Eventually, we push so many values in, that the FIFO queue fills up. At this point, the <span class="in">`rear`</span> cursor is <span class="in">`capacity`</span> greater than the <span class="in">`front`</span> cursor.</span>
+<span id="cb2-159"><a href="#cb2-159" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-160"><a href="#cb2-160" aria-hidden="true" tabindex="-1"></a>The FIFO queue empty and queue full conditions use the remainder operator <span class="in">`%`</span>. Division uses $20$ to $30$ cycles so it is a bit expensive. Another approach is to constrain the buffer size to an integral power of $2$, and use the bitwise <span class="in">`&amp;`</span> operator and that's a $1$ cycle operation. </span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 
