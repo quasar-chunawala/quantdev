@@ -1,5 +1,5 @@
 ---
-title: "Thread-safe queues"
+title: "A thread-safe queue implementation"
 author: "Quasar"
 date: "2025-02-23"
 categories: [C++]      
@@ -238,3 +238,40 @@ Running the above code-snippet, we find that there are several occassions when t
 You essentially have three groups of operations : those that query the state of the whole queue(`empty()` and `size()`), those that query the elements of the queue(`front()` and `back()`) and those that modify the queue (`push()`, `pop()` and `emplace()`). This is the same as we've seen for the stack container adapter, and we have the same issues regarding race conditions inherent in the interface. Consequently, we need to combine `front()` and `pop()` into a single function call, much as you combined `pop()` and `top()` for the stack. 
 
 
+```cpp
+namespace dev {
+    template<typename T>
+    class threadsafe_ring_buffer {
+    public:
+        threadsafe_ring_buffer() {}
+        threadsafe_ring_buffer(const threadsafe_ring_buffer& other)
+        {
+            std::lock_guard<std::mutex> lck(mtx);
+            m_ring_buffer = other.m_ring_buffer;
+        }
+        threadsafe_ring_buffer& operator=(const threadsafe_ring_buffer& other) = delete;
+
+        void wait_and_push(T new_value) {
+            std::unique_lock<std::mutex> lck(mtx);
+            queue_not_full_cond.wait(lck, []() {return !m_ring_buffer.full();});
+            m_ring_buffer.push(new_value);
+            queue_not_empty_cond.notify_one();
+        }
+
+        bool try_push(T new_value) {
+            std::unique_lock<std::mutex> lck(mtx);
+            if (!m_ring_buffer.full())
+                return false;
+
+            m_ring_buffer.push(new_value);
+            return true;
+        }
+
+    private:
+        ring_buffer<T> m_ring_buffer;
+        std::mutex mtx;
+        std::condition_variable queue_not_empty_cond;
+        std::condition_variable queue_not_full_cond;
+    };
+}
+```
