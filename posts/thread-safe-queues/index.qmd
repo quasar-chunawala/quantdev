@@ -253,7 +253,7 @@ namespace dev {
 
         void wait_and_push(T new_value) {
             std::unique_lock<std::mutex> lck(mtx);
-            queue_not_full_cond.wait(lck, []() {return !m_ring_buffer.full();});
+            queue_not_full_cond.wait(lck, [this]() {return !m_ring_buffer.full();});
             m_ring_buffer.push(new_value);
             queue_not_empty_cond.notify_one();
         }
@@ -265,6 +265,42 @@ namespace dev {
 
             m_ring_buffer.push(new_value);
             return true;
+        }
+
+        void wait_and_pop(T& value) {
+            std::unique_lock<std::mutex> lck(mtx);
+            queue_not_empty_cond.wait([this]() { return !m_ring_buffer.empty();});
+            value = m_ring_buffer.front();
+            m_ring_buffer.pop();
+            queue_not_full_cond.notify_one();
+        }
+
+        void try_pop(T& value) {
+            std::unique_lock<std::mutex> lck(mtx);
+            if (m_ring_buffer.empty())
+                return false;
+
+            value = m_ring_buffer.front();
+            m_ring_buffer.pop();
+            return true;
+        }
+
+        std::shared_ptr<T> wait_and_pop() {
+            std::unique_lock<std::mutex> lck(mtx);
+            queue_not_empty_cond.wait([this]() { return !empty(); });
+            std::shared_ptr<T> result{ std::make_shared<T>(m_ring_buffer.front()) };
+            m_ring_buffer.pop();
+            return result;
+        }
+
+        std::shared_ptr<T> try_pop() {
+            std::unique_lock<std::mutex> lck(mtx);
+            if (m_ring_buffer.empty())
+                return nullptr;
+
+            std::shared_ptr<T> result{ std::make_shared<T>(m_ring_buffer.front()) };
+            m_ring_buffer.pop();
+            return result;
         }
 
     private:
