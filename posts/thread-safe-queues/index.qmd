@@ -34,7 +34,7 @@ When we `push(42)` into the FIFO queue, the `rear` cursor is incremented and eac
 
 The FIFO queue empty and queue full conditions use the remainder operator `%`. Division uses $20$ to $30$ cycles so it is a bit expensive. Another approach is to constrain the buffer size to an integral power of $2$, and use the bitwise `&` operator and that's a $1$ cycle operation. 
 
-## Implementation notes
+### Implementation notes
 
 
 ```cpp
@@ -43,6 +43,10 @@ The FIFO queue empty and queue full conditions use the remainder operator `%`. D
 #include <thread>
 #include <array>
 #include <numeric>
+#include <memory>
+#include <condition_variable>
+#include <mutex>
+#include <shared_mutex>
 
 namespace dev {
     template<typename T>
@@ -62,7 +66,7 @@ namespace dev {
             , ring{nullptr}
             , m_capacity{0}
         { 
-            ring = operator new(min_capacity);
+            ring = static_cast<T*>(operator new(min_capacity));
             m_capacity = min_capacity;
         }
 
@@ -77,7 +81,7 @@ namespace dev {
         }
 
         /* Copy constructor - Perform a deep copy */
-        ring_buffer(const ring_buffer& other)
+        ring_buffer(const ring_buffer<T>& other)
             : m_front{ 0 }
             , m_rear{ 0 }
             , ring{ nullptr }
@@ -96,23 +100,20 @@ namespace dev {
         }
 
         /* Swap */
-        void swap(ring_buffer& other) noexcept{
-            std::swap(m_front, other.m_front);
-            std::swap(m_rear, other.m_rear);
-            std::swap(m_capacity, other.m_capacity);
-            std::swap(ring, other.ring);
-        }
-
-        friend void swap(ring_buffer& lhs, ring_buffer& rhs)
+        friend void swap(ring_buffer<T>& lhs, ring_buffer<T>& rhs)
         {
-            lhs.swap(rhs);
+            std::swap(lhs.m_front, rhs.m_front);
+            std::swap(lhs.m_rear, rhs.m_rear);
+            std::swap(lhs.m_capacity, rhs.m_capacity);
+            std::swap(lhs.ring, rhs.ring);
         }
 
         /* Copy assignment */
-        ring_buffer& operator=(const ring_buffer& other)
+        ring_buffer<T>& operator=(const ring_buffer<T>& other)
         {
-            ring_buffer temp{ other };  //Copy-construct
-            return std::exchange(*this, temp);
+            ring_buffer<T> temp{ other };  //Copy-construct
+            swap(*this, temp);
+            return *this;
         }
 
         T& front() {
@@ -129,28 +130,28 @@ namespace dev {
             return ring[(m_rear - 1) % m_capacity];
         }
 
-        T& operator[](int i) {
+        T& operator[](int i) const {
             if (empty())
                 throw std::exception("buffer is empty!");
 
             return ring[(m_front + i) % m_capacity];
         }
 
-        bool empty() {
+        bool empty() const {
             return m_front == m_rear;
         }
 
-        bool full() {
+        bool full() const {
             return size() == capacity();
         }
 
         void push(const T& value) {
-            if (full())                                           
+            if (full())
                 throw std::exception("buffer is full!");
 
-            new (&ring[m_rear % m_capacity]) T(value);      // [C1]
+            new (&ring[m_rear % m_capacity]) T(value);
             std::cout << "\n" << "pushed " << value << " to buffer";
-            ++m_rear;               
+            ++m_rear;
         }
 
         void push(T&& value) {
@@ -163,13 +164,13 @@ namespace dev {
         }
 
         void pop() {
-            if (empty())            
+            if (empty())
                 throw std::exception("buffer is empty!");
 
-            T value = front();                              // [C2]
+            T value = front();
             ring[m_front % m_capacity].~T();
             std::cout << "\n" << "popped " << value << " off buffer";
-            ++m_front;              
+            ++m_front;
         }
 
         int capacity() const{
@@ -187,48 +188,6 @@ namespace dev {
         }
     };
 }
-
-
-int main()
-{
-    dev::ring_buffer<int> buffer(64);
-
-    
-    std::thread producer(
-        [&]() {
-            for (int i{ 1 };i <= 1000;++i)
-            {
-                try {
-                    buffer.push(i);
-                }
-                catch (std::exception e) {
-                    std::cout << "\n" << "buffer full!";
-                }
-            }
-        }
-    );
-
-    std::thread consumer(
-        [&]() {
-            for (int i{ 1 };i <= 1000;++i)
-            {
-                try {
-                    int front = buffer.front();
-                    buffer.pop();
-                    std::this_thread::sleep_for(std::chrono::microseconds(1));
-                }
-                catch (std::exception e) {
-                    std::cout << "\n" << "buffer empty!";
-                }
-            }
-        }
-    );
-
-    producer.join();
-    consumer.join();
-    
-    std::cout << "\nFinished execution";
-}
 ```
 
 Running the above code-snippet, we find that there are several occassions when there are buffer overflows or underflows, and there are also data races. 
@@ -243,23 +202,28 @@ namespace dev {
     template<typename T>
     class threadsafe_ring_buffer {
     public:
-        threadsafe_ring_buffer() {}
-        threadsafe_ring_buffer(const threadsafe_ring_buffer& other)
+        threadsafe_ring_buffer() : m_ring_buffer{ring_buffer<T>()}
+        {}
+
+        threadsafe_ring_buffer(int capacity) : m_ring_buffer{ring_buffer<T>(capacity)}
+        {}
+
+        threadsafe_ring_buffer(const threadsafe_ring_buffer<T>& other)
         {
-            std::lock_guard<std::mutex> lck(mtx);
+            std::shared_lock<std::shared_mutex> lck(mtx);
             m_ring_buffer = other.m_ring_buffer;
         }
-        threadsafe_ring_buffer& operator=(const threadsafe_ring_buffer& other) = delete;
+        threadsafe_ring_buffer<T>& operator=(const threadsafe_ring_buffer<T>& other) = delete;
 
         void wait_and_push(T new_value) {
-            std::unique_lock<std::mutex> lck(mtx);
+            std::unique_lock<std::shared_mutex> lck(mtx);
             queue_not_full_cond.wait(lck, [this]() {return !m_ring_buffer.full();});
             m_ring_buffer.push(new_value);
             queue_not_empty_cond.notify_one();
         }
 
         bool try_push(T new_value) {
-            std::unique_lock<std::mutex> lck(mtx);
+            std::unique_lock<std::shared_mutex> lck(mtx);
             if (!m_ring_buffer.full())
                 return false;
 
@@ -268,15 +232,15 @@ namespace dev {
         }
 
         void wait_and_pop(T& value) {
-            std::unique_lock<std::mutex> lck(mtx);
-            queue_not_empty_cond.wait([this]() { return !m_ring_buffer.empty();});
+            std::unique_lock<std::shared_mutex> lck(mtx);
+            queue_not_empty_cond.wait(lck, [this]() { return !m_ring_buffer.empty();});
             value = m_ring_buffer.front();
             m_ring_buffer.pop();
             queue_not_full_cond.notify_one();
         }
 
         void try_pop(T& value) {
-            std::unique_lock<std::mutex> lck(mtx);
+            std::unique_lock<std::shared_mutex> lck(mtx);
             if (m_ring_buffer.empty())
                 return false;
 
@@ -286,7 +250,7 @@ namespace dev {
         }
 
         std::shared_ptr<T> wait_and_pop() {
-            std::unique_lock<std::mutex> lck(mtx);
+            std::unique_lock<std::shared_mutex> lck(mtx);
             queue_not_empty_cond.wait([this]() { return !empty(); });
             std::shared_ptr<T> result{ std::make_shared<T>(m_ring_buffer.front()) };
             m_ring_buffer.pop();
@@ -294,7 +258,7 @@ namespace dev {
         }
 
         std::shared_ptr<T> try_pop() {
-            std::unique_lock<std::mutex> lck(mtx);
+            std::unique_lock<std::shared_mutex> lck(mtx);
             if (m_ring_buffer.empty())
                 return nullptr;
 
@@ -303,11 +267,71 @@ namespace dev {
             return result;
         }
 
+        bool empty() const {
+            std::shared_lock<std::shared_mutex> lck(mtx);
+            return m_ring_buffer.empty();
+        }
+
+        bool full() const {
+            std::shared_lock<std::shared_mutex> lck(mtx);
+            return m_ring_buffer.full();
+        }
+
+        int size() const {
+            std::shared_lock<std::shared_mutex> lck(mtx);
+            return m_ring_buffer.size();
+        }
+
+        int capacity() const {
+            std::shared_lock<std::shared_mutex> lck(mtx);
+            return m_ring_buffer.capacity();
+        }
+
     private:
         ring_buffer<T> m_ring_buffer;
-        std::mutex mtx;
-        std::condition_variable queue_not_empty_cond;
-        std::condition_variable queue_not_full_cond;
+        mutable std::shared_mutex mtx;
+        std::condition_variable_any queue_not_empty_cond;
+        std::condition_variable_any queue_not_full_cond;
     };
+}
+
+int main()
+{
+    dev::threadsafe_ring_buffer<int> buffer(64);
+
+    std::thread producer(
+        [&]() {
+            for (int i{ 1 };i <= 1000;++i)
+            {
+                try {
+                    buffer.wait_and_push(i);
+                }
+                catch (std::exception e) {
+                    std::cout << "\n" << "buffer full!";
+                }
+            }
+        }
+    );
+
+    std::thread consumer(
+        [&]() {
+            for (int i{ 1 };i <= 1000;++i)
+            {
+                try {
+                    int value;
+                    buffer.wait_and_pop(value);
+                    std::this_thread::sleep_for(std::chrono::microseconds(1));
+                }
+                catch (std::exception e) {
+                    std::cout << "\n" << "buffer empty!";
+                }
+            }
+        }
+    );
+
+    producer.join();
+    consumer.join();
+    
+    std::cout << "\nFinished execution";
 }
 ```
