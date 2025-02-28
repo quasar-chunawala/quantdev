@@ -391,10 +391,16 @@ In the above implementation, I used `RLock` - a reentrant lock. If a thread acqu
 
 We looked at various ways of protecting the data that's shared between threads. But, sometimes we don't just need to protect the data, we also need to synchronize actions on separate threads. One thread might need to wait for another thread to complete a task before the first thread can complete its own. In general, its common to want a thread to wait for a specific event to happen or a condition to be `true`. Although it would be possible to do this by periodically checking a *task-complete* flag or something like that, it is far from ideal. The need to synchronize operations between threads like this is a common scenario and the python standard standard library provides facilities to handle it, in the form of *condition variables* and *futures*.  
 
-We can create a condition variable by passing in a lock. The two important methods of a condition variables are:
+A condition variable is always associated with some kind of lock; this can be passed in, or one will be created on the fly. Passing one in is useful when several condition variables must share the same lock. The two important methods of a condition variable are:
 
-- `wait()` - invoked by a thread to wait(block) on a test condition to be satisfied
-- `notify()` - invoked by the waited-for thread when it finishes its task and wants to inform the waiting threads to proceed.
+- `wait()` - The `wait()` method releases the lock held, then block until another thread awakens it by calling `notify()` or `notify_all()`. Once awakened, `wait()` reqacquires the lock and returns.
+- `notify()` - The `notify()` method arbitrarily wakes up any one of the threads waiting on the condition variable. The `notify_all()` method wakes up all the threads. 
+
+The typical programming style using condition variables uses the lock to synchronize access to some shared state; threads that are interest in a particular change of state call `wait()` repeatedly until they see the desired state, while threads that modify the state call `notify()` or `notify_all()` when they change the state in such a way that it could possibly be a desired state for one of the waiters.
+
+For example, the following code is a generic producer-consumer situation with unlimited buffer capacity:
+
+
 
 ### Implementation of a thread-safe SPSC bounded ring-buffer
 
