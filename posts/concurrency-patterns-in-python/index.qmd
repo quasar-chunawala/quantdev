@@ -201,3 +201,202 @@ if __name__ == "__main__":
     for t in threads:
         t.join()
 ```
+
+Another way to create threads is subclassing the `threading.Thread` class.
+
+```{python}
+from threading import Thread
+from threading import current_thread
+
+class MyTask(Thread):
+
+    def __init__(self):
+        Thread.__init__(self, name="subClassThread", args=(2,3))
+
+    def run(self):
+        print(f"{current_thread().name} is executing")
+
+myTask = MyTask()
+myTask.start()  # start the thread
+myTask.join()   # wait for the thread to complete
+```
+
+The important caveats to remember when subclassing `Thread` class are:
+
+- We can only override the `run()` method and the constructor of the `Thread` class.
+- `Thread.__init__()` must be invoked if the subclass chooses to override the constructor.
+
+### Daemon Thread
+
+*Daemon* threads are background threads. When the `main` thread is about to exit, it cycles through all regular non-daemon threads and waits for them to complete. In the implementation of the `threading` module, the [`_shutdown()`](https://github.com/python/cpython/blob/df5cdc11123a35065bbf1636251447d0bfe789a5/Lib/threading.py#L1263) method iterates through non-daemon threads and invokes `join()` on each of them. `join()` is a blocking call, which returns when a thread's work package is complete.
+
+```{python}
+import threading
+import time
+
+def daemon_task():
+    while(True):
+        print(f"Executing daemon task")
+        time.sleep(1)
+    print(f"Completed daemon task")
+
+if __name__ == "__main__":
+    daemon_thread = threading.Thread(
+        target=daemon_task,
+        name="daemon thread",
+        daemon=True
+    )
+
+    daemon_thread.start()
+```
+
+### Implementation of a thread-safe LIFO stack
+
+```{python}
+import threading
+import time
+from typing import Any, Optional
+
+class StackFull(Exception):
+    pass
+
+class StackEmpty(Exception):
+    pass
+    
+class Stack:
+    def __init__(self, maxsize : int = None):
+        self._mutex = threading.RLock()
+        self.maxsize = maxsize
+        self._data = list()
+
+    @property
+    def maxsize(self):
+        with self._mutex:
+            value = self._maxsize
+
+        return value
+
+    @maxsize.setter
+    def maxsize(self, value : int):
+        with self._mutex:
+            self._maxsize = value
+
+    def size(self) -> int:
+        with self._mutex:
+            size = len(self._data)
+        
+        return size
+
+    def empty(self) -> bool:
+        with self._mutex:
+            isEmpty = len(self._data) == 0
+        
+        return isEmpty
+
+    def full(self) -> bool:
+        with self._mutex:
+            if(self.maxsize is not None):
+                isFull = len(self._data) == self.maxsize
+            else:
+                isFull = False
+        
+        return isFull
+
+    def put(
+        self,
+        item : Any, 
+        block : bool = True, 
+        timeout : float = -1
+    ) -> None:
+        self._mutex.acquire(blocking=True,timeout=timeout)
+        print(f"\nPushing item {item} to the stack")
+        if self.full():
+            print("Stack full!")
+            self._mutex.release()
+            raise StackFull("Stack full!")
+        
+        self._data.append(item)
+        print(f"\nPush complete")
+        print(f"stack : {self._data}")
+        self._mutex.release()
+    
+    def put_nowait(self, item:Any):
+        self.put(item, block=False)
+
+    def get(self, block : bool = True, timeout : float = -1) -> Any:
+        self._mutex.acquire(blocking=block, timeout=timeout)
+        print(f"\nPopping from the stack")
+        if self.empty():
+            print("Stack empty!")
+            self._mutex.release()
+            raise StackEmpty("Stack empty!")
+        
+        value = self._data[self.size() - 1]
+        del self._data[self.size() - 1]
+        print(f"\nPopped item {value} from the stack")
+        print(f"stack : {self._data}")
+        self._mutex.release()
+
+        return value
+
+    def get_no_wait(self):
+        return self.get(block=False)
+
+    def top(self) -> Any:
+        self._mutex.acquire()
+        if self.empty():
+            self._mutex.release()
+            print("Stack empty!")
+            raise StackEmpty("Stack empty!")  
+
+        value = self._data[self.size() - 1]
+        self._mutex.release()
+        return value
+
+def push_thread(stack : Stack):
+    
+    for i in range(10):
+        try:
+            stack.put(i)
+            time.sleep(0.1)
+        except Exception:
+            pass
+
+def pop_thread(stack: Stack):
+    for i in range(10):
+        try:
+            item = stack.get()
+            time.sleep(0.12)
+        except Exception:
+            pass
+
+if __name__ == "__main__":
+    stack = Stack()
+    
+    t1 = threading.Thread(target=push_thread, args=(stack,))
+    t2 = threading.Thread(target=pop_thread, args=(stack,))
+    
+    t1.start()
+    t2.start()
+
+    t1.join()
+    t2.join()
+    
+    print("main() thread finished.")
+```
+
+In the above implementation, I used `RLock` - a reentrant lock. If a thread acquires a `RLock` object, it can choose to reacquire it as many times as possible. It is implicit to call `release()` as many times as `lock()` was called.
+
+### Condition variables
+
+We looked at various ways of protecting the data that's shared between threads. But, sometimes we don't just need to protect the data, we also need to synchronize actions on separate threads. One thread might need to wait for another thread to complete a task before the first thread can complete its own. In general, its common to want a thread to wait for a specific event to happen or a condition to be `true`. Although it would be possible to do this by periodically checking a *task-complete* flag or something like that, it is far from ideal. The need to synchronize operations between threads like this is a common scenario and the python standard standard library provides facilities to handle it, in the form of *condition variables* and *futures*.  
+
+We can create a condition variable by passing in a lock. The two important methods of a condition variables are:
+
+- `wait()` - invoked by a thread to wait(block) on a test condition to be satisfied
+- `notify()` - invoked by the waited-for thread when it finishes its task and wants to inform the waiting threads to proceed.
+
+### Implementation of a thread-safe SPSC bounded ring-buffer
+
+
+
