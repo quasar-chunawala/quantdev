@@ -398,11 +398,166 @@ A condition variable is always associated with some kind of lock; this can be pa
 
 The typical programming style using condition variables uses the lock to synchronize access to some shared state; threads that are interest in a particular change of state call `wait()` repeatedly until they see the desired state, while threads that modify the state call `notify()` or `notify_all()` when they change the state in such a way that it could possibly be a desired state for one of the waiters.
 
+Note: The `notify()` and `notify_all()` methods don't release the lock; this means that the thread or threads awakened will not return from their `wait()` call immediately, but only when the waited-for thread finally relinquishes the ownership of the lock.
+
 For example, the following code is a generic producer-consumer situation with unlimited buffer capacity:
 
+```python
+# consumer
+with cond_var:
+    while item_is_not_available:
+        cond_var.wait()
+    
+    get_the_available_item()
 
+# producer
+with cond_var:
+    produce_an_item()
+    cond_var.notify()
+```
 
 ### Implementation of a thread-safe SPSC bounded ring-buffer
 
+```{python}
+import threading
+import time
+from typing import Any, Optional
+from threading import Condition
 
+class QueueFull(Exception):
+    pass
+
+class QueueEmpty(Exception):
+    pass
+    
+class Queue:
+    def __init__(self, maxsize : int = None):
+        self._lck = threading.RLock()
+        self._queue_not_empty_condition = Condition(self._lck)
+        self._queue_not_full_condition = Condition(self._lck)
+        self.maxsize = maxsize
+        self._data = list()
+
+    @property
+    def maxsize(self):
+        with self._lck:
+            value = self._maxsize
+
+        return value
+
+    @maxsize.setter
+    def maxsize(self, value : int):
+        with self._lck:
+            self._maxsize = value
+
+    def size(self) -> int:
+        with self._lck:
+            size = len(self._data)
+        
+        return size
+
+    def empty(self) -> bool:
+        with self._lck:
+            isEmpty = len(self._data) == 0
+        
+        return isEmpty
+
+    def full(self) -> bool:
+        with self._lck:
+            if(self.maxsize is not None):
+                isFull = len(self._data) == self.maxsize
+            else:
+                isFull = False
+        
+        return isFull
+
+    def put(
+        self,
+        item : Any, 
+    ) -> None:
+        print(f"\nPushing item {item} to the queue")
+        
+        self._queue_not_full_condition.acquire()
+        
+        while (self.full()):
+            self._queue_not_full_condition.wait()
+        
+        self._data.append(item)
+
+        print(f"\nPush complete")
+        print(f"queue : {self._data}")
+        
+        self._queue_not_empty_condition.notify()
+
+        self._queue_not_full_condition.release()
+        return
+
+
+    def get(self) -> Any:
+        
+        self._queue_not_empty_condition.acquire()
+
+        while (self.empty()):
+            self._queue_not_empty_condition.wait()
+
+        print(f"\nPopping from the queue")
+        
+        value = self._data[0]
+        del self._data[0]
+        print(f"\nPopped item {value} from the queue")
+        print(f"queue : {self._data}")
+
+        self._queue_not_full_condition.notify()
+
+        self._queue_not_empty_condition.release()
+        return value
+
+    def top(self) -> Any:
+        self._lck.acquire()
+        if self.empty():
+            self._lck.release()
+            raise QueueEmpty("queue empty!")  
+
+        value = self._data[self.size() - 1]
+        self._lck.release()
+        return value
+
+def push_thread(queue : Queue):
+    
+    for i in range(10):
+        try:
+            queue.put(i)
+            time.sleep(0.07)
+        except Exception:
+            pass
+
+def pop_thread(queue: Queue):
+    for i in range(10):
+        try:
+            item = queue.get()
+            time.sleep(0.1)
+        except Exception:
+            pass
+
+if __name__ == "__main__":
+    queue = Queue()
+   
+    
+    t1 = threading.Thread(target=push_thread, args=(queue,))
+    t2 = threading.Thread(target=pop_thread, args=(queue,))
+    
+    t1.start()
+    t2.start()
+
+    t1.join()
+    t2.join()
+    
+    print("main() thread finished.")
+```
+
+### Semaphores
+
+Semaphores are one of the oldest synchronization primitives invented by Edsger Dijkstra. A semaphore is an atomic counter that gets decremented by one whenever `acquire()` is called and incremented by one whenever `release()` is called.
+
+Consider the below snippet that uses condition variables between threads:
 
