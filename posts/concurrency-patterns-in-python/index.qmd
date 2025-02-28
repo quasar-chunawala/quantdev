@@ -1,0 +1,162 @@
+---
+title: "Concurrency features in Python"
+author: "Quasar"
+date: "2025-02-28"
+categories: [Python]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+format:
+    html:
+        code-tools: true
+        code-block-border-left: true
+        code-annotations: below
+        highlight-style: pygments
+---
+
+## Basics
+
+In single-core processors, the machine can only perform one task at a time, but can switch between many tasks many times per second. By doing a bit of one task and then a bit of another and so on, it appears that the tasks are happening concureently. This is called *task switching*. Because the task switches are so fast, it provides an illusion of concurrency to both the user and the applications.
+
+On a single-core maching doing task switching, chunks from each task are interleaved. But, they are also spaced out a bit; in order to do the interleaving, the operating system has to perform a *context switch* every time it changes from one task to another, and this takes time. In order to perform a context switch, the OS has to save the CPU state and the instruction pointer for the currently running task, work out which task to switch to, and reload the CPU state for the task being switched to.
+
+Multi-core processors are genuinely capable of running more than one task in parallel. This is called *hardware concurrency*. 
+
+### Throughput and Latency 
+
+The rate of doing work (operations per second) is called *throughput*. The response time it takes for a system to process a request is called *latency*.
+
+### Synchronous vs Asynchronous
+
+Synchronous execution is sequential. 
+
+```{python}
+def foo():
+    print(f"Inside foo.")
+
+def main():
+    print(f"Starting work.")
+    foo()
+    print(f"Finishing work.")
+
+main()
+```
+
+In the `main()` code-path, the call to `foo()` is a blocking call, the execution jumps to `foo()` and `main()` resumes when `foo()` returns.
+
+Asynchronous(or *async*) execution refers to execution that doesn't block when invoking subroutines. It is a *fire-and-forget* technique. Any work package runs separately from the main application thread and notifies the calling thread of its completion, failure or progress. 
+
+Usually, such methods return an entity called `future` or `promise` that is the representation of an in-progress computation. The calling thread can query for the status of the computation via the returned future or promise and retrieve the result once completed. 
+
+Another pattern is to pass a callback function to the asynchronous functional call, which is invoked with the results when the asynchronous function is done processing. 
+
+Asynchronous programming is an execllent choice for applications that do extensive network or disk I/O and spend most of their time waiting.
+
+### I/O bound vs CPU bound
+
+#### CPU bound
+
+Programs that are compute-intensive are called CPU bound programs. This could involve numerical optimizations, Monte-Carlo simulations, data-crunching etc.
+
+#### I/O bound
+
+I/O bound programs spend most of their time doing network or main memory and file I/O operations. Since the CPU and main memory are separate, a bus exists between the two to transfer bits. Similarly, data needs to moved from the NIC to CPU/memory. Even though these physical distances are small, the time taken to transfer the data can waste a few thousand CPU cycles. This is why I/O bound programs show relatively lower CPU utilization than CPU bound programs.
+
+### Data race-conditions and thread safety
+
+The most common cause of bugs in concurrent code is a *race-condition*. 
+
+```{python}
+import concurrent.futures
+import logging
+import time
+import concurrent
+import threading
+
+class Account:
+    def __init__(self):
+        self.value = 0
+
+    @property
+    def value(self):
+        return self._value
+    
+    @value.setter
+    def value(self, x):
+        self._value = x
+    
+    def credit(self, name : str, amount : float):
+        logging.info("Thread %s: starting update", name)
+        
+        # ----- Critical section -----
+        local_copy = self.value     
+        local_copy += amount
+        time.sleep(0.1)
+        self.value = local_copy
+        # ----- End of critical section -----
+
+        logging.info("Thread %s: finishing update", name)
+
+if __name__ == "__main__":
+    format = "%(asctime)s: %(message)s"
+    logging.basicConfig(format=format, level=logging.INFO, datefmt="%H:%M:%S")
+    account = Account()
+    logging.info("Testing update. Starting value is %d.", account.value)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        for index in range(2):
+            executor.submit(account.credit, index, 100)
+
+    logging.info("Testing update. Ending value is %d", account.value)
+```
+
+The above logic can be made thread-safe by fencing off the critical section using a mutex and enforcing that only a single thread can enter at a time.
+
+### Deadlock, Liveness & Reentrant Locks
+
+Imagine that you have a toy that comes in two parts, and you need both parts to play with it - a toy drum and a drumstick, for example. Now, imagine that you ave two small children, both of whom like playing with it. If one of them gets both the drum and the drumstick, that child can merrily play the drum until titing of it. If the other child wants to play, they have wait, however sad that makes them. Now, imagine one child  has the drum and other has the drumstick. They're stuck, unless one decides to be nice and let the other play, each will hold on to whatver they have and demand that they be given the other piece, so neither gets to play. This is a deadlock. 
+
+Imagine two threads arguing over locks on mutexes: each of a pair of threads needs to lock both of a pair of mutexes to perform some operation, and each thread has one mutex and is waiting for the other. Neither thread can proceed, because each is waiting for the other to release its mutex. This scenario is called *deadlock*.
+
+```{python}
+import threading
+import concurrent
+import time
+
+if __name__ == "__main__":
+    drum = threading.Lock()
+    drumstick = threading.Lock()
+
+    def child1_plays_drums():
+        print(f"Child-1 waiting for drums")
+        drum.acquire()
+        print(f"Child-1 acquired drums")
+        time.sleep(1)
+        print(f"Child-1 waiting for drumstick")
+        drumstick.acquire()
+        print(f"Child-1 is playing drums")
+
+    def child2_plays_drums():
+        print(f"Child-2 waiting for drumstick")
+        drumstick.acquire()
+        print(f"Child-2 acquired drumstick")
+        time.sleep(1)
+        print(f"Child-2 waiting for drums")
+        drum.acquire()
+        print(f"Child-2 acquired drums")
+        print(f"Child-2 is playing drums")
+
+    t1 = threading.Thread(target=child1_plays_drums)
+    t2 = threading.Thread(target=child2_plays_drums)
+    
+    t1.start()
+    t2.start()
+```
+
+### Mutexes and Semaphores
+
+A mutex is an programming construct that allows only a single thread to access a shared resource or critical section. Once a thread acquires a mutex, all other threads attempting to acquire the same mutex are blocked until the thread releases the mutex.
+
+A semaphore on the hand is used to limit access to a collection of resources. Think of semaphore as having a limited number of permits to give out. If a semaphore has given out all the permits it has, then any new thread that comes along requesting a permit will be blocked till an earlier thread with a permit returns it to the semaphore. A protoypical example is a `ConnectionPool` that hands out database connects to requesting threads.  
+
+A semaphore with a single permit is called a *binary semaphore*.
