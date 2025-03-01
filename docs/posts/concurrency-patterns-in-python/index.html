@@ -243,9 +243,12 @@ window.Quarto = {
   <li><a href="#daemon-thread" id="toc-daemon-thread" class="nav-link" data-scroll-target="#daemon-thread">Daemon Thread</a></li>
   <li><a href="#implementation-of-a-thread-safe-lifo-stack" id="toc-implementation-of-a-thread-safe-lifo-stack" class="nav-link" data-scroll-target="#implementation-of-a-thread-safe-lifo-stack">Implementation of a thread-safe LIFO stack</a></li>
   <li><a href="#condition-variables" id="toc-condition-variables" class="nav-link" data-scroll-target="#condition-variables">Condition variables</a></li>
-  <li><a href="#implementation-of-a-thread-safe-spsc-bounded-ring-buffer" id="toc-implementation-of-a-thread-safe-spsc-bounded-ring-buffer" class="nav-link" data-scroll-target="#implementation-of-a-thread-safe-spsc-bounded-ring-buffer">Implementation of a thread-safe SPSC bounded ring-buffer</a></li>
+  <li><a href="#implementation-of-a-thread-based-spsc-bounded-ring-buffer" id="toc-implementation-of-a-thread-based-spsc-bounded-ring-buffer" class="nav-link" data-scroll-target="#implementation-of-a-thread-based-spsc-bounded-ring-buffer">Implementation of a thread-based SPSC bounded ring-buffer</a></li>
   <li><a href="#semaphores" id="toc-semaphores" class="nav-link" data-scroll-target="#semaphores">Semaphores</a></li>
   </ul></li>
+  <li><a href="#events" id="toc-events" class="nav-link" data-scroll-target="#events">Events</a></li>
+  <li><a href="#the-global-interpreter-lockgil" id="toc-the-global-interpreter-lockgil" class="nav-link" data-scroll-target="#the-global-interpreter-lockgil">The Global Interpreter Lock(GIL)</a></li>
+  <li><a href="#multiprocessing-module" id="toc-multiprocessing-module" class="nav-link" data-scroll-target="#multiprocessing-module"><code>multiprocessing</code> module</a></li>
   </ul>
 </nav>
     </div>
@@ -268,7 +271,7 @@ window.Quarto = {
 <section id="synchronous-vs-asynchronous" class="level3">
 <h3 class="anchored" data-anchor-id="synchronous-vs-asynchronous">Synchronous vs Asynchronous</h3>
 <p>Synchronous execution is sequential.</p>
-<div id="1d915006" class="cell" data-execution_count="1">
+<div id="42239676" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> foo():</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"Inside foo."</span>)</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -304,7 +307,7 @@ Finishing work.</code></pre>
 <section id="data-race-conditions-and-thread-safety" class="level3">
 <h3 class="anchored" data-anchor-id="data-race-conditions-and-thread-safety">Data race-conditions and thread safety</h3>
 <p>The most common cause of bugs in concurrent code is a <em>race-condition</em>.</p>
-<div id="a83998e2" class="cell" data-execution_count="2">
+<div id="c71f751b" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> concurrent.futures</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> logging</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> time</span>
@@ -347,12 +350,12 @@ Finishing work.</code></pre>
 <span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a>    logging.info(<span class="st">"Testing update. Ending value is </span><span class="sc">%d</span><span class="st">"</span>, account.value)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stderr">
-<pre><code>23:48:32: Testing update. Starting value is 0.
-23:48:32: Thread 0: starting update
-23:48:32: Thread 1: starting update
-23:48:32: Thread 0: finishing update
-23:48:32: Thread 1: finishing update
-23:48:32: Testing update. Ending value is 100</code></pre>
+<pre><code>07:45:38: Testing update. Starting value is 0.
+07:45:38: Thread 0: starting update
+07:45:38: Thread 1: starting update
+07:45:38: Thread 0: finishing update
+07:45:38: Thread 1: finishing update
+07:45:38: Testing update. Ending value is 100</code></pre>
 </div>
 </div>
 <p>The above logic can be made thread-safe by fencing off the critical section using a mutex and enforcing that only a single thread can enter at a time.</p>
@@ -361,7 +364,7 @@ Finishing work.</code></pre>
 <h3 class="anchored" data-anchor-id="deadlocks">Deadlocks</h3>
 <p>Imagine that you have a toy that comes in two parts, and you need both parts to play with it - a toy drum and a drumstick, for example. Now, imagine that you ave two small children, both of whom like playing with it. If one of them gets both the drum and the drumstick, that child can merrily play the drum until titing of it. If the other child wants to play, they have wait, however sad that makes them. Now, imagine one child has the drum and other has the drumstick. They’re stuck, unless one decides to be nice and let the other play, each will hold on to whatver they have and demand that they be given the other piece, so neither gets to play. This is a deadlock.</p>
 <p>Imagine two threads arguing over locks on mutexes: each of a pair of threads needs to lock both of a pair of mutexes to perform some operation, and each thread has one mutex and is waiting for the other. Neither thread can proceed, because each is waiting for the other to release its mutex. This scenario is called <em>deadlock</em>.</p>
-<div id="9693df68" class="cell" data-execution_count="3">
+<div id="c25cb33e" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> threading</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> concurrent</span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> time</span>
@@ -397,14 +400,16 @@ Finishing work.</code></pre>
 <div class="cell-output cell-output-stdout">
 <pre><code>
 Child-1 waiting for drums
+Child-2 waiting for drumstick
 
-Child-1 acquired drums
+Child-2 acquired drumstick
 
-Child-1 waiting for drumstick
+Child-2 waiting for drums
 
-Child-1 is playing drums
+Child-2 acquired drums
 
-Child-2 waiting for drumstick</code></pre>
+Child-2 is playing drums
+</code></pre>
 </div>
 </div>
 </section>
@@ -426,7 +431,7 @@ Child-2 waiting for drumstick</code></pre>
 <section id="threading-module" class="level2">
 <h2 class="anchored" data-anchor-id="threading-module"><code>threading</code> module</h2>
 <p>Data-parallelism can be achieved using multi-threading.</p>
-<div id="d788596e" class="cell" data-execution_count="4">
+<div id="5c47c73e" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> threading</span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> typing</span>
@@ -455,17 +460,17 @@ Child-2 waiting for drumstick</code></pre>
 <span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a>        t.join()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>
-Sum of the subarray 0 = 124950.34383810847
+Sum of the subarray 0 = 124859.35774791709
 
-Sum of the subarray 1 = 124897.03905530622
+Sum of the subarray 1 = 124907.37033599064
 
-Sum of the subarray 2 = 124885.70000903556
+Sum of the subarray 2 = 125192.6168794908
 
-Sum of the subarray 3 = 125287.90321991246</code></pre>
+Sum of the subarray 3 = 124728.5678004271</code></pre>
 </div>
 </div>
 <p>Another way to create threads is subclassing the <code>threading.Thread</code> class.</p>
-<div id="be65b8b7" class="cell" data-execution_count="5">
+<div id="daddcf4d" class="cell" data-execution_count="5">
 <div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> threading <span class="im">import</span> Thread</span>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> threading <span class="im">import</span> current_thread</span>
 <span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -489,7 +494,7 @@ Sum of the subarray 3 = 125287.90321991246</code></pre>
 <section id="daemon-thread" class="level3">
 <h3 class="anchored" data-anchor-id="daemon-thread">Daemon Thread</h3>
 <p><em>Daemon</em> threads are background threads. When the <code>main</code> thread is about to exit, it cycles through all regular non-daemon threads and waits for them to complete. In the implementation of the <code>threading</code> module, the <a href="https://github.com/python/cpython/blob/df5cdc11123a35065bbf1636251447d0bfe789a5/Lib/threading.py#L1263"><code>_shutdown()</code></a> method iterates through non-daemon threads and invokes <code>join()</code> on each of them. <code>join()</code> is a blocking call, which returns when a thread’s work package is complete.</p>
-<div id="49d9d196" class="cell" data-execution_count="6">
+<div id="f7cafc94" class="cell" data-execution_count="6">
 <div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> threading</span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> time</span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -514,7 +519,7 @@ Sum of the subarray 3 = 125287.90321991246</code></pre>
 </section>
 <section id="implementation-of-a-thread-safe-lifo-stack" class="level3">
 <h3 class="anchored" data-anchor-id="implementation-of-a-thread-safe-lifo-stack">Implementation of a thread-safe LIFO stack</h3>
-<div id="3654804c" class="cell" data-execution_count="7">
+<div id="c034671e" class="cell" data-execution_count="7">
 <div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> threading</span>
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> time</span>
 <span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> typing <span class="im">import</span> Any, Optional</span>
@@ -774,9 +779,9 @@ main() thread finished.</code></pre>
 <span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>    produce_an_item()</span>
 <span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>    cond_var.notify()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
-<section id="implementation-of-a-thread-safe-spsc-bounded-ring-buffer" class="level3">
-<h3 class="anchored" data-anchor-id="implementation-of-a-thread-safe-spsc-bounded-ring-buffer">Implementation of a thread-safe SPSC bounded ring-buffer</h3>
-<div id="6ea6510c" class="cell" data-execution_count="8">
+<section id="implementation-of-a-thread-based-spsc-bounded-ring-buffer" class="level3">
+<h3 class="anchored" data-anchor-id="implementation-of-a-thread-based-spsc-bounded-ring-buffer">Implementation of a thread-based SPSC bounded ring-buffer</h3>
+<div id="34e95433" class="cell" data-execution_count="8">
 <div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> threading</span>
 <span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> time</span>
 <span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> typing <span class="im">import</span> Any, Optional</span>
@@ -973,14 +978,14 @@ Pushing item 6 to the queue
 Push complete
 queue : [5, 6]
 
-Pushing item 7 to the queue
-
-Push complete
-queue : [5, 6, 7]
-
 Popping from the queue
 
 Popped item 5 from the queue
+queue : [6]
+
+Pushing item 7 to the queue
+
+Push complete
 queue : [6, 7]
 
 Pushing item 8 to the queue
@@ -1019,11 +1024,24 @@ main() thread finished.</code></pre>
 <section id="semaphores" class="level3">
 <h3 class="anchored" data-anchor-id="semaphores">Semaphores</h3>
 <p>This is one of the oldest synchronization primitices in the history of CS, invented by the Dutch computer scientist <a href="https://en.wikipedia.org/wiki/Edsger_W._Dijkstra">Edsger W. Djikstra</a>. A semaphore manages an internal counter which is decremented by each <code>acquire()</code> and incremented by each <code>release()</code> call.</p>
+</section>
+</section>
+<section id="events" class="level2">
+<h2 class="anchored" data-anchor-id="events">Events</h2>
+<p>An <code>Event</code> object is one of the simplest primitives available for synchronization. Internally, the CPython <a href="https://github.com/python/cpython/blob/df5cdc11123a35065bbf1636251447d0bfe789a5/Lib/threading.py#L488">implementation</a> manages a flag that can be set to <code>True</code> with the <code>set()</code> method and reset to <code>False</code> using the <code>clear()</code> method. The <code>wait()</code> method blocks until the flag is <code>True</code>.</p>
+<p>When the internal flag is set to <code>True</code>, all threads waiting on the <code>Event</code> are awakened. Threads that call <code>wait()</code> once the flag is <code>True</code> will not block at all.</p>
+<p>When the internal flag is reset to <code>False</code>, threads calling <code>wait()</code> will block until <code>set()</code> is called to set the internal flag to <code>True</code> again.</p>
+</section>
+<section id="the-global-interpreter-lockgil" class="level2">
+<h2 class="anchored" data-anchor-id="the-global-interpreter-lockgil">The Global Interpreter Lock(GIL)</h2>
+<p>The Python interpreter maintains a reference count of each object in Python code. When references go out of scope, the reference count of the object is decremented and if the reference count equals <span class="math inline">\(0\)</span>, memory is deallocated(reclaimed). These reference counts are shared state and executing Python bytecode requires acquiring an exclusive lock on the interpreter (shared state). The implication is that the <code>threading</code> library does not offer true hardware concurrency even on multi-core CPUs.</p>
+</section>
+<section id="multiprocessing-module" class="level2">
+<h2 class="anchored" data-anchor-id="multiprocessing-module"><code>multiprocessing</code> module</h2>
 
 
 <!-- -->
 
-</section>
 </section>
 
 </main> <!-- /main -->
@@ -1917,7 +1935,7 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb17-430"><a href="#cb17-430" aria-hidden="true" tabindex="-1"></a>    cond_var.notify()</span>
 <span id="cb17-431"><a href="#cb17-431" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb17-432"><a href="#cb17-432" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb17-433"><a href="#cb17-433" aria-hidden="true" tabindex="-1"></a><span class="fu">### Implementation of a thread-safe SPSC bounded ring-buffer</span></span>
+<span id="cb17-433"><a href="#cb17-433" aria-hidden="true" tabindex="-1"></a><span class="fu">### Implementation of a thread-based SPSC bounded ring-buffer</span></span>
 <span id="cb17-434"><a href="#cb17-434" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb17-437"><a href="#cb17-437" aria-hidden="true" tabindex="-1"></a><span class="in">```{python}</span></span>
 <span id="cb17-438"><a href="#cb17-438" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> threading</span>
@@ -2059,6 +2077,20 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb17-574"><a href="#cb17-574" aria-hidden="true" tabindex="-1"></a><span class="fu">### Semaphores</span></span>
 <span id="cb17-575"><a href="#cb17-575" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb17-576"><a href="#cb17-576" aria-hidden="true" tabindex="-1"></a>This is one of the oldest synchronization primitices in the history of CS, invented by the Dutch computer scientist <span class="co">[</span><span class="ot">Edsger W. Djikstra</span><span class="co">](https://en.wikipedia.org/wiki/Edsger_W._Dijkstra)</span>. A semaphore manages an internal counter which is decremented by each <span class="in">`acquire()`</span> and incremented by each <span class="in">`release()`</span> call.</span>
+<span id="cb17-577"><a href="#cb17-577" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-578"><a href="#cb17-578" aria-hidden="true" tabindex="-1"></a><span class="fu">## Events</span></span>
+<span id="cb17-579"><a href="#cb17-579" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-580"><a href="#cb17-580" aria-hidden="true" tabindex="-1"></a>An <span class="in">`Event`</span> object is one of the simplest primitives available for synchronization. Internally, the CPython <span class="co">[</span><span class="ot">implementation</span><span class="co">](https://github.com/python/cpython/blob/df5cdc11123a35065bbf1636251447d0bfe789a5/Lib/threading.py#L488)</span> manages a flag that can be set to <span class="in">`True`</span> with the <span class="in">`set()`</span> method and reset to <span class="in">`False`</span> using the <span class="in">`clear()`</span> method. The <span class="in">`wait()`</span> method blocks until the flag is <span class="in">`True`</span>. </span>
+<span id="cb17-581"><a href="#cb17-581" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-582"><a href="#cb17-582" aria-hidden="true" tabindex="-1"></a>When the internal flag is set to <span class="in">`True`</span>, all threads waiting on the <span class="in">`Event`</span> are awakened. Threads that call <span class="in">`wait()`</span> once the flag is <span class="in">`True`</span> will not block at all.</span>
+<span id="cb17-583"><a href="#cb17-583" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-584"><a href="#cb17-584" aria-hidden="true" tabindex="-1"></a>When the internal flag is reset to <span class="in">`False`</span>, threads calling <span class="in">`wait()`</span> will block until <span class="in">`set()`</span> is called to set the internal flag to <span class="in">`True`</span> again.</span>
+<span id="cb17-585"><a href="#cb17-585" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-586"><a href="#cb17-586" aria-hidden="true" tabindex="-1"></a><span class="fu">## The Global Interpreter Lock(GIL)</span></span>
+<span id="cb17-587"><a href="#cb17-587" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-588"><a href="#cb17-588" aria-hidden="true" tabindex="-1"></a>The Python interpreter maintains a reference count of each object in Python code. When references go out of scope, the reference count of the object is decremented and if the reference count equals $0$, memory is deallocated(reclaimed). These reference counts are shared state and executing Python bytecode requires acquiring an exclusive lock on the interpreter (shared state). The implication is that the <span class="in">`threading`</span> library does not offer true hardware concurrency even on multi-core CPUs.</span>
+<span id="cb17-589"><a href="#cb17-589" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-590"><a href="#cb17-590" aria-hidden="true" tabindex="-1"></a><span class="fu">## `multiprocessing` module</span></span>
 </code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
