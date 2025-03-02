@@ -614,3 +614,57 @@ process-1 has pid: 24838 with parent pid: 24835
 process-2 has pid: 24839 with parent pid: 24835
 MainProcess has pid: 24835 
 ```
+
+### Fork
+
+`fork` is the default method that Python uses to create processes on UNIX based systems. 
+
+#### `fork` system call 
+
+There are $2$ families of system calls, `fork` and `exec` that can be invoked by a process to create subprocesses on UNIX based systems. A process can invoke this system call and get an *almost* clone of itself. I qualify the statement with *almost* because not everything is copied when a `fork` happens. The exact list of what isn't copies can be found by checking out the `manpage` of `fork` on your platform. The child process gets an identical memory image, so any open file descriptors are copied. However, multiple threads of a process don't get copied. Any threads running in the parent process do not exist in the child process. Additionally, `fork` isn't available on a Windows platform. Under the hood, Python uses `os.fork()` to create the child process.
+
+Often, we don't want to fork processes, because the newly created process(called the child process) comes with identical copies of data-structures and file-descriptors of the parent process, which can be problematic.
+
+To illustrate the differences with other methods of creating processes, consider the snippet below:
+
+```python
+import multiprocessing
+
+class Foo:
+    x = 42
+
+def process_task():
+    print(f"x = {Foo.x}")
+
+if __name__ == "__main__":
+    multiprocessing.set_start_method('fork')
+
+    Foo.x = 17
+    process = multiprocessing.Process(
+        target=process_task,
+        name="process-1"
+    )
+
+    process.start()
+    process.join()
+```
+Output:
+```
+x = 17
+```
+
+In the snippet above, the forked child process executes the method `process_task()`. The main process changes the value of a static variable `Foo.x` from `42` to `17` before it forks the child process. The child process gets a copy of all the resources of the parent - data structures, database/nework connections, including the static variable and prints a value of `17`.
+
+When we `fork`, the entire process in Python is duplicated in memory including the python interpreter, code, libraries, stack memory. This creates a new instance of the python interpreter. `fork`ing creates new instances of the python interpreter each with its own GIL. A single GIL is no longer a constraint and we can have true hardware concurrency on a multi-core  processor.
+
+#### Problems with `fork`ing
+
+To illustrate the problems `fork` can create, consider the below code snippet. The main process created a `Lock` object and acquires it just before `fork`ing a child process. The child process receives a copy of all the global data-structures of the parent process. It attempts to acquire the lock but when the `Lock` object was copied it was already in the locked state, so the child ends up waiting on a `Lock` object that was inherited in the locked state and will be forever blocked because there's no other thread in the process that will unlock it. The child process will hang. 
+
+#### Child process hanging upon `fork`ing
+
+
+
+
+
+
