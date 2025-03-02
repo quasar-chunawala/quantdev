@@ -663,8 +663,48 @@ To illustrate the problems `fork` can create, consider the below code snippet. T
 
 #### Child process hanging upon `fork`ing
 
+```python
+import threading
+import multiprocessing
+from multiprocessing import current_process, parent_process, Process
+import os
 
+lock = threading.Lock()
 
+def process_task():
+    print("\nProcess ID {0}, parent process {1} waiting to acquire lock"
+          .format(os.getpid(), os.getppid())
+          )
+    lock.acquire()
+    print("\nProcess ID {0}, {1} lock acquired"
+          .format(os.getpid(), os.getppid())
+          )
+    lock.release()
+    print("\nProcess ID {0}, {1} lock released"
+          .format(os.getpid(), os.getppid())
+          )
 
+if __name__ == "__main__":
+    multiprocessing.set_start_method('fork')
+    p = Process(target=process_task)
 
+    # acquire the lock just before starting the new process
+    lock.acquire()
+
+    # fork a new process
+    p.start()
+
+    # release the lock after starting the child process
+    lock.release()
+
+    print(f"Main process waiting for the child to complete...")
+    # wait for the child process to be done
+    p.join()
+
+    print(f"We are all done here!")
+```
+Output
+```
+Process ID 30058, parent process 30057 waiting to acquire lock
+```
 
