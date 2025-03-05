@@ -1,5 +1,5 @@
 ---
-title: "Concurrency features in Python"
+title: "DIY asyncio"
 author: "Quasar"
 date: "2025-02-28"
 categories: [Python]      
@@ -571,140 +571,114 @@ When the internal flag is reset to `False`, threads calling `wait()` will block 
 
 The Python interpreter maintains a reference count of each object in Python code. When references go out of scope, the reference count of the object is decremented and if the reference count equals $0$, memory is deallocated(reclaimed). These reference counts are shared state and executing Python bytecode requires acquiring an exclusive lock on the interpreter (shared state). The implication is that the `threading` library does not offer true hardware concurrency even on multi-core CPUs.
 
-## `multiprocessing` module
+## `asyncio` from scratch
 
-We can spin off tasks as separate processes that can run on a multi-core CPU using python's `multiprocessing` module. Creating, managing and tearing down processes is far more expensive than doing the same for threads. Furthermore, inter-process communication is relatively slower than inter-thread communication.
+### Generators
+```{python}
+def fib(count: int):
+    a, b = 1, 0
+    for i in range(count):
+        a, b = b, a + b
+        yield b
 
-The API functions in the `multiprocessing` module mirror those in the `threading` module. 
+def main():
+    gen = fib(5)
+    print(gen)
+    while True:
+        print(next(gen))
 
-### Process
-
-Each OS has certain specific system calls to spawn new processes. The `multiprocessing` module offers the `set_start_method()` to let the developer decide the way new processes are created. There are 3 of them:
-
-- `fork`
-- `spawn`
-- `fork-server`
-
-```python
-from multiprocessing import Process
-from multiprocessing import current_process
-import os
-
-
-def process_task():
-    print("{0} has pid: {1} with parent pid: {2}".format(current_process().name, os.getpid(), os.getppid()))
-
-if __name__ == "__main__":
-    process = [0] * 3
-
-    for i in range(0, 3):
-        process[i] = Process(target=process_task, name="process-{0}".format(i))
-        process[i].start()
-
-    for i in range(0, 3):
-        process[i].join()
-
-    print("{0} has pid: {1} ".format(current_process().name, os.getpid()))
+try:
+    main()        
+except StopIteration:
+    print("Stop Iteration.")
 ```
 
-Output:
-```
-process-0 has pid: 24837 with parent pid: 24835
-process-1 has pid: 24838 with parent pid: 24835
-process-2 has pid: 24839 with parent pid: 24835
-MainProcess has pid: 24835 
-```
+The fibonacci sequence is a staple of generator examples. Each time through the loop we add the previous two numbers together and yield that value resulting in the sequence $\{1, 1, 2, 3, 5, \ldots \}$. But, when we call this function, we don't get any of these values directly, instead we get a compiled version of the generator object. The actual code in our function hasn't even started executing yet. 
 
-### Fork
+The generator object can then be iterated over just like a list and the standard `next()` function from the standard library can be used to iterate just once at a time. Each time we call `next()` on our generator object, it's re-entering the function where we left off, preserving the full state and if the function yields another value we get that value as the result value or the return value from the next call. When the generator function completes or returns, it raises a `StopIteration` exception, just like any other iterator would.
 
-`fork` is the default method that Python uses to create processes on UNIX based systems. 
+It's quite common to see generators that yield values out, but it's also possible to communicate or send values back into the generator from the outside. To do this, we have to replace the use of the `next()` function with the generator's `send()` function.
 
-#### `fork` system call 
+```{python}
+def counter(start = 0, stop = 10, step = 1):
+    value = start
+    while value < stop:
+        value = yield value
+        value += step
+    yield value
 
-There are $2$ families of system calls, `fork` and `exec` that can be invoked by a process to create subprocesses on UNIX based systems. A process can invoke this system call and get an *almost* clone of itself. I qualify the statement with *almost* because not everything is copied when a `fork` happens. The exact list of what isn't copies can be found by checking out the `manpage` of `fork` on your platform. The child process gets an identical memory image, so any open file descriptors are copied. However, multiple threads of a process don't get copied. Any threads running in the parent process do not exist in the child process. Additionally, `fork` isn't available on a Windows platform. Under the hood, Python uses `os.fork()` to create the child process.
+def main():
+    gen = counter()
+    
+    # prime the generator
+    # advance to the next yield statement
+    value = gen.send(None)
+    print(f"sent None, got {value}")
 
-Often, we don't want to fork processes, because the newly created process(called the child process) comes with identical copies of data-structures and file-descriptors of the parent process, which can be problematic.
+    try:
+        while(True):
+            next_value = gen.send(value)
+            print(f"sent {value}, got {next_value}")
+            value = next_value
+    except StopIteration:
+        print("StopIteration.")
 
-To illustrate the differences with other methods of creating processes, consider the snippet below:
-
-```python
-import multiprocessing
-
-class Foo:
-    x = 42
-
-def process_task():
-    print(f"x = {Foo.x}")
-
-if __name__ == "__main__":
-    multiprocessing.set_start_method('fork')
-
-    Foo.x = 17
-    process = multiprocessing.Process(
-        target=process_task,
-        name="process-1"
-    )
-
-    process.start()
-    process.join()
-```
-Output:
-```
-x = 17
+main()
 ```
 
-In the snippet above, the forked child process executes the method `process_task()`. The main process changes the value of a static variable `Foo.x` from `42` to `17` before it forks the child process. The child process gets a copy of all the resources of the parent - data structures, database/nework connections, including the static variable and prints a value of `17`.
+Congratulation, now you've just discovered coroutines. Python's had them hiding in plain sight for years. But, how do we actually use this to run concurrent tasks? 
 
-When we `fork`, the entire process in Python is duplicated in memory including the python interpreter, code, libraries, stack memory. This creates a new instance of the python interpreter. `fork`ing creates new instances of the python interpreter each with its own GIL. A single GIL is no longer a constraint and we can have true hardware concurrency on a multi-core  processor.
+We are going to write an event loop that calls `send` on each generator object. And rather than looking for a flag, we catch the `StopIteration` exception and mark those generators and tasks as completed. The `StopIteration` itself contains the return value from these generators. So, we save those for the final result. Lastly, we also capture intermediate yielded values and send them back on the next iteration, which enables coroutines to call other coroutines.
 
-#### Problems with `fork`ing
+```{python}
+from typing import Generator, Any, List, Iterable
+import time
 
-To illustrate the problems `fork` can create, consider the below code snippet. The main process created a `Lock` object and acquires it just before `fork`ing a child process. The child process receives a copy of all the global data-structures of the parent process. It attempts to acquire the lock but when the `Lock` object was copied it was already in the locked state, so the child ends up waiting on a `Lock` object that was inherited in the locked state and will be forever blocked because there's no other thread in the process that will unlock it. The child process will hang. 
 
-#### Child process hanging upon `fork`ing
+def wait(tasks: Iterable[Generator]) -> List[Any]:
+    pending = list(tasks)
+    tasks = {task: None for task in pending}
+    before = time.time()
 
-```python
-import threading
-import multiprocessing
-from multiprocessing import current_process, parent_process, Process
-import os
+    while pending:
+        for gen in pending:
+            try:
+                tasks[gen] = gen.send(tasks[gen])
+            except StopIteration as e:
+                tasks[gen] = e.args[0]
+                pending.remove(gen)
 
-lock = threading.Lock()
-
-def process_task():
-    print("\nProcess ID {0}, parent process {1} waiting to acquire lock"
-          .format(os.getpid(), os.getppid())
-          )
-    lock.acquire()
-    print("\nProcess ID {0}, {1} lock acquired"
-          .format(os.getpid(), os.getppid())
-          )
-    lock.release()
-    print("\nProcess ID {0}, {1} lock released"
-          .format(os.getpid(), os.getppid())
-          )
-
-if __name__ == "__main__":
-    multiprocessing.set_start_method('fork')
-    p = Process(target=process_task)
-
-    # acquire the lock just before starting the new process
-    lock.acquire()
-
-    # fork a new process
-    p.start()
-
-    # release the lock after starting the child process
-    lock.release()
-
-    print(f"Main process waiting for the child to complete...")
-    # wait for the child process to be done
-    p.join()
-
-    print(f"We are all done here!")
+    print(f"duration = {time.time() - before:.3}")
+    return list(tasks.values())
 ```
-Output
+
+This means that we can now `yield from` another coroutine to call into it. Together, this makes our coroutines look and feel more like standard functions. But, they are still yielding control on their terms, and get to continue where they left off when its their turn again.
+
+```{python}
+def sleep(duration: float):
+    now = time.time()
+    threshold = now + duration
+
+    while now < threshold:
+        yield
+        now = time.time()
+
+def bar():
+    yield from sleep(0.1)
+    return 123
+
+def foo():
+    value = yield from bar()
+    return value
+
+def main():
+    tasks = [foo(), foo()]
+    print(wait(tasks))
+
+main()
 ```
-Process ID 30058, parent process 30057 waiting to acquire lock
-```
+
+We can create a pair of coroutines from the `foo()` functions and pass them to the event loop. It will follow execution from `foo` into `bar` and then into the `sleep` coroutine. In there, it will continue yielding back into the event loop until the time duration is up. Then, on the next iteration, it will `return` control to `bar()` which returns the value back to `foo()` which finally completes and returns the value. 
+
+To be clear, at each `yield()`, our event loop is cycling to the next pending task, giving us the cooperative multitasking concurrency that we have been looking for.
 
