@@ -74,7 +74,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-f2a1071e85750ec973bbb8a8f120da0f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-c7c5442de8a335b1f49be48b1aa284fe.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../../site_libs/bootstrap/bootstrap-b654a3b854314e04210c82d1176af51f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -234,6 +234,7 @@ window.Quarto = {
   <li><a href="#implementation-notes" id="toc-implementation-notes" class="nav-link" data-scroll-target="#implementation-notes">Implementation notes</a></li>
   </ul></li>
   <li><a href="#building-a-thread-safe-queue-using-condition-variables" id="toc-building-a-thread-safe-queue-using-condition-variables" class="nav-link" data-scroll-target="#building-a-thread-safe-queue-using-condition-variables">Building a thread-safe queue using condition variables</a></li>
+  <li><a href="#spmc-queues-and-coding-up-a-threadpool" id="toc-spmc-queues-and-coding-up-a-threadpool" class="nav-link" data-scroll-target="#spmc-queues-and-coding-up-a-threadpool">SPMC queues and coding up a <code>ThreadPool</code></a></li>
   </ul>
 </nav>
     </div>
@@ -556,6 +557,9 @@ window.Quarto = {
 <span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>    </span>
 <span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Finished execution"</span><span class="op">;</span></span>
 <span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="spmc-queues-and-coding-up-a-threadpool" class="level2">
+<h2 class="anchored" data-anchor-id="spmc-queues-and-coding-up-a-threadpool">SPMC queues and coding up a <code>ThreadPool</code></h2>
 
 
 <!-- -->
@@ -1048,330 +1052,331 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="co">        code-tools: true</span></span>
 <span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="co">        code-block-border-left: true</span></span>
 <span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="co">        code-annotations: below</span></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="co">        highlight-style: pygments</span></span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="fu">## Producer-consumer problem</span></span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>In the *producer-consumer problem*, we have two classes of threads, producers and consumers and a buffer containing a fixed number of slots. A producer thread attempts to put something into the next empty buffer slot, a consumer thread attempts to take something out of the next occupied buffer slot. The synchronization conditions are that producers cannot proceed unless there are empty slots and consumers cannot proceed unless there are occupied slots. The problem occurs because of the different rates at which producers deposit and consumers exhaust data.</span>
-<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>This is a classic, but frequently occurring synchronization problem. For example, the heart of the implementation of UNIX pipes is an instance of this problem.</span>
-<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a><span class="fu">## Ring buffer</span></span>
-<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>Consider a single, fixed-size buffer as if it were connected end-to-end, such that the oldest entry is processed first. This is a circular FIFO queue.</span>
-<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>What do we use SPSC FIFO queues for? In the industry, you often have a pipeline of processes. For example, you have one thread reading from sockets, another thread that handles the messages from the sockets and maybe processes them and produces a result and a third thread writes a response to the network. Those can be connected by SPSC FIFO queues. There's a couple of advantages to this. All these advantages and disadvantages are subject to measurement, so always measure. It may improve the throughput over just a single thread doing all $3$ of these operations, in fact, I'll be surprised if it didn't. It also should improve the resiliency of the application to spikes in message traffic. Some of the disadvantages are that you have to manage 3 threads and it probably uses more memory, because each of the FIFO queues needs place to store its messages.</span>
-<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>We all have come across circular FIFO queues. We usually have two cursors - <span class="in">`rear`</span> and <span class="in">`front`</span>. Items are pushed to the <span class="in">`rear`</span> of the queue and popped off the <span class="in">`front`</span> of the queue.</span>
-<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a><span class="al">![Circular FIFO Queue](circular_fifo_queue.jpg)</span>{fig-align="center" width=40% height=40%}</span>
-<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>When we <span class="in">`push(42)`</span> into the FIFO queue, the <span class="in">`rear`</span> cursor is incremented and each time we <span class="in">`pop()`</span>, the <span class="in">`front`</span> cursor is incremented. When the <span class="in">`front`</span> cursor and the <span class="in">`rear`</span> cursor are no longer equal, the FIFO queue is no longer empty. Eventually, we push so many values in, that the FIFO queue fills up. At this point, the <span class="in">`rear`</span> cursor is <span class="in">`capacity`</span> greater than the <span class="in">`front`</span> cursor.</span>
-<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>The FIFO queue empty and queue full conditions use the remainder operator <span class="in">`%`</span>. Division uses $20$ to $30$ cycles so it is a bit expensive. Another approach is to constrain the buffer size to an integral power of $2$, and use the bitwise <span class="in">`&amp;`</span> operator and that's a $1$ cycle operation. </span>
-<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a><span class="fu">### Implementation notes</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="fu">## Producer-consumer problem</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>In the *producer-consumer problem*, we have two classes of threads, producers and consumers and a buffer containing a fixed number of slots. A producer thread attempts to put something into the next empty buffer slot, a consumer thread attempts to take something out of the next occupied buffer slot. The synchronization conditions are that producers cannot proceed unless there are empty slots and consumers cannot proceed unless there are occupied slots. The problem occurs because of the different rates at which producers deposit and consumers exhaust data.</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>This is a classic, but frequently occurring synchronization problem. For example, the heart of the implementation of UNIX pipes is an instance of this problem.</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="fu">## Ring buffer</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>Consider a single, fixed-size buffer as if it were connected end-to-end, such that the oldest entry is processed first. This is a circular FIFO queue.</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>What do we use SPSC FIFO queues for? In the industry, you often have a pipeline of processes. For example, you have one thread reading from sockets, another thread that handles the messages from the sockets and maybe processes them and produces a result and a third thread writes a response to the network. Those can be connected by SPSC FIFO queues. There's a couple of advantages to this. All these advantages and disadvantages are subject to measurement, so always measure. It may improve the throughput over just a single thread doing all $3$ of these operations, in fact, I'll be surprised if it didn't. It also should improve the resiliency of the application to spikes in message traffic. Some of the disadvantages are that you have to manage 3 threads and it probably uses more memory, because each of the FIFO queues needs place to store its messages.</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>We all have come across circular FIFO queues. We usually have two cursors - <span class="in">`rear`</span> and <span class="in">`front`</span>. Items are pushed to the <span class="in">`rear`</span> of the queue and popped off the <span class="in">`front`</span> of the queue.</span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a><span class="al">![Circular FIFO Queue](circular_fifo_queue.jpg)</span>{fig-align="center" width=40% height=40%}</span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>When we <span class="in">`push(42)`</span> into the FIFO queue, the <span class="in">`rear`</span> cursor is incremented and each time we <span class="in">`pop()`</span>, the <span class="in">`front`</span> cursor is incremented. When the <span class="in">`front`</span> cursor and the <span class="in">`rear`</span> cursor are no longer equal, the FIFO queue is no longer empty. Eventually, we push so many values in, that the FIFO queue fills up. At this point, the <span class="in">`rear`</span> cursor is <span class="in">`capacity`</span> greater than the <span class="in">`front`</span> cursor.</span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>The FIFO queue empty and queue full conditions use the remainder operator <span class="in">`%`</span>. Division uses $20$ to $30$ cycles so it is a bit expensive. Another approach is to constrain the buffer size to an integral power of $2$, and use the bitwise <span class="in">`&amp;`</span> operator and that's a $1$ cycle operation. </span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a><span class="fu">### Implementation notes</span></span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;queue&gt;</span></span>
-<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;array&gt;</span></span>
-<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;numeric&gt;</span></span>
-<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
-<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;condition_variable&gt;</span></span>
-<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;mutex&gt;</span></span>
-<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;shared_mutex&gt;</span></span>
-<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> dev <span class="op">{</span></span>
-<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> ring_buffer <span class="op">{</span></span>
-<span id="cb3-54"><a href="#cb3-54" aria-hidden="true" tabindex="-1"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb3-55"><a href="#cb3-55" aria-hidden="true" tabindex="-1"></a>        <span class="kw">enum</span> <span class="op">{</span>min_capacity <span class="op">=</span> <span class="dv">128</span><span class="op">};</span></span>
-<span id="cb3-56"><a href="#cb3-56" aria-hidden="true" tabindex="-1"></a>        T<span class="op">*</span> ring<span class="op">;</span></span>
-<span id="cb3-57"><a href="#cb3-57" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> <span class="va">m_front</span><span class="op">;</span></span>
-<span id="cb3-58"><a href="#cb3-58" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> <span class="va">m_rear</span><span class="op">;</span></span>
-<span id="cb3-59"><a href="#cb3-59" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> <span class="va">m_capacity</span><span class="op">;</span></span>
-<span id="cb3-60"><a href="#cb3-60" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-61"><a href="#cb3-61" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb3-62"><a href="#cb3-62" aria-hidden="true" tabindex="-1"></a>        <span class="co">/* Default constructor*/</span></span>
-<span id="cb3-63"><a href="#cb3-63" aria-hidden="true" tabindex="-1"></a>        ring_buffer<span class="op">()</span> </span>
-<span id="cb3-64"><a href="#cb3-64" aria-hidden="true" tabindex="-1"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
-<span id="cb3-65"><a href="#cb3-65" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
-<span id="cb3-66"><a href="#cb3-66" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> ring<span class="op">{</span><span class="kw">nullptr</span><span class="op">}</span></span>
-<span id="cb3-67"><a href="#cb3-67" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
-<span id="cb3-68"><a href="#cb3-68" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span> </span>
-<span id="cb3-69"><a href="#cb3-69" aria-hidden="true" tabindex="-1"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>min_capacity<span class="op">));</span></span>
-<span id="cb3-70"><a href="#cb3-70" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_capacity</span> <span class="op">=</span> min_capacity<span class="op">;</span></span>
-<span id="cb3-71"><a href="#cb3-71" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-72"><a href="#cb3-72" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-73"><a href="#cb3-73" aria-hidden="true" tabindex="-1"></a>        ring_buffer<span class="op">(</span><span class="dt">int</span> capacity<span class="op">)</span></span>
-<span id="cb3-74"><a href="#cb3-74" aria-hidden="true" tabindex="-1"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-75"><a href="#cb3-75" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-76"><a href="#cb3-76" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> ring<span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
-<span id="cb3-77"><a href="#cb3-77" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-78"><a href="#cb3-78" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
-<span id="cb3-79"><a href="#cb3-79" aria-hidden="true" tabindex="-1"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>capacity<span class="op">));</span></span>
-<span id="cb3-80"><a href="#cb3-80" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_capacity</span> <span class="op">=</span> capacity<span class="op">;</span></span>
-<span id="cb3-81"><a href="#cb3-81" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-82"><a href="#cb3-82" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-83"><a href="#cb3-83" aria-hidden="true" tabindex="-1"></a>        <span class="co">/* Copy constructor - Perform a deep copy */</span></span>
-<span id="cb3-84"><a href="#cb3-84" aria-hidden="true" tabindex="-1"></a>        ring_buffer<span class="op">(</span><span class="at">const</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
-<span id="cb3-85"><a href="#cb3-85" aria-hidden="true" tabindex="-1"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-86"><a href="#cb3-86" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-87"><a href="#cb3-87" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> ring<span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
-<span id="cb3-88"><a href="#cb3-88" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-89"><a href="#cb3-89" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
-<span id="cb3-90"><a href="#cb3-90" aria-hidden="true" tabindex="-1"></a>            <span class="co">/* Allocation */</span></span>
-<span id="cb3-91"><a href="#cb3-91" aria-hidden="true" tabindex="-1"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>other<span class="op">.</span><span class="va">m_capacity</span><span class="op">));</span></span>
-<span id="cb3-92"><a href="#cb3-92" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-93"><a href="#cb3-93" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_capacity</span> <span class="op">=</span> other<span class="op">.</span><span class="va">m_capacity</span><span class="op">;</span></span>
-<span id="cb3-94"><a href="#cb3-94" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-95"><a href="#cb3-95" aria-hidden="true" tabindex="-1"></a>            <span class="co">/* Construction */</span></span>
-<span id="cb3-96"><a href="#cb3-96" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span><span class="dv">0</span><span class="op">};</span> i <span class="op">&lt;</span> other<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span></span>
-<span id="cb3-97"><a href="#cb3-97" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span></span>
-<span id="cb3-98"><a href="#cb3-98" aria-hidden="true" tabindex="-1"></a>                <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span>i<span class="op">])</span> T<span class="op">(</span>other<span class="op">[</span>i<span class="op">]);</span></span>
-<span id="cb3-99"><a href="#cb3-99" aria-hidden="true" tabindex="-1"></a>            <span class="op">}</span></span>
-<span id="cb3-100"><a href="#cb3-100" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-101"><a href="#cb3-101" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-102"><a href="#cb3-102" aria-hidden="true" tabindex="-1"></a>        <span class="co">/* Swap */</span></span>
-<span id="cb3-103"><a href="#cb3-103" aria-hidden="true" tabindex="-1"></a>        <span class="kw">friend</span> <span class="dt">void</span> swap<span class="op">(</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> lhs<span class="op">,</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> rhs<span class="op">)</span></span>
-<span id="cb3-104"><a href="#cb3-104" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
-<span id="cb3-105"><a href="#cb3-105" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_front</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_front</span><span class="op">);</span></span>
-<span id="cb3-106"><a href="#cb3-106" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_rear</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_rear</span><span class="op">);</span></span>
-<span id="cb3-107"><a href="#cb3-107" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">);</span></span>
-<span id="cb3-108"><a href="#cb3-108" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span>ring<span class="op">,</span> rhs<span class="op">.</span>ring<span class="op">);</span></span>
-<span id="cb3-109"><a href="#cb3-109" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-110"><a href="#cb3-110" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-111"><a href="#cb3-111" aria-hidden="true" tabindex="-1"></a>        <span class="co">/* Copy assignment */</span></span>
-<span id="cb3-112"><a href="#cb3-112" aria-hidden="true" tabindex="-1"></a>        ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
-<span id="cb3-113"><a href="#cb3-113" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
-<span id="cb3-114"><a href="#cb3-114" aria-hidden="true" tabindex="-1"></a>            ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;</span> temp<span class="op">{</span> other <span class="op">};</span>  <span class="co">//Copy-construct</span></span>
-<span id="cb3-115"><a href="#cb3-115" aria-hidden="true" tabindex="-1"></a>            swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> temp<span class="op">);</span></span>
-<span id="cb3-116"><a href="#cb3-116" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
-<span id="cb3-117"><a href="#cb3-117" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-118"><a href="#cb3-118" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-119"><a href="#cb3-119" aria-hidden="true" tabindex="-1"></a>        T<span class="op">&amp;</span> front<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-120"><a href="#cb3-120" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
-<span id="cb3-121"><a href="#cb3-121" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
-<span id="cb3-122"><a href="#cb3-122" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-123"><a href="#cb3-123" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> ring<span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb3-124"><a href="#cb3-124" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-125"><a href="#cb3-125" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-126"><a href="#cb3-126" aria-hidden="true" tabindex="-1"></a>        T<span class="op">&amp;</span> back<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-127"><a href="#cb3-127" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
-<span id="cb3-128"><a href="#cb3-128" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
-<span id="cb3-129"><a href="#cb3-129" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-130"><a href="#cb3-130" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> ring<span class="op">[(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb3-131"><a href="#cb3-131" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-132"><a href="#cb3-132" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-133"><a href="#cb3-133" aria-hidden="true" tabindex="-1"></a>        T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-134"><a href="#cb3-134" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
-<span id="cb3-135"><a href="#cb3-135" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
-<span id="cb3-136"><a href="#cb3-136" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-137"><a href="#cb3-137" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> ring<span class="op">[(</span><span class="va">m_front</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb3-138"><a href="#cb3-138" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-139"><a href="#cb3-139" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-140"><a href="#cb3-140" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> empty<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-141"><a href="#cb3-141" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_front</span> <span class="op">==</span> <span class="va">m_rear</span><span class="op">;</span></span>
-<span id="cb3-142"><a href="#cb3-142" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-143"><a href="#cb3-143" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-144"><a href="#cb3-144" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> full<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-145"><a href="#cb3-145" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> size<span class="op">()</span> <span class="op">==</span> capacity<span class="op">();</span></span>
-<span id="cb3-146"><a href="#cb3-146" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-147"><a href="#cb3-147" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-148"><a href="#cb3-148" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> push<span class="op">(</span><span class="at">const</span> T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-149"><a href="#cb3-149" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
-<span id="cb3-150"><a href="#cb3-150" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is full!"</span><span class="op">);</span></span>
-<span id="cb3-151"><a href="#cb3-151" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-152"><a href="#cb3-152" aria-hidden="true" tabindex="-1"></a>            <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">])</span> T<span class="op">(</span>value<span class="op">);</span></span>
-<span id="cb3-153"><a href="#cb3-153" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"pushed "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to buffer"</span><span class="op">;</span></span>
-<span id="cb3-154"><a href="#cb3-154" aria-hidden="true" tabindex="-1"></a>            <span class="op">++</span><span class="va">m_rear</span><span class="op">;</span></span>
-<span id="cb3-155"><a href="#cb3-155" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-156"><a href="#cb3-156" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-157"><a href="#cb3-157" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> push<span class="op">(</span>T<span class="op">&amp;&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-158"><a href="#cb3-158" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
-<span id="cb3-159"><a href="#cb3-159" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is full!"</span><span class="op">);</span></span>
-<span id="cb3-160"><a href="#cb3-160" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-161"><a href="#cb3-161" aria-hidden="true" tabindex="-1"></a>            <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">])</span> T<span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span>value<span class="op">));</span></span>
-<span id="cb3-162"><a href="#cb3-162" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"pushed "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to buffer"</span><span class="op">;</span></span>
-<span id="cb3-163"><a href="#cb3-163" aria-hidden="true" tabindex="-1"></a>            <span class="op">++</span><span class="va">m_rear</span><span class="op">;</span></span>
-<span id="cb3-164"><a href="#cb3-164" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-165"><a href="#cb3-165" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-166"><a href="#cb3-166" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> pop<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-167"><a href="#cb3-167" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
-<span id="cb3-168"><a href="#cb3-168" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
-<span id="cb3-169"><a href="#cb3-169" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-170"><a href="#cb3-170" aria-hidden="true" tabindex="-1"></a>            T value <span class="op">=</span> front<span class="op">();</span></span>
-<span id="cb3-171"><a href="#cb3-171" aria-hidden="true" tabindex="-1"></a>            ring<span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">].~</span>T<span class="op">();</span></span>
-<span id="cb3-172"><a href="#cb3-172" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"popped "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" off buffer"</span><span class="op">;</span></span>
-<span id="cb3-173"><a href="#cb3-173" aria-hidden="true" tabindex="-1"></a>            <span class="op">++</span><span class="va">m_front</span><span class="op">;</span></span>
-<span id="cb3-174"><a href="#cb3-174" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-175"><a href="#cb3-175" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-176"><a href="#cb3-176" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> capacity<span class="op">()</span> <span class="at">const</span><span class="op">{</span></span>
-<span id="cb3-177"><a href="#cb3-177" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_capacity</span><span class="op">;</span></span>
-<span id="cb3-178"><a href="#cb3-178" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-179"><a href="#cb3-179" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-180"><a href="#cb3-180" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-181"><a href="#cb3-181" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="op">(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="va">m_front</span><span class="op">);</span></span>
-<span id="cb3-182"><a href="#cb3-182" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-183"><a href="#cb3-183" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-184"><a href="#cb3-184" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> print<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-185"><a href="#cb3-185" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span>i <span class="op">&lt;</span> size<span class="op">();++</span>i<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-186"><a href="#cb3-186" aria-hidden="true" tabindex="-1"></a>                <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"ring["</span> <span class="op">&lt;&lt;</span> i <span class="op">&lt;&lt;</span> <span class="st">"] = "</span> <span class="op">&lt;&lt;</span> <span class="op">(*</span><span class="kw">this</span><span class="op">)[</span>i<span class="op">];</span></span>
-<span id="cb3-187"><a href="#cb3-187" aria-hidden="true" tabindex="-1"></a>            <span class="op">}</span></span>
-<span id="cb3-188"><a href="#cb3-188" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-189"><a href="#cb3-189" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
-<span id="cb3-190"><a href="#cb3-190" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb3-191"><a href="#cb3-191" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb3-192"><a href="#cb3-192" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-193"><a href="#cb3-193" aria-hidden="true" tabindex="-1"></a>Running the above code-snippet, we find that there are several occassions when there are buffer overflows or underflows, and there are also data races. </span>
-<span id="cb3-194"><a href="#cb3-194" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-195"><a href="#cb3-195" aria-hidden="true" tabindex="-1"></a><span class="fu">## Building a thread-safe queue using condition variables</span></span>
-<span id="cb3-196"><a href="#cb3-196" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-197"><a href="#cb3-197" aria-hidden="true" tabindex="-1"></a>You essentially have three groups of operations : those that query the state of the whole queue(<span class="in">`empty()`</span> and <span class="in">`size()`</span>), those that query the elements of the queue(<span class="in">`front()`</span> and <span class="in">`back()`</span>) and those that modify the queue (<span class="in">`push()`</span>, <span class="in">`pop()`</span> and <span class="in">`emplace()`</span>). This is the same as we've seen for the stack container adapter, and we have the same issues regarding race conditions inherent in the interface. Consequently, we need to combine <span class="in">`front()`</span> and <span class="in">`pop()`</span> into a single function call, much as you combined <span class="in">`pop()`</span> and <span class="in">`top()`</span> for the stack. </span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;queue&gt;</span></span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;array&gt;</span></span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;numeric&gt;</span></span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;condition_variable&gt;</span></span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;mutex&gt;</span></span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;shared_mutex&gt;</span></span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> dev <span class="op">{</span></span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> ring_buffer <span class="op">{</span></span>
+<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb3-54"><a href="#cb3-54" aria-hidden="true" tabindex="-1"></a>        <span class="kw">enum</span> <span class="op">{</span>min_capacity <span class="op">=</span> <span class="dv">128</span><span class="op">};</span></span>
+<span id="cb3-55"><a href="#cb3-55" aria-hidden="true" tabindex="-1"></a>        T<span class="op">*</span> ring<span class="op">;</span></span>
+<span id="cb3-56"><a href="#cb3-56" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> <span class="va">m_front</span><span class="op">;</span></span>
+<span id="cb3-57"><a href="#cb3-57" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> <span class="va">m_rear</span><span class="op">;</span></span>
+<span id="cb3-58"><a href="#cb3-58" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> <span class="va">m_capacity</span><span class="op">;</span></span>
+<span id="cb3-59"><a href="#cb3-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-60"><a href="#cb3-60" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb3-61"><a href="#cb3-61" aria-hidden="true" tabindex="-1"></a>        <span class="co">/* Default constructor*/</span></span>
+<span id="cb3-62"><a href="#cb3-62" aria-hidden="true" tabindex="-1"></a>        ring_buffer<span class="op">()</span> </span>
+<span id="cb3-63"><a href="#cb3-63" aria-hidden="true" tabindex="-1"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
+<span id="cb3-64"><a href="#cb3-64" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
+<span id="cb3-65"><a href="#cb3-65" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> ring<span class="op">{</span><span class="kw">nullptr</span><span class="op">}</span></span>
+<span id="cb3-66"><a href="#cb3-66" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
+<span id="cb3-67"><a href="#cb3-67" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span> </span>
+<span id="cb3-68"><a href="#cb3-68" aria-hidden="true" tabindex="-1"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>min_capacity<span class="op">));</span></span>
+<span id="cb3-69"><a href="#cb3-69" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_capacity</span> <span class="op">=</span> min_capacity<span class="op">;</span></span>
+<span id="cb3-70"><a href="#cb3-70" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-71"><a href="#cb3-71" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-72"><a href="#cb3-72" aria-hidden="true" tabindex="-1"></a>        ring_buffer<span class="op">(</span><span class="dt">int</span> capacity<span class="op">)</span></span>
+<span id="cb3-73"><a href="#cb3-73" aria-hidden="true" tabindex="-1"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb3-74"><a href="#cb3-74" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb3-75"><a href="#cb3-75" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> ring<span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
+<span id="cb3-76"><a href="#cb3-76" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb3-77"><a href="#cb3-77" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
+<span id="cb3-78"><a href="#cb3-78" aria-hidden="true" tabindex="-1"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>capacity<span class="op">));</span></span>
+<span id="cb3-79"><a href="#cb3-79" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_capacity</span> <span class="op">=</span> capacity<span class="op">;</span></span>
+<span id="cb3-80"><a href="#cb3-80" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-81"><a href="#cb3-81" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-82"><a href="#cb3-82" aria-hidden="true" tabindex="-1"></a>        <span class="co">/* Copy constructor - Perform a deep copy */</span></span>
+<span id="cb3-83"><a href="#cb3-83" aria-hidden="true" tabindex="-1"></a>        ring_buffer<span class="op">(</span><span class="at">const</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
+<span id="cb3-84"><a href="#cb3-84" aria-hidden="true" tabindex="-1"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb3-85"><a href="#cb3-85" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb3-86"><a href="#cb3-86" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> ring<span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
+<span id="cb3-87"><a href="#cb3-87" aria-hidden="true" tabindex="-1"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb3-88"><a href="#cb3-88" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
+<span id="cb3-89"><a href="#cb3-89" aria-hidden="true" tabindex="-1"></a>            <span class="co">/* Allocation */</span></span>
+<span id="cb3-90"><a href="#cb3-90" aria-hidden="true" tabindex="-1"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>other<span class="op">.</span><span class="va">m_capacity</span><span class="op">));</span></span>
+<span id="cb3-91"><a href="#cb3-91" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-92"><a href="#cb3-92" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_capacity</span> <span class="op">=</span> other<span class="op">.</span><span class="va">m_capacity</span><span class="op">;</span></span>
+<span id="cb3-93"><a href="#cb3-93" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-94"><a href="#cb3-94" aria-hidden="true" tabindex="-1"></a>            <span class="co">/* Construction */</span></span>
+<span id="cb3-95"><a href="#cb3-95" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span><span class="dv">0</span><span class="op">};</span> i <span class="op">&lt;</span> other<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb3-96"><a href="#cb3-96" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span></span>
+<span id="cb3-97"><a href="#cb3-97" aria-hidden="true" tabindex="-1"></a>                <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span>i<span class="op">])</span> T<span class="op">(</span>other<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb3-98"><a href="#cb3-98" aria-hidden="true" tabindex="-1"></a>            <span class="op">}</span></span>
+<span id="cb3-99"><a href="#cb3-99" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-100"><a href="#cb3-100" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-101"><a href="#cb3-101" aria-hidden="true" tabindex="-1"></a>        <span class="co">/* Swap */</span></span>
+<span id="cb3-102"><a href="#cb3-102" aria-hidden="true" tabindex="-1"></a>        <span class="kw">friend</span> <span class="dt">void</span> swap<span class="op">(</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> lhs<span class="op">,</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> rhs<span class="op">)</span></span>
+<span id="cb3-103"><a href="#cb3-103" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
+<span id="cb3-104"><a href="#cb3-104" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_front</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_front</span><span class="op">);</span></span>
+<span id="cb3-105"><a href="#cb3-105" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_rear</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_rear</span><span class="op">);</span></span>
+<span id="cb3-106"><a href="#cb3-106" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">);</span></span>
+<span id="cb3-107"><a href="#cb3-107" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span>ring<span class="op">,</span> rhs<span class="op">.</span>ring<span class="op">);</span></span>
+<span id="cb3-108"><a href="#cb3-108" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-109"><a href="#cb3-109" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-110"><a href="#cb3-110" aria-hidden="true" tabindex="-1"></a>        <span class="co">/* Copy assignment */</span></span>
+<span id="cb3-111"><a href="#cb3-111" aria-hidden="true" tabindex="-1"></a>        ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
+<span id="cb3-112"><a href="#cb3-112" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
+<span id="cb3-113"><a href="#cb3-113" aria-hidden="true" tabindex="-1"></a>            ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;</span> temp<span class="op">{</span> other <span class="op">};</span>  <span class="co">//Copy-construct</span></span>
+<span id="cb3-114"><a href="#cb3-114" aria-hidden="true" tabindex="-1"></a>            swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> temp<span class="op">);</span></span>
+<span id="cb3-115"><a href="#cb3-115" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb3-116"><a href="#cb3-116" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-117"><a href="#cb3-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-118"><a href="#cb3-118" aria-hidden="true" tabindex="-1"></a>        T<span class="op">&amp;</span> front<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-119"><a href="#cb3-119" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
+<span id="cb3-120"><a href="#cb3-120" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
+<span id="cb3-121"><a href="#cb3-121" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-122"><a href="#cb3-122" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> ring<span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
+<span id="cb3-123"><a href="#cb3-123" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-124"><a href="#cb3-124" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-125"><a href="#cb3-125" aria-hidden="true" tabindex="-1"></a>        T<span class="op">&amp;</span> back<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-126"><a href="#cb3-126" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
+<span id="cb3-127"><a href="#cb3-127" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
+<span id="cb3-128"><a href="#cb3-128" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-129"><a href="#cb3-129" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> ring<span class="op">[(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
+<span id="cb3-130"><a href="#cb3-130" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-131"><a href="#cb3-131" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-132"><a href="#cb3-132" aria-hidden="true" tabindex="-1"></a>        T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-133"><a href="#cb3-133" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
+<span id="cb3-134"><a href="#cb3-134" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
+<span id="cb3-135"><a href="#cb3-135" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-136"><a href="#cb3-136" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> ring<span class="op">[(</span><span class="va">m_front</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
+<span id="cb3-137"><a href="#cb3-137" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-138"><a href="#cb3-138" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-139"><a href="#cb3-139" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> empty<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-140"><a href="#cb3-140" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_front</span> <span class="op">==</span> <span class="va">m_rear</span><span class="op">;</span></span>
+<span id="cb3-141"><a href="#cb3-141" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-142"><a href="#cb3-142" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-143"><a href="#cb3-143" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> full<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-144"><a href="#cb3-144" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> size<span class="op">()</span> <span class="op">==</span> capacity<span class="op">();</span></span>
+<span id="cb3-145"><a href="#cb3-145" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-146"><a href="#cb3-146" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-147"><a href="#cb3-147" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> push<span class="op">(</span><span class="at">const</span> T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-148"><a href="#cb3-148" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
+<span id="cb3-149"><a href="#cb3-149" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is full!"</span><span class="op">);</span></span>
+<span id="cb3-150"><a href="#cb3-150" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-151"><a href="#cb3-151" aria-hidden="true" tabindex="-1"></a>            <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">])</span> T<span class="op">(</span>value<span class="op">);</span></span>
+<span id="cb3-152"><a href="#cb3-152" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"pushed "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to buffer"</span><span class="op">;</span></span>
+<span id="cb3-153"><a href="#cb3-153" aria-hidden="true" tabindex="-1"></a>            <span class="op">++</span><span class="va">m_rear</span><span class="op">;</span></span>
+<span id="cb3-154"><a href="#cb3-154" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-155"><a href="#cb3-155" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-156"><a href="#cb3-156" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> push<span class="op">(</span>T<span class="op">&amp;&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-157"><a href="#cb3-157" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
+<span id="cb3-158"><a href="#cb3-158" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is full!"</span><span class="op">);</span></span>
+<span id="cb3-159"><a href="#cb3-159" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-160"><a href="#cb3-160" aria-hidden="true" tabindex="-1"></a>            <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">])</span> T<span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span>value<span class="op">));</span></span>
+<span id="cb3-161"><a href="#cb3-161" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"pushed "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to buffer"</span><span class="op">;</span></span>
+<span id="cb3-162"><a href="#cb3-162" aria-hidden="true" tabindex="-1"></a>            <span class="op">++</span><span class="va">m_rear</span><span class="op">;</span></span>
+<span id="cb3-163"><a href="#cb3-163" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-164"><a href="#cb3-164" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-165"><a href="#cb3-165" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> pop<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-166"><a href="#cb3-166" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
+<span id="cb3-167"><a href="#cb3-167" aria-hidden="true" tabindex="-1"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
+<span id="cb3-168"><a href="#cb3-168" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-169"><a href="#cb3-169" aria-hidden="true" tabindex="-1"></a>            T value <span class="op">=</span> front<span class="op">();</span></span>
+<span id="cb3-170"><a href="#cb3-170" aria-hidden="true" tabindex="-1"></a>            ring<span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">].~</span>T<span class="op">();</span></span>
+<span id="cb3-171"><a href="#cb3-171" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"popped "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" off buffer"</span><span class="op">;</span></span>
+<span id="cb3-172"><a href="#cb3-172" aria-hidden="true" tabindex="-1"></a>            <span class="op">++</span><span class="va">m_front</span><span class="op">;</span></span>
+<span id="cb3-173"><a href="#cb3-173" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-174"><a href="#cb3-174" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-175"><a href="#cb3-175" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> capacity<span class="op">()</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb3-176"><a href="#cb3-176" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_capacity</span><span class="op">;</span></span>
+<span id="cb3-177"><a href="#cb3-177" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-178"><a href="#cb3-178" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-179"><a href="#cb3-179" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-180"><a href="#cb3-180" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="op">(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="va">m_front</span><span class="op">);</span></span>
+<span id="cb3-181"><a href="#cb3-181" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-182"><a href="#cb3-182" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-183"><a href="#cb3-183" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> print<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-184"><a href="#cb3-184" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span>i <span class="op">&lt;</span> size<span class="op">();++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-185"><a href="#cb3-185" aria-hidden="true" tabindex="-1"></a>                <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"ring["</span> <span class="op">&lt;&lt;</span> i <span class="op">&lt;&lt;</span> <span class="st">"] = "</span> <span class="op">&lt;&lt;</span> <span class="op">(*</span><span class="kw">this</span><span class="op">)[</span>i<span class="op">];</span></span>
+<span id="cb3-186"><a href="#cb3-186" aria-hidden="true" tabindex="-1"></a>            <span class="op">}</span></span>
+<span id="cb3-187"><a href="#cb3-187" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-188"><a href="#cb3-188" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb3-189"><a href="#cb3-189" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb3-190"><a href="#cb3-190" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb3-191"><a href="#cb3-191" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-192"><a href="#cb3-192" aria-hidden="true" tabindex="-1"></a>Running the above code-snippet, we find that there are several occassions when there are buffer overflows or underflows, and there are also data races. </span>
+<span id="cb3-193"><a href="#cb3-193" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-194"><a href="#cb3-194" aria-hidden="true" tabindex="-1"></a><span class="fu">## Building a thread-safe queue using condition variables</span></span>
+<span id="cb3-195"><a href="#cb3-195" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-196"><a href="#cb3-196" aria-hidden="true" tabindex="-1"></a>You essentially have three groups of operations : those that query the state of the whole queue(<span class="in">`empty()`</span> and <span class="in">`size()`</span>), those that query the elements of the queue(<span class="in">`front()`</span> and <span class="in">`back()`</span>) and those that modify the queue (<span class="in">`push()`</span>, <span class="in">`pop()`</span> and <span class="in">`emplace()`</span>). This is the same as we've seen for the stack container adapter, and we have the same issues regarding race conditions inherent in the interface. Consequently, we need to combine <span class="in">`front()`</span> and <span class="in">`pop()`</span> into a single function call, much as you combined <span class="in">`pop()`</span> and <span class="in">`top()`</span> for the stack. </span>
+<span id="cb3-197"><a href="#cb3-197" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-198"><a href="#cb3-198" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-199"><a href="#cb3-199" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-200"><a href="#cb3-200" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
-<span id="cb3-201"><a href="#cb3-201" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> dev <span class="op">{</span></span>
-<span id="cb3-202"><a href="#cb3-202" aria-hidden="true" tabindex="-1"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb3-203"><a href="#cb3-203" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> threadsafe_ring_buffer <span class="op">{</span></span>
-<span id="cb3-204"><a href="#cb3-204" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb3-205"><a href="#cb3-205" aria-hidden="true" tabindex="-1"></a>        threadsafe_ring_buffer<span class="op">()</span> <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;()}</span></span>
-<span id="cb3-206"><a href="#cb3-206" aria-hidden="true" tabindex="-1"></a>        <span class="op">{}</span></span>
-<span id="cb3-207"><a href="#cb3-207" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-208"><a href="#cb3-208" aria-hidden="true" tabindex="-1"></a>        threadsafe_ring_buffer<span class="op">(</span><span class="dt">int</span> capacity<span class="op">)</span> <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;(</span>capacity<span class="op">)}</span></span>
-<span id="cb3-209"><a href="#cb3-209" aria-hidden="true" tabindex="-1"></a>        <span class="op">{}</span></span>
-<span id="cb3-210"><a href="#cb3-210" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-211"><a href="#cb3-211" aria-hidden="true" tabindex="-1"></a>        threadsafe_ring_buffer<span class="op">(</span><span class="at">const</span> threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
-<span id="cb3-212"><a href="#cb3-212" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
-<span id="cb3-213"><a href="#cb3-213" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-214"><a href="#cb3-214" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span> <span class="op">=</span> other<span class="op">.</span><span class="va">m_ring_buffer</span><span class="op">;</span></span>
-<span id="cb3-215"><a href="#cb3-215" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-216"><a href="#cb3-216" aria-hidden="true" tabindex="-1"></a>        threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
-<span id="cb3-217"><a href="#cb3-217" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-218"><a href="#cb3-218" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> wait_and_push<span class="op">(</span>T new_value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-219"><a href="#cb3-219" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-220"><a href="#cb3-220" aria-hidden="true" tabindex="-1"></a>            queue_not_full_cond<span class="op">.</span>wait<span class="op">(</span>lck<span class="op">,</span> <span class="op">[</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span><span class="cf">return</span> <span class="op">!</span><span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">();});</span></span>
-<span id="cb3-221"><a href="#cb3-221" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>push<span class="op">(</span>new_value<span class="op">);</span></span>
-<span id="cb3-222"><a href="#cb3-222" aria-hidden="true" tabindex="-1"></a>            queue_not_empty_cond<span class="op">.</span>notify_one<span class="op">();</span></span>
-<span id="cb3-223"><a href="#cb3-223" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-224"><a href="#cb3-224" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-225"><a href="#cb3-225" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> try_push<span class="op">(</span>T new_value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-226"><a href="#cb3-226" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-227"><a href="#cb3-227" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(!</span><span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">())</span></span>
-<span id="cb3-228"><a href="#cb3-228" aria-hidden="true" tabindex="-1"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
-<span id="cb3-229"><a href="#cb3-229" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-230"><a href="#cb3-230" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>push<span class="op">(</span>new_value<span class="op">);</span></span>
-<span id="cb3-231"><a href="#cb3-231" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
-<span id="cb3-232"><a href="#cb3-232" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-233"><a href="#cb3-233" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-234"><a href="#cb3-234" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> wait_and_pop<span class="op">(</span>T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-235"><a href="#cb3-235" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-236"><a href="#cb3-236" aria-hidden="true" tabindex="-1"></a>            queue_not_empty_cond<span class="op">.</span>wait<span class="op">(</span>lck<span class="op">,</span> <span class="op">[</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">!</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">();});</span></span>
-<span id="cb3-237"><a href="#cb3-237" aria-hidden="true" tabindex="-1"></a>            value <span class="op">=</span> <span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">();</span></span>
-<span id="cb3-238"><a href="#cb3-238" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
-<span id="cb3-239"><a href="#cb3-239" aria-hidden="true" tabindex="-1"></a>            queue_not_full_cond<span class="op">.</span>notify_one<span class="op">();</span></span>
-<span id="cb3-240"><a href="#cb3-240" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-241"><a href="#cb3-241" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-242"><a href="#cb3-242" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> try_pop<span class="op">(</span>T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-243"><a href="#cb3-243" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-244"><a href="#cb3-244" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">())</span></span>
-<span id="cb3-245"><a href="#cb3-245" aria-hidden="true" tabindex="-1"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
-<span id="cb3-246"><a href="#cb3-246" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-247"><a href="#cb3-247" aria-hidden="true" tabindex="-1"></a>            value <span class="op">=</span> <span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">();</span></span>
-<span id="cb3-248"><a href="#cb3-248" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
-<span id="cb3-249"><a href="#cb3-249" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
-<span id="cb3-250"><a href="#cb3-250" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-251"><a href="#cb3-251" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-252"><a href="#cb3-252" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> wait_and_pop<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-253"><a href="#cb3-253" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-254"><a href="#cb3-254" aria-hidden="true" tabindex="-1"></a>            queue_not_empty_cond<span class="op">.</span>wait<span class="op">([</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">!</span>empty<span class="op">();</span> <span class="op">});</span></span>
-<span id="cb3-255"><a href="#cb3-255" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span> <span class="bu">std::</span>make_shared<span class="op">&lt;</span>T<span class="op">&gt;(</span><span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">())</span> <span class="op">};</span></span>
-<span id="cb3-256"><a href="#cb3-256" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
-<span id="cb3-257"><a href="#cb3-257" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
-<span id="cb3-258"><a href="#cb3-258" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-259"><a href="#cb3-259" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-260"><a href="#cb3-260" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> try_pop<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-261"><a href="#cb3-261" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-262"><a href="#cb3-262" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">())</span></span>
-<span id="cb3-263"><a href="#cb3-263" aria-hidden="true" tabindex="-1"></a>                <span class="cf">return</span> <span class="kw">nullptr</span><span class="op">;</span></span>
-<span id="cb3-264"><a href="#cb3-264" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-265"><a href="#cb3-265" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span> <span class="bu">std::</span>make_shared<span class="op">&lt;</span>T<span class="op">&gt;(</span><span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">())</span> <span class="op">};</span></span>
-<span id="cb3-266"><a href="#cb3-266" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
-<span id="cb3-267"><a href="#cb3-267" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
-<span id="cb3-268"><a href="#cb3-268" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-269"><a href="#cb3-269" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-270"><a href="#cb3-270" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> empty<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-271"><a href="#cb3-271" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-272"><a href="#cb3-272" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">();</span></span>
-<span id="cb3-273"><a href="#cb3-273" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-274"><a href="#cb3-274" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-275"><a href="#cb3-275" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> full<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-276"><a href="#cb3-276" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-277"><a href="#cb3-277" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">();</span></span>
-<span id="cb3-278"><a href="#cb3-278" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-279"><a href="#cb3-279" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-280"><a href="#cb3-280" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-281"><a href="#cb3-281" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-282"><a href="#cb3-282" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>size<span class="op">();</span></span>
-<span id="cb3-283"><a href="#cb3-283" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-284"><a href="#cb3-284" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-285"><a href="#cb3-285" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> capacity<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-286"><a href="#cb3-286" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-287"><a href="#cb3-287" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>capacity<span class="op">();</span></span>
-<span id="cb3-288"><a href="#cb3-288" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-289"><a href="#cb3-289" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-290"><a href="#cb3-290" aria-hidden="true" tabindex="-1"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb3-291"><a href="#cb3-291" aria-hidden="true" tabindex="-1"></a>        ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="va">m_ring_buffer</span><span class="op">;</span></span>
-<span id="cb3-292"><a href="#cb3-292" aria-hidden="true" tabindex="-1"></a>        <span class="at">mutable</span> <span class="bu">std::</span>shared_mutex mtx<span class="op">;</span></span>
-<span id="cb3-293"><a href="#cb3-293" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>condition_variable_any queue_not_empty_cond<span class="op">;</span></span>
-<span id="cb3-294"><a href="#cb3-294" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>condition_variable_any queue_not_full_cond<span class="op">;</span></span>
-<span id="cb3-295"><a href="#cb3-295" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
-<span id="cb3-296"><a href="#cb3-296" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb3-297"><a href="#cb3-297" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-298"><a href="#cb3-298" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb3-299"><a href="#cb3-299" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
-<span id="cb3-300"><a href="#cb3-300" aria-hidden="true" tabindex="-1"></a>    dev<span class="op">::</span>threadsafe_ring_buffer<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> buffer<span class="op">(</span><span class="dv">64</span><span class="op">);</span></span>
-<span id="cb3-301"><a href="#cb3-301" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-302"><a href="#cb3-302" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread producer<span class="op">(</span></span>
-<span id="cb3-303"><a href="#cb3-303" aria-hidden="true" tabindex="-1"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
-<span id="cb3-304"><a href="#cb3-304" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span>i <span class="op">&lt;=</span> <span class="dv">1000</span><span class="op">;++</span>i<span class="op">)</span></span>
-<span id="cb3-305"><a href="#cb3-305" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span></span>
-<span id="cb3-306"><a href="#cb3-306" aria-hidden="true" tabindex="-1"></a>                <span class="cf">try</span> <span class="op">{</span></span>
-<span id="cb3-307"><a href="#cb3-307" aria-hidden="true" tabindex="-1"></a>                    buffer<span class="op">.</span>wait_and_push<span class="op">(</span>i<span class="op">);</span></span>
-<span id="cb3-308"><a href="#cb3-308" aria-hidden="true" tabindex="-1"></a>                <span class="op">}</span></span>
-<span id="cb3-309"><a href="#cb3-309" aria-hidden="true" tabindex="-1"></a>                <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception e<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-310"><a href="#cb3-310" aria-hidden="true" tabindex="-1"></a>                    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"buffer full!"</span><span class="op">;</span></span>
-<span id="cb3-311"><a href="#cb3-311" aria-hidden="true" tabindex="-1"></a>                <span class="op">}</span></span>
-<span id="cb3-312"><a href="#cb3-312" aria-hidden="true" tabindex="-1"></a>            <span class="op">}</span></span>
-<span id="cb3-313"><a href="#cb3-313" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-314"><a href="#cb3-314" aria-hidden="true" tabindex="-1"></a>    <span class="op">);</span></span>
-<span id="cb3-315"><a href="#cb3-315" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-316"><a href="#cb3-316" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread consumer<span class="op">(</span></span>
-<span id="cb3-317"><a href="#cb3-317" aria-hidden="true" tabindex="-1"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
-<span id="cb3-318"><a href="#cb3-318" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span>i <span class="op">&lt;=</span> <span class="dv">1000</span><span class="op">;++</span>i<span class="op">)</span></span>
-<span id="cb3-319"><a href="#cb3-319" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span></span>
-<span id="cb3-320"><a href="#cb3-320" aria-hidden="true" tabindex="-1"></a>                <span class="cf">try</span> <span class="op">{</span></span>
-<span id="cb3-321"><a href="#cb3-321" aria-hidden="true" tabindex="-1"></a>                    <span class="dt">int</span> value<span class="op">;</span></span>
-<span id="cb3-322"><a href="#cb3-322" aria-hidden="true" tabindex="-1"></a>                    buffer<span class="op">.</span>wait_and_pop<span class="op">(</span>value<span class="op">);</span></span>
-<span id="cb3-323"><a href="#cb3-323" aria-hidden="true" tabindex="-1"></a>                    <span class="bu">std::</span>this_thread::sleep_for<span class="op">(</span><span class="bu">std::</span>chrono::microseconds<span class="op">(</span><span class="dv">1</span><span class="op">));</span></span>
-<span id="cb3-324"><a href="#cb3-324" aria-hidden="true" tabindex="-1"></a>                <span class="op">}</span></span>
-<span id="cb3-325"><a href="#cb3-325" aria-hidden="true" tabindex="-1"></a>                <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception e<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-326"><a href="#cb3-326" aria-hidden="true" tabindex="-1"></a>                    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"buffer empty!"</span><span class="op">;</span></span>
-<span id="cb3-327"><a href="#cb3-327" aria-hidden="true" tabindex="-1"></a>                <span class="op">}</span></span>
-<span id="cb3-328"><a href="#cb3-328" aria-hidden="true" tabindex="-1"></a>            <span class="op">}</span></span>
-<span id="cb3-329"><a href="#cb3-329" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
-<span id="cb3-330"><a href="#cb3-330" aria-hidden="true" tabindex="-1"></a>    <span class="op">);</span></span>
-<span id="cb3-331"><a href="#cb3-331" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-332"><a href="#cb3-332" aria-hidden="true" tabindex="-1"></a>    producer<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb3-333"><a href="#cb3-333" aria-hidden="true" tabindex="-1"></a>    consumer<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb3-334"><a href="#cb3-334" aria-hidden="true" tabindex="-1"></a>    </span>
-<span id="cb3-335"><a href="#cb3-335" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Finished execution"</span><span class="op">;</span></span>
-<span id="cb3-336"><a href="#cb3-336" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb3-337"><a href="#cb3-337" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
+<span id="cb3-199"><a href="#cb3-199" aria-hidden="true" tabindex="-1"></a><span class="in">```cpp</span></span>
+<span id="cb3-200"><a href="#cb3-200" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> dev <span class="op">{</span></span>
+<span id="cb3-201"><a href="#cb3-201" aria-hidden="true" tabindex="-1"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb3-202"><a href="#cb3-202" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> threadsafe_ring_buffer <span class="op">{</span></span>
+<span id="cb3-203"><a href="#cb3-203" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb3-204"><a href="#cb3-204" aria-hidden="true" tabindex="-1"></a>        threadsafe_ring_buffer<span class="op">()</span> <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;()}</span></span>
+<span id="cb3-205"><a href="#cb3-205" aria-hidden="true" tabindex="-1"></a>        <span class="op">{}</span></span>
+<span id="cb3-206"><a href="#cb3-206" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-207"><a href="#cb3-207" aria-hidden="true" tabindex="-1"></a>        threadsafe_ring_buffer<span class="op">(</span><span class="dt">int</span> capacity<span class="op">)</span> <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;(</span>capacity<span class="op">)}</span></span>
+<span id="cb3-208"><a href="#cb3-208" aria-hidden="true" tabindex="-1"></a>        <span class="op">{}</span></span>
+<span id="cb3-209"><a href="#cb3-209" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-210"><a href="#cb3-210" aria-hidden="true" tabindex="-1"></a>        threadsafe_ring_buffer<span class="op">(</span><span class="at">const</span> threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
+<span id="cb3-211"><a href="#cb3-211" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
+<span id="cb3-212"><a href="#cb3-212" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb3-213"><a href="#cb3-213" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span> <span class="op">=</span> other<span class="op">.</span><span class="va">m_ring_buffer</span><span class="op">;</span></span>
+<span id="cb3-214"><a href="#cb3-214" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-215"><a href="#cb3-215" aria-hidden="true" tabindex="-1"></a>        threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
+<span id="cb3-216"><a href="#cb3-216" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-217"><a href="#cb3-217" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> wait_and_push<span class="op">(</span>T new_value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-218"><a href="#cb3-218" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb3-219"><a href="#cb3-219" aria-hidden="true" tabindex="-1"></a>            queue_not_full_cond<span class="op">.</span>wait<span class="op">(</span>lck<span class="op">,</span> <span class="op">[</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span><span class="cf">return</span> <span class="op">!</span><span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">();});</span></span>
+<span id="cb3-220"><a href="#cb3-220" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>push<span class="op">(</span>new_value<span class="op">);</span></span>
+<span id="cb3-221"><a href="#cb3-221" aria-hidden="true" tabindex="-1"></a>            queue_not_empty_cond<span class="op">.</span>notify_one<span class="op">();</span></span>
+<span id="cb3-222"><a href="#cb3-222" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-223"><a href="#cb3-223" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-224"><a href="#cb3-224" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> try_push<span class="op">(</span>T new_value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-225"><a href="#cb3-225" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb3-226"><a href="#cb3-226" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(!</span><span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">())</span></span>
+<span id="cb3-227"><a href="#cb3-227" aria-hidden="true" tabindex="-1"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb3-228"><a href="#cb3-228" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-229"><a href="#cb3-229" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>push<span class="op">(</span>new_value<span class="op">);</span></span>
+<span id="cb3-230"><a href="#cb3-230" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb3-231"><a href="#cb3-231" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-232"><a href="#cb3-232" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-233"><a href="#cb3-233" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> wait_and_pop<span class="op">(</span>T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-234"><a href="#cb3-234" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb3-235"><a href="#cb3-235" aria-hidden="true" tabindex="-1"></a>            queue_not_empty_cond<span class="op">.</span>wait<span class="op">(</span>lck<span class="op">,</span> <span class="op">[</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">!</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">();});</span></span>
+<span id="cb3-236"><a href="#cb3-236" aria-hidden="true" tabindex="-1"></a>            value <span class="op">=</span> <span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">();</span></span>
+<span id="cb3-237"><a href="#cb3-237" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
+<span id="cb3-238"><a href="#cb3-238" aria-hidden="true" tabindex="-1"></a>            queue_not_full_cond<span class="op">.</span>notify_one<span class="op">();</span></span>
+<span id="cb3-239"><a href="#cb3-239" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-240"><a href="#cb3-240" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-241"><a href="#cb3-241" aria-hidden="true" tabindex="-1"></a>        <span class="dt">void</span> try_pop<span class="op">(</span>T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-242"><a href="#cb3-242" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb3-243"><a href="#cb3-243" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">())</span></span>
+<span id="cb3-244"><a href="#cb3-244" aria-hidden="true" tabindex="-1"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb3-245"><a href="#cb3-245" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-246"><a href="#cb3-246" aria-hidden="true" tabindex="-1"></a>            value <span class="op">=</span> <span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">();</span></span>
+<span id="cb3-247"><a href="#cb3-247" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
+<span id="cb3-248"><a href="#cb3-248" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb3-249"><a href="#cb3-249" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-250"><a href="#cb3-250" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-251"><a href="#cb3-251" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> wait_and_pop<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-252"><a href="#cb3-252" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb3-253"><a href="#cb3-253" aria-hidden="true" tabindex="-1"></a>            queue_not_empty_cond<span class="op">.</span>wait<span class="op">([</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">!</span>empty<span class="op">();</span> <span class="op">});</span></span>
+<span id="cb3-254"><a href="#cb3-254" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span> <span class="bu">std::</span>make_shared<span class="op">&lt;</span>T<span class="op">&gt;(</span><span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">())</span> <span class="op">};</span></span>
+<span id="cb3-255"><a href="#cb3-255" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
+<span id="cb3-256"><a href="#cb3-256" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb3-257"><a href="#cb3-257" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-258"><a href="#cb3-258" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-259"><a href="#cb3-259" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> try_pop<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-260"><a href="#cb3-260" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb3-261"><a href="#cb3-261" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> <span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">())</span></span>
+<span id="cb3-262"><a href="#cb3-262" aria-hidden="true" tabindex="-1"></a>                <span class="cf">return</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb3-263"><a href="#cb3-263" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-264"><a href="#cb3-264" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span> <span class="bu">std::</span>make_shared<span class="op">&lt;</span>T<span class="op">&gt;(</span><span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">())</span> <span class="op">};</span></span>
+<span id="cb3-265"><a href="#cb3-265" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
+<span id="cb3-266"><a href="#cb3-266" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb3-267"><a href="#cb3-267" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-268"><a href="#cb3-268" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-269"><a href="#cb3-269" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> empty<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-270"><a href="#cb3-270" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb3-271"><a href="#cb3-271" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">();</span></span>
+<span id="cb3-272"><a href="#cb3-272" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-273"><a href="#cb3-273" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-274"><a href="#cb3-274" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> full<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-275"><a href="#cb3-275" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb3-276"><a href="#cb3-276" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">();</span></span>
+<span id="cb3-277"><a href="#cb3-277" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-278"><a href="#cb3-278" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-279"><a href="#cb3-279" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-280"><a href="#cb3-280" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb3-281"><a href="#cb3-281" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>size<span class="op">();</span></span>
+<span id="cb3-282"><a href="#cb3-282" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-283"><a href="#cb3-283" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-284"><a href="#cb3-284" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> capacity<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-285"><a href="#cb3-285" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb3-286"><a href="#cb3-286" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>capacity<span class="op">();</span></span>
+<span id="cb3-287"><a href="#cb3-287" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-288"><a href="#cb3-288" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-289"><a href="#cb3-289" aria-hidden="true" tabindex="-1"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb3-290"><a href="#cb3-290" aria-hidden="true" tabindex="-1"></a>        ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="va">m_ring_buffer</span><span class="op">;</span></span>
+<span id="cb3-291"><a href="#cb3-291" aria-hidden="true" tabindex="-1"></a>        <span class="at">mutable</span> <span class="bu">std::</span>shared_mutex mtx<span class="op">;</span></span>
+<span id="cb3-292"><a href="#cb3-292" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>condition_variable_any queue_not_empty_cond<span class="op">;</span></span>
+<span id="cb3-293"><a href="#cb3-293" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>condition_variable_any queue_not_full_cond<span class="op">;</span></span>
+<span id="cb3-294"><a href="#cb3-294" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb3-295"><a href="#cb3-295" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb3-296"><a href="#cb3-296" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-297"><a href="#cb3-297" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb3-298"><a href="#cb3-298" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb3-299"><a href="#cb3-299" aria-hidden="true" tabindex="-1"></a>    dev<span class="op">::</span>threadsafe_ring_buffer<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> buffer<span class="op">(</span><span class="dv">64</span><span class="op">);</span></span>
+<span id="cb3-300"><a href="#cb3-300" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-301"><a href="#cb3-301" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread producer<span class="op">(</span></span>
+<span id="cb3-302"><a href="#cb3-302" aria-hidden="true" tabindex="-1"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
+<span id="cb3-303"><a href="#cb3-303" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span>i <span class="op">&lt;=</span> <span class="dv">1000</span><span class="op">;++</span>i<span class="op">)</span></span>
+<span id="cb3-304"><a href="#cb3-304" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span></span>
+<span id="cb3-305"><a href="#cb3-305" aria-hidden="true" tabindex="-1"></a>                <span class="cf">try</span> <span class="op">{</span></span>
+<span id="cb3-306"><a href="#cb3-306" aria-hidden="true" tabindex="-1"></a>                    buffer<span class="op">.</span>wait_and_push<span class="op">(</span>i<span class="op">);</span></span>
+<span id="cb3-307"><a href="#cb3-307" aria-hidden="true" tabindex="-1"></a>                <span class="op">}</span></span>
+<span id="cb3-308"><a href="#cb3-308" aria-hidden="true" tabindex="-1"></a>                <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception e<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-309"><a href="#cb3-309" aria-hidden="true" tabindex="-1"></a>                    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"buffer full!"</span><span class="op">;</span></span>
+<span id="cb3-310"><a href="#cb3-310" aria-hidden="true" tabindex="-1"></a>                <span class="op">}</span></span>
+<span id="cb3-311"><a href="#cb3-311" aria-hidden="true" tabindex="-1"></a>            <span class="op">}</span></span>
+<span id="cb3-312"><a href="#cb3-312" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-313"><a href="#cb3-313" aria-hidden="true" tabindex="-1"></a>    <span class="op">);</span></span>
+<span id="cb3-314"><a href="#cb3-314" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-315"><a href="#cb3-315" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>thread consumer<span class="op">(</span></span>
+<span id="cb3-316"><a href="#cb3-316" aria-hidden="true" tabindex="-1"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
+<span id="cb3-317"><a href="#cb3-317" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span>i <span class="op">&lt;=</span> <span class="dv">1000</span><span class="op">;++</span>i<span class="op">)</span></span>
+<span id="cb3-318"><a href="#cb3-318" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span></span>
+<span id="cb3-319"><a href="#cb3-319" aria-hidden="true" tabindex="-1"></a>                <span class="cf">try</span> <span class="op">{</span></span>
+<span id="cb3-320"><a href="#cb3-320" aria-hidden="true" tabindex="-1"></a>                    <span class="dt">int</span> value<span class="op">;</span></span>
+<span id="cb3-321"><a href="#cb3-321" aria-hidden="true" tabindex="-1"></a>                    buffer<span class="op">.</span>wait_and_pop<span class="op">(</span>value<span class="op">);</span></span>
+<span id="cb3-322"><a href="#cb3-322" aria-hidden="true" tabindex="-1"></a>                    <span class="bu">std::</span>this_thread::sleep_for<span class="op">(</span><span class="bu">std::</span>chrono::microseconds<span class="op">(</span><span class="dv">1</span><span class="op">));</span></span>
+<span id="cb3-323"><a href="#cb3-323" aria-hidden="true" tabindex="-1"></a>                <span class="op">}</span></span>
+<span id="cb3-324"><a href="#cb3-324" aria-hidden="true" tabindex="-1"></a>                <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception e<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-325"><a href="#cb3-325" aria-hidden="true" tabindex="-1"></a>                    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"buffer empty!"</span><span class="op">;</span></span>
+<span id="cb3-326"><a href="#cb3-326" aria-hidden="true" tabindex="-1"></a>                <span class="op">}</span></span>
+<span id="cb3-327"><a href="#cb3-327" aria-hidden="true" tabindex="-1"></a>            <span class="op">}</span></span>
+<span id="cb3-328"><a href="#cb3-328" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-329"><a href="#cb3-329" aria-hidden="true" tabindex="-1"></a>    <span class="op">);</span></span>
+<span id="cb3-330"><a href="#cb3-330" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-331"><a href="#cb3-331" aria-hidden="true" tabindex="-1"></a>    producer<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb3-332"><a href="#cb3-332" aria-hidden="true" tabindex="-1"></a>    consumer<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb3-333"><a href="#cb3-333" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-334"><a href="#cb3-334" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Finished execution"</span><span class="op">;</span></span>
+<span id="cb3-335"><a href="#cb3-335" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb3-336"><a href="#cb3-336" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb3-337"><a href="#cb3-337" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-338"><a href="#cb3-338" aria-hidden="true" tabindex="-1"></a><span class="fu">## SPMC queues and coding up a `ThreadPool`</span></span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 
