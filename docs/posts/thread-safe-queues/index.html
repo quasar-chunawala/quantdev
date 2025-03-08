@@ -71,10 +71,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-d129a44951930463e8a313df5966fbea.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-d948b33b500407ef511e9a9cea1c6b10.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-52232225ae3909a0ea66e9fd7c84c945.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../../site_libs/bootstrap/bootstrap-4ab3f544bab657c9f6e36ffdce11b523.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -235,6 +235,11 @@ window.Quarto = {
   <li><a href="#implementation-notes" id="toc-implementation-notes" class="nav-link" data-scroll-target="#implementation-notes">Implementation notes</a></li>
   </ul></li>
   <li><a href="#building-a-thread-safe-queue-using-condition-variables" id="toc-building-a-thread-safe-queue-using-condition-variables" class="nav-link" data-scroll-target="#building-a-thread-safe-queue-using-condition-variables">Building a thread-safe queue using condition variables</a></li>
+  <li><a href="#semaphores" id="toc-semaphores" class="nav-link" data-scroll-target="#semaphores">Semaphores</a>
+  <ul class="collapse">
+  <li><a href="#binary-semaphores" id="toc-binary-semaphores" class="nav-link" data-scroll-target="#binary-semaphores">Binary Semaphores</a></li>
+  <li><a href="#counting-semaphores" id="toc-counting-semaphores" class="nav-link" data-scroll-target="#counting-semaphores">Counting semaphores</a></li>
+  </ul></li>
   <li><a href="#spmc-queues-and-coding-up-a-threadpool" id="toc-spmc-queues-and-coding-up-a-threadpool" class="nav-link" data-scroll-target="#spmc-queues-and-coding-up-a-threadpool">SPMC queues and coding up a <code>ThreadPool</code></a></li>
   </ul>
 </nav>
@@ -559,8 +564,36 @@ window.Quarto = {
 <span id="cb2-135"><a href="#cb2-135"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Finished execution"</span><span class="op">;</span></span>
 <span id="cb2-136"><a href="#cb2-136"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
+<section id="semaphores" class="level2">
+<h2 class="anchored" data-anchor-id="semaphores">Semaphores</h2>
+<p>C++20 introduces new synchronization primitives to write multi-threaded applications .</p>
+<p>A <strong>semaphore</strong> is a counter that manages the numberof permits available for accessing a share resource. Semaphores can be classified into two main types:</p>
+<ul>
+<li><strong>Binary Semaphore</strong>. It has only <span class="math inline">\(2\)</span> states: <span class="math inline">\(0\)</span> and <span class="math inline">\(1\)</span>. Event though a binary semaphore is conceptually like a mutex, there are some differences between a binary semaphore and a mutex, that we’ll explore later.</li>
+<li><strong>Counting Semaphore</strong>. It can have a value greater than <span class="math inline">\(1\)</span> and is used to control access to a resource that has a limited number of instances.</li>
+</ul>
+<p>C++20 implements both binary and counting semaphores.</p>
+<section id="binary-semaphores" class="level3">
+<h3 class="anchored" data-anchor-id="binary-semaphores">Binary Semaphores</h3>
+<p>A binary semaphore is a synchronization primitive that can be used to control access to a shared resource. It has two states: <span class="math inline">\(0\)</span> and <span class="math inline">\(1\)</span>. A semaphore with a value of <span class="math inline">\(0\)</span> indicates that the resource is unavailable, while a semaphore with a value of <span class="math inline">\(1\)</span> indicates that the resource is available.</p>
+<p>The most significant difference between mutexes and semaphores is that threads that have acquired a mutex have exclusive ownership of it. Only the thread owning the mutex can release it. Semaphores can be signaled by any thread. A mutex is a locking mechanism for a critical section, whereas a semaphore is more like a signaling mechanism. For this reason, semaphores are commonly used for signaling rather than for mutual exlusion.</p>
+<p>In C++20, <code>std::binary_semaphore</code> is an alias for the specialization of <code>std::counting_semaphore</code> with <code>LeastMaxValue</code> being <span class="math inline">\(1\)</span>.</p>
+<p>Binary semaphores must be initialized with either <span class="math inline">\(1\)</span> or <span class="math inline">\(0\)</span> as follows:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="bu">std::</span>binary_semaphore smphr1<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a><span class="bu">std::</span>binary_semaphore smphr2<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>If the initial value is <code>0</code>, acquiring the semaphore will block the thread trying to acquire it, and before it can be acquired, it must be released by another thread. Acquiring the semaphore decreases the counter, and releasing it increases the counter.</p>
+</section>
+<section id="counting-semaphores" class="level3">
+<h3 class="anchored" data-anchor-id="counting-semaphores">Counting semaphores</h3>
+<p>A counting semaphore allows access to a shared resource by more than one thread. The counter can be initialized to an arbitrary number, and it will be decreased every time a thread acquires the semaphore.</p>
+<p>We can design a thread-safe queue using semaphores instead of condition variables to synchronize access to the queue.</p>
+</section>
+</section>
 <section id="spmc-queues-and-coding-up-a-threadpool" class="level2">
 <h2 class="anchored" data-anchor-id="spmc-queues-and-coding-up-a-threadpool">SPMC queues and coding up a <code>ThreadPool</code></h2>
+<p>A <em>thread-pool</em> is a group of pre-instantiated, idle threads which stand ready to be given work. These are preferred over instantiating new threads for each task whenever there are a large number of short tasks to be done rather than a small number of long ones. This prevents having to incur the overhead of creating a thread a large number of times and starvation of threads.</p>
+<p>The <code>ThreadPool</code> class has a container for the worker threads as one of its member-variables.</p>
+<p>When a <em>thread-pool</em> is handed a <code>Task</code>, it is added to a SPMC queue. If a thread from the <code>ThreadPool</code> is idle, it can <code>pop()</code> the next task off the <code>TaskQueue</code> and executes it. Once the execution is complete, the thread hands itself back to the pool to be put into the container for reuse and until the <code>queue_not_empty_cond</code> condition is met, and the cycle repeats.</p>
 
 
 <!-- -->
@@ -1040,339 +1073,381 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 </script>
 <input type="hidden" id="giscus-base-theme" value="light">
 <input type="hidden" id="giscus-alt-theme" value="dark"><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
-<div class="sourceCode" id="cb3" data-shortcodes="false"><pre class="sourceCode numberSource markdown number-lines code-with-copy"><code class="sourceCode markdown"><span id="cb3-1"><a href="#cb3-1"></a><span class="co">---</span></span>
-<span id="cb3-2"><a href="#cb3-2"></a><span class="an">title:</span><span class="co"> "A thread-safe queue implementation"</span></span>
-<span id="cb3-3"><a href="#cb3-3"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
-<span id="cb3-4"><a href="#cb3-4"></a><span class="an">date:</span><span class="co"> "2025-02-23"</span></span>
-<span id="cb3-5"><a href="#cb3-5"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
-<span id="cb3-6"><a href="#cb3-6"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
-<span id="cb3-7"><a href="#cb3-7"></a><span class="an">toc:</span><span class="co"> true</span></span>
-<span id="cb3-8"><a href="#cb3-8"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
-<span id="cb3-9"><a href="#cb3-9"></a><span class="co">---</span></span>
-<span id="cb3-10"><a href="#cb3-10"></a></span>
-<span id="cb3-11"><a href="#cb3-11"></a><span class="fu">## Producer-consumer problem</span></span>
-<span id="cb3-12"><a href="#cb3-12"></a></span>
-<span id="cb3-13"><a href="#cb3-13"></a>In the *producer-consumer problem*, we have two classes of threads, producers and consumers and a buffer containing a fixed number of slots. A producer thread attempts to put something into the next empty buffer slot, a consumer thread attempts to take something out of the next occupied buffer slot. The synchronization conditions are that producers cannot proceed unless there are empty slots and consumers cannot proceed unless there are occupied slots. The problem occurs because of the different rates at which producers deposit and consumers exhaust data.</span>
-<span id="cb3-14"><a href="#cb3-14"></a></span>
-<span id="cb3-15"><a href="#cb3-15"></a>This is a classic, but frequently occurring synchronization problem. For example, the heart of the implementation of UNIX pipes is an instance of this problem.</span>
-<span id="cb3-16"><a href="#cb3-16"></a></span>
-<span id="cb3-17"><a href="#cb3-17"></a><span class="fu">## Ring buffer</span></span>
-<span id="cb3-18"><a href="#cb3-18"></a></span>
-<span id="cb3-19"><a href="#cb3-19"></a>Consider a single, fixed-size buffer as if it were connected end-to-end, such that the oldest entry is processed first. This is a circular FIFO queue.</span>
-<span id="cb3-20"><a href="#cb3-20"></a></span>
-<span id="cb3-21"><a href="#cb3-21"></a>What do we use SPSC FIFO queues for? In the industry, you often have a pipeline of processes. For example, you have one thread reading from sockets, another thread that handles the messages from the sockets and maybe processes them and produces a result and a third thread writes a response to the network. Those can be connected by SPSC FIFO queues. There's a couple of advantages to this. All these advantages and disadvantages are subject to measurement, so always measure. It may improve the throughput over just a single thread doing all $3$ of these operations, in fact, I'll be surprised if it didn't. It also should improve the resiliency of the application to spikes in message traffic. Some of the disadvantages are that you have to manage 3 threads and it probably uses more memory, because each of the FIFO queues needs place to store its messages.</span>
-<span id="cb3-22"><a href="#cb3-22"></a></span>
-<span id="cb3-23"><a href="#cb3-23"></a>We all have come across circular FIFO queues. We usually have two cursors - <span class="in">`rear`</span> and <span class="in">`front`</span>. Items are pushed to the <span class="in">`rear`</span> of the queue and popped off the <span class="in">`front`</span> of the queue.</span>
-<span id="cb3-24"><a href="#cb3-24"></a></span>
-<span id="cb3-25"><a href="#cb3-25"></a><span class="al">![Circular FIFO Queue](circular_fifo_queue.jpg)</span>{fig-align="center" width=40% height=40%}</span>
-<span id="cb3-26"><a href="#cb3-26"></a></span>
-<span id="cb3-27"><a href="#cb3-27"></a>When we <span class="in">`push(42)`</span> into the FIFO queue, the <span class="in">`rear`</span> cursor is incremented and each time we <span class="in">`pop()`</span>, the <span class="in">`front`</span> cursor is incremented. When the <span class="in">`front`</span> cursor and the <span class="in">`rear`</span> cursor are no longer equal, the FIFO queue is no longer empty. Eventually, we push so many values in, that the FIFO queue fills up. At this point, the <span class="in">`rear`</span> cursor is <span class="in">`capacity`</span> greater than the <span class="in">`front`</span> cursor.</span>
-<span id="cb3-28"><a href="#cb3-28"></a></span>
-<span id="cb3-29"><a href="#cb3-29"></a>The FIFO queue empty and queue full conditions use the remainder operator <span class="in">`%`</span>. Division uses $20$ to $30$ cycles so it is a bit expensive. Another approach is to constrain the buffer size to an integral power of $2$, and use the bitwise <span class="in">`&amp;`</span> operator and that's a $1$ cycle operation. </span>
-<span id="cb3-30"><a href="#cb3-30"></a></span>
-<span id="cb3-31"><a href="#cb3-31"></a><span class="fu">### Implementation notes</span></span>
-<span id="cb3-32"><a href="#cb3-32"></a></span>
-<span id="cb3-33"><a href="#cb3-33"></a></span>
-<span id="cb3-34"><a href="#cb3-34"></a><span class="in">```cpp</span></span>
-<span id="cb3-35"><a href="#cb3-35"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb3-36"><a href="#cb3-36"></a><span class="pp">#include </span><span class="im">&lt;queue&gt;</span></span>
-<span id="cb3-37"><a href="#cb3-37"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb3-38"><a href="#cb3-38"></a><span class="pp">#include </span><span class="im">&lt;array&gt;</span></span>
-<span id="cb3-39"><a href="#cb3-39"></a><span class="pp">#include </span><span class="im">&lt;numeric&gt;</span></span>
-<span id="cb3-40"><a href="#cb3-40"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
-<span id="cb3-41"><a href="#cb3-41"></a><span class="pp">#include </span><span class="im">&lt;condition_variable&gt;</span></span>
-<span id="cb3-42"><a href="#cb3-42"></a><span class="pp">#include </span><span class="im">&lt;mutex&gt;</span></span>
-<span id="cb3-43"><a href="#cb3-43"></a><span class="pp">#include </span><span class="im">&lt;shared_mutex&gt;</span></span>
-<span id="cb3-44"><a href="#cb3-44"></a></span>
-<span id="cb3-45"><a href="#cb3-45"></a><span class="kw">namespace</span> dev <span class="op">{</span></span>
-<span id="cb3-46"><a href="#cb3-46"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb3-47"><a href="#cb3-47"></a>    <span class="kw">class</span> ring_buffer <span class="op">{</span></span>
-<span id="cb3-48"><a href="#cb3-48"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb3-49"><a href="#cb3-49"></a>        <span class="kw">enum</span> <span class="op">{</span>min_capacity <span class="op">=</span> <span class="dv">128</span><span class="op">};</span></span>
-<span id="cb3-50"><a href="#cb3-50"></a>        T<span class="op">*</span> ring<span class="op">;</span></span>
-<span id="cb3-51"><a href="#cb3-51"></a>        <span class="dt">int</span> <span class="va">m_front</span><span class="op">;</span></span>
-<span id="cb3-52"><a href="#cb3-52"></a>        <span class="dt">int</span> <span class="va">m_rear</span><span class="op">;</span></span>
-<span id="cb3-53"><a href="#cb3-53"></a>        <span class="dt">int</span> <span class="va">m_capacity</span><span class="op">;</span></span>
-<span id="cb3-54"><a href="#cb3-54"></a></span>
-<span id="cb3-55"><a href="#cb3-55"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb3-56"><a href="#cb3-56"></a>        <span class="co">/* Default constructor*/</span></span>
-<span id="cb3-57"><a href="#cb3-57"></a>        ring_buffer<span class="op">()</span> </span>
-<span id="cb3-58"><a href="#cb3-58"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
-<span id="cb3-59"><a href="#cb3-59"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
-<span id="cb3-60"><a href="#cb3-60"></a>            <span class="op">,</span> ring<span class="op">{</span><span class="kw">nullptr</span><span class="op">}</span></span>
-<span id="cb3-61"><a href="#cb3-61"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
-<span id="cb3-62"><a href="#cb3-62"></a>        <span class="op">{</span> </span>
-<span id="cb3-63"><a href="#cb3-63"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>min_capacity<span class="op">));</span></span>
-<span id="cb3-64"><a href="#cb3-64"></a>            <span class="va">m_capacity</span> <span class="op">=</span> min_capacity<span class="op">;</span></span>
-<span id="cb3-65"><a href="#cb3-65"></a>        <span class="op">}</span></span>
-<span id="cb3-66"><a href="#cb3-66"></a></span>
-<span id="cb3-67"><a href="#cb3-67"></a>        ring_buffer<span class="op">(</span><span class="dt">int</span> capacity<span class="op">)</span></span>
-<span id="cb3-68"><a href="#cb3-68"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-69"><a href="#cb3-69"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-70"><a href="#cb3-70"></a>            <span class="op">,</span> ring<span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
-<span id="cb3-71"><a href="#cb3-71"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-72"><a href="#cb3-72"></a>        <span class="op">{</span></span>
-<span id="cb3-73"><a href="#cb3-73"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>capacity<span class="op">));</span></span>
-<span id="cb3-74"><a href="#cb3-74"></a>            <span class="va">m_capacity</span> <span class="op">=</span> capacity<span class="op">;</span></span>
-<span id="cb3-75"><a href="#cb3-75"></a>        <span class="op">}</span></span>
-<span id="cb3-76"><a href="#cb3-76"></a></span>
-<span id="cb3-77"><a href="#cb3-77"></a>        <span class="co">/* Copy constructor - Perform a deep copy */</span></span>
-<span id="cb3-78"><a href="#cb3-78"></a>        ring_buffer<span class="op">(</span><span class="at">const</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
-<span id="cb3-79"><a href="#cb3-79"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-80"><a href="#cb3-80"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-81"><a href="#cb3-81"></a>            <span class="op">,</span> ring<span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
-<span id="cb3-82"><a href="#cb3-82"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb3-83"><a href="#cb3-83"></a>        <span class="op">{</span></span>
-<span id="cb3-84"><a href="#cb3-84"></a>            <span class="co">/* Allocation */</span></span>
-<span id="cb3-85"><a href="#cb3-85"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>other<span class="op">.</span><span class="va">m_capacity</span><span class="op">));</span></span>
-<span id="cb3-86"><a href="#cb3-86"></a></span>
-<span id="cb3-87"><a href="#cb3-87"></a>            <span class="va">m_capacity</span> <span class="op">=</span> other<span class="op">.</span><span class="va">m_capacity</span><span class="op">;</span></span>
-<span id="cb3-88"><a href="#cb3-88"></a></span>
-<span id="cb3-89"><a href="#cb3-89"></a>            <span class="co">/* Construction */</span></span>
-<span id="cb3-90"><a href="#cb3-90"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span><span class="dv">0</span><span class="op">};</span> i <span class="op">&lt;</span> other<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span></span>
-<span id="cb3-91"><a href="#cb3-91"></a>            <span class="op">{</span></span>
-<span id="cb3-92"><a href="#cb3-92"></a>                <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span>i<span class="op">])</span> T<span class="op">(</span>other<span class="op">[</span>i<span class="op">]);</span></span>
-<span id="cb3-93"><a href="#cb3-93"></a>            <span class="op">}</span></span>
-<span id="cb3-94"><a href="#cb3-94"></a>        <span class="op">}</span></span>
-<span id="cb3-95"><a href="#cb3-95"></a></span>
-<span id="cb3-96"><a href="#cb3-96"></a>        <span class="co">/* Swap */</span></span>
-<span id="cb3-97"><a href="#cb3-97"></a>        <span class="kw">friend</span> <span class="dt">void</span> swap<span class="op">(</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> lhs<span class="op">,</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> rhs<span class="op">)</span></span>
-<span id="cb3-98"><a href="#cb3-98"></a>        <span class="op">{</span></span>
-<span id="cb3-99"><a href="#cb3-99"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_front</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_front</span><span class="op">);</span></span>
-<span id="cb3-100"><a href="#cb3-100"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_rear</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_rear</span><span class="op">);</span></span>
-<span id="cb3-101"><a href="#cb3-101"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">);</span></span>
-<span id="cb3-102"><a href="#cb3-102"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span>ring<span class="op">,</span> rhs<span class="op">.</span>ring<span class="op">);</span></span>
-<span id="cb3-103"><a href="#cb3-103"></a>        <span class="op">}</span></span>
-<span id="cb3-104"><a href="#cb3-104"></a></span>
-<span id="cb3-105"><a href="#cb3-105"></a>        <span class="co">/* Copy assignment */</span></span>
-<span id="cb3-106"><a href="#cb3-106"></a>        ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
-<span id="cb3-107"><a href="#cb3-107"></a>        <span class="op">{</span></span>
-<span id="cb3-108"><a href="#cb3-108"></a>            ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;</span> temp<span class="op">{</span> other <span class="op">};</span>  <span class="co">//Copy-construct</span></span>
-<span id="cb3-109"><a href="#cb3-109"></a>            swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> temp<span class="op">);</span></span>
-<span id="cb3-110"><a href="#cb3-110"></a>            <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
-<span id="cb3-111"><a href="#cb3-111"></a>        <span class="op">}</span></span>
-<span id="cb3-112"><a href="#cb3-112"></a></span>
-<span id="cb3-113"><a href="#cb3-113"></a>        T<span class="op">&amp;</span> front<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-114"><a href="#cb3-114"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
-<span id="cb3-115"><a href="#cb3-115"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
-<span id="cb3-116"><a href="#cb3-116"></a></span>
-<span id="cb3-117"><a href="#cb3-117"></a>            <span class="cf">return</span> ring<span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb3-118"><a href="#cb3-118"></a>        <span class="op">}</span></span>
-<span id="cb3-119"><a href="#cb3-119"></a></span>
-<span id="cb3-120"><a href="#cb3-120"></a>        T<span class="op">&amp;</span> back<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-121"><a href="#cb3-121"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
-<span id="cb3-122"><a href="#cb3-122"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
-<span id="cb3-123"><a href="#cb3-123"></a></span>
-<span id="cb3-124"><a href="#cb3-124"></a>            <span class="cf">return</span> ring<span class="op">[(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb3-125"><a href="#cb3-125"></a>        <span class="op">}</span></span>
-<span id="cb3-126"><a href="#cb3-126"></a></span>
-<span id="cb3-127"><a href="#cb3-127"></a>        T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-128"><a href="#cb3-128"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
-<span id="cb3-129"><a href="#cb3-129"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
-<span id="cb3-130"><a href="#cb3-130"></a></span>
-<span id="cb3-131"><a href="#cb3-131"></a>            <span class="cf">return</span> ring<span class="op">[(</span><span class="va">m_front</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb3-132"><a href="#cb3-132"></a>        <span class="op">}</span></span>
-<span id="cb3-133"><a href="#cb3-133"></a></span>
-<span id="cb3-134"><a href="#cb3-134"></a>        <span class="dt">bool</span> empty<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-135"><a href="#cb3-135"></a>            <span class="cf">return</span> <span class="va">m_front</span> <span class="op">==</span> <span class="va">m_rear</span><span class="op">;</span></span>
-<span id="cb3-136"><a href="#cb3-136"></a>        <span class="op">}</span></span>
-<span id="cb3-137"><a href="#cb3-137"></a></span>
-<span id="cb3-138"><a href="#cb3-138"></a>        <span class="dt">bool</span> full<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-139"><a href="#cb3-139"></a>            <span class="cf">return</span> size<span class="op">()</span> <span class="op">==</span> capacity<span class="op">();</span></span>
-<span id="cb3-140"><a href="#cb3-140"></a>        <span class="op">}</span></span>
-<span id="cb3-141"><a href="#cb3-141"></a></span>
-<span id="cb3-142"><a href="#cb3-142"></a>        <span class="dt">void</span> push<span class="op">(</span><span class="at">const</span> T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-143"><a href="#cb3-143"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
-<span id="cb3-144"><a href="#cb3-144"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is full!"</span><span class="op">);</span></span>
-<span id="cb3-145"><a href="#cb3-145"></a></span>
-<span id="cb3-146"><a href="#cb3-146"></a>            <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">])</span> T<span class="op">(</span>value<span class="op">);</span></span>
-<span id="cb3-147"><a href="#cb3-147"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"pushed "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to buffer"</span><span class="op">;</span></span>
-<span id="cb3-148"><a href="#cb3-148"></a>            <span class="op">++</span><span class="va">m_rear</span><span class="op">;</span></span>
-<span id="cb3-149"><a href="#cb3-149"></a>        <span class="op">}</span></span>
-<span id="cb3-150"><a href="#cb3-150"></a></span>
-<span id="cb3-151"><a href="#cb3-151"></a>        <span class="dt">void</span> push<span class="op">(</span>T<span class="op">&amp;&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-152"><a href="#cb3-152"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
-<span id="cb3-153"><a href="#cb3-153"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is full!"</span><span class="op">);</span></span>
-<span id="cb3-154"><a href="#cb3-154"></a></span>
-<span id="cb3-155"><a href="#cb3-155"></a>            <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">])</span> T<span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span>value<span class="op">));</span></span>
-<span id="cb3-156"><a href="#cb3-156"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"pushed "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to buffer"</span><span class="op">;</span></span>
-<span id="cb3-157"><a href="#cb3-157"></a>            <span class="op">++</span><span class="va">m_rear</span><span class="op">;</span></span>
-<span id="cb3-158"><a href="#cb3-158"></a>        <span class="op">}</span></span>
-<span id="cb3-159"><a href="#cb3-159"></a></span>
-<span id="cb3-160"><a href="#cb3-160"></a>        <span class="dt">void</span> pop<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-161"><a href="#cb3-161"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
-<span id="cb3-162"><a href="#cb3-162"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
-<span id="cb3-163"><a href="#cb3-163"></a></span>
-<span id="cb3-164"><a href="#cb3-164"></a>            T value <span class="op">=</span> front<span class="op">();</span></span>
-<span id="cb3-165"><a href="#cb3-165"></a>            ring<span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">].~</span>T<span class="op">();</span></span>
-<span id="cb3-166"><a href="#cb3-166"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"popped "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" off buffer"</span><span class="op">;</span></span>
-<span id="cb3-167"><a href="#cb3-167"></a>            <span class="op">++</span><span class="va">m_front</span><span class="op">;</span></span>
-<span id="cb3-168"><a href="#cb3-168"></a>        <span class="op">}</span></span>
-<span id="cb3-169"><a href="#cb3-169"></a></span>
-<span id="cb3-170"><a href="#cb3-170"></a>        <span class="dt">int</span> capacity<span class="op">()</span> <span class="at">const</span><span class="op">{</span></span>
-<span id="cb3-171"><a href="#cb3-171"></a>            <span class="cf">return</span> <span class="va">m_capacity</span><span class="op">;</span></span>
-<span id="cb3-172"><a href="#cb3-172"></a>        <span class="op">}</span></span>
-<span id="cb3-173"><a href="#cb3-173"></a></span>
-<span id="cb3-174"><a href="#cb3-174"></a>        <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-175"><a href="#cb3-175"></a>            <span class="cf">return</span> <span class="op">(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="va">m_front</span><span class="op">);</span></span>
-<span id="cb3-176"><a href="#cb3-176"></a>        <span class="op">}</span></span>
-<span id="cb3-177"><a href="#cb3-177"></a></span>
-<span id="cb3-178"><a href="#cb3-178"></a>        <span class="dt">void</span> print<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-179"><a href="#cb3-179"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span>i <span class="op">&lt;</span> size<span class="op">();++</span>i<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-180"><a href="#cb3-180"></a>                <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"ring["</span> <span class="op">&lt;&lt;</span> i <span class="op">&lt;&lt;</span> <span class="st">"] = "</span> <span class="op">&lt;&lt;</span> <span class="op">(*</span><span class="kw">this</span><span class="op">)[</span>i<span class="op">];</span></span>
-<span id="cb3-181"><a href="#cb3-181"></a>            <span class="op">}</span></span>
-<span id="cb3-182"><a href="#cb3-182"></a>        <span class="op">}</span></span>
-<span id="cb3-183"><a href="#cb3-183"></a>    <span class="op">};</span></span>
-<span id="cb3-184"><a href="#cb3-184"></a><span class="op">}</span></span>
-<span id="cb3-185"><a href="#cb3-185"></a><span class="in">```</span></span>
-<span id="cb3-186"><a href="#cb3-186"></a></span>
-<span id="cb3-187"><a href="#cb3-187"></a>Running the above code-snippet, we find that there are several occassions when there are buffer overflows or underflows, and there are also data races. </span>
-<span id="cb3-188"><a href="#cb3-188"></a></span>
-<span id="cb3-189"><a href="#cb3-189"></a><span class="fu">## Building a thread-safe queue using condition variables</span></span>
-<span id="cb3-190"><a href="#cb3-190"></a></span>
-<span id="cb3-191"><a href="#cb3-191"></a>You essentially have three groups of operations : those that query the state of the whole queue(<span class="in">`empty()`</span> and <span class="in">`size()`</span>), those that query the elements of the queue(<span class="in">`front()`</span> and <span class="in">`back()`</span>) and those that modify the queue (<span class="in">`push()`</span>, <span class="in">`pop()`</span> and <span class="in">`emplace()`</span>). This is the same as we've seen for the stack container adapter, and we have the same issues regarding race conditions inherent in the interface. Consequently, we need to combine <span class="in">`front()`</span> and <span class="in">`pop()`</span> into a single function call, much as you combined <span class="in">`pop()`</span> and <span class="in">`top()`</span> for the stack. </span>
-<span id="cb3-192"><a href="#cb3-192"></a></span>
-<span id="cb3-193"><a href="#cb3-193"></a></span>
-<span id="cb3-194"><a href="#cb3-194"></a><span class="in">```cpp</span></span>
-<span id="cb3-195"><a href="#cb3-195"></a><span class="kw">namespace</span> dev <span class="op">{</span></span>
-<span id="cb3-196"><a href="#cb3-196"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb3-197"><a href="#cb3-197"></a>    <span class="kw">class</span> threadsafe_ring_buffer <span class="op">{</span></span>
-<span id="cb3-198"><a href="#cb3-198"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb3-199"><a href="#cb3-199"></a>        threadsafe_ring_buffer<span class="op">()</span> <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;()}</span></span>
-<span id="cb3-200"><a href="#cb3-200"></a>        <span class="op">{}</span></span>
-<span id="cb3-201"><a href="#cb3-201"></a></span>
-<span id="cb3-202"><a href="#cb3-202"></a>        threadsafe_ring_buffer<span class="op">(</span><span class="dt">int</span> capacity<span class="op">)</span> <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;(</span>capacity<span class="op">)}</span></span>
-<span id="cb3-203"><a href="#cb3-203"></a>        <span class="op">{}</span></span>
-<span id="cb3-204"><a href="#cb3-204"></a></span>
-<span id="cb3-205"><a href="#cb3-205"></a>        threadsafe_ring_buffer<span class="op">(</span><span class="at">const</span> threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
-<span id="cb3-206"><a href="#cb3-206"></a>        <span class="op">{</span></span>
-<span id="cb3-207"><a href="#cb3-207"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-208"><a href="#cb3-208"></a>            <span class="va">m_ring_buffer</span> <span class="op">=</span> other<span class="op">.</span><span class="va">m_ring_buffer</span><span class="op">;</span></span>
-<span id="cb3-209"><a href="#cb3-209"></a>        <span class="op">}</span></span>
-<span id="cb3-210"><a href="#cb3-210"></a>        threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
-<span id="cb3-211"><a href="#cb3-211"></a></span>
-<span id="cb3-212"><a href="#cb3-212"></a>        <span class="dt">void</span> wait_and_push<span class="op">(</span>T new_value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-213"><a href="#cb3-213"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-214"><a href="#cb3-214"></a>            queue_not_full_cond<span class="op">.</span>wait<span class="op">(</span>lck<span class="op">,</span> <span class="op">[</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span><span class="cf">return</span> <span class="op">!</span><span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">();});</span></span>
-<span id="cb3-215"><a href="#cb3-215"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>push<span class="op">(</span>new_value<span class="op">);</span></span>
-<span id="cb3-216"><a href="#cb3-216"></a>            queue_not_empty_cond<span class="op">.</span>notify_one<span class="op">();</span></span>
-<span id="cb3-217"><a href="#cb3-217"></a>        <span class="op">}</span></span>
-<span id="cb3-218"><a href="#cb3-218"></a></span>
-<span id="cb3-219"><a href="#cb3-219"></a>        <span class="dt">bool</span> try_push<span class="op">(</span>T new_value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-220"><a href="#cb3-220"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-221"><a href="#cb3-221"></a>            <span class="cf">if</span> <span class="op">(!</span><span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">())</span></span>
-<span id="cb3-222"><a href="#cb3-222"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
-<span id="cb3-223"><a href="#cb3-223"></a></span>
-<span id="cb3-224"><a href="#cb3-224"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>push<span class="op">(</span>new_value<span class="op">);</span></span>
-<span id="cb3-225"><a href="#cb3-225"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
-<span id="cb3-226"><a href="#cb3-226"></a>        <span class="op">}</span></span>
-<span id="cb3-227"><a href="#cb3-227"></a></span>
-<span id="cb3-228"><a href="#cb3-228"></a>        <span class="dt">void</span> wait_and_pop<span class="op">(</span>T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-229"><a href="#cb3-229"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-230"><a href="#cb3-230"></a>            queue_not_empty_cond<span class="op">.</span>wait<span class="op">(</span>lck<span class="op">,</span> <span class="op">[</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">!</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">();});</span></span>
-<span id="cb3-231"><a href="#cb3-231"></a>            value <span class="op">=</span> <span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">();</span></span>
-<span id="cb3-232"><a href="#cb3-232"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
-<span id="cb3-233"><a href="#cb3-233"></a>            queue_not_full_cond<span class="op">.</span>notify_one<span class="op">();</span></span>
-<span id="cb3-234"><a href="#cb3-234"></a>        <span class="op">}</span></span>
-<span id="cb3-235"><a href="#cb3-235"></a></span>
-<span id="cb3-236"><a href="#cb3-236"></a>        <span class="dt">void</span> try_pop<span class="op">(</span>T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-237"><a href="#cb3-237"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-238"><a href="#cb3-238"></a>            <span class="cf">if</span> <span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">())</span></span>
-<span id="cb3-239"><a href="#cb3-239"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
-<span id="cb3-240"><a href="#cb3-240"></a></span>
-<span id="cb3-241"><a href="#cb3-241"></a>            value <span class="op">=</span> <span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">();</span></span>
-<span id="cb3-242"><a href="#cb3-242"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
-<span id="cb3-243"><a href="#cb3-243"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
-<span id="cb3-244"><a href="#cb3-244"></a>        <span class="op">}</span></span>
-<span id="cb3-245"><a href="#cb3-245"></a></span>
-<span id="cb3-246"><a href="#cb3-246"></a>        <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> wait_and_pop<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-247"><a href="#cb3-247"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-248"><a href="#cb3-248"></a>            queue_not_empty_cond<span class="op">.</span>wait<span class="op">([</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">!</span>empty<span class="op">();</span> <span class="op">});</span></span>
-<span id="cb3-249"><a href="#cb3-249"></a>            <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span> <span class="bu">std::</span>make_shared<span class="op">&lt;</span>T<span class="op">&gt;(</span><span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">())</span> <span class="op">};</span></span>
-<span id="cb3-250"><a href="#cb3-250"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
-<span id="cb3-251"><a href="#cb3-251"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
-<span id="cb3-252"><a href="#cb3-252"></a>        <span class="op">}</span></span>
-<span id="cb3-253"><a href="#cb3-253"></a></span>
-<span id="cb3-254"><a href="#cb3-254"></a>        <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> try_pop<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-255"><a href="#cb3-255"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-256"><a href="#cb3-256"></a>            <span class="cf">if</span> <span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">())</span></span>
-<span id="cb3-257"><a href="#cb3-257"></a>                <span class="cf">return</span> <span class="kw">nullptr</span><span class="op">;</span></span>
-<span id="cb3-258"><a href="#cb3-258"></a></span>
-<span id="cb3-259"><a href="#cb3-259"></a>            <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span> <span class="bu">std::</span>make_shared<span class="op">&lt;</span>T<span class="op">&gt;(</span><span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">())</span> <span class="op">};</span></span>
-<span id="cb3-260"><a href="#cb3-260"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
-<span id="cb3-261"><a href="#cb3-261"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
-<span id="cb3-262"><a href="#cb3-262"></a>        <span class="op">}</span></span>
-<span id="cb3-263"><a href="#cb3-263"></a></span>
-<span id="cb3-264"><a href="#cb3-264"></a>        <span class="dt">bool</span> empty<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-265"><a href="#cb3-265"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-266"><a href="#cb3-266"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">();</span></span>
-<span id="cb3-267"><a href="#cb3-267"></a>        <span class="op">}</span></span>
-<span id="cb3-268"><a href="#cb3-268"></a></span>
-<span id="cb3-269"><a href="#cb3-269"></a>        <span class="dt">bool</span> full<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-270"><a href="#cb3-270"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-271"><a href="#cb3-271"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">();</span></span>
-<span id="cb3-272"><a href="#cb3-272"></a>        <span class="op">}</span></span>
-<span id="cb3-273"><a href="#cb3-273"></a></span>
-<span id="cb3-274"><a href="#cb3-274"></a>        <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-275"><a href="#cb3-275"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-276"><a href="#cb3-276"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>size<span class="op">();</span></span>
-<span id="cb3-277"><a href="#cb3-277"></a>        <span class="op">}</span></span>
-<span id="cb3-278"><a href="#cb3-278"></a></span>
-<span id="cb3-279"><a href="#cb3-279"></a>        <span class="dt">int</span> capacity<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb3-280"><a href="#cb3-280"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
-<span id="cb3-281"><a href="#cb3-281"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>capacity<span class="op">();</span></span>
-<span id="cb3-282"><a href="#cb3-282"></a>        <span class="op">}</span></span>
-<span id="cb3-283"><a href="#cb3-283"></a></span>
-<span id="cb3-284"><a href="#cb3-284"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb3-285"><a href="#cb3-285"></a>        ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="va">m_ring_buffer</span><span class="op">;</span></span>
-<span id="cb3-286"><a href="#cb3-286"></a>        <span class="at">mutable</span> <span class="bu">std::</span>shared_mutex mtx<span class="op">;</span></span>
-<span id="cb3-287"><a href="#cb3-287"></a>        <span class="bu">std::</span>condition_variable_any queue_not_empty_cond<span class="op">;</span></span>
-<span id="cb3-288"><a href="#cb3-288"></a>        <span class="bu">std::</span>condition_variable_any queue_not_full_cond<span class="op">;</span></span>
-<span id="cb3-289"><a href="#cb3-289"></a>    <span class="op">};</span></span>
-<span id="cb3-290"><a href="#cb3-290"></a><span class="op">}</span></span>
-<span id="cb3-291"><a href="#cb3-291"></a></span>
-<span id="cb3-292"><a href="#cb3-292"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb3-293"><a href="#cb3-293"></a><span class="op">{</span></span>
-<span id="cb3-294"><a href="#cb3-294"></a>    dev<span class="op">::</span>threadsafe_ring_buffer<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> buffer<span class="op">(</span><span class="dv">64</span><span class="op">);</span></span>
-<span id="cb3-295"><a href="#cb3-295"></a></span>
-<span id="cb3-296"><a href="#cb3-296"></a>    <span class="bu">std::</span>thread producer<span class="op">(</span></span>
-<span id="cb3-297"><a href="#cb3-297"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
-<span id="cb3-298"><a href="#cb3-298"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span>i <span class="op">&lt;=</span> <span class="dv">1000</span><span class="op">;++</span>i<span class="op">)</span></span>
-<span id="cb3-299"><a href="#cb3-299"></a>            <span class="op">{</span></span>
-<span id="cb3-300"><a href="#cb3-300"></a>                <span class="cf">try</span> <span class="op">{</span></span>
-<span id="cb3-301"><a href="#cb3-301"></a>                    buffer<span class="op">.</span>wait_and_push<span class="op">(</span>i<span class="op">);</span></span>
-<span id="cb3-302"><a href="#cb3-302"></a>                <span class="op">}</span></span>
-<span id="cb3-303"><a href="#cb3-303"></a>                <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception e<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-304"><a href="#cb3-304"></a>                    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"buffer full!"</span><span class="op">;</span></span>
-<span id="cb3-305"><a href="#cb3-305"></a>                <span class="op">}</span></span>
-<span id="cb3-306"><a href="#cb3-306"></a>            <span class="op">}</span></span>
-<span id="cb3-307"><a href="#cb3-307"></a>        <span class="op">}</span></span>
-<span id="cb3-308"><a href="#cb3-308"></a>    <span class="op">);</span></span>
-<span id="cb3-309"><a href="#cb3-309"></a></span>
-<span id="cb3-310"><a href="#cb3-310"></a>    <span class="bu">std::</span>thread consumer<span class="op">(</span></span>
-<span id="cb3-311"><a href="#cb3-311"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
-<span id="cb3-312"><a href="#cb3-312"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span>i <span class="op">&lt;=</span> <span class="dv">1000</span><span class="op">;++</span>i<span class="op">)</span></span>
-<span id="cb3-313"><a href="#cb3-313"></a>            <span class="op">{</span></span>
-<span id="cb3-314"><a href="#cb3-314"></a>                <span class="cf">try</span> <span class="op">{</span></span>
-<span id="cb3-315"><a href="#cb3-315"></a>                    <span class="dt">int</span> value<span class="op">;</span></span>
-<span id="cb3-316"><a href="#cb3-316"></a>                    buffer<span class="op">.</span>wait_and_pop<span class="op">(</span>value<span class="op">);</span></span>
-<span id="cb3-317"><a href="#cb3-317"></a>                    <span class="bu">std::</span>this_thread::sleep_for<span class="op">(</span><span class="bu">std::</span>chrono::microseconds<span class="op">(</span><span class="dv">1</span><span class="op">));</span></span>
-<span id="cb3-318"><a href="#cb3-318"></a>                <span class="op">}</span></span>
-<span id="cb3-319"><a href="#cb3-319"></a>                <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception e<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-320"><a href="#cb3-320"></a>                    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"buffer empty!"</span><span class="op">;</span></span>
-<span id="cb3-321"><a href="#cb3-321"></a>                <span class="op">}</span></span>
-<span id="cb3-322"><a href="#cb3-322"></a>            <span class="op">}</span></span>
-<span id="cb3-323"><a href="#cb3-323"></a>        <span class="op">}</span></span>
-<span id="cb3-324"><a href="#cb3-324"></a>    <span class="op">);</span></span>
-<span id="cb3-325"><a href="#cb3-325"></a></span>
-<span id="cb3-326"><a href="#cb3-326"></a>    producer<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb3-327"><a href="#cb3-327"></a>    consumer<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb3-328"><a href="#cb3-328"></a>    </span>
-<span id="cb3-329"><a href="#cb3-329"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Finished execution"</span><span class="op">;</span></span>
-<span id="cb3-330"><a href="#cb3-330"></a><span class="op">}</span></span>
-<span id="cb3-331"><a href="#cb3-331"></a><span class="in">```</span></span>
-<span id="cb3-332"><a href="#cb3-332"></a></span>
-<span id="cb3-333"><a href="#cb3-333"></a><span class="fu">## SPMC queues and coding up a `ThreadPool`</span></span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb4" data-shortcodes="false"><pre class="sourceCode numberSource markdown number-lines code-with-copy"><code class="sourceCode markdown"><span id="cb4-1"><a href="#cb4-1"></a><span class="co">---</span></span>
+<span id="cb4-2"><a href="#cb4-2"></a><span class="an">title:</span><span class="co"> "A thread-safe queue implementation"</span></span>
+<span id="cb4-3"><a href="#cb4-3"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
+<span id="cb4-4"><a href="#cb4-4"></a><span class="an">date:</span><span class="co"> "2025-02-23"</span></span>
+<span id="cb4-5"><a href="#cb4-5"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
+<span id="cb4-6"><a href="#cb4-6"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
+<span id="cb4-7"><a href="#cb4-7"></a><span class="an">toc:</span><span class="co"> true</span></span>
+<span id="cb4-8"><a href="#cb4-8"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
+<span id="cb4-9"><a href="#cb4-9"></a><span class="co">---</span></span>
+<span id="cb4-10"><a href="#cb4-10"></a></span>
+<span id="cb4-11"><a href="#cb4-11"></a><span class="fu">## Producer-consumer problem</span></span>
+<span id="cb4-12"><a href="#cb4-12"></a></span>
+<span id="cb4-13"><a href="#cb4-13"></a>In the *producer-consumer problem*, we have two classes of threads, producers and consumers and a buffer containing a fixed number of slots. A producer thread attempts to put something into the next empty buffer slot, a consumer thread attempts to take something out of the next occupied buffer slot. The synchronization conditions are that producers cannot proceed unless there are empty slots and consumers cannot proceed unless there are occupied slots. The problem occurs because of the different rates at which producers deposit and consumers exhaust data.</span>
+<span id="cb4-14"><a href="#cb4-14"></a></span>
+<span id="cb4-15"><a href="#cb4-15"></a>This is a classic, but frequently occurring synchronization problem. For example, the heart of the implementation of UNIX pipes is an instance of this problem.</span>
+<span id="cb4-16"><a href="#cb4-16"></a></span>
+<span id="cb4-17"><a href="#cb4-17"></a><span class="fu">## Ring buffer</span></span>
+<span id="cb4-18"><a href="#cb4-18"></a></span>
+<span id="cb4-19"><a href="#cb4-19"></a>Consider a single, fixed-size buffer as if it were connected end-to-end, such that the oldest entry is processed first. This is a circular FIFO queue.</span>
+<span id="cb4-20"><a href="#cb4-20"></a></span>
+<span id="cb4-21"><a href="#cb4-21"></a>What do we use SPSC FIFO queues for? In the industry, you often have a pipeline of processes. For example, you have one thread reading from sockets, another thread that handles the messages from the sockets and maybe processes them and produces a result and a third thread writes a response to the network. Those can be connected by SPSC FIFO queues. There's a couple of advantages to this. All these advantages and disadvantages are subject to measurement, so always measure. It may improve the throughput over just a single thread doing all $3$ of these operations, in fact, I'll be surprised if it didn't. It also should improve the resiliency of the application to spikes in message traffic. Some of the disadvantages are that you have to manage 3 threads and it probably uses more memory, because each of the FIFO queues needs place to store its messages.</span>
+<span id="cb4-22"><a href="#cb4-22"></a></span>
+<span id="cb4-23"><a href="#cb4-23"></a>We all have come across circular FIFO queues. We usually have two cursors - <span class="in">`rear`</span> and <span class="in">`front`</span>. Items are pushed to the <span class="in">`rear`</span> of the queue and popped off the <span class="in">`front`</span> of the queue.</span>
+<span id="cb4-24"><a href="#cb4-24"></a></span>
+<span id="cb4-25"><a href="#cb4-25"></a><span class="al">![Circular FIFO Queue](circular_fifo_queue.jpg)</span>{fig-align="center" width=40% height=40%}</span>
+<span id="cb4-26"><a href="#cb4-26"></a></span>
+<span id="cb4-27"><a href="#cb4-27"></a>When we <span class="in">`push(42)`</span> into the FIFO queue, the <span class="in">`rear`</span> cursor is incremented and each time we <span class="in">`pop()`</span>, the <span class="in">`front`</span> cursor is incremented. When the <span class="in">`front`</span> cursor and the <span class="in">`rear`</span> cursor are no longer equal, the FIFO queue is no longer empty. Eventually, we push so many values in, that the FIFO queue fills up. At this point, the <span class="in">`rear`</span> cursor is <span class="in">`capacity`</span> greater than the <span class="in">`front`</span> cursor.</span>
+<span id="cb4-28"><a href="#cb4-28"></a></span>
+<span id="cb4-29"><a href="#cb4-29"></a>The FIFO queue empty and queue full conditions use the remainder operator <span class="in">`%`</span>. Division uses $20$ to $30$ cycles so it is a bit expensive. Another approach is to constrain the buffer size to an integral power of $2$, and use the bitwise <span class="in">`&amp;`</span> operator and that's a $1$ cycle operation. </span>
+<span id="cb4-30"><a href="#cb4-30"></a></span>
+<span id="cb4-31"><a href="#cb4-31"></a><span class="fu">### Implementation notes</span></span>
+<span id="cb4-32"><a href="#cb4-32"></a></span>
+<span id="cb4-33"><a href="#cb4-33"></a></span>
+<span id="cb4-34"><a href="#cb4-34"></a><span class="in">```cpp</span></span>
+<span id="cb4-35"><a href="#cb4-35"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb4-36"><a href="#cb4-36"></a><span class="pp">#include </span><span class="im">&lt;queue&gt;</span></span>
+<span id="cb4-37"><a href="#cb4-37"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb4-38"><a href="#cb4-38"></a><span class="pp">#include </span><span class="im">&lt;array&gt;</span></span>
+<span id="cb4-39"><a href="#cb4-39"></a><span class="pp">#include </span><span class="im">&lt;numeric&gt;</span></span>
+<span id="cb4-40"><a href="#cb4-40"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb4-41"><a href="#cb4-41"></a><span class="pp">#include </span><span class="im">&lt;condition_variable&gt;</span></span>
+<span id="cb4-42"><a href="#cb4-42"></a><span class="pp">#include </span><span class="im">&lt;mutex&gt;</span></span>
+<span id="cb4-43"><a href="#cb4-43"></a><span class="pp">#include </span><span class="im">&lt;shared_mutex&gt;</span></span>
+<span id="cb4-44"><a href="#cb4-44"></a></span>
+<span id="cb4-45"><a href="#cb4-45"></a><span class="kw">namespace</span> dev <span class="op">{</span></span>
+<span id="cb4-46"><a href="#cb4-46"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb4-47"><a href="#cb4-47"></a>    <span class="kw">class</span> ring_buffer <span class="op">{</span></span>
+<span id="cb4-48"><a href="#cb4-48"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb4-49"><a href="#cb4-49"></a>        <span class="kw">enum</span> <span class="op">{</span>min_capacity <span class="op">=</span> <span class="dv">128</span><span class="op">};</span></span>
+<span id="cb4-50"><a href="#cb4-50"></a>        T<span class="op">*</span> ring<span class="op">;</span></span>
+<span id="cb4-51"><a href="#cb4-51"></a>        <span class="dt">int</span> <span class="va">m_front</span><span class="op">;</span></span>
+<span id="cb4-52"><a href="#cb4-52"></a>        <span class="dt">int</span> <span class="va">m_rear</span><span class="op">;</span></span>
+<span id="cb4-53"><a href="#cb4-53"></a>        <span class="dt">int</span> <span class="va">m_capacity</span><span class="op">;</span></span>
+<span id="cb4-54"><a href="#cb4-54"></a></span>
+<span id="cb4-55"><a href="#cb4-55"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb4-56"><a href="#cb4-56"></a>        <span class="co">/* Default constructor*/</span></span>
+<span id="cb4-57"><a href="#cb4-57"></a>        ring_buffer<span class="op">()</span> </span>
+<span id="cb4-58"><a href="#cb4-58"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
+<span id="cb4-59"><a href="#cb4-59"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
+<span id="cb4-60"><a href="#cb4-60"></a>            <span class="op">,</span> ring<span class="op">{</span><span class="kw">nullptr</span><span class="op">}</span></span>
+<span id="cb4-61"><a href="#cb4-61"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
+<span id="cb4-62"><a href="#cb4-62"></a>        <span class="op">{</span> </span>
+<span id="cb4-63"><a href="#cb4-63"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>min_capacity<span class="op">));</span></span>
+<span id="cb4-64"><a href="#cb4-64"></a>            <span class="va">m_capacity</span> <span class="op">=</span> min_capacity<span class="op">;</span></span>
+<span id="cb4-65"><a href="#cb4-65"></a>        <span class="op">}</span></span>
+<span id="cb4-66"><a href="#cb4-66"></a></span>
+<span id="cb4-67"><a href="#cb4-67"></a>        ring_buffer<span class="op">(</span><span class="dt">int</span> capacity<span class="op">)</span></span>
+<span id="cb4-68"><a href="#cb4-68"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb4-69"><a href="#cb4-69"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb4-70"><a href="#cb4-70"></a>            <span class="op">,</span> ring<span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
+<span id="cb4-71"><a href="#cb4-71"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb4-72"><a href="#cb4-72"></a>        <span class="op">{</span></span>
+<span id="cb4-73"><a href="#cb4-73"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>capacity<span class="op">));</span></span>
+<span id="cb4-74"><a href="#cb4-74"></a>            <span class="va">m_capacity</span> <span class="op">=</span> capacity<span class="op">;</span></span>
+<span id="cb4-75"><a href="#cb4-75"></a>        <span class="op">}</span></span>
+<span id="cb4-76"><a href="#cb4-76"></a></span>
+<span id="cb4-77"><a href="#cb4-77"></a>        <span class="co">/* Copy constructor - Perform a deep copy */</span></span>
+<span id="cb4-78"><a href="#cb4-78"></a>        ring_buffer<span class="op">(</span><span class="at">const</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
+<span id="cb4-79"><a href="#cb4-79"></a>            <span class="op">:</span> <span class="va">m_front</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb4-80"><a href="#cb4-80"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb4-81"><a href="#cb4-81"></a>            <span class="op">,</span> ring<span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
+<span id="cb4-82"><a href="#cb4-82"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb4-83"><a href="#cb4-83"></a>        <span class="op">{</span></span>
+<span id="cb4-84"><a href="#cb4-84"></a>            <span class="co">/* Allocation */</span></span>
+<span id="cb4-85"><a href="#cb4-85"></a>            ring <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>other<span class="op">.</span><span class="va">m_capacity</span><span class="op">));</span></span>
+<span id="cb4-86"><a href="#cb4-86"></a></span>
+<span id="cb4-87"><a href="#cb4-87"></a>            <span class="va">m_capacity</span> <span class="op">=</span> other<span class="op">.</span><span class="va">m_capacity</span><span class="op">;</span></span>
+<span id="cb4-88"><a href="#cb4-88"></a></span>
+<span id="cb4-89"><a href="#cb4-89"></a>            <span class="co">/* Construction */</span></span>
+<span id="cb4-90"><a href="#cb4-90"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span><span class="dv">0</span><span class="op">};</span> i <span class="op">&lt;</span> other<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb4-91"><a href="#cb4-91"></a>            <span class="op">{</span></span>
+<span id="cb4-92"><a href="#cb4-92"></a>                <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span>i<span class="op">])</span> T<span class="op">(</span>other<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb4-93"><a href="#cb4-93"></a>            <span class="op">}</span></span>
+<span id="cb4-94"><a href="#cb4-94"></a>        <span class="op">}</span></span>
+<span id="cb4-95"><a href="#cb4-95"></a></span>
+<span id="cb4-96"><a href="#cb4-96"></a>        <span class="co">/* Swap */</span></span>
+<span id="cb4-97"><a href="#cb4-97"></a>        <span class="kw">friend</span> <span class="dt">void</span> swap<span class="op">(</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> lhs<span class="op">,</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> rhs<span class="op">)</span></span>
+<span id="cb4-98"><a href="#cb4-98"></a>        <span class="op">{</span></span>
+<span id="cb4-99"><a href="#cb4-99"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_front</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_front</span><span class="op">);</span></span>
+<span id="cb4-100"><a href="#cb4-100"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_rear</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_rear</span><span class="op">);</span></span>
+<span id="cb4-101"><a href="#cb4-101"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">);</span></span>
+<span id="cb4-102"><a href="#cb4-102"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span>ring<span class="op">,</span> rhs<span class="op">.</span>ring<span class="op">);</span></span>
+<span id="cb4-103"><a href="#cb4-103"></a>        <span class="op">}</span></span>
+<span id="cb4-104"><a href="#cb4-104"></a></span>
+<span id="cb4-105"><a href="#cb4-105"></a>        <span class="co">/* Copy assignment */</span></span>
+<span id="cb4-106"><a href="#cb4-106"></a>        ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
+<span id="cb4-107"><a href="#cb4-107"></a>        <span class="op">{</span></span>
+<span id="cb4-108"><a href="#cb4-108"></a>            ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;</span> temp<span class="op">{</span> other <span class="op">};</span>  <span class="co">//Copy-construct</span></span>
+<span id="cb4-109"><a href="#cb4-109"></a>            swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> temp<span class="op">);</span></span>
+<span id="cb4-110"><a href="#cb4-110"></a>            <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb4-111"><a href="#cb4-111"></a>        <span class="op">}</span></span>
+<span id="cb4-112"><a href="#cb4-112"></a></span>
+<span id="cb4-113"><a href="#cb4-113"></a>        T<span class="op">&amp;</span> front<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-114"><a href="#cb4-114"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
+<span id="cb4-115"><a href="#cb4-115"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
+<span id="cb4-116"><a href="#cb4-116"></a></span>
+<span id="cb4-117"><a href="#cb4-117"></a>            <span class="cf">return</span> ring<span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
+<span id="cb4-118"><a href="#cb4-118"></a>        <span class="op">}</span></span>
+<span id="cb4-119"><a href="#cb4-119"></a></span>
+<span id="cb4-120"><a href="#cb4-120"></a>        T<span class="op">&amp;</span> back<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-121"><a href="#cb4-121"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
+<span id="cb4-122"><a href="#cb4-122"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
+<span id="cb4-123"><a href="#cb4-123"></a></span>
+<span id="cb4-124"><a href="#cb4-124"></a>            <span class="cf">return</span> ring<span class="op">[(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
+<span id="cb4-125"><a href="#cb4-125"></a>        <span class="op">}</span></span>
+<span id="cb4-126"><a href="#cb4-126"></a></span>
+<span id="cb4-127"><a href="#cb4-127"></a>        T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb4-128"><a href="#cb4-128"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
+<span id="cb4-129"><a href="#cb4-129"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
+<span id="cb4-130"><a href="#cb4-130"></a></span>
+<span id="cb4-131"><a href="#cb4-131"></a>            <span class="cf">return</span> ring<span class="op">[(</span><span class="va">m_front</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
+<span id="cb4-132"><a href="#cb4-132"></a>        <span class="op">}</span></span>
+<span id="cb4-133"><a href="#cb4-133"></a></span>
+<span id="cb4-134"><a href="#cb4-134"></a>        <span class="dt">bool</span> empty<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb4-135"><a href="#cb4-135"></a>            <span class="cf">return</span> <span class="va">m_front</span> <span class="op">==</span> <span class="va">m_rear</span><span class="op">;</span></span>
+<span id="cb4-136"><a href="#cb4-136"></a>        <span class="op">}</span></span>
+<span id="cb4-137"><a href="#cb4-137"></a></span>
+<span id="cb4-138"><a href="#cb4-138"></a>        <span class="dt">bool</span> full<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb4-139"><a href="#cb4-139"></a>            <span class="cf">return</span> size<span class="op">()</span> <span class="op">==</span> capacity<span class="op">();</span></span>
+<span id="cb4-140"><a href="#cb4-140"></a>        <span class="op">}</span></span>
+<span id="cb4-141"><a href="#cb4-141"></a></span>
+<span id="cb4-142"><a href="#cb4-142"></a>        <span class="dt">void</span> push<span class="op">(</span><span class="at">const</span> T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-143"><a href="#cb4-143"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
+<span id="cb4-144"><a href="#cb4-144"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is full!"</span><span class="op">);</span></span>
+<span id="cb4-145"><a href="#cb4-145"></a></span>
+<span id="cb4-146"><a href="#cb4-146"></a>            <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">])</span> T<span class="op">(</span>value<span class="op">);</span></span>
+<span id="cb4-147"><a href="#cb4-147"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"pushed "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to buffer"</span><span class="op">;</span></span>
+<span id="cb4-148"><a href="#cb4-148"></a>            <span class="op">++</span><span class="va">m_rear</span><span class="op">;</span></span>
+<span id="cb4-149"><a href="#cb4-149"></a>        <span class="op">}</span></span>
+<span id="cb4-150"><a href="#cb4-150"></a></span>
+<span id="cb4-151"><a href="#cb4-151"></a>        <span class="dt">void</span> push<span class="op">(</span>T<span class="op">&amp;&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-152"><a href="#cb4-152"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
+<span id="cb4-153"><a href="#cb4-153"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is full!"</span><span class="op">);</span></span>
+<span id="cb4-154"><a href="#cb4-154"></a></span>
+<span id="cb4-155"><a href="#cb4-155"></a>            <span class="kw">new</span> <span class="op">(&amp;</span>ring<span class="op">[</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">])</span> T<span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span>value<span class="op">));</span></span>
+<span id="cb4-156"><a href="#cb4-156"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"pushed "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to buffer"</span><span class="op">;</span></span>
+<span id="cb4-157"><a href="#cb4-157"></a>            <span class="op">++</span><span class="va">m_rear</span><span class="op">;</span></span>
+<span id="cb4-158"><a href="#cb4-158"></a>        <span class="op">}</span></span>
+<span id="cb4-159"><a href="#cb4-159"></a></span>
+<span id="cb4-160"><a href="#cb4-160"></a>        <span class="dt">void</span> pop<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-161"><a href="#cb4-161"></a>            <span class="cf">if</span> <span class="op">(</span>empty<span class="op">())</span></span>
+<span id="cb4-162"><a href="#cb4-162"></a>                <span class="cf">throw</span> <span class="bu">std::</span>exception<span class="op">(</span><span class="st">"buffer is empty!"</span><span class="op">);</span></span>
+<span id="cb4-163"><a href="#cb4-163"></a></span>
+<span id="cb4-164"><a href="#cb4-164"></a>            T value <span class="op">=</span> front<span class="op">();</span></span>
+<span id="cb4-165"><a href="#cb4-165"></a>            ring<span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">].~</span>T<span class="op">();</span></span>
+<span id="cb4-166"><a href="#cb4-166"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"popped "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" off buffer"</span><span class="op">;</span></span>
+<span id="cb4-167"><a href="#cb4-167"></a>            <span class="op">++</span><span class="va">m_front</span><span class="op">;</span></span>
+<span id="cb4-168"><a href="#cb4-168"></a>        <span class="op">}</span></span>
+<span id="cb4-169"><a href="#cb4-169"></a></span>
+<span id="cb4-170"><a href="#cb4-170"></a>        <span class="dt">int</span> capacity<span class="op">()</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb4-171"><a href="#cb4-171"></a>            <span class="cf">return</span> <span class="va">m_capacity</span><span class="op">;</span></span>
+<span id="cb4-172"><a href="#cb4-172"></a>        <span class="op">}</span></span>
+<span id="cb4-173"><a href="#cb4-173"></a></span>
+<span id="cb4-174"><a href="#cb4-174"></a>        <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb4-175"><a href="#cb4-175"></a>            <span class="cf">return</span> <span class="op">(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="va">m_front</span><span class="op">);</span></span>
+<span id="cb4-176"><a href="#cb4-176"></a>        <span class="op">}</span></span>
+<span id="cb4-177"><a href="#cb4-177"></a></span>
+<span id="cb4-178"><a href="#cb4-178"></a>        <span class="dt">void</span> print<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-179"><a href="#cb4-179"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span>i <span class="op">&lt;</span> size<span class="op">();++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-180"><a href="#cb4-180"></a>                <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"ring["</span> <span class="op">&lt;&lt;</span> i <span class="op">&lt;&lt;</span> <span class="st">"] = "</span> <span class="op">&lt;&lt;</span> <span class="op">(*</span><span class="kw">this</span><span class="op">)[</span>i<span class="op">];</span></span>
+<span id="cb4-181"><a href="#cb4-181"></a>            <span class="op">}</span></span>
+<span id="cb4-182"><a href="#cb4-182"></a>        <span class="op">}</span></span>
+<span id="cb4-183"><a href="#cb4-183"></a>    <span class="op">};</span></span>
+<span id="cb4-184"><a href="#cb4-184"></a><span class="op">}</span></span>
+<span id="cb4-185"><a href="#cb4-185"></a><span class="in">```</span></span>
+<span id="cb4-186"><a href="#cb4-186"></a></span>
+<span id="cb4-187"><a href="#cb4-187"></a>Running the above code-snippet, we find that there are several occassions when there are buffer overflows or underflows, and there are also data races. </span>
+<span id="cb4-188"><a href="#cb4-188"></a></span>
+<span id="cb4-189"><a href="#cb4-189"></a><span class="fu">## Building a thread-safe queue using condition variables</span></span>
+<span id="cb4-190"><a href="#cb4-190"></a></span>
+<span id="cb4-191"><a href="#cb4-191"></a>You essentially have three groups of operations : those that query the state of the whole queue(<span class="in">`empty()`</span> and <span class="in">`size()`</span>), those that query the elements of the queue(<span class="in">`front()`</span> and <span class="in">`back()`</span>) and those that modify the queue (<span class="in">`push()`</span>, <span class="in">`pop()`</span> and <span class="in">`emplace()`</span>). This is the same as we've seen for the stack container adapter, and we have the same issues regarding race conditions inherent in the interface. Consequently, we need to combine <span class="in">`front()`</span> and <span class="in">`pop()`</span> into a single function call, much as you combined <span class="in">`pop()`</span> and <span class="in">`top()`</span> for the stack. </span>
+<span id="cb4-192"><a href="#cb4-192"></a></span>
+<span id="cb4-193"><a href="#cb4-193"></a></span>
+<span id="cb4-194"><a href="#cb4-194"></a><span class="in">```cpp</span></span>
+<span id="cb4-195"><a href="#cb4-195"></a><span class="kw">namespace</span> dev <span class="op">{</span></span>
+<span id="cb4-196"><a href="#cb4-196"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb4-197"><a href="#cb4-197"></a>    <span class="kw">class</span> threadsafe_ring_buffer <span class="op">{</span></span>
+<span id="cb4-198"><a href="#cb4-198"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb4-199"><a href="#cb4-199"></a>        threadsafe_ring_buffer<span class="op">()</span> <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;()}</span></span>
+<span id="cb4-200"><a href="#cb4-200"></a>        <span class="op">{}</span></span>
+<span id="cb4-201"><a href="#cb4-201"></a></span>
+<span id="cb4-202"><a href="#cb4-202"></a>        threadsafe_ring_buffer<span class="op">(</span><span class="dt">int</span> capacity<span class="op">)</span> <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span>ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;(</span>capacity<span class="op">)}</span></span>
+<span id="cb4-203"><a href="#cb4-203"></a>        <span class="op">{}</span></span>
+<span id="cb4-204"><a href="#cb4-204"></a></span>
+<span id="cb4-205"><a href="#cb4-205"></a>        threadsafe_ring_buffer<span class="op">(</span><span class="at">const</span> threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span></span>
+<span id="cb4-206"><a href="#cb4-206"></a>        <span class="op">{</span></span>
+<span id="cb4-207"><a href="#cb4-207"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb4-208"><a href="#cb4-208"></a>            <span class="va">m_ring_buffer</span> <span class="op">=</span> other<span class="op">.</span><span class="va">m_ring_buffer</span><span class="op">;</span></span>
+<span id="cb4-209"><a href="#cb4-209"></a>        <span class="op">}</span></span>
+<span id="cb4-210"><a href="#cb4-210"></a>        threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> threadsafe_ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;&amp;</span> other<span class="op">)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
+<span id="cb4-211"><a href="#cb4-211"></a></span>
+<span id="cb4-212"><a href="#cb4-212"></a>        <span class="dt">void</span> wait_and_push<span class="op">(</span>T new_value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-213"><a href="#cb4-213"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb4-214"><a href="#cb4-214"></a>            queue_not_full_cond<span class="op">.</span>wait<span class="op">(</span>lck<span class="op">,</span> <span class="op">[</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span><span class="cf">return</span> <span class="op">!</span><span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">();});</span></span>
+<span id="cb4-215"><a href="#cb4-215"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>push<span class="op">(</span>new_value<span class="op">);</span></span>
+<span id="cb4-216"><a href="#cb4-216"></a>            queue_not_empty_cond<span class="op">.</span>notify_one<span class="op">();</span></span>
+<span id="cb4-217"><a href="#cb4-217"></a>        <span class="op">}</span></span>
+<span id="cb4-218"><a href="#cb4-218"></a></span>
+<span id="cb4-219"><a href="#cb4-219"></a>        <span class="dt">bool</span> try_push<span class="op">(</span>T new_value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-220"><a href="#cb4-220"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb4-221"><a href="#cb4-221"></a>            <span class="cf">if</span> <span class="op">(!</span><span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">())</span></span>
+<span id="cb4-222"><a href="#cb4-222"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb4-223"><a href="#cb4-223"></a></span>
+<span id="cb4-224"><a href="#cb4-224"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>push<span class="op">(</span>new_value<span class="op">);</span></span>
+<span id="cb4-225"><a href="#cb4-225"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb4-226"><a href="#cb4-226"></a>        <span class="op">}</span></span>
+<span id="cb4-227"><a href="#cb4-227"></a></span>
+<span id="cb4-228"><a href="#cb4-228"></a>        <span class="dt">void</span> wait_and_pop<span class="op">(</span>T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-229"><a href="#cb4-229"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb4-230"><a href="#cb4-230"></a>            queue_not_empty_cond<span class="op">.</span>wait<span class="op">(</span>lck<span class="op">,</span> <span class="op">[</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">!</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">();});</span></span>
+<span id="cb4-231"><a href="#cb4-231"></a>            value <span class="op">=</span> <span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">();</span></span>
+<span id="cb4-232"><a href="#cb4-232"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
+<span id="cb4-233"><a href="#cb4-233"></a>            queue_not_full_cond<span class="op">.</span>notify_one<span class="op">();</span></span>
+<span id="cb4-234"><a href="#cb4-234"></a>        <span class="op">}</span></span>
+<span id="cb4-235"><a href="#cb4-235"></a></span>
+<span id="cb4-236"><a href="#cb4-236"></a>        <span class="dt">void</span> try_pop<span class="op">(</span>T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-237"><a href="#cb4-237"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb4-238"><a href="#cb4-238"></a>            <span class="cf">if</span> <span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">())</span></span>
+<span id="cb4-239"><a href="#cb4-239"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb4-240"><a href="#cb4-240"></a></span>
+<span id="cb4-241"><a href="#cb4-241"></a>            value <span class="op">=</span> <span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">();</span></span>
+<span id="cb4-242"><a href="#cb4-242"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
+<span id="cb4-243"><a href="#cb4-243"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb4-244"><a href="#cb4-244"></a>        <span class="op">}</span></span>
+<span id="cb4-245"><a href="#cb4-245"></a></span>
+<span id="cb4-246"><a href="#cb4-246"></a>        <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> wait_and_pop<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-247"><a href="#cb4-247"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb4-248"><a href="#cb4-248"></a>            queue_not_empty_cond<span class="op">.</span>wait<span class="op">([</span><span class="kw">this</span><span class="op">]()</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">!</span>empty<span class="op">();</span> <span class="op">});</span></span>
+<span id="cb4-249"><a href="#cb4-249"></a>            <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span> <span class="bu">std::</span>make_shared<span class="op">&lt;</span>T<span class="op">&gt;(</span><span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">())</span> <span class="op">};</span></span>
+<span id="cb4-250"><a href="#cb4-250"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
+<span id="cb4-251"><a href="#cb4-251"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb4-252"><a href="#cb4-252"></a>        <span class="op">}</span></span>
+<span id="cb4-253"><a href="#cb4-253"></a></span>
+<span id="cb4-254"><a href="#cb4-254"></a>        <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> try_pop<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-255"><a href="#cb4-255"></a>            <span class="bu">std::</span>unique_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb4-256"><a href="#cb4-256"></a>            <span class="cf">if</span> <span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">())</span></span>
+<span id="cb4-257"><a href="#cb4-257"></a>                <span class="cf">return</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb4-258"><a href="#cb4-258"></a></span>
+<span id="cb4-259"><a href="#cb4-259"></a>            <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span> <span class="bu">std::</span>make_shared<span class="op">&lt;</span>T<span class="op">&gt;(</span><span class="va">m_ring_buffer</span><span class="op">.</span>front<span class="op">())</span> <span class="op">};</span></span>
+<span id="cb4-260"><a href="#cb4-260"></a>            <span class="va">m_ring_buffer</span><span class="op">.</span>pop<span class="op">();</span></span>
+<span id="cb4-261"><a href="#cb4-261"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb4-262"><a href="#cb4-262"></a>        <span class="op">}</span></span>
+<span id="cb4-263"><a href="#cb4-263"></a></span>
+<span id="cb4-264"><a href="#cb4-264"></a>        <span class="dt">bool</span> empty<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb4-265"><a href="#cb4-265"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb4-266"><a href="#cb4-266"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>empty<span class="op">();</span></span>
+<span id="cb4-267"><a href="#cb4-267"></a>        <span class="op">}</span></span>
+<span id="cb4-268"><a href="#cb4-268"></a></span>
+<span id="cb4-269"><a href="#cb4-269"></a>        <span class="dt">bool</span> full<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb4-270"><a href="#cb4-270"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb4-271"><a href="#cb4-271"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>full<span class="op">();</span></span>
+<span id="cb4-272"><a href="#cb4-272"></a>        <span class="op">}</span></span>
+<span id="cb4-273"><a href="#cb4-273"></a></span>
+<span id="cb4-274"><a href="#cb4-274"></a>        <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb4-275"><a href="#cb4-275"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb4-276"><a href="#cb4-276"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>size<span class="op">();</span></span>
+<span id="cb4-277"><a href="#cb4-277"></a>        <span class="op">}</span></span>
+<span id="cb4-278"><a href="#cb4-278"></a></span>
+<span id="cb4-279"><a href="#cb4-279"></a>        <span class="dt">int</span> capacity<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb4-280"><a href="#cb4-280"></a>            <span class="bu">std::</span>shared_lock<span class="op">&lt;</span><span class="bu">std::</span>shared_mutex<span class="op">&gt;</span> lck<span class="op">(</span>mtx<span class="op">);</span></span>
+<span id="cb4-281"><a href="#cb4-281"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">.</span>capacity<span class="op">();</span></span>
+<span id="cb4-282"><a href="#cb4-282"></a>        <span class="op">}</span></span>
+<span id="cb4-283"><a href="#cb4-283"></a></span>
+<span id="cb4-284"><a href="#cb4-284"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb4-285"><a href="#cb4-285"></a>        ring_buffer<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="va">m_ring_buffer</span><span class="op">;</span></span>
+<span id="cb4-286"><a href="#cb4-286"></a>        <span class="at">mutable</span> <span class="bu">std::</span>shared_mutex mtx<span class="op">;</span></span>
+<span id="cb4-287"><a href="#cb4-287"></a>        <span class="bu">std::</span>condition_variable_any queue_not_empty_cond<span class="op">;</span></span>
+<span id="cb4-288"><a href="#cb4-288"></a>        <span class="bu">std::</span>condition_variable_any queue_not_full_cond<span class="op">;</span></span>
+<span id="cb4-289"><a href="#cb4-289"></a>    <span class="op">};</span></span>
+<span id="cb4-290"><a href="#cb4-290"></a><span class="op">}</span></span>
+<span id="cb4-291"><a href="#cb4-291"></a></span>
+<span id="cb4-292"><a href="#cb4-292"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb4-293"><a href="#cb4-293"></a><span class="op">{</span></span>
+<span id="cb4-294"><a href="#cb4-294"></a>    dev<span class="op">::</span>threadsafe_ring_buffer<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> buffer<span class="op">(</span><span class="dv">64</span><span class="op">);</span></span>
+<span id="cb4-295"><a href="#cb4-295"></a></span>
+<span id="cb4-296"><a href="#cb4-296"></a>    <span class="bu">std::</span>thread producer<span class="op">(</span></span>
+<span id="cb4-297"><a href="#cb4-297"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
+<span id="cb4-298"><a href="#cb4-298"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span>i <span class="op">&lt;=</span> <span class="dv">1000</span><span class="op">;++</span>i<span class="op">)</span></span>
+<span id="cb4-299"><a href="#cb4-299"></a>            <span class="op">{</span></span>
+<span id="cb4-300"><a href="#cb4-300"></a>                <span class="cf">try</span> <span class="op">{</span></span>
+<span id="cb4-301"><a href="#cb4-301"></a>                    buffer<span class="op">.</span>wait_and_push<span class="op">(</span>i<span class="op">);</span></span>
+<span id="cb4-302"><a href="#cb4-302"></a>                <span class="op">}</span></span>
+<span id="cb4-303"><a href="#cb4-303"></a>                <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception e<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-304"><a href="#cb4-304"></a>                    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"buffer full!"</span><span class="op">;</span></span>
+<span id="cb4-305"><a href="#cb4-305"></a>                <span class="op">}</span></span>
+<span id="cb4-306"><a href="#cb4-306"></a>            <span class="op">}</span></span>
+<span id="cb4-307"><a href="#cb4-307"></a>        <span class="op">}</span></span>
+<span id="cb4-308"><a href="#cb4-308"></a>    <span class="op">);</span></span>
+<span id="cb4-309"><a href="#cb4-309"></a></span>
+<span id="cb4-310"><a href="#cb4-310"></a>    <span class="bu">std::</span>thread consumer<span class="op">(</span></span>
+<span id="cb4-311"><a href="#cb4-311"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
+<span id="cb4-312"><a href="#cb4-312"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span>i <span class="op">&lt;=</span> <span class="dv">1000</span><span class="op">;++</span>i<span class="op">)</span></span>
+<span id="cb4-313"><a href="#cb4-313"></a>            <span class="op">{</span></span>
+<span id="cb4-314"><a href="#cb4-314"></a>                <span class="cf">try</span> <span class="op">{</span></span>
+<span id="cb4-315"><a href="#cb4-315"></a>                    <span class="dt">int</span> value<span class="op">;</span></span>
+<span id="cb4-316"><a href="#cb4-316"></a>                    buffer<span class="op">.</span>wait_and_pop<span class="op">(</span>value<span class="op">);</span></span>
+<span id="cb4-317"><a href="#cb4-317"></a>                    <span class="bu">std::</span>this_thread::sleep_for<span class="op">(</span><span class="bu">std::</span>chrono::microseconds<span class="op">(</span><span class="dv">1</span><span class="op">));</span></span>
+<span id="cb4-318"><a href="#cb4-318"></a>                <span class="op">}</span></span>
+<span id="cb4-319"><a href="#cb4-319"></a>                <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception e<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-320"><a href="#cb4-320"></a>                    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"buffer empty!"</span><span class="op">;</span></span>
+<span id="cb4-321"><a href="#cb4-321"></a>                <span class="op">}</span></span>
+<span id="cb4-322"><a href="#cb4-322"></a>            <span class="op">}</span></span>
+<span id="cb4-323"><a href="#cb4-323"></a>        <span class="op">}</span></span>
+<span id="cb4-324"><a href="#cb4-324"></a>    <span class="op">);</span></span>
+<span id="cb4-325"><a href="#cb4-325"></a></span>
+<span id="cb4-326"><a href="#cb4-326"></a>    producer<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb4-327"><a href="#cb4-327"></a>    consumer<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb4-328"><a href="#cb4-328"></a>    </span>
+<span id="cb4-329"><a href="#cb4-329"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">Finished execution"</span><span class="op">;</span></span>
+<span id="cb4-330"><a href="#cb4-330"></a><span class="op">}</span></span>
+<span id="cb4-331"><a href="#cb4-331"></a><span class="in">```</span></span>
+<span id="cb4-332"><a href="#cb4-332"></a></span>
+<span id="cb4-333"><a href="#cb4-333"></a><span class="fu">## Semaphores</span></span>
+<span id="cb4-334"><a href="#cb4-334"></a></span>
+<span id="cb4-335"><a href="#cb4-335"></a>C++20 introduces new synchronization primitives to write multi-threaded applications . </span>
+<span id="cb4-336"><a href="#cb4-336"></a></span>
+<span id="cb4-337"><a href="#cb4-337"></a>A **semaphore** is a counter that manages the numberof permits available for accessing a share resource. Semaphores can be classified into two main types:</span>
+<span id="cb4-338"><a href="#cb4-338"></a></span>
+<span id="cb4-339"><a href="#cb4-339"></a><span class="ss">- </span>**Binary Semaphore**. It has only $2$ states: $0$ and $1$. Event though a binary semaphore is conceptually like a mutex, there are some differences between a binary semaphore and a mutex, that we'll explore later.</span>
+<span id="cb4-340"><a href="#cb4-340"></a><span class="ss">- </span>**Counting Semaphore**. It can have a value greater than $1$ and is used to control access to a resource that has a limited number of instances.</span>
+<span id="cb4-341"><a href="#cb4-341"></a></span>
+<span id="cb4-342"><a href="#cb4-342"></a>C++20 implements both binary and counting semaphores.</span>
+<span id="cb4-343"><a href="#cb4-343"></a></span>
+<span id="cb4-344"><a href="#cb4-344"></a><span class="fu">### Binary Semaphores</span></span>
+<span id="cb4-345"><a href="#cb4-345"></a></span>
+<span id="cb4-346"><a href="#cb4-346"></a>A binary semaphore is a synchronization primitive that can be used to control access to a shared resource. It has two states: $0$ and $1$. A semaphore with a value of $0$ indicates that the resource is unavailable, while a semaphore with a value of $1$ indicates that the resource is available.</span>
+<span id="cb4-347"><a href="#cb4-347"></a></span>
+<span id="cb4-348"><a href="#cb4-348"></a>The most significant difference between mutexes and semaphores is that threads that have acquired a mutex have exclusive ownership of it. Only the thread owning the mutex can release it. Semaphores can be signaled by any thread. A mutex is a locking mechanism for a critical section, whereas a semaphore is more like a signaling mechanism. For this reason, semaphores are commonly used for signaling rather than for mutual exlusion.</span>
+<span id="cb4-349"><a href="#cb4-349"></a></span>
+<span id="cb4-350"><a href="#cb4-350"></a>In C++20, <span class="in">`std::binary_semaphore`</span> is an alias for the specialization of <span class="in">`std::counting_semaphore`</span> with <span class="in">`LeastMaxValue`</span> being $1$.</span>
+<span id="cb4-351"><a href="#cb4-351"></a></span>
+<span id="cb4-352"><a href="#cb4-352"></a>Binary semaphores must be initialized with either $1$ or $0$ as follows:</span>
+<span id="cb4-353"><a href="#cb4-353"></a></span>
+<span id="cb4-354"><a href="#cb4-354"></a><span class="in">```cpp</span></span>
+<span id="cb4-355"><a href="#cb4-355"></a><span class="bu">std::</span>binary_semaphore smphr1<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
+<span id="cb4-356"><a href="#cb4-356"></a><span class="bu">std::</span>binary_semaphore smphr2<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span></span>
+<span id="cb4-357"><a href="#cb4-357"></a><span class="in">```</span></span>
+<span id="cb4-358"><a href="#cb4-358"></a></span>
+<span id="cb4-359"><a href="#cb4-359"></a>If the initial value is <span class="in">`0`</span>, acquiring the semaphore will block the thread trying to acquire it, and before it can be acquired, it must be released by another thread. Acquiring the semaphore decreases the counter, and releasing it increases the counter.</span>
+<span id="cb4-360"><a href="#cb4-360"></a></span>
+<span id="cb4-361"><a href="#cb4-361"></a><span class="fu">### Counting semaphores</span></span>
+<span id="cb4-362"><a href="#cb4-362"></a></span>
+<span id="cb4-363"><a href="#cb4-363"></a>A counting semaphore allows access to a shared resource by more than one thread. The counter can be initialized to an arbitrary number, and it will be decreased every time a thread acquires the semaphore.</span>
+<span id="cb4-364"><a href="#cb4-364"></a></span>
+<span id="cb4-365"><a href="#cb4-365"></a>We can design a thread-safe queue using semaphores instead of condition variables to synchronize access to the queue.</span>
+<span id="cb4-366"><a href="#cb4-366"></a></span>
+<span id="cb4-367"><a href="#cb4-367"></a></span>
+<span id="cb4-368"><a href="#cb4-368"></a></span>
+<span id="cb4-369"><a href="#cb4-369"></a><span class="fu">## SPMC queues and coding up a `ThreadPool`</span></span>
+<span id="cb4-370"><a href="#cb4-370"></a></span>
+<span id="cb4-371"><a href="#cb4-371"></a>A *thread-pool* is a group of pre-instantiated, idle threads which stand ready to be given work. These are preferred over instantiating new threads for each task whenever there are a large number of short tasks to be done rather than a small number of long ones. This prevents having to incur the overhead of creating a thread a large number of times and starvation of threads. </span>
+<span id="cb4-372"><a href="#cb4-372"></a></span>
+<span id="cb4-373"><a href="#cb4-373"></a>The <span class="in">`ThreadPool`</span> class has a container for the worker threads as one of its member-variables. </span>
+<span id="cb4-374"><a href="#cb4-374"></a></span>
+<span id="cb4-375"><a href="#cb4-375"></a>When a *thread-pool* is handed a <span class="in">`Task`</span>, it is added to a SPMC queue. If a thread from the <span class="in">`ThreadPool`</span> is idle, it can <span class="in">`pop()`</span> the next task off the <span class="in">`TaskQueue`</span> and executes it. Once the execution is complete, the thread hands itself back to the pool to be put into the container for reuse and until the <span class="in">`queue_not_empty_cond`</span> condition is met, and the cycle repeats.</span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 
