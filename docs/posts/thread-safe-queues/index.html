@@ -587,6 +587,7 @@ window.Quarto = {
 <h3 class="anchored" data-anchor-id="counting-semaphores">Counting semaphores</h3>
 <p>A counting semaphore allows access to a shared resource by more than one thread. The counter can be initialized to an arbitrary number, and it will be decreased every time a thread acquires the semaphore.</p>
 <p>We can design a thread-safe queue using semaphores instead of condition variables to synchronize access to the queue.</p>
+<p>We code up an unbounded <code>queue</code> implemented as a circular queue with doubling.</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
 <span id="cb4-2"><a href="#cb4-2"></a><span class="pp">#include </span><span class="im">&lt;shared_mutex&gt;</span></span>
 <span id="cb4-3"><a href="#cb4-3"></a><span class="pp">#include </span><span class="im">&lt;semaphore&gt;</span></span>
@@ -807,6 +808,7 @@ window.Quarto = {
 <span id="cb4-218"><a href="#cb4-218"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Queue capacity = "</span> <span class="op">&lt;&lt;</span> q<span class="op">.</span>capacity<span class="op">();</span></span>
 <span id="cb4-219"><a href="#cb4-219"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p><a href="https://godbolt.org/z/7xbY4x5x3">Play on Compiler Explorer</a></p>
+<p>Next, we code up the <code>semaphore_queue</code> class that uses semaphores instead of condition variables as the synchronization mechanism.</p>
 </section>
 </section>
 <section id="spmc-queues-and-coding-up-a-threadpool" class="level2">
@@ -1659,237 +1661,241 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb5-364"><a href="#cb5-364"></a></span>
 <span id="cb5-365"><a href="#cb5-365"></a>We can design a thread-safe queue using semaphores instead of condition variables to synchronize access to the queue.</span>
 <span id="cb5-366"><a href="#cb5-366"></a></span>
-<span id="cb5-367"><a href="#cb5-367"></a><span class="in">```cpp</span></span>
-<span id="cb5-368"><a href="#cb5-368"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb5-369"><a href="#cb5-369"></a><span class="pp">#include </span><span class="im">&lt;shared_mutex&gt;</span></span>
-<span id="cb5-370"><a href="#cb5-370"></a><span class="pp">#include </span><span class="im">&lt;semaphore&gt;</span></span>
-<span id="cb5-371"><a href="#cb5-371"></a></span>
-<span id="cb5-372"><a href="#cb5-372"></a><span class="kw">namespace</span> dev <span class="op">{</span></span>
-<span id="cb5-373"><a href="#cb5-373"></a>    <span class="co">/* </span></span>
-<span id="cb5-374"><a href="#cb5-374"></a><span class="co">    A queue implements a first-in-first-out data-structure allowing </span></span>
-<span id="cb5-375"><a href="#cb5-375"></a><span class="co">    enqueuing (adding) items to the rear and dequeuing(removing)</span></span>
-<span id="cb5-376"><a href="#cb5-376"></a><span class="co">    them from the front.</span></span>
-<span id="cb5-377"><a href="#cb5-377"></a></span>
-<span id="cb5-378"><a href="#cb5-378"></a><span class="co">    My implementation uses a circular queue with doubling - the simplest</span></span>
-<span id="cb5-379"><a href="#cb5-379"></a><span class="co">    and reasonably efficient choice.</span></span>
-<span id="cb5-380"><a href="#cb5-380"></a></span>
-<span id="cb5-381"><a href="#cb5-381"></a><span class="co">    The interface design conforms to the standard library std::queue&lt;T&gt;</span></span>
-<span id="cb5-382"><a href="#cb5-382"></a><span class="co">    specification.</span></span>
-<span id="cb5-383"><a href="#cb5-383"></a><span class="co">    */</span></span>
-<span id="cb5-384"><a href="#cb5-384"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb5-385"><a href="#cb5-385"></a>    <span class="kw">class</span> queue <span class="op">{</span></span>
-<span id="cb5-386"><a href="#cb5-386"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb5-387"><a href="#cb5-387"></a>        <span class="kw">enum</span><span class="op">{</span>min_capacity <span class="op">=</span> <span class="dv">8</span><span class="op">};</span></span>
-<span id="cb5-388"><a href="#cb5-388"></a>        T<span class="op">*</span> <span class="va">m_ring_buffer</span><span class="op">;</span></span>
-<span id="cb5-389"><a href="#cb5-389"></a>        <span class="dt">int</span> <span class="va">m_front</span><span class="op">;</span></span>
-<span id="cb5-390"><a href="#cb5-390"></a>        <span class="dt">int</span> <span class="va">m_rear</span><span class="op">;</span></span>
-<span id="cb5-391"><a href="#cb5-391"></a>        <span class="dt">int</span> <span class="va">m_capacity</span><span class="op">;</span></span>
-<span id="cb5-392"><a href="#cb5-392"></a></span>
-<span id="cb5-393"><a href="#cb5-393"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb5-394"><a href="#cb5-394"></a>        <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
-<span id="cb5-395"><a href="#cb5-395"></a>        <span class="kw">using</span> reference <span class="op">=</span> T<span class="op">&amp;;</span></span>
-<span id="cb5-396"><a href="#cb5-396"></a></span>
-<span id="cb5-397"><a href="#cb5-397"></a>        <span class="co">/* Constructors */</span></span>
+<span id="cb5-367"><a href="#cb5-367"></a>We code up an unbounded <span class="in">`queue`</span> implemented as a circular queue with doubling.</span>
+<span id="cb5-368"><a href="#cb5-368"></a></span>
+<span id="cb5-369"><a href="#cb5-369"></a><span class="in">```cpp</span></span>
+<span id="cb5-370"><a href="#cb5-370"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb5-371"><a href="#cb5-371"></a><span class="pp">#include </span><span class="im">&lt;shared_mutex&gt;</span></span>
+<span id="cb5-372"><a href="#cb5-372"></a><span class="pp">#include </span><span class="im">&lt;semaphore&gt;</span></span>
+<span id="cb5-373"><a href="#cb5-373"></a></span>
+<span id="cb5-374"><a href="#cb5-374"></a><span class="kw">namespace</span> dev <span class="op">{</span></span>
+<span id="cb5-375"><a href="#cb5-375"></a>    <span class="co">/* </span></span>
+<span id="cb5-376"><a href="#cb5-376"></a><span class="co">    A queue implements a first-in-first-out data-structure allowing </span></span>
+<span id="cb5-377"><a href="#cb5-377"></a><span class="co">    enqueuing (adding) items to the rear and dequeuing(removing)</span></span>
+<span id="cb5-378"><a href="#cb5-378"></a><span class="co">    them from the front.</span></span>
+<span id="cb5-379"><a href="#cb5-379"></a></span>
+<span id="cb5-380"><a href="#cb5-380"></a><span class="co">    My implementation uses a circular queue with doubling - the simplest</span></span>
+<span id="cb5-381"><a href="#cb5-381"></a><span class="co">    and reasonably efficient choice.</span></span>
+<span id="cb5-382"><a href="#cb5-382"></a></span>
+<span id="cb5-383"><a href="#cb5-383"></a><span class="co">    The interface design conforms to the standard library std::queue&lt;T&gt;</span></span>
+<span id="cb5-384"><a href="#cb5-384"></a><span class="co">    specification.</span></span>
+<span id="cb5-385"><a href="#cb5-385"></a><span class="co">    */</span></span>
+<span id="cb5-386"><a href="#cb5-386"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb5-387"><a href="#cb5-387"></a>    <span class="kw">class</span> queue <span class="op">{</span></span>
+<span id="cb5-388"><a href="#cb5-388"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb5-389"><a href="#cb5-389"></a>        <span class="kw">enum</span><span class="op">{</span>min_capacity <span class="op">=</span> <span class="dv">8</span><span class="op">};</span></span>
+<span id="cb5-390"><a href="#cb5-390"></a>        T<span class="op">*</span> <span class="va">m_ring_buffer</span><span class="op">;</span></span>
+<span id="cb5-391"><a href="#cb5-391"></a>        <span class="dt">int</span> <span class="va">m_front</span><span class="op">;</span></span>
+<span id="cb5-392"><a href="#cb5-392"></a>        <span class="dt">int</span> <span class="va">m_rear</span><span class="op">;</span></span>
+<span id="cb5-393"><a href="#cb5-393"></a>        <span class="dt">int</span> <span class="va">m_capacity</span><span class="op">;</span></span>
+<span id="cb5-394"><a href="#cb5-394"></a></span>
+<span id="cb5-395"><a href="#cb5-395"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb5-396"><a href="#cb5-396"></a>        <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb5-397"><a href="#cb5-397"></a>        <span class="kw">using</span> reference <span class="op">=</span> T<span class="op">&amp;;</span></span>
 <span id="cb5-398"><a href="#cb5-398"></a></span>
-<span id="cb5-399"><a href="#cb5-399"></a>        <span class="co">// Default constructor</span></span>
-<span id="cb5-400"><a href="#cb5-400"></a>        queue<span class="op">()</span> <span class="op">:</span> queue<span class="op">(</span>min_capacity<span class="op">){}</span></span>
-<span id="cb5-401"><a href="#cb5-401"></a></span>
-<span id="cb5-402"><a href="#cb5-402"></a>        <span class="co">// Parametrized Constructor</span></span>
-<span id="cb5-403"><a href="#cb5-403"></a>        queue<span class="op">(</span><span class="dt">int</span> capacity<span class="op">)</span></span>
-<span id="cb5-404"><a href="#cb5-404"></a>            <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
-<span id="cb5-405"><a href="#cb5-405"></a>            <span class="op">,</span> <span class="va">m_front</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb5-406"><a href="#cb5-406"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb5-407"><a href="#cb5-407"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
-<span id="cb5-408"><a href="#cb5-408"></a>        <span class="op">{</span></span>
-<span id="cb5-409"><a href="#cb5-409"></a>            <span class="va">m_ring_buffer</span> <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>capacity <span class="op">*</span> <span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)));</span></span>
-<span id="cb5-410"><a href="#cb5-410"></a>            <span class="va">m_capacity</span> <span class="op">=</span> capacity<span class="op">;</span></span>
-<span id="cb5-411"><a href="#cb5-411"></a>        <span class="op">}</span></span>
-<span id="cb5-412"><a href="#cb5-412"></a></span>
-<span id="cb5-413"><a href="#cb5-413"></a>        <span class="co">/* Destructor */</span></span>
-<span id="cb5-414"><a href="#cb5-414"></a>        <span class="op">~</span>queue<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb5-415"><a href="#cb5-415"></a>            clear<span class="op">();</span></span>
-<span id="cb5-416"><a href="#cb5-416"></a>            <span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">);</span></span>
-<span id="cb5-417"><a href="#cb5-417"></a>        <span class="op">}</span></span>
-<span id="cb5-418"><a href="#cb5-418"></a></span>
-<span id="cb5-419"><a href="#cb5-419"></a>        <span class="co">/* Copy constructor </span></span>
-<span id="cb5-420"><a href="#cb5-420"></a><span class="co">        * Perform a deep-copy of the contents of the queue</span></span>
-<span id="cb5-421"><a href="#cb5-421"></a><span class="co">        */</span></span>
-<span id="cb5-422"><a href="#cb5-422"></a>        queue<span class="op">(</span><span class="at">const</span> queue<span class="op">&amp;</span> other<span class="op">)</span> </span>
-<span id="cb5-423"><a href="#cb5-423"></a>            <span class="op">:</span> queue<span class="op">(</span>other<span class="op">.</span><span class="va">m_capacity</span><span class="op">)</span> <span class="co">// Allocation step</span></span>
-<span id="cb5-424"><a href="#cb5-424"></a>        <span class="op">{</span></span>
-<span id="cb5-425"><a href="#cb5-425"></a>            <span class="co">/* Call the copy constructor of T </span></span>
-<span id="cb5-426"><a href="#cb5-426"></a><span class="co">            * placing it directly into the pre-allocated</span></span>
-<span id="cb5-427"><a href="#cb5-427"></a><span class="co">            * storage at memory address &amp;m_ring_buffer[i]</span></span>
-<span id="cb5-428"><a href="#cb5-428"></a><span class="co">            */</span></span>
-<span id="cb5-429"><a href="#cb5-429"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span>i <span class="op">&lt;</span> other<span class="op">.</span>size<span class="op">();++</span>i<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb5-430"><a href="#cb5-430"></a>                <span class="kw">new</span> <span class="op">(&amp;</span><span class="va">m_ring_buffer</span><span class="op">[</span>i<span class="op">])</span> T<span class="op">(</span>other<span class="op">[</span>i<span class="op">]);</span></span>
-<span id="cb5-431"><a href="#cb5-431"></a>                <span class="op">++</span><span class="va">m_rear</span><span class="op">;</span></span>
-<span id="cb5-432"><a href="#cb5-432"></a>            <span class="op">}</span></span>
-<span id="cb5-433"><a href="#cb5-433"></a>        <span class="op">}</span></span>
-<span id="cb5-434"><a href="#cb5-434"></a></span>
-<span id="cb5-435"><a href="#cb5-435"></a>        <span class="co">/* Swap the contents of lhs and rhs member-by-member */</span></span>
-<span id="cb5-436"><a href="#cb5-436"></a>        <span class="kw">friend</span> <span class="dt">void</span> swap<span class="op">(</span>queue<span class="op">&amp;</span> lhs<span class="op">,</span> queue<span class="op">&amp;</span> rhs<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb5-437"><a href="#cb5-437"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_ring_buffer</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_ring_buffer</span><span class="op">);</span></span>
-<span id="cb5-438"><a href="#cb5-438"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_front</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_front</span><span class="op">);</span></span>
-<span id="cb5-439"><a href="#cb5-439"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_rear</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_rear</span><span class="op">);</span></span>
-<span id="cb5-440"><a href="#cb5-440"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">);</span></span>
-<span id="cb5-441"><a href="#cb5-441"></a>        <span class="op">}</span></span>
-<span id="cb5-442"><a href="#cb5-442"></a></span>
-<span id="cb5-443"><a href="#cb5-443"></a>        <span class="co">/* Copy-assignment */</span></span>
-<span id="cb5-444"><a href="#cb5-444"></a>        queue<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> queue<span class="op">&amp;</span> other<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb5-445"><a href="#cb5-445"></a>            queue temp<span class="op">{</span> other <span class="op">};</span>    <span class="co">// Copy-construct</span></span>
-<span id="cb5-446"><a href="#cb5-446"></a>            swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> temp<span class="op">);</span>      <span class="co">// and swap idiom</span></span>
-<span id="cb5-447"><a href="#cb5-447"></a>            <span class="cf">return</span> <span class="op">(*</span><span class="kw">this</span><span class="op">);</span></span>
-<span id="cb5-448"><a href="#cb5-448"></a>        <span class="op">}</span></span>
-<span id="cb5-449"><a href="#cb5-449"></a></span>
-<span id="cb5-450"><a href="#cb5-450"></a>        <span class="co">/* Move constructor */</span></span>
-<span id="cb5-451"><a href="#cb5-451"></a>        queue<span class="op">(</span>queue<span class="op">&amp;&amp;</span> other<span class="op">)</span></span>
-<span id="cb5-452"><a href="#cb5-452"></a>            <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span> <span class="bu">std::</span>move<span class="op">(</span>other<span class="op">.</span><span class="va">m_ring_buffer</span><span class="op">)</span> <span class="op">}</span></span>
-<span id="cb5-453"><a href="#cb5-453"></a>            <span class="op">,</span> <span class="va">m_front</span><span class="op">{</span> <span class="bu">std::</span>move<span class="op">(</span>other<span class="op">.</span><span class="va">m_front</span><span class="op">)</span> <span class="op">}</span></span>
-<span id="cb5-454"><a href="#cb5-454"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="bu">std::</span>move<span class="op">(</span>other<span class="op">.</span><span class="va">m_rear</span><span class="op">)</span> <span class="op">}</span></span>
-<span id="cb5-455"><a href="#cb5-455"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="bu">std::</span>move<span class="op">(</span>other<span class="op">.</span><span class="va">m_capacity</span><span class="op">)</span> <span class="op">}</span></span>
-<span id="cb5-456"><a href="#cb5-456"></a>        <span class="op">{</span></span>
-<span id="cb5-457"><a href="#cb5-457"></a>            other<span class="op">.</span><span class="va">m_ring_buffer</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
-<span id="cb5-458"><a href="#cb5-458"></a>        <span class="op">}</span></span>
-<span id="cb5-459"><a href="#cb5-459"></a></span>
-<span id="cb5-460"><a href="#cb5-460"></a>        <span class="co">/* Move assignment */</span></span>
-<span id="cb5-461"><a href="#cb5-461"></a>        queue<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span>queue<span class="op">&amp;&amp;</span> other<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb5-462"><a href="#cb5-462"></a>            queue temp<span class="op">{</span> <span class="bu">std::</span>move<span class="op">(</span>other<span class="op">)</span> <span class="op">};</span></span>
-<span id="cb5-463"><a href="#cb5-463"></a>            <span class="bu">std::</span>swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> temp<span class="op">);</span></span>
-<span id="cb5-464"><a href="#cb5-464"></a>            <span class="cf">return</span> <span class="op">(*</span><span class="kw">this</span><span class="op">);</span></span>
-<span id="cb5-465"><a href="#cb5-465"></a>        <span class="op">}</span></span>
-<span id="cb5-466"><a href="#cb5-466"></a></span>
-<span id="cb5-467"><a href="#cb5-467"></a>        <span class="co">/* Capacity*/</span></span>
+<span id="cb5-399"><a href="#cb5-399"></a>        <span class="co">/* Constructors */</span></span>
+<span id="cb5-400"><a href="#cb5-400"></a></span>
+<span id="cb5-401"><a href="#cb5-401"></a>        <span class="co">// Default constructor</span></span>
+<span id="cb5-402"><a href="#cb5-402"></a>        queue<span class="op">()</span> <span class="op">:</span> queue<span class="op">(</span>min_capacity<span class="op">){}</span></span>
+<span id="cb5-403"><a href="#cb5-403"></a></span>
+<span id="cb5-404"><a href="#cb5-404"></a>        <span class="co">// Parametrized Constructor</span></span>
+<span id="cb5-405"><a href="#cb5-405"></a>        queue<span class="op">(</span><span class="dt">int</span> capacity<span class="op">)</span></span>
+<span id="cb5-406"><a href="#cb5-406"></a>            <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
+<span id="cb5-407"><a href="#cb5-407"></a>            <span class="op">,</span> <span class="va">m_front</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb5-408"><a href="#cb5-408"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb5-409"><a href="#cb5-409"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb5-410"><a href="#cb5-410"></a>        <span class="op">{</span></span>
+<span id="cb5-411"><a href="#cb5-411"></a>            <span class="va">m_ring_buffer</span> <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span>capacity <span class="op">*</span> <span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)));</span></span>
+<span id="cb5-412"><a href="#cb5-412"></a>            <span class="va">m_capacity</span> <span class="op">=</span> capacity<span class="op">;</span></span>
+<span id="cb5-413"><a href="#cb5-413"></a>        <span class="op">}</span></span>
+<span id="cb5-414"><a href="#cb5-414"></a></span>
+<span id="cb5-415"><a href="#cb5-415"></a>        <span class="co">/* Destructor */</span></span>
+<span id="cb5-416"><a href="#cb5-416"></a>        <span class="op">~</span>queue<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb5-417"><a href="#cb5-417"></a>            clear<span class="op">();</span></span>
+<span id="cb5-418"><a href="#cb5-418"></a>            <span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">);</span></span>
+<span id="cb5-419"><a href="#cb5-419"></a>        <span class="op">}</span></span>
+<span id="cb5-420"><a href="#cb5-420"></a></span>
+<span id="cb5-421"><a href="#cb5-421"></a>        <span class="co">/* Copy constructor </span></span>
+<span id="cb5-422"><a href="#cb5-422"></a><span class="co">        * Perform a deep-copy of the contents of the queue</span></span>
+<span id="cb5-423"><a href="#cb5-423"></a><span class="co">        */</span></span>
+<span id="cb5-424"><a href="#cb5-424"></a>        queue<span class="op">(</span><span class="at">const</span> queue<span class="op">&amp;</span> other<span class="op">)</span> </span>
+<span id="cb5-425"><a href="#cb5-425"></a>            <span class="op">:</span> queue<span class="op">(</span>other<span class="op">.</span><span class="va">m_capacity</span><span class="op">)</span> <span class="co">// Allocation step</span></span>
+<span id="cb5-426"><a href="#cb5-426"></a>        <span class="op">{</span></span>
+<span id="cb5-427"><a href="#cb5-427"></a>            <span class="co">/* Call the copy constructor of T </span></span>
+<span id="cb5-428"><a href="#cb5-428"></a><span class="co">            * placing it directly into the pre-allocated</span></span>
+<span id="cb5-429"><a href="#cb5-429"></a><span class="co">            * storage at memory address &amp;m_ring_buffer[i]</span></span>
+<span id="cb5-430"><a href="#cb5-430"></a><span class="co">            */</span></span>
+<span id="cb5-431"><a href="#cb5-431"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span>i <span class="op">&lt;</span> other<span class="op">.</span>size<span class="op">();++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-432"><a href="#cb5-432"></a>                <span class="kw">new</span> <span class="op">(&amp;</span><span class="va">m_ring_buffer</span><span class="op">[</span>i<span class="op">])</span> T<span class="op">(</span>other<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb5-433"><a href="#cb5-433"></a>                <span class="op">++</span><span class="va">m_rear</span><span class="op">;</span></span>
+<span id="cb5-434"><a href="#cb5-434"></a>            <span class="op">}</span></span>
+<span id="cb5-435"><a href="#cb5-435"></a>        <span class="op">}</span></span>
+<span id="cb5-436"><a href="#cb5-436"></a></span>
+<span id="cb5-437"><a href="#cb5-437"></a>        <span class="co">/* Swap the contents of lhs and rhs member-by-member */</span></span>
+<span id="cb5-438"><a href="#cb5-438"></a>        <span class="kw">friend</span> <span class="dt">void</span> swap<span class="op">(</span>queue<span class="op">&amp;</span> lhs<span class="op">,</span> queue<span class="op">&amp;</span> rhs<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-439"><a href="#cb5-439"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_ring_buffer</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_ring_buffer</span><span class="op">);</span></span>
+<span id="cb5-440"><a href="#cb5-440"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_front</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_front</span><span class="op">);</span></span>
+<span id="cb5-441"><a href="#cb5-441"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_rear</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_rear</span><span class="op">);</span></span>
+<span id="cb5-442"><a href="#cb5-442"></a>            <span class="bu">std::</span>swap<span class="op">(</span>lhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">,</span> rhs<span class="op">.</span><span class="va">m_capacity</span><span class="op">);</span></span>
+<span id="cb5-443"><a href="#cb5-443"></a>        <span class="op">}</span></span>
+<span id="cb5-444"><a href="#cb5-444"></a></span>
+<span id="cb5-445"><a href="#cb5-445"></a>        <span class="co">/* Copy-assignment */</span></span>
+<span id="cb5-446"><a href="#cb5-446"></a>        queue<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> queue<span class="op">&amp;</span> other<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-447"><a href="#cb5-447"></a>            queue temp<span class="op">{</span> other <span class="op">};</span>    <span class="co">// Copy-construct</span></span>
+<span id="cb5-448"><a href="#cb5-448"></a>            swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> temp<span class="op">);</span>      <span class="co">// and swap idiom</span></span>
+<span id="cb5-449"><a href="#cb5-449"></a>            <span class="cf">return</span> <span class="op">(*</span><span class="kw">this</span><span class="op">);</span></span>
+<span id="cb5-450"><a href="#cb5-450"></a>        <span class="op">}</span></span>
+<span id="cb5-451"><a href="#cb5-451"></a></span>
+<span id="cb5-452"><a href="#cb5-452"></a>        <span class="co">/* Move constructor */</span></span>
+<span id="cb5-453"><a href="#cb5-453"></a>        queue<span class="op">(</span>queue<span class="op">&amp;&amp;</span> other<span class="op">)</span></span>
+<span id="cb5-454"><a href="#cb5-454"></a>            <span class="op">:</span> <span class="va">m_ring_buffer</span><span class="op">{</span> <span class="bu">std::</span>move<span class="op">(</span>other<span class="op">.</span><span class="va">m_ring_buffer</span><span class="op">)</span> <span class="op">}</span></span>
+<span id="cb5-455"><a href="#cb5-455"></a>            <span class="op">,</span> <span class="va">m_front</span><span class="op">{</span> <span class="bu">std::</span>move<span class="op">(</span>other<span class="op">.</span><span class="va">m_front</span><span class="op">)</span> <span class="op">}</span></span>
+<span id="cb5-456"><a href="#cb5-456"></a>            <span class="op">,</span> <span class="va">m_rear</span><span class="op">{</span> <span class="bu">std::</span>move<span class="op">(</span>other<span class="op">.</span><span class="va">m_rear</span><span class="op">)</span> <span class="op">}</span></span>
+<span id="cb5-457"><a href="#cb5-457"></a>            <span class="op">,</span> <span class="va">m_capacity</span><span class="op">{</span> <span class="bu">std::</span>move<span class="op">(</span>other<span class="op">.</span><span class="va">m_capacity</span><span class="op">)</span> <span class="op">}</span></span>
+<span id="cb5-458"><a href="#cb5-458"></a>        <span class="op">{</span></span>
+<span id="cb5-459"><a href="#cb5-459"></a>            other<span class="op">.</span><span class="va">m_ring_buffer</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb5-460"><a href="#cb5-460"></a>        <span class="op">}</span></span>
+<span id="cb5-461"><a href="#cb5-461"></a></span>
+<span id="cb5-462"><a href="#cb5-462"></a>        <span class="co">/* Move assignment */</span></span>
+<span id="cb5-463"><a href="#cb5-463"></a>        queue<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span>queue<span class="op">&amp;&amp;</span> other<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-464"><a href="#cb5-464"></a>            queue temp<span class="op">{</span> <span class="bu">std::</span>move<span class="op">(</span>other<span class="op">)</span> <span class="op">};</span></span>
+<span id="cb5-465"><a href="#cb5-465"></a>            <span class="bu">std::</span>swap<span class="op">(*</span><span class="kw">this</span><span class="op">,</span> temp<span class="op">);</span></span>
+<span id="cb5-466"><a href="#cb5-466"></a>            <span class="cf">return</span> <span class="op">(*</span><span class="kw">this</span><span class="op">);</span></span>
+<span id="cb5-467"><a href="#cb5-467"></a>        <span class="op">}</span></span>
 <span id="cb5-468"><a href="#cb5-468"></a></span>
-<span id="cb5-469"><a href="#cb5-469"></a>        <span class="co">/* Checks whether the queue is empty */</span></span>
-<span id="cb5-470"><a href="#cb5-470"></a>        <span class="dt">bool</span> empty<span class="op">()</span></span>
-<span id="cb5-471"><a href="#cb5-471"></a>        <span class="op">{</span></span>
-<span id="cb5-472"><a href="#cb5-472"></a>            <span class="cf">return</span> <span class="op">(</span><span class="va">m_rear</span> <span class="op">==</span> <span class="va">m_front</span><span class="op">);</span></span>
-<span id="cb5-473"><a href="#cb5-473"></a>        <span class="op">}</span></span>
-<span id="cb5-474"><a href="#cb5-474"></a></span>
-<span id="cb5-475"><a href="#cb5-475"></a>        <span class="dt">bool</span> full<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb5-476"><a href="#cb5-476"></a>            <span class="cf">return</span> <span class="op">(</span><span class="va">m_rear</span> <span class="op">==</span> <span class="va">m_front</span> <span class="op">+</span> <span class="va">m_capacity</span><span class="op">);</span></span>
-<span id="cb5-477"><a href="#cb5-477"></a>        <span class="op">}</span></span>
-<span id="cb5-478"><a href="#cb5-478"></a></span>
-<span id="cb5-479"><a href="#cb5-479"></a>        <span class="co">/* Returns the number of elements in the queue*/</span></span>
-<span id="cb5-480"><a href="#cb5-480"></a>        <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb5-481"><a href="#cb5-481"></a>            <span class="cf">return</span> <span class="op">(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="va">m_front</span><span class="op">);</span></span>
-<span id="cb5-482"><a href="#cb5-482"></a>        <span class="op">}</span></span>
-<span id="cb5-483"><a href="#cb5-483"></a></span>
-<span id="cb5-484"><a href="#cb5-484"></a>        <span class="dt">int</span> capacity<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb5-485"><a href="#cb5-485"></a>            <span class="cf">return</span> <span class="va">m_capacity</span><span class="op">;</span></span>
-<span id="cb5-486"><a href="#cb5-486"></a>        <span class="op">}</span></span>
-<span id="cb5-487"><a href="#cb5-487"></a></span>
-<span id="cb5-488"><a href="#cb5-488"></a>        <span class="co">/* Modifiers */</span></span>
+<span id="cb5-469"><a href="#cb5-469"></a>        <span class="co">/* Capacity*/</span></span>
+<span id="cb5-470"><a href="#cb5-470"></a></span>
+<span id="cb5-471"><a href="#cb5-471"></a>        <span class="co">/* Checks whether the queue is empty */</span></span>
+<span id="cb5-472"><a href="#cb5-472"></a>        <span class="dt">bool</span> empty<span class="op">()</span></span>
+<span id="cb5-473"><a href="#cb5-473"></a>        <span class="op">{</span></span>
+<span id="cb5-474"><a href="#cb5-474"></a>            <span class="cf">return</span> <span class="op">(</span><span class="va">m_rear</span> <span class="op">==</span> <span class="va">m_front</span><span class="op">);</span></span>
+<span id="cb5-475"><a href="#cb5-475"></a>        <span class="op">}</span></span>
+<span id="cb5-476"><a href="#cb5-476"></a></span>
+<span id="cb5-477"><a href="#cb5-477"></a>        <span class="dt">bool</span> full<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb5-478"><a href="#cb5-478"></a>            <span class="cf">return</span> <span class="op">(</span><span class="va">m_rear</span> <span class="op">==</span> <span class="va">m_front</span> <span class="op">+</span> <span class="va">m_capacity</span><span class="op">);</span></span>
+<span id="cb5-479"><a href="#cb5-479"></a>        <span class="op">}</span></span>
+<span id="cb5-480"><a href="#cb5-480"></a></span>
+<span id="cb5-481"><a href="#cb5-481"></a>        <span class="co">/* Returns the number of elements in the queue*/</span></span>
+<span id="cb5-482"><a href="#cb5-482"></a>        <span class="dt">int</span> size<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb5-483"><a href="#cb5-483"></a>            <span class="cf">return</span> <span class="op">(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="va">m_front</span><span class="op">);</span></span>
+<span id="cb5-484"><a href="#cb5-484"></a>        <span class="op">}</span></span>
+<span id="cb5-485"><a href="#cb5-485"></a></span>
+<span id="cb5-486"><a href="#cb5-486"></a>        <span class="dt">int</span> capacity<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb5-487"><a href="#cb5-487"></a>            <span class="cf">return</span> <span class="va">m_capacity</span><span class="op">;</span></span>
+<span id="cb5-488"><a href="#cb5-488"></a>        <span class="op">}</span></span>
 <span id="cb5-489"><a href="#cb5-489"></a></span>
-<span id="cb5-490"><a href="#cb5-490"></a>        <span class="co">/* Double the capacity of the queue */</span></span>
-<span id="cb5-491"><a href="#cb5-491"></a>        <span class="dt">void</span> resize<span class="op">()</span></span>
-<span id="cb5-492"><a href="#cb5-492"></a>        <span class="op">{</span></span>
-<span id="cb5-493"><a href="#cb5-493"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Resizing the queue from "</span> <span class="op">&lt;&lt;</span> <span class="va">m_capacity</span> </span>
-<span id="cb5-494"><a href="#cb5-494"></a>                <span class="op">&lt;&lt;</span> <span class="st">" to "</span> <span class="op">&lt;&lt;</span> <span class="dv">2</span> <span class="op">*</span> <span class="va">m_capacity</span> <span class="op">&lt;&lt;</span> <span class="st">" elements."</span><span class="op">;</span></span>
-<span id="cb5-495"><a href="#cb5-495"></a></span>
-<span id="cb5-496"><a href="#cb5-496"></a>            <span class="co">// 1. Allocation step</span></span>
-<span id="cb5-497"><a href="#cb5-497"></a>            T<span class="op">*</span> new_array <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="dv">2</span> <span class="op">*</span> <span class="va">m_capacity</span> <span class="op">*</span> <span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)));</span></span>
-<span id="cb5-498"><a href="#cb5-498"></a></span>
-<span id="cb5-499"><a href="#cb5-499"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Allocation complete."</span><span class="op">;</span></span>
+<span id="cb5-490"><a href="#cb5-490"></a>        <span class="co">/* Modifiers */</span></span>
+<span id="cb5-491"><a href="#cb5-491"></a></span>
+<span id="cb5-492"><a href="#cb5-492"></a>        <span class="co">/* Double the capacity of the queue */</span></span>
+<span id="cb5-493"><a href="#cb5-493"></a>        <span class="dt">void</span> resize<span class="op">()</span></span>
+<span id="cb5-494"><a href="#cb5-494"></a>        <span class="op">{</span></span>
+<span id="cb5-495"><a href="#cb5-495"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Resizing the queue from "</span> <span class="op">&lt;&lt;</span> <span class="va">m_capacity</span> </span>
+<span id="cb5-496"><a href="#cb5-496"></a>                <span class="op">&lt;&lt;</span> <span class="st">" to "</span> <span class="op">&lt;&lt;</span> <span class="dv">2</span> <span class="op">*</span> <span class="va">m_capacity</span> <span class="op">&lt;&lt;</span> <span class="st">" elements."</span><span class="op">;</span></span>
+<span id="cb5-497"><a href="#cb5-497"></a></span>
+<span id="cb5-498"><a href="#cb5-498"></a>            <span class="co">// 1. Allocation step</span></span>
+<span id="cb5-499"><a href="#cb5-499"></a>            T<span class="op">*</span> new_array <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="dv">2</span> <span class="op">*</span> <span class="va">m_capacity</span> <span class="op">*</span> <span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)));</span></span>
 <span id="cb5-500"><a href="#cb5-500"></a></span>
-<span id="cb5-501"><a href="#cb5-501"></a>            <span class="co">// 2. Copy over the elements of the queue to the newly</span></span>
-<span id="cb5-502"><a href="#cb5-502"></a>            <span class="co">// allocated storage.</span></span>
-<span id="cb5-503"><a href="#cb5-503"></a>            <span class="dt">int</span> new_size <span class="op">=</span> size<span class="op">();</span></span>
-<span id="cb5-504"><a href="#cb5-504"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span>i <span class="op">&lt;</span> new_size<span class="op">;++</span>i<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb5-505"><a href="#cb5-505"></a>                <span class="kw">new</span> <span class="op">(&amp;</span>new_array<span class="op">[</span>i<span class="op">])</span> T<span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">[(</span>i <span class="op">+</span> <span class="va">m_front</span><span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">]));</span></span>
-<span id="cb5-506"><a href="#cb5-506"></a>            <span class="op">}</span></span>
-<span id="cb5-507"><a href="#cb5-507"></a></span>
-<span id="cb5-508"><a href="#cb5-508"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Copy-construction complete"</span><span class="op">;</span></span>
+<span id="cb5-501"><a href="#cb5-501"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Allocation complete."</span><span class="op">;</span></span>
+<span id="cb5-502"><a href="#cb5-502"></a></span>
+<span id="cb5-503"><a href="#cb5-503"></a>            <span class="co">// 2. Copy over the elements of the queue to the newly</span></span>
+<span id="cb5-504"><a href="#cb5-504"></a>            <span class="co">// allocated storage.</span></span>
+<span id="cb5-505"><a href="#cb5-505"></a>            <span class="dt">int</span> new_size <span class="op">=</span> size<span class="op">();</span></span>
+<span id="cb5-506"><a href="#cb5-506"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span>i <span class="op">&lt;</span> new_size<span class="op">;++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-507"><a href="#cb5-507"></a>                <span class="kw">new</span> <span class="op">(&amp;</span>new_array<span class="op">[</span>i<span class="op">])</span> T<span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">[(</span>i <span class="op">+</span> <span class="va">m_front</span><span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">]));</span></span>
+<span id="cb5-508"><a href="#cb5-508"></a>            <span class="op">}</span></span>
 <span id="cb5-509"><a href="#cb5-509"></a></span>
-<span id="cb5-510"><a href="#cb5-510"></a>            <span class="co">// 3. Destroy the old array</span></span>
-<span id="cb5-511"><a href="#cb5-511"></a>            clear<span class="op">();</span></span>
-<span id="cb5-512"><a href="#cb5-512"></a>            <span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">);</span></span>
-<span id="cb5-513"><a href="#cb5-513"></a></span>
-<span id="cb5-514"><a href="#cb5-514"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Destruction of old array complete"</span><span class="op">;</span></span>
-<span id="cb5-515"><a href="#cb5-515"></a>            </span>
-<span id="cb5-516"><a href="#cb5-516"></a>            <span class="co">// Re-wire m_ring_buffer, set front, rear and capacity</span></span>
-<span id="cb5-517"><a href="#cb5-517"></a>            <span class="va">m_ring_buffer</span> <span class="op">=</span> new_array<span class="op">;</span></span>
-<span id="cb5-518"><a href="#cb5-518"></a>            <span class="va">m_front</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb5-519"><a href="#cb5-519"></a>            <span class="va">m_rear</span> <span class="op">=</span> new_size<span class="op">;</span></span>
-<span id="cb5-520"><a href="#cb5-520"></a>            <span class="va">m_capacity</span> <span class="op">*=</span> <span class="dv">2</span><span class="op">;</span></span>
-<span id="cb5-521"><a href="#cb5-521"></a>        <span class="op">}</span></span>
-<span id="cb5-522"><a href="#cb5-522"></a></span>
-<span id="cb5-523"><a href="#cb5-523"></a>        <span class="co">/* Push the given value to the end of the queue */</span></span>
-<span id="cb5-524"><a href="#cb5-524"></a>        <span class="dt">void</span> push<span class="op">(</span><span class="at">const</span> T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb5-525"><a href="#cb5-525"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Pushing "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to the queue"</span><span class="op">;</span></span>
-<span id="cb5-526"><a href="#cb5-526"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
-<span id="cb5-527"><a href="#cb5-527"></a>                resize<span class="op">();</span></span>
-<span id="cb5-528"><a href="#cb5-528"></a>            <span class="kw">new</span> <span class="op">(&amp;</span><span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">)])</span> T<span class="op">(</span>value<span class="op">);</span></span>
-<span id="cb5-529"><a href="#cb5-529"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Pushed "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to the queue"</span><span class="op">;</span></span>
-<span id="cb5-530"><a href="#cb5-530"></a>            <span class="va">m_rear</span><span class="op">++;</span></span>
-<span id="cb5-531"><a href="#cb5-531"></a>        <span class="op">}</span></span>
-<span id="cb5-532"><a href="#cb5-532"></a></span>
-<span id="cb5-533"><a href="#cb5-533"></a>        <span class="dt">void</span> push<span class="op">(</span>T<span class="op">&amp;&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb5-534"><a href="#cb5-534"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Pushing "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to the queue"</span><span class="op">;</span></span>
-<span id="cb5-535"><a href="#cb5-535"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
-<span id="cb5-536"><a href="#cb5-536"></a>                resize<span class="op">();</span></span>
-<span id="cb5-537"><a href="#cb5-537"></a>            <span class="kw">new</span><span class="op">(&amp;</span><span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">)])</span> T<span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span>value<span class="op">));</span></span>
-<span id="cb5-538"><a href="#cb5-538"></a>            <span class="va">m_rear</span><span class="op">++;</span></span>
-<span id="cb5-539"><a href="#cb5-539"></a>        <span class="op">}</span></span>
-<span id="cb5-540"><a href="#cb5-540"></a></span>
-<span id="cb5-541"><a href="#cb5-541"></a>        <span class="co">/* Removes an element from the front of the queue */</span></span>
-<span id="cb5-542"><a href="#cb5-542"></a>        <span class="dt">void</span> pop<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb5-543"><a href="#cb5-543"></a>            <span class="va">m_ring_buffer</span><span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">].~</span>T<span class="op">();</span></span>
-<span id="cb5-544"><a href="#cb5-544"></a>            <span class="va">m_front</span><span class="op">++;</span></span>
-<span id="cb5-545"><a href="#cb5-545"></a>        <span class="op">}</span></span>
-<span id="cb5-546"><a href="#cb5-546"></a></span>
-<span id="cb5-547"><a href="#cb5-547"></a>        <span class="co">/* Element access */</span></span>
+<span id="cb5-510"><a href="#cb5-510"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Copy-construction complete"</span><span class="op">;</span></span>
+<span id="cb5-511"><a href="#cb5-511"></a></span>
+<span id="cb5-512"><a href="#cb5-512"></a>            <span class="co">// 3. Destroy the old array</span></span>
+<span id="cb5-513"><a href="#cb5-513"></a>            clear<span class="op">();</span></span>
+<span id="cb5-514"><a href="#cb5-514"></a>            <span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span><span class="va">m_ring_buffer</span><span class="op">);</span></span>
+<span id="cb5-515"><a href="#cb5-515"></a></span>
+<span id="cb5-516"><a href="#cb5-516"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Destruction of old array complete"</span><span class="op">;</span></span>
+<span id="cb5-517"><a href="#cb5-517"></a>            </span>
+<span id="cb5-518"><a href="#cb5-518"></a>            <span class="co">// Re-wire m_ring_buffer, set front, rear and capacity</span></span>
+<span id="cb5-519"><a href="#cb5-519"></a>            <span class="va">m_ring_buffer</span> <span class="op">=</span> new_array<span class="op">;</span></span>
+<span id="cb5-520"><a href="#cb5-520"></a>            <span class="va">m_front</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb5-521"><a href="#cb5-521"></a>            <span class="va">m_rear</span> <span class="op">=</span> new_size<span class="op">;</span></span>
+<span id="cb5-522"><a href="#cb5-522"></a>            <span class="va">m_capacity</span> <span class="op">*=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb5-523"><a href="#cb5-523"></a>        <span class="op">}</span></span>
+<span id="cb5-524"><a href="#cb5-524"></a></span>
+<span id="cb5-525"><a href="#cb5-525"></a>        <span class="co">/* Push the given value to the end of the queue */</span></span>
+<span id="cb5-526"><a href="#cb5-526"></a>        <span class="dt">void</span> push<span class="op">(</span><span class="at">const</span> T<span class="op">&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-527"><a href="#cb5-527"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Pushing "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to the queue"</span><span class="op">;</span></span>
+<span id="cb5-528"><a href="#cb5-528"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
+<span id="cb5-529"><a href="#cb5-529"></a>                resize<span class="op">();</span></span>
+<span id="cb5-530"><a href="#cb5-530"></a>            <span class="kw">new</span> <span class="op">(&amp;</span><span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">)])</span> T<span class="op">(</span>value<span class="op">);</span></span>
+<span id="cb5-531"><a href="#cb5-531"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Pushed "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to the queue"</span><span class="op">;</span></span>
+<span id="cb5-532"><a href="#cb5-532"></a>            <span class="va">m_rear</span><span class="op">++;</span></span>
+<span id="cb5-533"><a href="#cb5-533"></a>        <span class="op">}</span></span>
+<span id="cb5-534"><a href="#cb5-534"></a></span>
+<span id="cb5-535"><a href="#cb5-535"></a>        <span class="dt">void</span> push<span class="op">(</span>T<span class="op">&amp;&amp;</span> value<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-536"><a href="#cb5-536"></a>            <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Pushing "</span> <span class="op">&lt;&lt;</span> value <span class="op">&lt;&lt;</span> <span class="st">" to the queue"</span><span class="op">;</span></span>
+<span id="cb5-537"><a href="#cb5-537"></a>            <span class="cf">if</span> <span class="op">(</span>full<span class="op">())</span></span>
+<span id="cb5-538"><a href="#cb5-538"></a>                resize<span class="op">();</span></span>
+<span id="cb5-539"><a href="#cb5-539"></a>            <span class="kw">new</span><span class="op">(&amp;</span><span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_rear</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">)])</span> T<span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span>value<span class="op">));</span></span>
+<span id="cb5-540"><a href="#cb5-540"></a>            <span class="va">m_rear</span><span class="op">++;</span></span>
+<span id="cb5-541"><a href="#cb5-541"></a>        <span class="op">}</span></span>
+<span id="cb5-542"><a href="#cb5-542"></a></span>
+<span id="cb5-543"><a href="#cb5-543"></a>        <span class="co">/* Removes an element from the front of the queue */</span></span>
+<span id="cb5-544"><a href="#cb5-544"></a>        <span class="dt">void</span> pop<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb5-545"><a href="#cb5-545"></a>            <span class="va">m_ring_buffer</span><span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">].~</span>T<span class="op">();</span></span>
+<span id="cb5-546"><a href="#cb5-546"></a>            <span class="va">m_front</span><span class="op">++;</span></span>
+<span id="cb5-547"><a href="#cb5-547"></a>        <span class="op">}</span></span>
 <span id="cb5-548"><a href="#cb5-548"></a></span>
-<span id="cb5-549"><a href="#cb5-549"></a>        T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb5-550"><a href="#cb5-550"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_front</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb5-551"><a href="#cb5-551"></a>        <span class="op">}</span></span>
-<span id="cb5-552"><a href="#cb5-552"></a></span>
-<span id="cb5-553"><a href="#cb5-553"></a>        T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb5-554"><a href="#cb5-554"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_front</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb5-555"><a href="#cb5-555"></a>        <span class="op">}</span></span>
-<span id="cb5-556"><a href="#cb5-556"></a></span>
-<span id="cb5-557"><a href="#cb5-557"></a>        <span class="co">/* Returns a reference to the first element in the queue */</span></span>
-<span id="cb5-558"><a href="#cb5-558"></a>        T<span class="op">&amp;</span> front<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb5-559"><a href="#cb5-559"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb5-560"><a href="#cb5-560"></a>        <span class="op">}</span></span>
-<span id="cb5-561"><a href="#cb5-561"></a></span>
-<span id="cb5-562"><a href="#cb5-562"></a>        <span class="co">/* Return a reference to the last element in the queue */</span></span>
-<span id="cb5-563"><a href="#cb5-563"></a>        T<span class="op">&amp;</span> back<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb5-564"><a href="#cb5-564"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb5-565"><a href="#cb5-565"></a>        <span class="op">}</span></span>
-<span id="cb5-566"><a href="#cb5-566"></a></span>
-<span id="cb5-567"><a href="#cb5-567"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb5-568"><a href="#cb5-568"></a>        <span class="co">/* Helper function to clear the queue */</span></span>
-<span id="cb5-569"><a href="#cb5-569"></a>        <span class="dt">void</span> clear<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb5-570"><a href="#cb5-570"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb5-571"><a href="#cb5-571"></a>                <span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_front</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">].~</span>T<span class="op">();</span></span>
-<span id="cb5-572"><a href="#cb5-572"></a>            <span class="op">}</span></span>
-<span id="cb5-573"><a href="#cb5-573"></a>        <span class="op">}</span></span>
-<span id="cb5-574"><a href="#cb5-574"></a>    <span class="op">};</span></span>
-<span id="cb5-575"><a href="#cb5-575"></a><span class="op">}</span></span>
-<span id="cb5-576"><a href="#cb5-576"></a></span>
-<span id="cb5-577"><a href="#cb5-577"></a><span class="dt">int</span> main<span class="op">()</span></span>
-<span id="cb5-578"><a href="#cb5-578"></a><span class="op">{</span></span>
-<span id="cb5-579"><a href="#cb5-579"></a>    dev<span class="op">::</span>queue<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> q<span class="op">;</span></span>
-<span id="cb5-580"><a href="#cb5-580"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Queue capacity = "</span> <span class="op">&lt;&lt;</span> q<span class="op">.</span>capacity<span class="op">();</span></span>
-<span id="cb5-581"><a href="#cb5-581"></a>    </span>
-<span id="cb5-582"><a href="#cb5-582"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">double</span> i<span class="op">{</span> <span class="fl">1.0</span> <span class="op">};</span>i <span class="op">&lt;=</span> <span class="fl">10.0</span><span class="op">;</span>i<span class="op">++)</span></span>
-<span id="cb5-583"><a href="#cb5-583"></a>        q<span class="op">.</span>push<span class="op">(</span>i<span class="op">);</span></span>
-<span id="cb5-584"><a href="#cb5-584"></a>    </span>
-<span id="cb5-585"><a href="#cb5-585"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Queue capacity = "</span> <span class="op">&lt;&lt;</span> q<span class="op">.</span>capacity<span class="op">();</span></span>
-<span id="cb5-586"><a href="#cb5-586"></a><span class="op">}</span></span>
-<span id="cb5-587"><a href="#cb5-587"></a><span class="in">```</span></span>
-<span id="cb5-588"><a href="#cb5-588"></a></span>
-<span id="cb5-589"><a href="#cb5-589"></a><span class="co">[</span><span class="ot">Play on Compiler Explorer</span><span class="co">](https://godbolt.org/z/7xbY4x5x3)</span></span>
+<span id="cb5-549"><a href="#cb5-549"></a>        <span class="co">/* Element access */</span></span>
+<span id="cb5-550"><a href="#cb5-550"></a></span>
+<span id="cb5-551"><a href="#cb5-551"></a>        T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-552"><a href="#cb5-552"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_front</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
+<span id="cb5-553"><a href="#cb5-553"></a>        <span class="op">}</span></span>
+<span id="cb5-554"><a href="#cb5-554"></a></span>
+<span id="cb5-555"><a href="#cb5-555"></a>        T<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">[](</span><span class="dt">int</span> i<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb5-556"><a href="#cb5-556"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_front</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
+<span id="cb5-557"><a href="#cb5-557"></a>        <span class="op">}</span></span>
+<span id="cb5-558"><a href="#cb5-558"></a></span>
+<span id="cb5-559"><a href="#cb5-559"></a>        <span class="co">/* Returns a reference to the first element in the queue */</span></span>
+<span id="cb5-560"><a href="#cb5-560"></a>        T<span class="op">&amp;</span> front<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb5-561"><a href="#cb5-561"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">[</span><span class="va">m_front</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
+<span id="cb5-562"><a href="#cb5-562"></a>        <span class="op">}</span></span>
+<span id="cb5-563"><a href="#cb5-563"></a></span>
+<span id="cb5-564"><a href="#cb5-564"></a>        <span class="co">/* Return a reference to the last element in the queue */</span></span>
+<span id="cb5-565"><a href="#cb5-565"></a>        T<span class="op">&amp;</span> back<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb5-566"><a href="#cb5-566"></a>            <span class="cf">return</span> <span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_rear</span> <span class="op">-</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">];</span></span>
+<span id="cb5-567"><a href="#cb5-567"></a>        <span class="op">}</span></span>
+<span id="cb5-568"><a href="#cb5-568"></a></span>
+<span id="cb5-569"><a href="#cb5-569"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb5-570"><a href="#cb5-570"></a>        <span class="co">/* Helper function to clear the queue */</span></span>
+<span id="cb5-571"><a href="#cb5-571"></a>        <span class="dt">void</span> clear<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb5-572"><a href="#cb5-572"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-573"><a href="#cb5-573"></a>                <span class="va">m_ring_buffer</span><span class="op">[(</span><span class="va">m_front</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">%</span> <span class="va">m_capacity</span><span class="op">].~</span>T<span class="op">();</span></span>
+<span id="cb5-574"><a href="#cb5-574"></a>            <span class="op">}</span></span>
+<span id="cb5-575"><a href="#cb5-575"></a>        <span class="op">}</span></span>
+<span id="cb5-576"><a href="#cb5-576"></a>    <span class="op">};</span></span>
+<span id="cb5-577"><a href="#cb5-577"></a><span class="op">}</span></span>
+<span id="cb5-578"><a href="#cb5-578"></a></span>
+<span id="cb5-579"><a href="#cb5-579"></a><span class="dt">int</span> main<span class="op">()</span></span>
+<span id="cb5-580"><a href="#cb5-580"></a><span class="op">{</span></span>
+<span id="cb5-581"><a href="#cb5-581"></a>    dev<span class="op">::</span>queue<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> q<span class="op">;</span></span>
+<span id="cb5-582"><a href="#cb5-582"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Queue capacity = "</span> <span class="op">&lt;&lt;</span> q<span class="op">.</span>capacity<span class="op">();</span></span>
+<span id="cb5-583"><a href="#cb5-583"></a>    </span>
+<span id="cb5-584"><a href="#cb5-584"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">double</span> i<span class="op">{</span> <span class="fl">1.0</span> <span class="op">};</span>i <span class="op">&lt;=</span> <span class="fl">10.0</span><span class="op">;</span>i<span class="op">++)</span></span>
+<span id="cb5-585"><a href="#cb5-585"></a>        q<span class="op">.</span>push<span class="op">(</span>i<span class="op">);</span></span>
+<span id="cb5-586"><a href="#cb5-586"></a>    </span>
+<span id="cb5-587"><a href="#cb5-587"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Queue capacity = "</span> <span class="op">&lt;&lt;</span> q<span class="op">.</span>capacity<span class="op">();</span></span>
+<span id="cb5-588"><a href="#cb5-588"></a><span class="op">}</span></span>
+<span id="cb5-589"><a href="#cb5-589"></a><span class="in">```</span></span>
 <span id="cb5-590"><a href="#cb5-590"></a></span>
-<span id="cb5-591"><a href="#cb5-591"></a><span class="fu">## SPMC queues and coding up a `ThreadPool`</span></span>
+<span id="cb5-591"><a href="#cb5-591"></a><span class="co">[</span><span class="ot">Play on Compiler Explorer</span><span class="co">](https://godbolt.org/z/7xbY4x5x3)</span></span>
 <span id="cb5-592"><a href="#cb5-592"></a></span>
-<span id="cb5-593"><a href="#cb5-593"></a>A *thread-pool* is a group of pre-instantiated, idle threads which stand ready to be given work. These are preferred over instantiating new threads for each task whenever there are a large number of short tasks to be done rather than a small number of long ones. This prevents having to incur the overhead of creating a thread a large number of times and starvation of threads. </span>
+<span id="cb5-593"><a href="#cb5-593"></a>Next, we code up the <span class="in">`semaphore_queue`</span> class that uses semaphores instead of condition variables as the synchronization mechanism.</span>
 <span id="cb5-594"><a href="#cb5-594"></a></span>
-<span id="cb5-595"><a href="#cb5-595"></a>The <span class="in">`ThreadPool`</span> class has a container for the worker threads as one of its member-variables. </span>
+<span id="cb5-595"><a href="#cb5-595"></a><span class="fu">## SPMC queues and coding up a `ThreadPool`</span></span>
 <span id="cb5-596"><a href="#cb5-596"></a></span>
-<span id="cb5-597"><a href="#cb5-597"></a>When a *thread-pool* is handed a <span class="in">`Task`</span>, it is added to a SPMC queue. If a thread from the <span class="in">`ThreadPool`</span> is idle, it can <span class="in">`pop()`</span> the next task off the <span class="in">`TaskQueue`</span> and executes it. Once the execution is complete, the thread hands itself back to the pool to be put into the container for reuse and until the <span class="in">`queue_not_empty_cond`</span> condition is met, and the cycle repeats.</span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
+<span id="cb5-597"><a href="#cb5-597"></a>A *thread-pool* is a group of pre-instantiated, idle threads which stand ready to be given work. These are preferred over instantiating new threads for each task whenever there are a large number of short tasks to be done rather than a small number of long ones. This prevents having to incur the overhead of creating a thread a large number of times and starvation of threads. </span>
+<span id="cb5-598"><a href="#cb5-598"></a></span>
+<span id="cb5-599"><a href="#cb5-599"></a>The <span class="in">`ThreadPool`</span> class has a container for the worker threads as one of its member-variables. </span>
+<span id="cb5-600"><a href="#cb5-600"></a></span>
+<span id="cb5-601"><a href="#cb5-601"></a>When a *thread-pool* is handed a <span class="in">`Task`</span>, it is added to a SPMC queue. If a thread from the <span class="in">`ThreadPool`</span> is idle, it can <span class="in">`pop()`</span> the next task off the <span class="in">`TaskQueue`</span> and executes it. Once the execution is complete, the thread hands itself back to the pool to be put into the container for reuse and until the <span class="in">`queue_not_empty_cond`</span> condition is met, and the cycle repeats.</span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 
