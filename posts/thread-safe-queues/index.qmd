@@ -364,6 +364,230 @@ A counting semaphore allows access to a shared resource by more than one thread.
 
 We can design a thread-safe queue using semaphores instead of condition variables to synchronize access to the queue.
 
+```cpp
+#include <iostream>
+#include <shared_mutex>
+#include <semaphore>
+
+namespace dev {
+    /* 
+    A queue implements a first-in-first-out data-structure allowing 
+    enqueuing (adding) items to the rear and dequeuing(removing)
+    them from the front.
+
+    My implementation uses a circular queue with doubling - the simplest
+    and reasonably efficient choice.
+
+    The interface design conforms to the standard library std::queue<T>
+    specification.
+    */
+    template<typename T>
+    class queue {
+    private:
+        enum{min_capacity = 8};
+        T* m_ring_buffer;
+        int m_front;
+        int m_rear;
+        int m_capacity;
+
+    public:
+        using value_type = T;
+        using reference = T&;
+
+        /* Constructors */
+
+        // Default constructor
+        queue() : queue(min_capacity){}
+
+        // Parametrized Constructor
+        queue(int capacity)
+            : m_ring_buffer{ nullptr }
+            , m_front{ 0 }
+            , m_rear{ 0 }
+            , m_capacity{ 0 }
+        {
+            m_ring_buffer = static_cast<T*>(operator new(capacity * sizeof(T)));
+            m_capacity = capacity;
+        }
+
+        /* Destructor */
+        ~queue() {
+            clear();
+            operator delete(m_ring_buffer);
+        }
+
+        /* Copy constructor 
+        * Perform a deep-copy of the contents of the queue
+        */
+        queue(const queue& other) 
+            : queue(other.m_capacity) // Allocation step
+        {
+            /* Call the copy constructor of T 
+            * placing it directly into the pre-allocated
+            * storage at memory address &m_ring_buffer[i]
+            */
+            for (int i{ 0 };i < other.size();++i) {
+                new (&m_ring_buffer[i]) T(other[i]);
+                ++m_rear;
+            }
+        }
+
+        /* Swap the contents of lhs and rhs member-by-member */
+        friend void swap(queue& lhs, queue& rhs) {
+            std::swap(lhs.m_ring_buffer, rhs.m_ring_buffer);
+            std::swap(lhs.m_front, rhs.m_front);
+            std::swap(lhs.m_rear, rhs.m_rear);
+            std::swap(lhs.m_capacity, rhs.m_capacity);
+        }
+
+        /* Copy-assignment */
+        queue& operator=(const queue& other) {
+            queue temp{ other };    // Copy-construct
+            swap(*this, temp);      // and swap idiom
+            return (*this);
+        }
+
+        /* Move constructor */
+        queue(queue&& other)
+            : m_ring_buffer{ std::move(other.m_ring_buffer) }
+            , m_front{ std::move(other.m_front) }
+            , m_rear{ std::move(other.m_rear) }
+            , m_capacity{ std::move(other.m_capacity) }
+        {
+            other.m_ring_buffer = nullptr;
+        }
+
+        /* Move assignment */
+        queue& operator=(queue&& other) {
+            queue temp{ std::move(other) };
+            std::swap(*this, temp);
+            return (*this);
+        }
+
+        /* Capacity*/
+
+        /* Checks whether the queue is empty */
+        bool empty()
+        {
+            return (m_rear == m_front);
+        }
+
+        bool full() {
+            return (m_rear == m_front + m_capacity);
+        }
+
+        /* Returns the number of elements in the queue*/
+        int size() const {
+            return (m_rear - m_front);
+        }
+
+        int capacity() const {
+            return m_capacity;
+        }
+
+        /* Modifiers */
+
+        /* Double the capacity of the queue */
+        void resize()
+        {
+            std::cout << "\n" << "Resizing the queue from " << m_capacity 
+                << " to " << 2 * m_capacity << " elements.";
+
+            // 1. Allocation step
+            T* new_array = static_cast<T*>(operator new(2 * m_capacity * sizeof(T)));
+
+            std::cout << "\n" << "Allocation complete.";
+
+            // 2. Copy over the elements of the queue to the newly
+            // allocated storage.
+            int new_size = size();
+            for (int i{ 0 };i < new_size;++i) {
+                new (&new_array[i]) T(std::move(m_ring_buffer[(i + m_front) % m_capacity]));
+            }
+
+            std::cout << "\n" << "Copy-construction complete";
+
+            // 3. Destroy the old array
+            clear();
+            operator delete(m_ring_buffer);
+
+            std::cout << "\n" << "Destruction of old array complete";
+            
+            // Re-wire m_ring_buffer, set front, rear and capacity
+            m_ring_buffer = new_array;
+            m_front = 0;
+            m_rear = new_size;
+            m_capacity *= 2;
+        }
+
+        /* Push the given value to the end of the queue */
+        void push(const T& value) {
+            std::cout << "\n" << "Pushing " << value << " to the queue";
+            if (full())
+                resize();
+            new (&m_ring_buffer[(m_rear % m_capacity)]) T(value);
+            std::cout << "\n" << "Pushed " << value << " to the queue";
+            m_rear++;
+        }
+
+        void push(T&& value) {
+            std::cout << "\n" << "Pushing " << value << " to the queue";
+            if (full())
+                resize();
+            new(&m_ring_buffer[(m_rear % m_capacity)]) T(std::move(value));
+            m_rear++;
+        }
+
+        /* Removes an element from the front of the queue */
+        void pop() {
+            m_ring_buffer[m_front % m_capacity].~T();
+            m_front++;
+        }
+
+        /* Element access */
+
+        T& operator[](int i) {
+            return m_ring_buffer[(m_front + i) % m_capacity];
+        }
+
+        T& operator[](int i) const {
+            return m_ring_buffer[(m_front + i) % m_capacity];
+        }
+
+        /* Returns a reference to the first element in the queue */
+        T& front() {
+            return m_ring_buffer[m_front % m_capacity];
+        }
+
+        /* Return a reference to the last element in the queue */
+        T& back() {
+            return m_ring_buffer[(m_rear - 1) % m_capacity];
+        }
+
+    private:
+        /* Helper function to clear the queue */
+        void clear() {
+            for (int i{ 0 }; i < size(); ++i) {
+                m_ring_buffer[(m_front + i) % m_capacity].~T();
+            }
+        }
+    };
+}
+
+int main()
+{
+    dev::queue<double> q;
+    std::cout << "\n" << "Queue capacity = " << q.capacity();
+    
+    for (double i{ 1.0 };i <= 10.0;i++)
+        q.push(i);
+    
+    std::cout << "\n" << "Queue capacity = " << q.capacity();
+}
+```
+
+[Play on Compiler Explorer](https://godbolt.org/z/7xbY4x5x3)
+
 
 
 ## SPMC queues and coding up a `ThreadPool`
