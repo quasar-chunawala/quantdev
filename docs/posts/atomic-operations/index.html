@@ -236,6 +236,7 @@ window.Quarto = {
   <ul class="collapse">
   <li><a href="#sequential-consistency" id="toc-sequential-consistency" class="nav-link" data-scroll-target="#sequential-consistency">Sequential consistency</a></li>
   </ul></li>
+  <li><a href="#acquire-release-semantic" id="toc-acquire-release-semantic" class="nav-link" data-scroll-target="#acquire-release-semantic">Acquire-Release Semantic</a></li>
   
   </ul>
 </nav>
@@ -362,11 +363,39 @@ window.Quarto = {
 <p>There is a global order of events, and all threads observe the same global order.</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
 <span id="cb11-2"><a href="#cb11-2"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
-<span id="cb11-3"><a href="#cb11-3"></a></span>
-<span id="cb11-4"><a href="#cb11-4"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> x<span class="op">;</span></span>
-<span id="cb11-5"><a href="#cb11-5"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> y<span class="op">;</span></span>
-<span id="cb11-6"><a href="#cb11-6"></a></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb11-3"><a href="#cb11-3"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb11-4"><a href="#cb11-4"></a></span>
+<span id="cb11-5"><a href="#cb11-5"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> x <span class="op">=</span> ATOMIC_INT_LOCK_FREE<span class="op">;</span></span>
+<span id="cb11-6"><a href="#cb11-6"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> y <span class="op">=</span> ATOMIC_INT_LOCK_FREE<span class="op">;</span></span>
+<span id="cb11-7"><a href="#cb11-7"></a></span>
+<span id="cb11-8"><a href="#cb11-8"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb11-9"><a href="#cb11-9"></a>    <span class="bu">std::</span>thread t1<span class="op">(</span></span>
+<span id="cb11-10"><a href="#cb11-10"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
+<span id="cb11-11"><a href="#cb11-11"></a>            x<span class="op">.</span>store<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
+<span id="cb11-12"><a href="#cb11-12"></a>            <span class="dt">int</span> result1 <span class="op">=</span> y<span class="op">.</span>load<span class="op">();</span></span>
+<span id="cb11-13"><a href="#cb11-13"></a>        <span class="op">}</span></span>
+<span id="cb11-14"><a href="#cb11-14"></a>    <span class="op">);</span></span>
+<span id="cb11-15"><a href="#cb11-15"></a></span>
+<span id="cb11-16"><a href="#cb11-16"></a>    <span class="bu">std::</span>thread t2<span class="op">(</span></span>
+<span id="cb11-17"><a href="#cb11-17"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
+<span id="cb11-18"><a href="#cb11-18"></a>            y<span class="op">.</span>store<span class="op">(</span><span class="dv">17</span><span class="op">);</span></span>
+<span id="cb11-19"><a href="#cb11-19"></a>            <span class="dt">int</span> result2 <span class="op">=</span> x<span class="op">.</span>load<span class="op">();</span></span>
+<span id="cb11-20"><a href="#cb11-20"></a>        <span class="op">}</span></span>
+<span id="cb11-21"><a href="#cb11-21"></a>    <span class="op">);</span></span>
+<span id="cb11-22"><a href="#cb11-22"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Sequential ordering is also the default memory ordering.</p>
+<p><code>x.store(42)</code> will always be performed before <code>y.load()</code>. <code>y.store(17)</code> will always be performed before <code>x.load()</code>. That is the guarantee of the sequential consistency. And each thread sees operations of the other thread in the same order. This respects our intuition.</p>
+<p>How many ways exist to perform these 4 operations? Extremely easy!</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="sequential_memory_order.png" width="500" height="300" class="figure-img"></p>
+<figcaption>Sequential Memory Order</figcaption>
+</figure>
+</div>
 </section>
+</section>
+<section id="acquire-release-semantic" class="level2">
+<h2 class="anchored" data-anchor-id="acquire-release-semantic">Acquire-Release Semantic</h2>
 </section>
 
 
@@ -1030,16 +1059,44 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb12-176"><a href="#cb12-176"></a><span class="in">```cpp</span></span>
 <span id="cb12-177"><a href="#cb12-177"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
 <span id="cb12-178"><a href="#cb12-178"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
-<span id="cb12-179"><a href="#cb12-179"></a></span>
-<span id="cb12-180"><a href="#cb12-180"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> x<span class="op">;</span></span>
-<span id="cb12-181"><a href="#cb12-181"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> y<span class="op">;</span></span>
-<span id="cb12-182"><a href="#cb12-182"></a></span>
+<span id="cb12-179"><a href="#cb12-179"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb12-180"><a href="#cb12-180"></a></span>
+<span id="cb12-181"><a href="#cb12-181"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> x <span class="op">=</span> ATOMIC_INT_LOCK_FREE<span class="op">;</span></span>
+<span id="cb12-182"><a href="#cb12-182"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> y <span class="op">=</span> ATOMIC_INT_LOCK_FREE<span class="op">;</span></span>
 <span id="cb12-183"><a href="#cb12-183"></a></span>
-<span id="cb12-184"><a href="#cb12-184"></a><span class="in">```</span></span>
-<span id="cb12-185"><a href="#cb12-185"></a></span>
-<span id="cb12-186"><a href="#cb12-186"></a><span class="fu">## References {.appendix}</span></span>
-<span id="cb12-187"><a href="#cb12-187"></a></span>
-<span id="cb12-188"><a href="#cb12-188"></a><span class="ss">- </span>*[The memory model in C++ - Rainier Grimm](https://www.youtube.com/watch?v=e0DsVqZLMzU&amp;t=2312s), Meeting C++ 2016.*</span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
+<span id="cb12-184"><a href="#cb12-184"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb12-185"><a href="#cb12-185"></a>    <span class="bu">std::</span>thread t1<span class="op">(</span></span>
+<span id="cb12-186"><a href="#cb12-186"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
+<span id="cb12-187"><a href="#cb12-187"></a>            x<span class="op">.</span>store<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
+<span id="cb12-188"><a href="#cb12-188"></a>            <span class="dt">int</span> result1 <span class="op">=</span> y<span class="op">.</span>load<span class="op">();</span></span>
+<span id="cb12-189"><a href="#cb12-189"></a>        <span class="op">}</span></span>
+<span id="cb12-190"><a href="#cb12-190"></a>    <span class="op">);</span></span>
+<span id="cb12-191"><a href="#cb12-191"></a></span>
+<span id="cb12-192"><a href="#cb12-192"></a>    <span class="bu">std::</span>thread t2<span class="op">(</span></span>
+<span id="cb12-193"><a href="#cb12-193"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
+<span id="cb12-194"><a href="#cb12-194"></a>            y<span class="op">.</span>store<span class="op">(</span><span class="dv">17</span><span class="op">);</span></span>
+<span id="cb12-195"><a href="#cb12-195"></a>            <span class="dt">int</span> result2 <span class="op">=</span> x<span class="op">.</span>load<span class="op">();</span></span>
+<span id="cb12-196"><a href="#cb12-196"></a>        <span class="op">}</span></span>
+<span id="cb12-197"><a href="#cb12-197"></a>    <span class="op">);</span></span>
+<span id="cb12-198"><a href="#cb12-198"></a><span class="op">}</span></span>
+<span id="cb12-199"><a href="#cb12-199"></a><span class="in">```</span></span>
+<span id="cb12-200"><a href="#cb12-200"></a></span>
+<span id="cb12-201"><a href="#cb12-201"></a>Sequential ordering is also the default memory ordering. </span>
+<span id="cb12-202"><a href="#cb12-202"></a></span>
+<span id="cb12-203"><a href="#cb12-203"></a><span class="in">`x.store(42)`</span> will always be performed before <span class="in">`y.load()`</span>. <span class="in">`y.store(17)`</span> will always be performed before <span class="in">`x.load()`</span>. That is the guarantee of the sequential consistency. And each thread sees operations of the other thread in the same order. This respects our intuition. </span>
+<span id="cb12-204"><a href="#cb12-204"></a></span>
+<span id="cb12-205"><a href="#cb12-205"></a>How many ways exist to perform these 4 operations? Extremely easy!</span>
+<span id="cb12-206"><a href="#cb12-206"></a></span>
+<span id="cb12-207"><a href="#cb12-207"></a><span class="al">![Sequential Memory Order](sequential_memory_order.png)</span>{width="500px" height="300px" fig-align="center"}</span>
+<span id="cb12-208"><a href="#cb12-208"></a></span>
+<span id="cb12-209"><a href="#cb12-209"></a><span class="fu">## Acquire-Release Semantic</span></span>
+<span id="cb12-210"><a href="#cb12-210"></a></span>
+<span id="cb12-211"><a href="#cb12-211"></a></span>
+<span id="cb12-212"><a href="#cb12-212"></a></span>
+<span id="cb12-213"><a href="#cb12-213"></a></span>
+<span id="cb12-214"><a href="#cb12-214"></a><span class="fu">## References {.appendix}</span></span>
+<span id="cb12-215"><a href="#cb12-215"></a></span>
+<span id="cb12-216"><a href="#cb12-216"></a><span class="ss">- </span>*[The memory model in C++ - Rainier Grimm](https://www.youtube.com/watch?v=e0DsVqZLMzU&amp;t=2312s), Meeting C++ 2016.*</span></code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 
