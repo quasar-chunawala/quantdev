@@ -509,138 +509,157 @@ Since, it is a portfolio of zero coupon bonds, it is a tradable asset and its pr
 
 The forward swap rate $S(t,T_{0:N})$ is a martingale in the annuity measure $\mathbb{Q}^{T_{0:N}}$. 
 
-## Pricing the payoff $V(T) = S_T(S_T - K)^{+}$
+## Pricing the payoff $V(T) = [S_T(S_T - K)]^{+}$
 
-Under the risk-neutral measure $\mathbb{Q}^M$ associated with the money-market account numeraire $M(t)$, the stock price $S(t)$ evolves according to:
+Sell-side quant interviews are known to ask puzzles to price tricky payoffs like the power option $V_T=(S_T^2 - K)1_{S_T > K}$, exchange options $V_T = (S_2(T) - S_1(T))^{+}$ and quantos.  
+
+Change of numeraire and measure transformation provide an elegant way to price these payoffs quickly.
+
+Suppose, we want to price the following payoff:
+
+$$
+V(T) = \max( S(T)(S(T) - K), 0 )
+$$
+
+By the risk-neutral pricing formula,
+
+$$
+V(t) = M(t) \mathbf{E}^{Q}\left[\frac{S(T)}{M(T)}(S(T) - K)1_{S_T > K}|\mathcal{F}_t\right]
+$$
+
+The Radon-Nikodym derivative $\frac{dQ}{dQ^S}$ is given by:
+
+$$
+L(t) = \frac{dQ}{dQ^S} = \frac{M(T)/M(t)}{S(T)/S(t)} = \frac{M(T)}{S(T)}\cdot \frac{S(t)}{M(t)}
+$$
+
+Consequently, we can write:
 
 $$
 \begin{align*}
-dS_t = r S_t dt + \sigma S_t dW^{\mathbb{Q}^M}
+V(t) &= M(t) \mathbf{E}^{Q^S}\left[\frac{dQ}{dQ^S}\cdot\frac{S(T)}{M(T)}(S(T) - K)1_{S_T > K}|\mathcal{F}_t\right]\\
+&= M(t) \mathbf{E}^{Q^S}\left[\frac{M(T)}{S(T)}\cdot \frac{S(t)}{M(t)}\cdot\frac{S(T)}{M(T)}(S(T) - K)1_{S_T > K}|\mathcal{F}_t\right]\\
+&= \mathbf{E}^{Q^S}\left[S(t)(S(T) - K)1_{S_T > K}|\mathcal{F}_t\right]\\
+&= S(t)\mathbf{E}^{Q^S}\left[(S(T) - K)1_{S_T > K}|\mathcal{F}_t\right]
 \end{align*}
-$$ {#eq-diffusion}
+$$ {#eq-expectation-under-stock-measure}
 
-which has the solution:
+This looks much like the familiar European vanilla call option payoff, except that, the conditional expectation needs to be taken under the probability measure induced by the stock numeraire $(S,Q^S)$. 
+
+To find the dynamics of the stock price $S(t)$ under the probability measure $Q^S$, we use the intuitive fact, that, all normalized asset prices - the asset price $X(t)$ deflated by the numeraire price $S(t)$, $\frac{X(t)}{S(t)}$ must be martingales under $Q^S$. Thus, the price process $M(t)/S(t)$ must be a martingale.
+
+Let's find the dynamics of the process $\left(\frac{M(t)}{S(t)}\right)$.
+
+Consider $f(x,y) = \frac{x}{y}$. We have: 
 
 $$
 \begin{align*}
-S_t = S_0\exp\left[\left(r - \frac{\sigma^2}{2}\right)t + \sigma W^{\mathbb{Q}^M}(t)\right]
+f_x = \frac{1}{y}, \quad f_y = -\frac{x}{y^2}\\
+f_{xx} = 0, \quad f_{xy} = -\frac{1}{y^2}, f_{yy} = \frac{2x}{y^3}
 \end{align*}
-$$ {#eq-solution-of-gbm}
+$$
+
+We have:
+
+$$
+\begin{aligned}
+d\left(\frac{M_{t}}{S_{t}}\right) & =\frac{1}{S_{t}} dM( t) -\frac{M_{t}}{S_{t}^{2}} dS( t)\\
+ & -\frac{1}{S_{t}^{2}} dM( t) \cdotp dS( t) +\frac{1}{2} \cdot \frac{2M_{t}}{S_{t}^{3}}( dS_{t})^{2}\\
+ & =\frac{1}{S_{t}} rM( t) dt-\frac{M_{t}}{S_{t}^{2}}\left( rdt+\sigma dW^{\boxed{Q}}( t)\right)\\
+ & +\frac{M_{t}}{S_{t}^{3}} \sigma ^{2} S_{t}^{2} dt\\
+ & =\left(\frac{M_{t}}{S_{t}}\right)\left( rdt-rdt-\sigma dW^{\boxed{Q}}( t) +\sigma ^{2} dt\right)\\
+ & =-\sigma \left(\frac{M_{t}}{S_{t}}\right)\left( -\sigma dt+dW^{\boxed{Q}}( t)\right)
+\end{aligned}
+$$
+
+But, we know that the process $(M_t/S_t)$ is a $Q^S$-martingale and should be driftless. Thus, we should have:
+
+$$
+d\left(\frac{M_t}{S_t}\right) = -\sigma \left(\frac{M_{t}}{S_{t}}\right)(0 \cdot dt + dW^{\boxed{Q^S}}( t))
+$$
+
+So, we perform the measure transformation:
+
+$$
+dW^{\boxed{Q^S}}(t) = -\sigma dt+dW^{\boxed{Q}}(t)
+$$ {#eq-measure-transformation}
+
+Consequently, $Q^S$-dynamics of the asset $S(t)$ can be expressed as:
+
+$$
+\begin{align*}
+dS(t) &= rSdt + \sigma S dW^{\boxed{Q}}(t)\\
+&=rSdt + \sigma S (dW^{\boxed{Q^S}}(t) + \sigma dt)\\
+&=(r+\sigma^2)Sdt + \sigma S dW^{\boxed{Q^S}}(t)
+\end{align*}
+$$
+
+So, $S(t)$ is still a lognormal random variable and evolves according to:
+
+$$
+S(T) = S(t)\exp\left[\left(r+\frac{\sigma^2}{2}\right)(T-t) + \sigma (W^{\boxed{Q^S}}(T) - W^{\boxed{Q^S}}(t))\right]
+$$ {#eq-dynamics-of-the-asset-under-stock-measure}
+
+The price of the option would be given by:
+
+$$
+V(t) = S(t)[S(t)\Phi(d_{+}) - K\Phi(d_{-})]
+$$
+
+where 
+
+$$
+\begin{align*}
+d_{+} &= \frac{\ln\left(\frac{S(t)}{K}\right) + (r + \frac{3\sigma^2}{2})(T-t)}{\sigma\sqrt{T - t}}\\
+d_{-} &= \frac{\ln\left(\frac{S(t)}{K}\right) + (r + \frac{\sigma^2}{2})(T-t)}{\sigma\sqrt{T - t}}
+\end{align*}
+$$
+
+## Pricing the payoff $V(T) = S_1(T)1_{S_2(T) > K}$
+
+Suppose the dynamics of two assets $S_1(t)$ and $S_2(t)$ are given by:
+
+$$
+\begin{align*}
+dS_1(t) &= rS_1(t)dt + \sigma_1 S_1 W_1^{Q}(t) \\
+dS_2(t) &= rS_2(t)dt + \sigma_2 S_2 W_2^{Q}(t) 
+\end{align*}
+$$
+
+Assume that the two driving brownian motions are correlated and their instantaneous correlation is given by:
+
+$$
+dW_1^{Q}(t) dW_2^{Q}(t) = \rho dt
+$$
 
 By the risk-neutral pricing formula, we have:
 
 $$
-\begin{align*}
-V(0) &= \mathbb{E}^{\mathbb{Q}^M}\left[\frac{V(T)}{M(T)}\right] \\
-&= \mathbb{E}^{\mathbb{Q}^M}\left[\frac{S_T}{M_T}(S_T - K)^{+}\right]
-\end{align*}
-$$ {#eq-risk-neutral}
+V(t) = M(t)\mathbb{E}^{\boxed{Q}}\left[\frac{S_1(T)}{M(T)}1_{S_2(T) > K}\right]
+$$
 
-By the change-of-measure formula, if $N$ is any other numeraire with associated probability measure $\mathbb{Q}^N$, we know that:
+By change of numeraire, we have:
 
 $$
 \begin{align*}
-\mathbb{E}^{\mathbb{Q}^N}[V(T)]=\mathbb{E}^{\mathbb{Q}^M}\left[\frac{d\mathbb{Q}^N}{d\mathbb{Q}^M}V(T)\right]
+V(t) &= M(t)\mathbb{E}^{\boxed{Q}}\left[\frac{S_1(T)}{M(T)}1_{S_2(T) > K}\right]\\
+&= M(t) \mathbb{E}^{\boxed{Q^{S_1}}}\left[\frac{dQ}{dQ^{S_1}}\cdot \frac{S_1(T)}{M(T)}1_{S_2(T) > K}\right]\\
+&= M(t) \mathbb{E}^{\boxed{Q^{S_1}}}\left[\frac{M(T)}{S_1(T)}\cdot \frac{S_1(t)}{M(t)}\cdot \frac{S_1(T)}{M(T)}1_{S_2(T) > K}\right]\\
+&= M(t) \mathbb{E}^{\boxed{Q^{S_1}}}\left[\frac{M(T)}{S_1(T)}\cdot \frac{S_1(t)}{M(t)}\cdot \frac{S_1(T)}{M(T)}1_{S_2(T) > K}\right]\\
+&=S_1(t)\mathbb{E}^{\boxed{Q^{S_1}}}[1_{S_2(T) > K}]\\
+&=S_1(t)Q^{S_1}(S_2(T) > K)
 \end{align*}
-$$ {#eq-change-of-measure}
+$$ 
 
-We switch to the stock numeraire $S_t$. The Radon-Nikodym derivative $L_T = d\mathbb{Q}^S/d\mathbb{Q}^M$ is simply:
+Thus, we need to derive the $Q^{S_1}$-dynamics of the asset $S_2$. Under the $Q^{S_1}$-measure, $\left(\frac{S_2(t)}{S_1(t)}\right)$ must be a martingale. 
+
+Let $f(x,y) = \frac{y}{x}$. We have:
 
 $$
 \begin{align*}
-L_T = \frac{d\mathbb{Q}^S}{d\mathbb{Q}^M} = \frac{S(T)/S(0)}{M(T)/M(0)}  = \frac{1}{S(0)}\cdot \frac{S(T)}{M(T)}
-\end{align*}
-$$ {#eq-radon-nikodym}
-
-The dynamics of $L_t$ under the $\mathbb{Q}_M$ measure is given by:
-
-$$
-dL_t = \phi_t L_t dW^{\mathbb{Q}^M}
-$$
-
-where the Girsanov kernel $\phi_t = \sigma$. Then, the Girsanov transformation is:
-
-$$
-W^{\mathbb{Q}^M}_T = W^{\mathbb{Q}^S}_T + \sigma T
-$$ {#eq-girsanov-drift}
-
-So, the $\mathbb{Q}^S$ dynamics of the stock price is:
-
-$$
-\begin{align*}
-S_T &= S_0 \exp\left[\left(r - \frac{\sigma^2}{2}\right)T + \sigma (W^{\mathbb{Q}^S}_T + \sigma T)\right]\\
-&=  S_0 \exp\left[\left(r + \frac{\sigma^2}{2}\right)T + \sigma (W^{\mathbb{Q}^S}_T)\right]
-\end{align*}
-$$ {#eq-Qs-dynamics}
-
-We can develop the expression in @eq-risk-neutral to be:
-
-$$
-\begin{align*}
-V(0) &= S_0\mathbb{E}^{\mathbb{Q}^M}\left[\frac{1}{S_0}\frac{S_T}{M_T}(S_T - K)^{+}\right]
-\end{align*}
-$$ {#eq-develop-the-expression}
-
-Applying the change-of-measure (abstract *Baye's* formula),we have:
-
-$$
-\begin{align*}
-V(0) &= S_0\mathbb{E}^{\mathbb{Q}^S}\left[(S_T - K)^{+}\right]
-\end{align*}
-$$ {#eq-applying-change-of-measure-formula}
-
-Now, we have:
-
-$$
-\begin{align*}
-\mathbb{Q}^S(S_T > K) &= \mathbb{Q}^S\left(S_0 \exp\left[\left(r + \frac{\sigma^2}{2}\right)T + \sigma (W^{\mathbb{Q}^S}_T)\right] > K\right)\\
-&= \mathbb{Q}^S\left(S_0 \exp\left[\left(r + \frac{\sigma^2}{2}\right)T + \sigma (-\sqrt{T}Z)\right] > K\right)\\
-&= \mathbb{Q}^S\left(\log \frac{S_0}{K}  + \left(r + \frac{\sigma^2}{2}\right)T   > \sigma\sqrt{T}Z\right)\\
-\end{align*}
-$$ {#eq-probability-under-stock-measure}
-
-where we subbed $-\sqrt{T}Z=W^{\mathbb{Q}^S}_T$. Recall, the standard normals $Z$ and $-Z$ have the same distribution by symmetry.
-
-Define 
-
-$$
-d_{-} = \frac{\log \frac{S_0}{K}  + \left(r + \frac{\sigma^2}{2}\right)T}{\sigma\sqrt{T}}
-$$ {#eq-expression-for-d2}
-
-Then, since $Z \sim \mathcal{N}^{\mathbb{Q}^S}(0,1)$:
-
-$$
-\mathbb{Q}^S(S_T > K) = \mathbb{Q}^S(Z < d_{-}) = \Phi(d_{-})
-$$ {#eq-STgtKprobability}
-
-So, we can expand the expectation in @eq-applying-change-of-measure-formula. The indicator random variable $1_{\{S_T > K\}}$ is $1$ for all points $Z < d_{-}$. So, the limits of integration will be $-\infty$ to $d_{-}$.
-
-$$
-\begin{align*}
-V(0) &= S_0\left[\int_{-\infty}^{d_{-}} S_T  d\mathbb{Q}^S - K\int_{-\infty}^{d_{-}} dQ^S\right]\\
-&= S_0\left[\int_{-\infty}^{d_{-}} S_T f_Z^{\mathbb{Q}^S}(z)dz - K\int_{-\infty}^{d_{-}} f_Z^{\mathbb{Q}^S}(z)dz\right]\\
-&= S_0\left[\frac{1}{\sqrt{2\pi}}\int_{-\infty}^{d_{-}} S_0 \exp\left[\left(r + \frac{\sigma^2}{2}\right)T - \sigma \sqrt{T}z\right] \exp(-\frac{z^2}{2})dz - K\Phi(d_{-})\right]
+f_x = -\frac{y}{x^2}, \quad f_y = \frac{1}{x} \\
+f_{xx} = \frac{2y}{x^3}, \quad f_{xy} = -\frac{1}{x^2}, \quad f_{yy} = 0
 \end{align*}
 $$
 
-Completing the square, we have:
-
-$$
-\begin{align*}
-V(0) &= S_0\left[\frac{1}{\sqrt{2\pi}}\int_{-\infty}^{d_{-}} S_0 \exp\left[-\frac{1}{2}(z^2 + 2\sigma\sqrt{T}z + (\sigma \sqrt{T})^2)\right] \exp\left[\left(r + \sigma^2\right)T\right]dz - K\Phi(d_{-})\right]\\
-&=S_0 \left[S_0\frac{e^{(r + \sigma^2) T}}{\sqrt{2\pi}}\int_{-\infty}^{d_{-}} \exp\left(-\frac{1}{2}(z + \sigma\sqrt{T})^2\right) dz - K\Phi(d_{-})\right]\\
-\end{align*}
-$$
-
-Let $u = z + \sigma\sqrt{T}$. And define:
-
-$$
-d_{+} = d_{-} + \sigma \sqrt{T} = \frac{\log \frac{S_0}{K} + \left(r + \frac{3}{2}\sigma^2\right)}{\sigma \sqrt{T}}
-$$
-
-We have the closed-form formula:
-
-$$
-V(0) = S_0^2 e^{(r+\sigma^2)T} \Phi(d_{+}) - KS_0 \Phi(d_{-})
-$$
 
