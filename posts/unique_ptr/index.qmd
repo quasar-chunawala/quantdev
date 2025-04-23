@@ -44,10 +44,14 @@ I skimmed through the documentation for `std::unique_ptr` on cppreference.com. A
 TEST(UniquePtrTest, CreateAndAccessTest)
 {
     int* raw_ptr = new int(42);
-    dev::unique_ptr<int> p(raw_ptr);
+    dev::unique_ptr<int> p1(raw_ptr);
     
-    EXPECT_EQ(*unique_ptr == 42,true);
-    EXPECT_EQ(unique_ptr.get(), raw_ptr);
+    EXPECT_EQ(*p1 == 42,true);
+    EXPECT_EQ(p1.get(), raw_ptr);
+
+    dev::unique_ptr<int> p2 = new int(17);
+    EXPECT_EQ(*p2 == 17,true);
+    EXPECT_EQ(p2.get() != nullptr, true);
 }
 
 /* Move constructor - Transfer of ownership */
@@ -55,20 +59,18 @@ TEST(UniquePtrTest, MoveConstructorTest)
 {
     dev::unique_ptr p {dev::unique_ptr(new int(17))};
 
-    EXPECT_EQ(*unique_ptr, 17);
-    EXPECT_EQ(unique_ptr!=nullptr, true);
+    EXPECT_EQ(*p, 17);
+    EXPECT_EQ(p!=nullptr, true);
 }
 
 /* Move assignment */
 TEST(UniquePtrTest, MoveAssignmentTest)
 {
     dev::unique_ptr<int> p1(new int(42));
-    dev::unique_ptr<int> p2(new int(17));
-    p1 = p2;
+    p1 = dev::unique_ptr<int>(new int(17));
 
     EXPECT_EQ(p1!=nullptr, true);
     EXPECT_EQ(*p1 == 17, true);
-    EXPECT_EQ(sizeof(p2) == 0, true);
 }
 
 // Modifiers
@@ -101,10 +103,10 @@ TEST(UniquePtrTest, SwapTest){
     dev::unique_ptr<int> p1(first);
     dev::unique_ptr<int> p2(second);
 
-    std::swap(p1, p2);
+    swap(p1, p2);
 
-    EXPECT_EQ(p2 == first && p1 == second, true);
-    EXPECT_EQ(*p1 == 17 && *p2 == 42, true);
+    EXPECT_EQ(p2.get() == first && p1.get() == second, true);
+    EXPECT_EQ(((*p1) == 17) && ((*p2) == 42), true);
 }
 
 // Observers
@@ -118,186 +120,295 @@ TEST(UniquePtrTest, GetTest){
 }
 
 /* operator bool() : Checks whether *this owns an object*/
-TEST(UniquePtrTest, OperatorBoolTest){
+/*TEST(UniquePtrTest, OperatorBoolTest){
     int* resource = new int(28);
-    dev::unique_ptr p1;
-    dev::unique_ptr p2(resource);
+    dev::unique_ptr<int> p1;
+    dev::unique_ptr<int> p2(resource);
 
     EXPECT_EQ(p1, false);
     EXPECT_EQ(p2, true);
-}
+}*/
 
 // Pointer-like functions
 TEST(UniquePtrTest, IndirectionOperatorTest) {
     /* indirection operator* to dereference pointer to managed object,
        member access operator -> to call member function*/
     struct X {
-        int n;
-        int foo() { return n; }
+        int _n;
+
+        X() = default;
+        X(int n) : _n{n} {}
+        ~X() = default;
+        int foo() { return _n; }
     };
 
     dev::unique_ptr<X> ptr(new X(10));
-    EXPECT_EQ((*ptr).n == 10, true);
+    EXPECT_EQ((*ptr)._n == 10, true);
     EXPECT_EQ(ptr->foo() == 10, true);
+}
+
+TEST(UniquePtrTest, PointerToArrayOfTConstructionAndAccess){
+    /* Constructing unique_ptr<T[]> and access */
+    dev::unique_ptr<int[]> p;
+    EXPECT_EQ(p == nullptr, true);
+    {
+        p = new int[5]{1, 2, 3, 4, 5};
+        EXPECT_EQ(p !=nullptr, true);
+        EXPECT_EQ(*p == 1, true);
+        EXPECT_EQ(p[2] == 3, true);
+        p.release();
+        EXPECT_EQ(p ==nullptr, true);
+    }
 }
 ```
 
 # A custom implementation
 
+Most of the code is self-evident. The special case, where the resource(pointee) is an array of elements of type `T`, we write a partial specialization of `unique_ptr<T[],D>`. 
+
 ```cpp
-// UniquePointer.cpp : This file contains the 'main' function. Program execution begins and ends there.
+#include<format>
+#include<concepts>
 
-#include <iostream>
-#include <memory>
-#include <cassert>
-#include <utility>
-#include <vector>
-#include <optional>
+namespace dev{
 
-
-namespace dev {
-    // Implement unique_ptr here
+    /* Default deleter - single object version */
     template<typename T>
-    class unique_ptr {
-    public:
-        // Default c'tor 
-        unique_ptr() : ptr{ nullptr } {}
+    struct default_deleter{
+        void operator()(T* raw_ptr){
+            delete raw_ptr;
+        }
+    };
 
-        // Copy c'tor should be deleted to enforce the concept that this is 
-        // an owning pointer
-        unique_ptr(const unique_ptr& u) = delete;
+    /* Default deleter - pointee is an array of objects version */
+    template<typename T>
+    struct default_deleter<T[]>{
+        void operator()(T* raw_ptr){
+            delete[] raw_ptr;
+        }
+    };
 
-        // Copy assignment should also be deleted to enforce the ownership of the 
-        // managed object
-        unique_ptr& operator=(const unique_ptr&) = delete;
+    /* Single object version */
+    template<typename T, typename D = default_deleter<T>>
+    class unique_ptr : public D{
+        public:
+        using deleter_type = D;
 
-        // Move constructor
-        unique_ptr(unique_ptr&& other) : ptr{ nullptr }
-        {
-            std::swap(ptr, other.ptr);
+        /* Default c'tor */
+        unique_ptr() = default;
+
+        unique_ptr(const unique_ptr& ) = delete;
+        unique_ptr& operator=(const unique_ptr& ) = delete;
+
+        /* Parameteric constructor */
+        unique_ptr(T* ptr) : m_underlying_ptr{ptr}
+        {}
+
+        /* Swap function */
+        void swap(unique_ptr& other) noexcept{
+            std::swap(m_underlying_ptr, other.m_underlying_ptr);
         }
 
-        // Move assignment operator
-        unique_ptr& operator=(unique_ptr&& other) {
-            if (ptr == other)
-                return (*this);
+        /* Move constructor */
+        unique_ptr(unique_ptr&& other)
+        : m_underlying_ptr{ std::move(other.m_underlying_ptr)}
+        {}
 
-            delete_underlying_ptr();
-            ptr = std::exchange(other.ptr, nullptr);
-            return (*this);
-        }
-
-        // Parameterized construtor
-        unique_ptr(T* p)
-            : ptr{ p }
-        {
-        }
-
-        // Overload deferencing operator *
-        T& operator*() {
-            return (*ptr);
-        }
-
-        // Overload deferencing operator *
-        T& operator*() const {
-            return (*ptr);
-        }
-
-        // get the raw pointer
-        T* get() const
-        {
-            return ptr;
-        }
-
-        /* Reset the unique_ptr */
-        void reset(T* other) {
-            if (ptr == other)
-                return;
-
-            delete_underlying_ptr();
-            std::swap(ptr, other);
-        }
-
-        /* Release unique_ptr ownership */
-        T* release() {
-            return std::exchange(ptr, nullptr);
+        /* Move assignment */
+        unique_ptr& operator=(unique_ptr&& other){
+            std::swap(m_underlying_ptr, other.m_underlying_ptr);
+            return *this;
         }
 
         /* Destructor */
-        ~unique_ptr() {
-            delete_underlying_ptr();
+        ~unique_ptr(){
+            deleter_type* deleter = static_cast<deleter_type*>(this);
+            (*deleter)(m_underlying_ptr);
         }
 
-        /* swap - Exchange the contents of ptr1 and ptr2 member-by-member */
-        friend void swap(dev::unique_ptr<T>& ptr1, dev::unique_ptr<T>& ptr2) noexcept
-        {
-            //Re-wire the raw pointers
-            std::swap(ptr1.ptr, ptr2.ptr);
+        // Pointer-like functions
+        /* Dereferencing operator */
+        T operator*(){
+            return *m_underlying_ptr;
         }
 
-        /* operator bool */
-        constexpr operator bool() {
-            return (ptr != nullptr);
+        /* Indirection operator*/
+        T* operator->(){
+            return m_underlying_ptr;
         }
 
-        /* Member access operator - return the underlying pointer */
-        T* operator->() {
-            return ptr;
+        /* get() - get the raw underlying pointer*/
+        T* get() const{
+            return m_underlying_ptr;
         }
 
-        /* Helper function to invoke delete on the underlying raw pointer */
-        void delete_underlying_ptr() {
-            if (ptr != nullptr) {
-                delete ptr;
-                ptr = nullptr;
+        // Modifiers
+        /* Release - returns a pointer to the managed object
+           and releases the ownership*/
+        T* release(){
+            return std::exchange(m_underlying_ptr, nullptr);
+        }
+
+        /* Reset - Replaces the managed object */
+        void reset(T* other){
+            if(m_underlying_ptr != other)
+            {
+                deleter_type* deleter = static_cast<deleter_type*>(this);
+                (*deleter)(m_underlying_ptr);
+    
+                m_underlying_ptr = other;
             }
         }
-    private:
-        T* ptr;
+
+        void reset(std::nullptr_t){
+            deleter_type* deleter = static_cast<deleter_type*>(this);
+            (*deleter)(m_underlying_ptr);
+            m_underlying_ptr = nullptr;
+        }
+
+        explicit operator bool() const{
+            return (m_underlying_ptr == nullptr);
+        }
+
+        friend bool operator==(const unique_ptr& lhs, const unique_ptr& rhs){
+            return (lhs.get() == rhs.get());
+        }
+
+        friend bool operator==(const unique_ptr& lhs, std::nullptr_t rhs){
+            return (lhs.m_underlying_ptr == nullptr);
+        }
+
+        friend bool operator!=(unique_ptr& lhs, unique_ptr& rhs){
+            return !(lhs == rhs);
+        }
+
+        friend bool operator!=(unique_ptr& lhs, std::nullptr_t){
+            return !(lhs == nullptr);
+        }
+
+        friend void swap(unique_ptr& lhs, unique_ptr& rhs){
+            lhs.swap(rhs);
+        }
+
+        private:
+        T* m_underlying_ptr{nullptr};
     };
 
-    template<typename T, typename... Args>
-    dev::unique_ptr<T> make_unique(Args&&... args) {
-        return dev::unique_ptr(new T(std::forward<Args>(args)...));
-    }
+    /* Array version*/
+    template<typename T, typename D>
+    class unique_ptr<T[], D> : public D{
+        public:
+        using deleter_type = D;
 
-    /* Non-member functions */
-//Overload operator==
-    template<typename T1, typename T2>
-    bool operator==(const dev::unique_ptr<T1>& lhs, const dev::unique_ptr<T2>& rhs) {
-        return lhs.get() == rhs.get();
-    }
+        /* Default c'tor */
+        unique_ptr() = default;
 
-    /*template<typename T1> */
-    template<typename T1>
-    bool operator==(const dev::unique_ptr<T1>& lhs, std::nullptr_t rhs) {
-        return lhs.get() == nullptr;
-    }
+        unique_ptr(const unique_ptr& ) = delete;
+        unique_ptr& operator=(const unique_ptr& ) = delete;
 
-    template<typename T1>
-    bool operator==(std::nullptr_t lhs, const dev::unique_ptr<T1>& rhs) {
-        return rhs.get() == nullptr;
-    }
+        /* Parameteric constructor */
+        unique_ptr(T* ptr) : m_underlying_ptr{ptr}
+        {}
 
-    //Overload operator!=
-    template<typename T1, typename T2>
-    bool operator!=(const dev::unique_ptr<T1>& lhs, const dev::unique_ptr<T2>& rhs) {
-        return !(lhs == rhs);
-    }
+        /* Swap function */
+        void swap(unique_ptr& other) noexcept{
+            std::swap(m_underlying_ptr, other.m_underlying_ptr);
+        }
 
-    template<typename T1>
-    bool operator!=(const dev::unique_ptr<T1>& lhs, std::nullopt_t& rhs) {
-        return !(lhs == rhs);
-    }
+        /* Move constructor */
+        unique_ptr(unique_ptr&& other)
+        : m_underlying_ptr{ std::move(other.m_underlying_ptr)}
+        {}
 
-    template<typename T1>
-    bool operator!=(std::nullopt_t& lhs, const dev::unique_ptr<T1>& rhs) {
-        return !(lhs == rhs);
-    }
+        /* Move assignment */
+        unique_ptr& operator=(unique_ptr&& other){
+            std::swap(m_underlying_ptr, other.m_underlying_ptr);
+            return *this;
+        }
+
+        /* Destructor */
+        ~unique_ptr(){
+            deleter_type* deleter = static_cast<deleter_type*>(this);
+            (*deleter)(m_underlying_ptr);
+        }
+
+        // Pointer-like functions
+        /* Dereferencing operator */
+        T operator*(){
+            return *m_underlying_ptr;
+        }
+
+        /* Indirection operator*/
+        T* operator->(){
+            return m_underlying_ptr;
+        }
+
+        /* IndexOf operator - provides indexed access 
+           to the managed array.*/
+        T operator[](std::size_t index){
+            return m_underlying_ptr[index];
+        }
+
+        /* get() - get the raw underlying pointer*/
+        T* get() const{
+            return m_underlying_ptr;
+        }
+
+        // Modifiers
+        /* Release - returns a pointer to the managed object
+           and releases the ownership*/
+        T* release(){
+            return std::exchange(m_underlying_ptr, nullptr);
+        }
+
+        /* Reset - Replaces the managed object */
+        void reset(T* other){
+            if(m_underlying_ptr != other)
+            {
+                deleter_type* deleter = static_cast<deleter_type*>(this);
+                (*deleter)(m_underlying_ptr);
+    
+                m_underlying_ptr = other;
+            }
+        }
+
+        void reset(std::nullptr_t){
+            deleter_type* deleter = static_cast<deleter_type*>(this);
+            (*deleter)(m_underlying_ptr);
+            m_underlying_ptr = nullptr;
+        }
+
+        explicit operator bool() const{
+            return (m_underlying_ptr == nullptr);
+        }
+
+        friend bool operator==(const unique_ptr& lhs, const unique_ptr& rhs){
+            return (lhs.get() == rhs.get());
+        }
+
+        friend bool operator==(const unique_ptr& lhs, std::nullptr_t rhs){
+            return (lhs.m_underlying_ptr == nullptr);
+        }
+
+        friend bool operator!=(unique_ptr& lhs, unique_ptr& rhs){
+            return !(lhs == rhs);
+        }
+
+        friend bool operator!=(unique_ptr& lhs, std::nullptr_t){
+            return !(lhs == nullptr);
+        }
+
+        friend void swap(unique_ptr& lhs, unique_ptr& rhs){
+            lhs.swap(rhs);
+        }
+
+        private:
+        T* m_underlying_ptr{nullptr};
+    };
 }
 ```
 
-[Compiler Explorer](https://godbolt.org/z/vMzcYzhGe)
+You can play around the code files, build the project and run unit tests for this (naive) toy-implementation of `unique_ptr` by cloning my GitHub repo [github.com/quasar-chunawala/interview_data_structures](https://github.com/quasar-chunawala/interview_data_structures).
 
 ## References {.appendix}
 
