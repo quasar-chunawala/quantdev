@@ -314,7 +314,88 @@ Even though there is a happens-before relationship between the stores and betwee
 
 There's another cool example I played around with, from Anthony William's book, [Concurrency in Action](https://www.amazon.co.uk/Concurrency-Action-2E-Anthony-Williams/dp/1617294691/ref=sr_1_1?crid=XDM8P8PX83TE&dib=eyJ2IjoiMSJ9.IYYYm5K7-DAC9QatR4JhacRupYhVCqhXKTMwjKypkLH2Ra8XhTokeONnDHFXgYAHeaZ__O2JHJG2xcuQO_NACM56oXNi6J2FDDpUqgGwHfA.UwWhBmhH2n059_YhK2AVjuHzezw0wWzzhfmhcgnOLOY&dib_tag=se&keywords=concurrency+in+action&qid=1745649385&sprefix=Concurrency+in+action%2Caps%2C65&sr=8-1).
 
+```cpp
+// Relaxed operations on multiple threads
+// Ref: Concurrency in action, Anthony Williams
+#include<thread>
+#include<atomic>
+#include<iostream>
 
+std::atomic<int> x{0}, y{0}, z{0};
+std::atomic<bool> go{false};
+const uint loop_count{10};
+
+struct Snapshot{
+    int x;
+    int y;
+    int z;
+};
+
+Snapshot snapshots[5][loop_count];
+
+void increment(std::atomic<int>* var_to_inc, Snapshot* snapshots){
+    while(!go)
+        std::this_thread::yield();      // Spin, waiting for the signal
+
+    for(unsigned i=0;i<loop_count;++i){
+        snapshots[i].x = x.load(std::memory_order_relaxed);
+        snapshots[i].y = y.load(std::memory_order_relaxed);
+        snapshots[i].z = z.load(std::memory_order_relaxed);
+        var_to_inc->store(i+1, std::memory_order_relaxed);
+        std::this_thread::yield();
+    }
+}
+
+void record_values(Snapshot* snapshots){
+    while(!go)
+        std::this_thread::yield();
+
+    for(unsigned i{0};i<loop_count;++i){
+        snapshots[i].x = x.load(std::memory_order_relaxed);
+        snapshots[i].y = y.load(std::memory_order_relaxed);
+        snapshots[i].z = z.load(std::memory_order_relaxed);
+        std::this_thread::yield();
+    }
+}
+
+void print(Snapshot* v){
+    for(unsigned i={0};i<loop_count;++i){
+        if(i)
+            std::cout << ",";
+        std::cout<< "(" << v[i].x << "," << v[i].y << "," << v[i].z << ")";
+    }
+
+    std::cout<<"\n";
+}
+
+int main(){
+    std::thread t1(increment, &x, snapshots[0]);
+    std::thread t2(increment, &y, snapshots[1]);
+    std::thread t3(increment, &z, snapshots[2]);
+    std::thread t4(record_values, snapshots[3]);
+    std::thread t5(record_values, snapshots[4]);
+    go=true;
+    t5.join();
+    t4.join();
+    t3.join();
+    t2.join();
+    t1.join();
+
+    for(unsigned i{0};i<5;++i)
+        print(snapshots[i]);
+}
+```
+
+Output:
+```shell
+(0,1,0),(1,5,0),(2,6,0),(3,8,0),(4,8,0),(5,10,0),(6,10,0),(7,10,0),(8,10,0),(9,10,0)
+(0,0,0),(1,1,0),(1,2,0),(1,3,0),(1,4,0),(1,5,0),(2,6,0),(3,7,0),(4,8,0),(5,9,0)
+(10,10,0),(10,10,1),(10,10,2),(10,10,3),(10,10,4),(10,10,5),(10,10,6),(10,10,7),(10,10,8),(10,10,9)
+(10,10,10),(10,10,10),(10,10,10),(10,10,10),(10,10,10),(10,10,10),(10,10,10),(10,10,10),(10,10,10),(10,10,10)
+(0,1,0),(1,3,0),(1,4,0),(1,5,0),(2,6,0),(3,7,0),(4,8,0),(5,9,0),(5,10,0),(6,10,0)
+```
+
+This simple code-snippet shows that each thread sees a distinct sequence of values for the distinct variables `x`, `y`, and `z` when incremented `10` times each. Only the modification order of each variable is consistent amongst the threads.
 
 ## Acquire-Release Semantic
 
@@ -328,8 +409,8 @@ So, what are typically `acquire` and `release` operations?
 
 Additionally,
 
-- Read and write operations cannot be moved to before an acquire operation. 
-- Read and write operations cannot be moved to after a release operation.
+- Read and write operations cannot be reordered to before an acquire operation. 
+- Read and write operations cannot be reordered to after a release operation.
 
 ```cpp
 #include <iostream>
