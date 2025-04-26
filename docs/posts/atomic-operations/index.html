@@ -198,12 +198,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
   <li><a href="#non-blocking-data-structures" id="toc-non-blocking-data-structures" class="nav-link" data-scroll-target="#non-blocking-data-structures">Non-Blocking Data-Structures</a></li>
   <li><a href="#memory-access" id="toc-memory-access" class="nav-link" data-scroll-target="#memory-access">Memory Access</a></li>
+  <li><a href="#modification-order" id="toc-modification-order" class="nav-link" data-scroll-target="#modification-order">Modification Order</a></li>
   <li><a href="#memory-model" id="toc-memory-model" class="nav-link" data-scroll-target="#memory-model">Memory Model</a>
   <ul class="collapse">
   <li><a href="#sequential-consistency" id="toc-sequential-consistency" class="nav-link" data-scroll-target="#sequential-consistency">Sequential consistency</a></li>
   </ul></li>
+  <li><a href="#non-sequential-memory-ordering" id="toc-non-sequential-memory-ordering" class="nav-link" data-scroll-target="#non-sequential-memory-ordering">Non-sequential memory ordering</a></li>
   <li><a href="#acquire-release-semantic" id="toc-acquire-release-semantic" class="nav-link" data-scroll-target="#acquire-release-semantic">Acquire-Release Semantic</a></li>
-  <li><a href="#relaxed-memory-ordering" id="toc-relaxed-memory-ordering" class="nav-link" data-scroll-target="#relaxed-memory-ordering">Relaxed Memory Ordering</a></li>
+  <li><a href="#atomic-types" id="toc-atomic-types" class="nav-link" data-scroll-target="#atomic-types">Atomic types</a></li>
   
   </ul>
 </nav>
@@ -309,6 +311,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb10-8"><a href="#cb10-8"></a>        <span class="cf">ret</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>To conclude, the source code order, the compiler generated object-code order and the actual exection order on a multi-core CPU will differ.</p>
 </section>
+<section id="modification-order" class="level2">
+<h2 class="anchored" data-anchor-id="modification-order">Modification Order</h2>
+<p>Any entity with a type <code>T</code> that has a lifetime and occupies storage in memory is an object. Every object in a C++ program has a modification order, consisting of all writes to that object from all the threads in the program, starting with the object’s initialization. In multi-threaded code, the modification order may vary between runs, but in a given execution of the program, all threads must agree on the order.</p>
+<p>If distinct threads see distinct sequences of values for a single variable, we have a data-race and UB.</p>
+<p>Certain kinds of speculative execution aren’t permitted. Once a thread has seen a particular entry in the modification order, subsequent reads from the same thread must return later values and subsequent writes to that object must occur later in the modification order. A read of an object that follows a write to that object in the same thread must either return the same value or another value that occurs later in the modification order. Although all threads must agree on the modification orders of each individual object, they may not necessarily agree on the relative ordering of operations on separate objects.</p>
+</section>
 <section id="memory-model" class="level2">
 <h2 class="anchored" data-anchor-id="memory-model">Memory Model</h2>
 <p>Typically, each core in a multi-core processor has dedicated store buffers, its own L3 cache. A pair of cores often share the L2 cache. All cores share the L1 cache and the global main memory. So, the below picture is a more accurate mental model of a modern microprocessor.</p>
@@ -326,7 +334,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="sequential-consistency" class="level3">
 <h3 class="anchored" data-anchor-id="sequential-consistency">Sequential consistency</h3>
 <p><code>std::memory_order_seq_cst</code> has two implications. The operations of a program(thread) will always be executed in source code order.</p>
-<p>There is a global order of events, and all threads observe the same global order.</p>
+<p>In a given execution, there is a single global ordering of all operations tagged <code>memory_order_seq</code>, and all threads observe the same global order.</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
 <span id="cb11-2"><a href="#cb11-2"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
 <span id="cb11-3"><a href="#cb11-3"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
@@ -359,7 +367,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </figure>
 </div>
 <p>To further elaborate, consider the below snippet:</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1"></a><span class="co">// Asynchronous programming with C++</span></span>
+<div class="sourceCode" id="cb12"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1"></a><span class="co">// Ref: Asynchronous programming with C++</span></span>
 <span id="cb12-2"><a href="#cb12-2"></a><span class="co">// Javier Reguera Salgado</span></span>
 <span id="cb12-3"><a href="#cb12-3"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
 <span id="cb12-4"><a href="#cb12-4"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
@@ -407,8 +415,47 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb12-46"><a href="#cb12-46"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"y = "</span> <span class="op">&lt;&lt;</span> y<span class="op">;</span></span>
 <span id="cb12-47"><a href="#cb12-47"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"z = "</span> <span class="op">&lt;&lt;</span> z<span class="op">;</span></span>
 <span id="cb12-48"><a href="#cb12-48"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Under no circumstances, the value of <code>z</code> will be equal to <code>0</code>.</p>
+<p>Under no circumstances, the value of <code>z</code> will be equal to <code>0</code>. Either the <code>write_x</code> goes before <code>write_y</code> or <code>write_y</code> goes before <code>write_x</code>. All threads observe the same global order of events.</p>
 </section>
+</section>
+<section id="non-sequential-memory-ordering" class="level2">
+<h2 class="anchored" data-anchor-id="non-sequential-memory-ordering">Non-sequential memory ordering</h2>
+<p>On the opposite end of the spectrum is relaxed ordering. <em>In the absence of other ordering constraints, the only requirement is that threads agree on the modification order of each variable</em>. Operations on distinct variables can appear in different orders on different threads.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1"></a><span class="co">// Ref: Concurrency in Action, Anthony Williams</span></span>
+<span id="cb13-2"><a href="#cb13-2"></a><span class="pp">#include</span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb13-3"><a href="#cb13-3"></a><span class="pp">#include</span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb13-4"><a href="#cb13-4"></a><span class="pp">#include</span><span class="im">&lt;assert.h&gt;</span></span>
+<span id="cb13-5"><a href="#cb13-5"></a></span>
+<span id="cb13-6"><a href="#cb13-6"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> x<span class="op">,</span>y<span class="op">;</span></span>
+<span id="cb13-7"><a href="#cb13-7"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> z<span class="op">;</span></span>
+<span id="cb13-8"><a href="#cb13-8"></a></span>
+<span id="cb13-9"><a href="#cb13-9"></a><span class="dt">void</span> write_x_then_y<span class="op">()</span></span>
+<span id="cb13-10"><a href="#cb13-10"></a><span class="op">{</span></span>
+<span id="cb13-11"><a href="#cb13-11"></a>    x<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_relaxed<span class="op">);</span>   <span class="co">// [1]</span></span>
+<span id="cb13-12"><a href="#cb13-12"></a>    y<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_relaxed<span class="op">);</span>   <span class="co">// [2]</span></span>
+<span id="cb13-13"><a href="#cb13-13"></a><span class="op">}</span></span>
+<span id="cb13-14"><a href="#cb13-14"></a></span>
+<span id="cb13-15"><a href="#cb13-15"></a><span class="dt">void</span> read_y_then_x<span class="op">()</span></span>
+<span id="cb13-16"><a href="#cb13-16"></a><span class="op">{</span></span>
+<span id="cb13-17"><a href="#cb13-17"></a>    <span class="cf">while</span><span class="op">(!</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">));</span>  <span class="co">//[3]</span></span>
+<span id="cb13-18"><a href="#cb13-18"></a>    <span class="cf">if</span><span class="op">(</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">))</span></span>
+<span id="cb13-19"><a href="#cb13-19"></a>        <span class="op">++</span>z<span class="op">;</span>                                    <span class="co">//[4]</span></span>
+<span id="cb13-20"><a href="#cb13-20"></a><span class="op">}</span></span>
+<span id="cb13-21"><a href="#cb13-21"></a></span>
+<span id="cb13-22"><a href="#cb13-22"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb13-23"><a href="#cb13-23"></a>    x <span class="op">=</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb13-24"><a href="#cb13-24"></a>    y <span class="op">=</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb13-25"><a href="#cb13-25"></a>    z <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb13-26"><a href="#cb13-26"></a>    <span class="bu">std::</span>thread<span class="op"> </span>a<span class="op">(</span>write_x_then_y<span class="op">);</span></span>
+<span id="cb13-27"><a href="#cb13-27"></a>    <span class="bu">std::</span>thread<span class="op"> </span>b<span class="op">(</span>read_y_then_x<span class="op">);</span></span>
+<span id="cb13-28"><a href="#cb13-28"></a>    a<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb13-29"><a href="#cb13-29"></a>    b<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb13-30"><a href="#cb13-30"></a>    <span class="ot">assert</span><span class="op">(</span>z<span class="op">.</span>load<span class="op">()!=</span><span class="dv">0</span><span class="op">);</span>                        <span class="co">//[5]</span></span>
+<span id="cb13-31"><a href="#cb13-31"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This time the <code>assert</code> at <code>[5]</code> can be false, because the <code>x.load()</code> can read <code>false</code>, even though the load of <code>y</code> reads <code>true</code> and the <code>store</code> of <code>x</code> happens before the <code>store</code> of <code>y</code>.</p>
+<p><code>x</code> and <code>y</code> are different variables so there are no ordering guarantees relating to the visbility of variables. Relaxed operations on different variables can be freely reordered (provided they obey any happens before relationships in the same thread). They don’t introduce synchronizes-with relationships.</p>
+<p>Even though there is a happens-before relationship between the stores and between the loads, the <code>store</code> of <code>y</code> does not synchronize with the <code>load</code> of <code>y</code>. So, the reader thread can see the stores out of order.</p>
+<p>There’s another cool example I played around with, from Anthony William’s book, <a href="https://www.amazon.co.uk/Concurrency-Action-2E-Anthony-Williams/dp/1617294691/ref=sr_1_1?crid=XDM8P8PX83TE&amp;dib=eyJ2IjoiMSJ9.IYYYm5K7-DAC9QatR4JhacRupYhVCqhXKTMwjKypkLH2Ra8XhTokeONnDHFXgYAHeaZ__O2JHJG2xcuQO_NACM56oXNi6J2FDDpUqgGwHfA.UwWhBmhH2n059_YhK2AVjuHzezw0wWzzhfmhcgnOLOY&amp;dib_tag=se&amp;keywords=concurrency+in+action&amp;qid=1745649385&amp;sprefix=Concurrency+in+action%2Caps%2C65&amp;sr=8-1">Concurrency in Action</a>.</p>
 </section>
 <section id="acquire-release-semantic" class="level2">
 <h2 class="anchored" data-anchor-id="acquire-release-semantic">Acquire-Release Semantic</h2>
@@ -423,44 +470,44 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li>Read and write operations cannot be moved to before an acquire operation.</li>
 <li>Read and write operations cannot be moved to after a release operation.</li>
 </ul>
-<div class="sourceCode" id="cb13"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb13-2"><a href="#cb13-2"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
-<span id="cb13-3"><a href="#cb13-3"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb13-4"><a href="#cb13-4"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
-<span id="cb13-5"><a href="#cb13-5"></a></span>
-<span id="cb13-6"><a href="#cb13-6"></a><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> mySharedItems<span class="op">;</span></span>
-<span id="cb13-7"><a href="#cb13-7"></a><span class="bu">std::</span>atomic_bool<span class="op"> </span>dataProduced<span class="op">;</span></span>
-<span id="cb13-8"><a href="#cb13-8"></a><span class="bu">std::</span>atomic_bool<span class="op"> </span>dataReadyToBeConsumed<span class="op">;</span></span>
-<span id="cb13-9"><a href="#cb13-9"></a></span>
-<span id="cb13-10"><a href="#cb13-10"></a><span class="dt">void</span> dataProducer<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb13-11"><a href="#cb13-11"></a>    mySharedItems <span class="op">=</span> <span class="op">{</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">3</span> <span class="op">};</span></span>
-<span id="cb13-12"><a href="#cb13-12"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"dataProduced.store(true)"</span><span class="op">;</span></span>
-<span id="cb13-13"><a href="#cb13-13"></a>    dataProduced<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb13-14"><a href="#cb13-14"></a><span class="op">}</span></span>
-<span id="cb13-15"><a href="#cb13-15"></a></span>
-<span id="cb13-16"><a href="#cb13-16"></a><span class="dt">void</span> deliveryBoy<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb13-17"><a href="#cb13-17"></a>    <span class="cf">while</span> <span class="op">(!</span>dataProduced<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
-<span id="cb13-18"><a href="#cb13-18"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"After dataProduced.load()"</span><span class="op">;</span></span>
-<span id="cb13-19"><a href="#cb13-19"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Before dataReadyToBeConsumed.store(true)"</span><span class="op">;</span></span>
-<span id="cb13-20"><a href="#cb13-20"></a>    dataReadyToBeConsumed<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb13-21"><a href="#cb13-21"></a><span class="op">}</span></span>
-<span id="cb13-22"><a href="#cb13-22"></a></span>
-<span id="cb13-23"><a href="#cb13-23"></a><span class="dt">void</span> dataConsumer<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb13-24"><a href="#cb13-24"></a>    <span class="cf">while</span> <span class="op">(!</span>dataReadyToBeConsumed<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
-<span id="cb13-25"><a href="#cb13-25"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"After dataReadyToBeConsumed.load()"</span><span class="op">;</span></span>
-<span id="cb13-26"><a href="#cb13-26"></a>    mySharedItems<span class="op">[</span><span class="dv">1</span><span class="op">]</span> <span class="op">=</span> <span class="dv">2</span><span class="op">;</span></span>
-<span id="cb13-27"><a href="#cb13-27"></a><span class="op">}</span></span>
-<span id="cb13-28"><a href="#cb13-28"></a></span>
-<span id="cb13-29"><a href="#cb13-29"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb13-30"><a href="#cb13-30"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span>dataProducer<span class="op">);</span></span>
-<span id="cb13-31"><a href="#cb13-31"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span>deliveryBoy<span class="op">);</span></span>
-<span id="cb13-32"><a href="#cb13-32"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t3<span class="op">(</span>dataConsumer<span class="op">);</span></span>
-<span id="cb13-33"><a href="#cb13-33"></a></span>
-<span id="cb13-34"><a href="#cb13-34"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb13-35"><a href="#cb13-35"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb13-36"><a href="#cb13-36"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb13-37"><a href="#cb13-37"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb13-38"><a href="#cb13-38"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb14"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb14-2"><a href="#cb14-2"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb14-3"><a href="#cb14-3"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb14-4"><a href="#cb14-4"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb14-5"><a href="#cb14-5"></a></span>
+<span id="cb14-6"><a href="#cb14-6"></a><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> mySharedItems<span class="op">;</span></span>
+<span id="cb14-7"><a href="#cb14-7"></a><span class="bu">std::</span>atomic_bool<span class="op"> </span>dataProduced<span class="op">;</span></span>
+<span id="cb14-8"><a href="#cb14-8"></a><span class="bu">std::</span>atomic_bool<span class="op"> </span>dataReadyToBeConsumed<span class="op">;</span></span>
+<span id="cb14-9"><a href="#cb14-9"></a></span>
+<span id="cb14-10"><a href="#cb14-10"></a><span class="dt">void</span> dataProducer<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb14-11"><a href="#cb14-11"></a>    mySharedItems <span class="op">=</span> <span class="op">{</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">3</span> <span class="op">};</span></span>
+<span id="cb14-12"><a href="#cb14-12"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"dataProduced.store(true)"</span><span class="op">;</span></span>
+<span id="cb14-13"><a href="#cb14-13"></a>    dataProduced<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb14-14"><a href="#cb14-14"></a><span class="op">}</span></span>
+<span id="cb14-15"><a href="#cb14-15"></a></span>
+<span id="cb14-16"><a href="#cb14-16"></a><span class="dt">void</span> deliveryBoy<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb14-17"><a href="#cb14-17"></a>    <span class="cf">while</span> <span class="op">(!</span>dataProduced<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
+<span id="cb14-18"><a href="#cb14-18"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"After dataProduced.load()"</span><span class="op">;</span></span>
+<span id="cb14-19"><a href="#cb14-19"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Before dataReadyToBeConsumed.store(true)"</span><span class="op">;</span></span>
+<span id="cb14-20"><a href="#cb14-20"></a>    dataReadyToBeConsumed<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb14-21"><a href="#cb14-21"></a><span class="op">}</span></span>
+<span id="cb14-22"><a href="#cb14-22"></a></span>
+<span id="cb14-23"><a href="#cb14-23"></a><span class="dt">void</span> dataConsumer<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb14-24"><a href="#cb14-24"></a>    <span class="cf">while</span> <span class="op">(!</span>dataReadyToBeConsumed<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
+<span id="cb14-25"><a href="#cb14-25"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"After dataReadyToBeConsumed.load()"</span><span class="op">;</span></span>
+<span id="cb14-26"><a href="#cb14-26"></a>    mySharedItems<span class="op">[</span><span class="dv">1</span><span class="op">]</span> <span class="op">=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb14-27"><a href="#cb14-27"></a><span class="op">}</span></span>
+<span id="cb14-28"><a href="#cb14-28"></a></span>
+<span id="cb14-29"><a href="#cb14-29"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb14-30"><a href="#cb14-30"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span>dataProducer<span class="op">);</span></span>
+<span id="cb14-31"><a href="#cb14-31"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span>deliveryBoy<span class="op">);</span></span>
+<span id="cb14-32"><a href="#cb14-32"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t3<span class="op">(</span>dataConsumer<span class="op">);</span></span>
+<span id="cb14-33"><a href="#cb14-33"></a></span>
+<span id="cb14-34"><a href="#cb14-34"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-35"><a href="#cb14-35"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-36"><a href="#cb14-36"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb14-37"><a href="#cb14-37"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-38"><a href="#cb14-38"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>The <code>store</code> on line 13 synchronizes with the <code>load</code> on line 17. That’s the acquire-release semantic. It also establishes a partial ordering. Read or write operations prior to the <code>release</code> on line 13 cannot be moved to after line 13. And <code>release</code> operation on line 20 cannot be moved before <code>acquire</code> operation on line 13.</p>
 <p>The same for the <code>deliveryBoy</code> and <code>dataConsumer</code>.</p>
 <div class="quarto-figure quarto-figure-center">
@@ -471,60 +518,59 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <p>If you think about mutexes, a mutex <code>lock()</code> is an acquire-operation. A mutex <code>unlock()</code> is a release operation. Things inside the critical region cannot be moved to outside it. An <code>unlock()</code> synchronizes with the next <code>lock()</code>. Similarly, <code>wait</code> and <code>notify</code> are acquire and release operations. The starting of a thread and <code>join</code> call on a thread are acquire and release operations.</p>
 <p>Consider the same code as in the previous section for sequential consistency, but in this case, I use acquire-release semantics.</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1"></a><span class="co">// Asynchronous programming with C++</span></span>
-<span id="cb14-2"><a href="#cb14-2"></a><span class="co">// Javier Reguera Salgado</span></span>
-<span id="cb14-3"><a href="#cb14-3"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb14-4"><a href="#cb14-4"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
-<span id="cb14-5"><a href="#cb14-5"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb14-6"><a href="#cb14-6"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
-<span id="cb14-7"><a href="#cb14-7"></a></span>
-<span id="cb14-8"><a href="#cb14-8"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> x<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
-<span id="cb14-9"><a href="#cb14-9"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> y<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
-<span id="cb14-10"><a href="#cb14-10"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> z<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
-<span id="cb14-11"><a href="#cb14-11"></a></span>
-<span id="cb14-12"><a href="#cb14-12"></a><span class="dt">void</span> write_x<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb14-13"><a href="#cb14-13"></a>    x<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb14-14"><a href="#cb14-14"></a><span class="op">}</span></span>
-<span id="cb14-15"><a href="#cb14-15"></a></span>
-<span id="cb14-16"><a href="#cb14-16"></a><span class="dt">void</span> write_y<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb14-17"><a href="#cb14-17"></a>    y<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb14-18"><a href="#cb14-18"></a><span class="op">}</span></span>
-<span id="cb14-19"><a href="#cb14-19"></a></span>
-<span id="cb14-20"><a href="#cb14-20"></a><span class="dt">void</span> read_x_then_y<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb14-21"><a href="#cb14-21"></a>    <span class="cf">while</span> <span class="op">(!</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
-<span id="cb14-22"><a href="#cb14-22"></a></span>
-<span id="cb14-23"><a href="#cb14-23"></a>    <span class="cf">if</span> <span class="op">(</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
-<span id="cb14-24"><a href="#cb14-24"></a>        <span class="op">++</span>z<span class="op">;</span></span>
-<span id="cb14-25"><a href="#cb14-25"></a><span class="op">}</span></span>
-<span id="cb14-26"><a href="#cb14-26"></a></span>
-<span id="cb14-27"><a href="#cb14-27"></a><span class="dt">void</span> read_y_then_x<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb14-28"><a href="#cb14-28"></a>    <span class="cf">while</span> <span class="op">(!</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
-<span id="cb14-29"><a href="#cb14-29"></a></span>
-<span id="cb14-30"><a href="#cb14-30"></a>    <span class="cf">if</span> <span class="op">(</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
-<span id="cb14-31"><a href="#cb14-31"></a>        <span class="op">++</span>z<span class="op">;</span></span>
-<span id="cb14-32"><a href="#cb14-32"></a><span class="op">}</span></span>
-<span id="cb14-33"><a href="#cb14-33"></a></span>
-<span id="cb14-34"><a href="#cb14-34"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb14-35"><a href="#cb14-35"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span>write_x<span class="op">);</span></span>
-<span id="cb14-36"><a href="#cb14-36"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span>write_y<span class="op">);</span></span>
-<span id="cb14-37"><a href="#cb14-37"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t3<span class="op">(</span>read_x_then_y<span class="op">);</span></span>
-<span id="cb14-38"><a href="#cb14-38"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t4<span class="op">(</span>read_y_then_x<span class="op">);</span></span>
-<span id="cb14-39"><a href="#cb14-39"></a></span>
-<span id="cb14-40"><a href="#cb14-40"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb14-41"><a href="#cb14-41"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb14-42"><a href="#cb14-42"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb14-43"><a href="#cb14-43"></a>    t4<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb14-44"><a href="#cb14-44"></a></span>
-<span id="cb14-45"><a href="#cb14-45"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"x = "</span> <span class="op">&lt;&lt;</span> x<span class="op">;</span></span>
-<span id="cb14-46"><a href="#cb14-46"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"y = "</span> <span class="op">&lt;&lt;</span> y<span class="op">;</span></span>
-<span id="cb14-47"><a href="#cb14-47"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"z = "</span> <span class="op">&lt;&lt;</span> z<span class="op">;</span></span>
-<span id="cb14-48"><a href="#cb14-48"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb15-1"><a href="#cb15-1"></a><span class="co">// Asynchronous programming with C++</span></span>
+<span id="cb15-2"><a href="#cb15-2"></a><span class="co">// Javier Reguera Salgado</span></span>
+<span id="cb15-3"><a href="#cb15-3"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb15-4"><a href="#cb15-4"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb15-5"><a href="#cb15-5"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb15-6"><a href="#cb15-6"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb15-7"><a href="#cb15-7"></a></span>
+<span id="cb15-8"><a href="#cb15-8"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> x<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
+<span id="cb15-9"><a href="#cb15-9"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> y<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
+<span id="cb15-10"><a href="#cb15-10"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> z<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
+<span id="cb15-11"><a href="#cb15-11"></a></span>
+<span id="cb15-12"><a href="#cb15-12"></a><span class="dt">void</span> write_x<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb15-13"><a href="#cb15-13"></a>    x<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb15-14"><a href="#cb15-14"></a><span class="op">}</span></span>
+<span id="cb15-15"><a href="#cb15-15"></a></span>
+<span id="cb15-16"><a href="#cb15-16"></a><span class="dt">void</span> write_y<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb15-17"><a href="#cb15-17"></a>    y<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb15-18"><a href="#cb15-18"></a><span class="op">}</span></span>
+<span id="cb15-19"><a href="#cb15-19"></a></span>
+<span id="cb15-20"><a href="#cb15-20"></a><span class="dt">void</span> read_x_then_y<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb15-21"><a href="#cb15-21"></a>    <span class="cf">while</span> <span class="op">(!</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
+<span id="cb15-22"><a href="#cb15-22"></a></span>
+<span id="cb15-23"><a href="#cb15-23"></a>    <span class="cf">if</span> <span class="op">(</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
+<span id="cb15-24"><a href="#cb15-24"></a>        <span class="op">++</span>z<span class="op">;</span></span>
+<span id="cb15-25"><a href="#cb15-25"></a><span class="op">}</span></span>
+<span id="cb15-26"><a href="#cb15-26"></a></span>
+<span id="cb15-27"><a href="#cb15-27"></a><span class="dt">void</span> read_y_then_x<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb15-28"><a href="#cb15-28"></a>    <span class="cf">while</span> <span class="op">(!</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
+<span id="cb15-29"><a href="#cb15-29"></a></span>
+<span id="cb15-30"><a href="#cb15-30"></a>    <span class="cf">if</span> <span class="op">(</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
+<span id="cb15-31"><a href="#cb15-31"></a>        <span class="op">++</span>z<span class="op">;</span></span>
+<span id="cb15-32"><a href="#cb15-32"></a><span class="op">}</span></span>
+<span id="cb15-33"><a href="#cb15-33"></a></span>
+<span id="cb15-34"><a href="#cb15-34"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb15-35"><a href="#cb15-35"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span>write_x<span class="op">);</span></span>
+<span id="cb15-36"><a href="#cb15-36"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span>write_y<span class="op">);</span></span>
+<span id="cb15-37"><a href="#cb15-37"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t3<span class="op">(</span>read_x_then_y<span class="op">);</span></span>
+<span id="cb15-38"><a href="#cb15-38"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t4<span class="op">(</span>read_y_then_x<span class="op">);</span></span>
+<span id="cb15-39"><a href="#cb15-39"></a></span>
+<span id="cb15-40"><a href="#cb15-40"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb15-41"><a href="#cb15-41"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb15-42"><a href="#cb15-42"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb15-43"><a href="#cb15-43"></a>    t4<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb15-44"><a href="#cb15-44"></a></span>
+<span id="cb15-45"><a href="#cb15-45"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"x = "</span> <span class="op">&lt;&lt;</span> x<span class="op">;</span></span>
+<span id="cb15-46"><a href="#cb15-46"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"y = "</span> <span class="op">&lt;&lt;</span> y<span class="op">;</span></span>
+<span id="cb15-47"><a href="#cb15-47"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"z = "</span> <span class="op">&lt;&lt;</span> z<span class="op">;</span></span>
+<span id="cb15-48"><a href="#cb15-48"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>The release operation on <code>x</code> in <code>t1</code> synchronizes with the acquire operation on <code>x</code> in <code>t3</code>. Similarly, the release operation on <code>y</code> in <code>t2</code> synchonizes with <code>acquire</code> operation in thread <code>t4</code>. However, writes to <code>x</code> and <code>y</code> happen in different threads.</p>
 <p>So, <code>t3</code> may find <code>x = true</code> and <code>y=false</code>. At the same time <code>t4</code> may find <code>y=true</code> and <code>x=false</code>. Different threads have different views of the memory.</p>
 </section>
-<section id="relaxed-memory-ordering" class="level2">
-<h2 class="anchored" data-anchor-id="relaxed-memory-ordering">Relaxed Memory Ordering</h2>
-<p>Operations on atomic types performed with relaxed ordering don’t participate in <em>syhcronizes-with</em> relationships. The modification order of each variable is the only thing shared between threads that are using <code>memory_order_relaxed</code>.</p>
+<section id="atomic-types" class="level2">
+<h2 class="anchored" data-anchor-id="atomic-types">Atomic types</h2>
 </section>
 
 
@@ -824,396 +870,452 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 </script>
 <script src="https://giscus.app/client.js" data-repo="quasar-chunawala/quantdev" data-repo-id="R_kgDOL2t5-A" data-category="General" data-category-id="DIC_kwDOL2t5-M4ClndQ" data-mapping="title" data-reactions-enabled="1" data-emit-metadata="0" data-input-position="top" data-theme="light" data-lang="en" crossorigin="anonymous" async="">
 </script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
-<div class="sourceCode" id="cb15" data-shortcodes="false"><pre class="sourceCode numberSource markdown number-lines code-with-copy"><code class="sourceCode markdown"><span id="cb15-1"><a href="#cb15-1"></a><span class="co">---</span></span>
-<span id="cb15-2"><a href="#cb15-2"></a><span class="an">title:</span><span class="co"> "C++ Atomics"</span></span>
-<span id="cb15-3"><a href="#cb15-3"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
-<span id="cb15-4"><a href="#cb15-4"></a><span class="an">date:</span><span class="co"> "2025-03-08"</span></span>
-<span id="cb15-5"><a href="#cb15-5"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
-<span id="cb15-6"><a href="#cb15-6"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
-<span id="cb15-7"><a href="#cb15-7"></a><span class="an">toc:</span><span class="co"> true</span></span>
-<span id="cb15-8"><a href="#cb15-8"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
-<span id="cb15-9"><a href="#cb15-9"></a><span class="co">---</span></span>
-<span id="cb15-10"><a href="#cb15-10"></a></span>
-<span id="cb15-11"><a href="#cb15-11"></a><span class="fu">## Introduction</span></span>
-<span id="cb15-12"><a href="#cb15-12"></a></span>
-<span id="cb15-13"><a href="#cb15-13"></a>Atomic operations are indivisible. Consider, for instance a shared variable <span class="in">`counter`</span> that is initialized to <span class="in">`0`</span>. Consider the assembly instructions corresponding to the increment operation <span class="in">`count++`</span>.</span>
-<span id="cb15-14"><a href="#cb15-14"></a></span>
-<span id="cb15-15"><a href="#cb15-15"></a><span class="in">```cpp</span></span>
-<span id="cb15-16"><a href="#cb15-16"></a><span class="dt">int</span> counter <span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
-<span id="cb15-17"><a href="#cb15-17"></a></span>
-<span id="cb15-18"><a href="#cb15-18"></a><span class="dt">int</span> main<span class="op">(){</span></span>
-<span id="cb15-19"><a href="#cb15-19"></a>    counter<span class="op">++;</span></span>
-<span id="cb15-20"><a href="#cb15-20"></a></span>
-<span id="cb15-21"><a href="#cb15-21"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb15-22"><a href="#cb15-22"></a><span class="op">}</span></span>
-<span id="cb15-23"><a href="#cb15-23"></a><span class="in">```</span></span>
-<span id="cb15-24"><a href="#cb15-24"></a><span class="co">[</span><span class="ot">Play on Compiler Explorer</span><span class="co">](https://godbolt.org/z/cjhYK3hv9)</span></span>
-<span id="cb15-25"><a href="#cb15-25"></a></span>
-<span id="cb15-26"><a href="#cb15-26"></a>Look at the assembler code generated by the compiler and the instructions the CPU executes.</span>
-<span id="cb15-27"><a href="#cb15-27"></a></span>
-<span id="cb15-28"><a href="#cb15-28"></a><span class="in">```fasm</span></span>
-<span id="cb15-29"><a href="#cb15-29"></a><span class="in">counter:</span></span>
-<span id="cb15-30"><a href="#cb15-30"></a><span class="in">        .zero   4</span></span>
-<span id="cb15-31"><a href="#cb15-31"></a><span class="in">main:</span></span>
-<span id="cb15-32"><a href="#cb15-32"></a><span class="in">        push    rbp</span></span>
-<span id="cb15-33"><a href="#cb15-33"></a><span class="in">        mov     rbp, rsp</span></span>
-<span id="cb15-34"><a href="#cb15-34"></a><span class="in">        mov     eax, DWORD PTR counter[rip]</span></span>
-<span id="cb15-35"><a href="#cb15-35"></a><span class="in">        add     eax, 1</span></span>
-<span id="cb15-36"><a href="#cb15-36"></a><span class="in">        mov     DWORD PTR counter[rip], eax</span></span>
-<span id="cb15-37"><a href="#cb15-37"></a><span class="in">        mov     eax, 0</span></span>
-<span id="cb15-38"><a href="#cb15-38"></a><span class="in">        pop     rbp</span></span>
-<span id="cb15-39"><a href="#cb15-39"></a><span class="in">        ret</span></span>
-<span id="cb15-40"><a href="#cb15-40"></a><span class="in">```</span></span>
-<span id="cb15-41"><a href="#cb15-41"></a></span>
-<span id="cb15-42"><a href="#cb15-42"></a>The code increments a global counter. The statement on line <span class="in">`6`</span>, copies the value stored in the <span class="in">`counter`</span> to the <span class="in">`eax`</span> register, line <span class="in">`7`</span> adds <span class="in">`1`</span> to the value stored in <span class="in">`eax`</span>, and finally line <span class="in">`8`</span> copies back the contents of the <span class="in">`eax`</span> register to the <span class="in">`counter`</span> variable. So, a thread could execute line <span class="in">`6`</span> and then be scheduled out, and another thread execute all threee instructions after that. When the first thread finishes increment the result, the counter will be increment just once and thus the result will incorrect. </span>
-<span id="cb15-43"><a href="#cb15-43"></a></span>
-<span id="cb15-44"><a href="#cb15-44"></a>The following code does the same: it increments a global counter. This time, though, we use an atomic type and operations. </span>
-<span id="cb15-45"><a href="#cb15-45"></a></span>
-<span id="cb15-46"><a href="#cb15-46"></a><span class="in">```cpp</span></span>
-<span id="cb15-47"><a href="#cb15-47"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
-<span id="cb15-48"><a href="#cb15-48"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> counter <span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
-<span id="cb15-49"><a href="#cb15-49"></a></span>
-<span id="cb15-50"><a href="#cb15-50"></a><span class="dt">int</span> main<span class="op">(){</span></span>
-<span id="cb15-51"><a href="#cb15-51"></a>    counter<span class="op">++;</span></span>
-<span id="cb15-52"><a href="#cb15-52"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb15-53"><a href="#cb15-53"></a><span class="op">}</span></span>
-<span id="cb15-54"><a href="#cb15-54"></a><span class="in">```</span></span>
-<span id="cb15-55"><a href="#cb15-55"></a><span class="co">[</span><span class="ot">Play on Compiler Explorer</span><span class="co">](https://godbolt.org/z/rs9Wrzz3M)</span></span>
-<span id="cb15-56"><a href="#cb15-56"></a></span>
-<span id="cb15-57"><a href="#cb15-57"></a>I will explain the <span class="in">`std::atomic&lt;int&gt;`</span> type and the atomic increment operation later. The generated assembly code is the following:</span>
-<span id="cb15-58"><a href="#cb15-58"></a></span>
-<span id="cb15-59"><a href="#cb15-59"></a><span class="in">```fasm</span></span>
-<span id="cb15-60"><a href="#cb15-60"></a><span class="in">lock add        DWORD PTR counter[rip], 1</span></span>
-<span id="cb15-61"><a href="#cb15-61"></a><span class="in">```</span></span>
-<span id="cb15-62"><a href="#cb15-62"></a></span>
-<span id="cb15-63"><a href="#cb15-63"></a>Just one instruction has been generated to add <span class="in">`1`</span> to the value stored in the <span class="in">`counter`</span> variable. The lock prefix here means that the following instruction (in this case <span class="in">`add`</span>) is going to be executed atomically. Hence, a thread cannot be interrupted in the middle of incrementing the counter. </span>
-<span id="cb15-64"><a href="#cb15-64"></a></span>
-<span id="cb15-65"><a href="#cb15-65"></a>Atomic operations allow threads to read, modify and write indivisibly and can also be used as synchronization primitives. Atomic operations must be provided by the CPU (as in the <span class="in">`lock add`</span> instruction).</span>
-<span id="cb15-66"><a href="#cb15-66"></a></span>
-<span id="cb15-67"><a href="#cb15-67"></a><span class="fu">## Non-Blocking Data-Structures</span></span>
-<span id="cb15-68"><a href="#cb15-68"></a></span>
-<span id="cb15-69"><a href="#cb15-69"></a>Data-structures synchronized with locks are called **blocking data-structures** because threads are blocked (by the operating system), waiting until the locks become available. </span>
-<span id="cb15-70"><a href="#cb15-70"></a></span>
-<span id="cb15-71"><a href="#cb15-71"></a>Data-structures that don't use locks are called **non-blocking data structures**. Most (but not all) of them are lock-free.</span>
-<span id="cb15-72"><a href="#cb15-72"></a></span>
-<span id="cb15-73"><a href="#cb15-73"></a>A data-structure or algorithm is considered lock-free if each synchronized action completes in a finite number of steps, not allowing indefinite waiting for a condition to become true or false.</span>
-<span id="cb15-74"><a href="#cb15-74"></a></span>
-<span id="cb15-75"><a href="#cb15-75"></a>The types of lock-free data structures are the following:</span>
-<span id="cb15-76"><a href="#cb15-76"></a></span>
-<span id="cb15-77"><a href="#cb15-77"></a><span class="ss">- </span>**Obstruction-free**: A thread will complete its operation in a bounded number of steps if all other threads are suspended. </span>
-<span id="cb15-78"><a href="#cb15-78"></a></span>
-<span id="cb15-79"><a href="#cb15-79"></a><span class="ss">- </span>**Lock-free**: Atleast one thread will complete its operation in a bounded number of steps while multiple threads are working on the data-structure.</span>
-<span id="cb15-80"><a href="#cb15-80"></a></span>
-<span id="cb15-81"><a href="#cb15-81"></a><span class="ss">- </span>**Wait-free**: All threads will complete their operations in a bounded number of steps while multiple threads are working on the data-structure.</span>
-<span id="cb15-82"><a href="#cb15-82"></a></span>
-<span id="cb15-83"><a href="#cb15-83"></a><span class="fu">## Memory Access </span></span>
-<span id="cb15-84"><a href="#cb15-84"></a></span>
-<span id="cb15-85"><a href="#cb15-85"></a>Memory order refers to the order in which memory(that is, the variables in a program) are accessed. Memory can be either read or write(load and store). But, what is the actual order in which the variables of a program are accessed? For the following code, there are $3$ points of view: the written code order, the compiler-generated instructions order, and finally, the order in which the instructions are executed by the CPU. These $3$ orderings can all be the same or (more likely) different. </span>
-<span id="cb15-86"><a href="#cb15-86"></a></span>
-<span id="cb15-87"><a href="#cb15-87"></a>The first and obvious ordering is the one in the code. </span>
-<span id="cb15-88"><a href="#cb15-88"></a></span>
-<span id="cb15-89"><a href="#cb15-89"></a><span class="in">```cpp</span></span>
-<span id="cb15-90"><a href="#cb15-90"></a><span class="dt">void</span> func_1<span class="op">(</span><span class="dt">int</span><span class="op">&amp;</span> a<span class="op">,</span> <span class="dt">int</span><span class="op">&amp;</span> b<span class="op">){</span></span>
-<span id="cb15-91"><a href="#cb15-91"></a>    a <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb15-92"><a href="#cb15-92"></a>    b <span class="op">+=</span> <span class="dv">10</span><span class="op">;</span></span>
-<span id="cb15-93"><a href="#cb15-93"></a>    a <span class="op">+=</span> <span class="dv">2</span><span class="op">;</span></span>
-<span id="cb15-94"><a href="#cb15-94"></a><span class="op">}</span></span>
-<span id="cb15-95"><a href="#cb15-95"></a><span class="in">```</span></span>
-<span id="cb15-96"><a href="#cb15-96"></a></span>
-<span id="cb15-97"><a href="#cb15-97"></a>The <span class="in">`func_1`</span> function first adds $1$ to the variable <span class="in">`a`</span>, then adds $10$ to the variable <span class="in">`b`</span> and finally adds $2$ to the variable <span class="in">`a`</span>. This is our intention and the order in which we define the statements to be executed. </span>
-<span id="cb15-98"><a href="#cb15-98"></a></span>
-<span id="cb15-99"><a href="#cb15-99"></a>When compiling the code to assembly, the compiler may change the order of the statements to make the generate code more efficient provided the outcome of the code execution is unchanged. For example, with the preceding code, the compiler could either do the two additions with variable <span class="in">`a`</span> first and then the addition with variable <span class="in">`b`</span>, or it could simply add <span class="in">`3`</span> to <span class="in">`a`</span> and <span class="in">`10`</span> to <span class="in">`b`</span>. </span>
-<span id="cb15-100"><a href="#cb15-100"></a></span>
-<span id="cb15-101"><a href="#cb15-101"></a><span class="in">```fasm</span></span>
-<span id="cb15-102"><a href="#cb15-102"></a><span class="in">func_1(int&amp;, int&amp;):</span></span>
-<span id="cb15-103"><a href="#cb15-103"></a><span class="in">        add     DWORD PTR [rdi], 1</span></span>
-<span id="cb15-104"><a href="#cb15-104"></a><span class="in">        add     DWORD PTR [rsi], 10</span></span>
-<span id="cb15-105"><a href="#cb15-105"></a><span class="in">        add     DWORD PTR [rdi], 2</span></span>
-<span id="cb15-106"><a href="#cb15-106"></a><span class="in">        ret</span></span>
-<span id="cb15-107"><a href="#cb15-107"></a><span class="in">```</span></span>
-<span id="cb15-108"><a href="#cb15-108"></a></span>
-<span id="cb15-109"><a href="#cb15-109"></a>If we define <span class="in">`func_2`</span> as:</span>
-<span id="cb15-110"><a href="#cb15-110"></a></span>
-<span id="cb15-111"><a href="#cb15-111"></a><span class="in">```cpp</span></span>
-<span id="cb15-112"><a href="#cb15-112"></a><span class="dt">void</span> func_2<span class="op">(</span><span class="dt">int</span><span class="op">&amp;</span> a<span class="op">,</span> <span class="dt">int</span><span class="op">&amp;</span> b<span class="op">){</span></span>
-<span id="cb15-113"><a href="#cb15-113"></a>    a <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb15-114"><a href="#cb15-114"></a>    a <span class="op">+=</span> <span class="dv">2</span><span class="op">;</span></span>
-<span id="cb15-115"><a href="#cb15-115"></a>    b <span class="op">+=</span> <span class="dv">10</span><span class="op">;</span></span>
-<span id="cb15-116"><a href="#cb15-116"></a><span class="op">}</span></span>
-<span id="cb15-117"><a href="#cb15-117"></a><span class="in">```</span></span>
-<span id="cb15-118"><a href="#cb15-118"></a></span>
-<span id="cb15-119"><a href="#cb15-119"></a>the compiler generates:</span>
-<span id="cb15-120"><a href="#cb15-120"></a></span>
-<span id="cb15-121"><a href="#cb15-121"></a><span class="in">```cpp</span></span>
-<span id="cb15-122"><a href="#cb15-122"></a>func_2<span class="op">(</span><span class="dt">int</span><span class="op">&amp;,</span> <span class="dt">int</span><span class="op">&amp;):</span></span>
-<span id="cb15-123"><a href="#cb15-123"></a>        add     DWORD PTR <span class="op">[</span>rdi<span class="op">],</span> <span class="dv">3</span></span>
-<span id="cb15-124"><a href="#cb15-124"></a>        add     DWORD PTR <span class="op">[</span>rsi<span class="op">],</span> <span class="dv">10</span></span>
-<span id="cb15-125"><a href="#cb15-125"></a>        ret</span>
-<span id="cb15-126"><a href="#cb15-126"></a><span class="in">```</span></span>
-<span id="cb15-127"><a href="#cb15-127"></a>In this case, the CPU could execute the instructions out of order, as there is no dependency among the operations.</span>
-<span id="cb15-128"><a href="#cb15-128"></a></span>
-<span id="cb15-129"><a href="#cb15-129"></a>Consider <span class="in">`func_3(int&amp;, int&amp;)`</span> defined as:</span>
-<span id="cb15-130"><a href="#cb15-130"></a></span>
-<span id="cb15-131"><a href="#cb15-131"></a><span class="in">```cpp</span></span>
-<span id="cb15-132"><a href="#cb15-132"></a><span class="dt">void</span> func_3<span class="op">(</span><span class="dt">int</span><span class="op">&amp;</span> a<span class="op">,</span> <span class="dt">int</span> <span class="op">&amp;</span>b<span class="op">){</span></span>
-<span id="cb15-133"><a href="#cb15-133"></a>    a <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb15-134"><a href="#cb15-134"></a>    b <span class="op">+=</span> <span class="dv">10</span> <span class="op">+</span> a<span class="op">;</span></span>
-<span id="cb15-135"><a href="#cb15-135"></a>    a <span class="op">+=</span> <span class="dv">2</span><span class="op">;</span></span>
-<span id="cb15-136"><a href="#cb15-136"></a><span class="op">}</span></span>
-<span id="cb15-137"><a href="#cb15-137"></a><span class="in">```</span></span>
-<span id="cb15-138"><a href="#cb15-138"></a></span>
-<span id="cb15-139"><a href="#cb15-139"></a>In this case, the operation on <span class="in">`b`</span> depends on the previous operation on <span class="in">`a`</span>, so the compiler cannot reorder the statements, and the generated code will be like the code we write (same order of operations).</span>
-<span id="cb15-140"><a href="#cb15-140"></a></span>
-<span id="cb15-141"><a href="#cb15-141"></a><span class="in">```fasm</span></span>
-<span id="cb15-142"><a href="#cb15-142"></a><span class="in">func_3(int&amp;, int&amp;):</span></span>
-<span id="cb15-143"><a href="#cb15-143"></a><span class="in">        mov     eax, DWORD PTR [rdi]</span></span>
-<span id="cb15-144"><a href="#cb15-144"></a><span class="in">        lea     edx, [rax+1]</span></span>
-<span id="cb15-145"><a href="#cb15-145"></a><span class="in">        add     eax, 11</span></span>
-<span id="cb15-146"><a href="#cb15-146"></a><span class="in">        mov     DWORD PTR [rdi], edx</span></span>
-<span id="cb15-147"><a href="#cb15-147"></a><span class="in">        add     DWORD PTR [rsi], eax</span></span>
-<span id="cb15-148"><a href="#cb15-148"></a><span class="in">        add     DWORD PTR [rdi], 2</span></span>
-<span id="cb15-149"><a href="#cb15-149"></a><span class="in">        ret</span></span>
-<span id="cb15-150"><a href="#cb15-150"></a><span class="in">```</span></span>
-<span id="cb15-151"><a href="#cb15-151"></a></span>
-<span id="cb15-152"><a href="#cb15-152"></a>To conclude, the source code order, the compiler generated object-code order and the actual exection order on a multi-core CPU will differ.</span>
-<span id="cb15-153"><a href="#cb15-153"></a></span>
-<span id="cb15-154"><a href="#cb15-154"></a><span class="fu">## Memory Model</span></span>
-<span id="cb15-155"><a href="#cb15-155"></a></span>
-<span id="cb15-156"><a href="#cb15-156"></a>Typically, each core in a multi-core processor has dedicated store buffers, its own L3 cache. A pair of cores often share the L2 cache. All cores share the L1 cache and the global main memory. So, the below picture is a more accurate mental model of a modern microprocessor. </span>
-<span id="cb15-157"><a href="#cb15-157"></a></span>
-<span id="cb15-158"><a href="#cb15-158"></a><span class="al">![Memory Model](multicore_processor.png)</span>{width="700px" height="500px" fig-align="center"}</span>
-<span id="cb15-159"><a href="#cb15-159"></a></span>
-<span id="cb15-160"><a href="#cb15-160"></a>Consider 2 globally declared atomic flags <span class="in">`flag1`</span> and <span class="in">`flag2`</span>. Assume that <span class="in">`thread_1`</span> executes on processor-1 and <span class="in">`thread_2`</span> executes on processor-2 and all reads and writes are atomic.</span>
-<span id="cb15-161"><a href="#cb15-161"></a></span>
-<span id="cb15-162"><a href="#cb15-162"></a>Essentially, <span class="in">`thread_1`</span> declares its intent to enter a critical section by setting <span class="in">`flag1 = 1`</span>. A <span class="in">`flag1.store(1)`</span> operation writes <span class="in">`flag1 = 1`</span> to the store buffer. Concurrently, <span class="in">`thread_2`</span> declares its intent to enter the critical section by setting <span class="in">`flag2 = 1`</span>. A <span class="in">`flag2.store(1)`</span> operation writes <span class="in">`flag2 = 1`</span> the processor's store buffer. </span>
-<span id="cb15-163"><a href="#cb15-163"></a></span>
-<span id="cb15-164"><a href="#cb15-164"></a><span class="in">`thread_1`</span> reads the value of <span class="in">`flag2`</span> from the global main memory, which is <span class="in">`0`</span> (since processor-2's buffer has not been flushed). Hence, the predicate <span class="in">`!flag2`</span> is satisfied and the <span class="in">`thread_1`</span> enters the critical section. Similarly, <span class="in">`thread_2`</span> reads the value of <span class="in">`flag1`</span> from the global main memory, which is also <span class="in">`0`</span> and enters the critical section at the same time. </span>
-<span id="cb15-165"><a href="#cb15-165"></a></span>
-<span id="cb15-166"><a href="#cb15-166"></a>$1$ nanosecond later, the contents of the store buffers on processor-1 and process-2 are flushed to main memory.</span>
-<span id="cb15-167"><a href="#cb15-167"></a></span>
-<span id="cb15-168"><a href="#cb15-168"></a>Thus, we need synchronization and some form of ordering to prevent undefined behavior.</span>
-<span id="cb15-169"><a href="#cb15-169"></a></span>
-<span id="cb15-170"><a href="#cb15-170"></a><span class="fu">### Sequential consistency</span></span>
-<span id="cb15-171"><a href="#cb15-171"></a></span>
-<span id="cb15-172"><a href="#cb15-172"></a><span class="in">`std::memory_order_seq_cst`</span> has two implications. The operations of a program(thread) will always be executed in source code order.</span>
-<span id="cb15-173"><a href="#cb15-173"></a></span>
-<span id="cb15-174"><a href="#cb15-174"></a>There is a global order of events, and all threads observe the same global order.</span>
-<span id="cb15-175"><a href="#cb15-175"></a></span>
-<span id="cb15-176"><a href="#cb15-176"></a><span class="in">```cpp</span></span>
-<span id="cb15-177"><a href="#cb15-177"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb15-178"><a href="#cb15-178"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
-<span id="cb15-179"><a href="#cb15-179"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb15-180"><a href="#cb15-180"></a></span>
-<span id="cb15-181"><a href="#cb15-181"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> x <span class="op">=</span> ATOMIC_INT_LOCK_FREE<span class="op">;</span></span>
-<span id="cb15-182"><a href="#cb15-182"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> y <span class="op">=</span> ATOMIC_INT_LOCK_FREE<span class="op">;</span></span>
-<span id="cb15-183"><a href="#cb15-183"></a></span>
-<span id="cb15-184"><a href="#cb15-184"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-185"><a href="#cb15-185"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span></span>
-<span id="cb15-186"><a href="#cb15-186"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
-<span id="cb15-187"><a href="#cb15-187"></a>            x<span class="op">.</span>store<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
-<span id="cb15-188"><a href="#cb15-188"></a>            <span class="dt">int</span> result1 <span class="op">=</span> y<span class="op">.</span>load<span class="op">();</span></span>
-<span id="cb15-189"><a href="#cb15-189"></a>        <span class="op">}</span></span>
-<span id="cb15-190"><a href="#cb15-190"></a>    <span class="op">);</span></span>
-<span id="cb15-191"><a href="#cb15-191"></a></span>
-<span id="cb15-192"><a href="#cb15-192"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span></span>
-<span id="cb15-193"><a href="#cb15-193"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
-<span id="cb15-194"><a href="#cb15-194"></a>            y<span class="op">.</span>store<span class="op">(</span><span class="dv">17</span><span class="op">);</span></span>
-<span id="cb15-195"><a href="#cb15-195"></a>            <span class="dt">int</span> result2 <span class="op">=</span> x<span class="op">.</span>load<span class="op">();</span></span>
-<span id="cb15-196"><a href="#cb15-196"></a>        <span class="op">}</span></span>
-<span id="cb15-197"><a href="#cb15-197"></a>    <span class="op">);</span></span>
-<span id="cb15-198"><a href="#cb15-198"></a><span class="op">}</span></span>
-<span id="cb15-199"><a href="#cb15-199"></a><span class="in">```</span></span>
-<span id="cb15-200"><a href="#cb15-200"></a></span>
-<span id="cb15-201"><a href="#cb15-201"></a>Sequential ordering is also the default memory ordering. </span>
-<span id="cb15-202"><a href="#cb15-202"></a></span>
-<span id="cb15-203"><a href="#cb15-203"></a><span class="in">`x.store(42)`</span> will always be performed before <span class="in">`y.load()`</span>. <span class="in">`y.store(17)`</span> will always be performed before <span class="in">`x.load()`</span>. That is the guarantee of the sequential consistency. And each thread sees operations of the other thread in the same order. This respects our intuition. </span>
-<span id="cb15-204"><a href="#cb15-204"></a></span>
-<span id="cb15-205"><a href="#cb15-205"></a>How many ways exist to perform these 4 operations? Extremely easy! There are 6 possibilities.</span>
-<span id="cb15-206"><a href="#cb15-206"></a></span>
-<span id="cb15-207"><a href="#cb15-207"></a><span class="al">![Sequential Memory Order](sequential_memory_order.png)</span>{fig-align="center"}</span>
-<span id="cb15-208"><a href="#cb15-208"></a></span>
-<span id="cb15-209"><a href="#cb15-209"></a>To further elaborate, consider the below snippet:</span>
-<span id="cb15-210"><a href="#cb15-210"></a></span>
-<span id="cb15-211"><a href="#cb15-211"></a><span class="in">```cpp</span></span>
-<span id="cb15-212"><a href="#cb15-212"></a><span class="co">// Asynchronous programming with C++</span></span>
-<span id="cb15-213"><a href="#cb15-213"></a><span class="co">// Javier Reguera Salgado</span></span>
-<span id="cb15-214"><a href="#cb15-214"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb15-215"><a href="#cb15-215"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
-<span id="cb15-216"><a href="#cb15-216"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb15-217"><a href="#cb15-217"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
-<span id="cb15-218"><a href="#cb15-218"></a></span>
-<span id="cb15-219"><a href="#cb15-219"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> x<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
-<span id="cb15-220"><a href="#cb15-220"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> y<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
-<span id="cb15-221"><a href="#cb15-221"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> z<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
-<span id="cb15-222"><a href="#cb15-222"></a></span>
-<span id="cb15-223"><a href="#cb15-223"></a><span class="dt">void</span> write_x<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-224"><a href="#cb15-224"></a>    x<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_seq_cst<span class="op">);</span></span>
-<span id="cb15-225"><a href="#cb15-225"></a><span class="op">}</span></span>
-<span id="cb15-226"><a href="#cb15-226"></a></span>
-<span id="cb15-227"><a href="#cb15-227"></a><span class="dt">void</span> write_y<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-228"><a href="#cb15-228"></a>    y<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_seq_cst<span class="op">);</span></span>
-<span id="cb15-229"><a href="#cb15-229"></a><span class="op">}</span></span>
-<span id="cb15-230"><a href="#cb15-230"></a></span>
-<span id="cb15-231"><a href="#cb15-231"></a><span class="dt">void</span> read_x_then_y<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-232"><a href="#cb15-232"></a>    <span class="cf">while</span> <span class="op">(!</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_seq_cst<span class="op">));</span></span>
-<span id="cb15-233"><a href="#cb15-233"></a></span>
-<span id="cb15-234"><a href="#cb15-234"></a>    <span class="cf">if</span> <span class="op">(</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_seq_cst<span class="op">))</span></span>
-<span id="cb15-235"><a href="#cb15-235"></a>        <span class="op">++</span>z<span class="op">;</span></span>
-<span id="cb15-236"><a href="#cb15-236"></a><span class="op">}</span></span>
-<span id="cb15-237"><a href="#cb15-237"></a></span>
-<span id="cb15-238"><a href="#cb15-238"></a><span class="dt">void</span> read_y_then_x<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-239"><a href="#cb15-239"></a>    <span class="cf">while</span> <span class="op">(!</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_seq_cst<span class="op">));</span></span>
-<span id="cb15-240"><a href="#cb15-240"></a></span>
-<span id="cb15-241"><a href="#cb15-241"></a>    <span class="cf">if</span> <span class="op">(</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_seq_cst<span class="op">))</span></span>
-<span id="cb15-242"><a href="#cb15-242"></a>        <span class="op">++</span>z<span class="op">;</span></span>
-<span id="cb15-243"><a href="#cb15-243"></a><span class="op">}</span></span>
-<span id="cb15-244"><a href="#cb15-244"></a></span>
-<span id="cb15-245"><a href="#cb15-245"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-246"><a href="#cb15-246"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span>write_x<span class="op">);</span></span>
-<span id="cb15-247"><a href="#cb15-247"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span>write_y<span class="op">);</span></span>
-<span id="cb15-248"><a href="#cb15-248"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t3<span class="op">(</span>read_x_then_y<span class="op">);</span></span>
-<span id="cb15-249"><a href="#cb15-249"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t4<span class="op">(</span>read_y_then_x<span class="op">);</span></span>
-<span id="cb15-250"><a href="#cb15-250"></a></span>
-<span id="cb15-251"><a href="#cb15-251"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb15-252"><a href="#cb15-252"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb15-253"><a href="#cb15-253"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb15-254"><a href="#cb15-254"></a>    t4<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb15-255"><a href="#cb15-255"></a></span>
-<span id="cb15-256"><a href="#cb15-256"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"x = "</span> <span class="op">&lt;&lt;</span> x<span class="op">;</span></span>
-<span id="cb15-257"><a href="#cb15-257"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"y = "</span> <span class="op">&lt;&lt;</span> y<span class="op">;</span></span>
-<span id="cb15-258"><a href="#cb15-258"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"z = "</span> <span class="op">&lt;&lt;</span> z<span class="op">;</span></span>
-<span id="cb15-259"><a href="#cb15-259"></a><span class="op">}</span></span>
-<span id="cb15-260"><a href="#cb15-260"></a><span class="in">```</span></span>
-<span id="cb15-261"><a href="#cb15-261"></a>Under no circumstances, the value of <span class="in">`z`</span> will be equal to <span class="in">`0`</span>. </span>
-<span id="cb15-262"><a href="#cb15-262"></a></span>
-<span id="cb15-263"><a href="#cb15-263"></a><span class="fu">## Acquire-Release Semantic</span></span>
-<span id="cb15-264"><a href="#cb15-264"></a></span>
-<span id="cb15-265"><a href="#cb15-265"></a>A <span class="in">`release`</span> operation on an atomic synchronizes with an <span class="in">`acquire`</span> operation on the same atomic and additionally establishes an ordering constraint. So, we have a synchronizationation and a partial ordering in the acquire-release semantic.</span>
-<span id="cb15-266"><a href="#cb15-266"></a></span>
-<span id="cb15-267"><a href="#cb15-267"></a>So, what are typically <span class="in">`acquire`</span> and <span class="in">`release`</span> operations?</span>
-<span id="cb15-268"><a href="#cb15-268"></a></span>
-<span id="cb15-269"><a href="#cb15-269"></a><span class="ss">- </span>Any write operation such as <span class="in">`store`</span> or <span class="in">`clear`</span> must specify <span class="in">`std::memory_order_release`</span>. This flushes the core cache and publishes all updates before the release operation. So, any writes intra-thread prior to the release operation are visible to other susbcriber threads.</span>
-<span id="cb15-270"><a href="#cb15-270"></a></span>
-<span id="cb15-271"><a href="#cb15-271"></a><span class="ss">- </span>Any read operation such as <span class="in">`load`</span> or <span class="in">`test_and_set`</span> must specify <span class="in">`std::memory_order_acquire`</span>. This captures any all updates upto this point.  </span>
-<span id="cb15-272"><a href="#cb15-272"></a></span>
-<span id="cb15-273"><a href="#cb15-273"></a>Additionally,</span>
-<span id="cb15-274"><a href="#cb15-274"></a></span>
-<span id="cb15-275"><a href="#cb15-275"></a><span class="ss">- </span>Read and write operations cannot be moved to before an acquire operation. </span>
-<span id="cb15-276"><a href="#cb15-276"></a><span class="ss">- </span>Read and write operations cannot be moved to after a release operation.</span>
-<span id="cb15-277"><a href="#cb15-277"></a></span>
-<span id="cb15-278"><a href="#cb15-278"></a><span class="in">```cpp</span></span>
-<span id="cb15-279"><a href="#cb15-279"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb15-280"><a href="#cb15-280"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
-<span id="cb15-281"><a href="#cb15-281"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb15-282"><a href="#cb15-282"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
-<span id="cb15-283"><a href="#cb15-283"></a></span>
-<span id="cb15-284"><a href="#cb15-284"></a><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> mySharedItems<span class="op">;</span></span>
-<span id="cb15-285"><a href="#cb15-285"></a><span class="bu">std::</span>atomic_bool<span class="op"> </span>dataProduced<span class="op">;</span></span>
-<span id="cb15-286"><a href="#cb15-286"></a><span class="bu">std::</span>atomic_bool<span class="op"> </span>dataReadyToBeConsumed<span class="op">;</span></span>
-<span id="cb15-287"><a href="#cb15-287"></a></span>
-<span id="cb15-288"><a href="#cb15-288"></a><span class="dt">void</span> dataProducer<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-289"><a href="#cb15-289"></a>    mySharedItems <span class="op">=</span> <span class="op">{</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">3</span> <span class="op">};</span></span>
-<span id="cb15-290"><a href="#cb15-290"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"dataProduced.store(true)"</span><span class="op">;</span></span>
-<span id="cb15-291"><a href="#cb15-291"></a>    dataProduced<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb15-292"><a href="#cb15-292"></a><span class="op">}</span></span>
-<span id="cb15-293"><a href="#cb15-293"></a></span>
-<span id="cb15-294"><a href="#cb15-294"></a><span class="dt">void</span> deliveryBoy<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-295"><a href="#cb15-295"></a>    <span class="cf">while</span> <span class="op">(!</span>dataProduced<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
-<span id="cb15-296"><a href="#cb15-296"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"After dataProduced.load()"</span><span class="op">;</span></span>
-<span id="cb15-297"><a href="#cb15-297"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Before dataReadyToBeConsumed.store(true)"</span><span class="op">;</span></span>
-<span id="cb15-298"><a href="#cb15-298"></a>    dataReadyToBeConsumed<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb15-299"><a href="#cb15-299"></a><span class="op">}</span></span>
-<span id="cb15-300"><a href="#cb15-300"></a></span>
-<span id="cb15-301"><a href="#cb15-301"></a><span class="dt">void</span> dataConsumer<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-302"><a href="#cb15-302"></a>    <span class="cf">while</span> <span class="op">(!</span>dataReadyToBeConsumed<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
-<span id="cb15-303"><a href="#cb15-303"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"After dataReadyToBeConsumed.load()"</span><span class="op">;</span></span>
-<span id="cb15-304"><a href="#cb15-304"></a>    mySharedItems<span class="op">[</span><span class="dv">1</span><span class="op">]</span> <span class="op">=</span> <span class="dv">2</span><span class="op">;</span></span>
-<span id="cb15-305"><a href="#cb15-305"></a><span class="op">}</span></span>
-<span id="cb15-306"><a href="#cb15-306"></a></span>
-<span id="cb15-307"><a href="#cb15-307"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-308"><a href="#cb15-308"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span>dataProducer<span class="op">);</span></span>
-<span id="cb15-309"><a href="#cb15-309"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span>deliveryBoy<span class="op">);</span></span>
-<span id="cb15-310"><a href="#cb15-310"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t3<span class="op">(</span>dataConsumer<span class="op">);</span></span>
-<span id="cb15-311"><a href="#cb15-311"></a></span>
-<span id="cb15-312"><a href="#cb15-312"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb15-313"><a href="#cb15-313"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb15-314"><a href="#cb15-314"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb15-315"><a href="#cb15-315"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb15-316"><a href="#cb15-316"></a><span class="op">}</span></span>
-<span id="cb15-317"><a href="#cb15-317"></a><span class="in">```</span></span>
-<span id="cb15-318"><a href="#cb15-318"></a></span>
-<span id="cb15-319"><a href="#cb15-319"></a>The <span class="in">`store`</span> on line 13 synchronizes with the <span class="in">`load`</span> on line 17. That's the acquire-release semantic. It also establishes a partial ordering. Read or write operations prior to the <span class="in">`release`</span> on line 13 cannot be moved to after line 13. And <span class="in">`release`</span> operation on line 20 cannot be moved before <span class="in">`acquire`</span> operation on line 13.</span>
-<span id="cb15-320"><a href="#cb15-320"></a></span>
-<span id="cb15-321"><a href="#cb15-321"></a>The same for the <span class="in">`deliveryBoy`</span> and <span class="in">`dataConsumer`</span>. </span>
-<span id="cb15-322"><a href="#cb15-322"></a></span>
-<span id="cb15-323"><a href="#cb15-323"></a><span class="al">![Acquire-release semantics](acquire_release_semantics.png)</span>{fig-align="center"}</span>
-<span id="cb15-324"><a href="#cb15-324"></a></span>
-<span id="cb15-325"><a href="#cb15-325"></a>If you think about mutexes, a mutex <span class="in">`lock()`</span> is an acquire-operation. A mutex <span class="in">`unlock()`</span> is a release operation. Things inside the critical region cannot be moved to outside it. An <span class="in">`unlock()`</span> synchronizes with the next <span class="in">`lock()`</span>. Similarly, <span class="in">`wait`</span> and <span class="in">`notify`</span> are acquire and release operations. The starting of a thread and <span class="in">`join`</span> call on a thread are acquire and release operations.</span>
-<span id="cb15-326"><a href="#cb15-326"></a></span>
-<span id="cb15-327"><a href="#cb15-327"></a>Consider the same code as in the previous section for sequential consistency, but in this case, I use acquire-release semantics.</span>
-<span id="cb15-328"><a href="#cb15-328"></a></span>
-<span id="cb15-329"><a href="#cb15-329"></a><span class="in">```cpp</span></span>
-<span id="cb15-330"><a href="#cb15-330"></a><span class="co">// Asynchronous programming with C++</span></span>
-<span id="cb15-331"><a href="#cb15-331"></a><span class="co">// Javier Reguera Salgado</span></span>
-<span id="cb15-332"><a href="#cb15-332"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb15-333"><a href="#cb15-333"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
-<span id="cb15-334"><a href="#cb15-334"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb15-335"><a href="#cb15-335"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
-<span id="cb15-336"><a href="#cb15-336"></a></span>
-<span id="cb15-337"><a href="#cb15-337"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> x<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
-<span id="cb15-338"><a href="#cb15-338"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> y<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
-<span id="cb15-339"><a href="#cb15-339"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> z<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
-<span id="cb15-340"><a href="#cb15-340"></a></span>
-<span id="cb15-341"><a href="#cb15-341"></a><span class="dt">void</span> write_x<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-342"><a href="#cb15-342"></a>    x<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb15-343"><a href="#cb15-343"></a><span class="op">}</span></span>
-<span id="cb15-344"><a href="#cb15-344"></a></span>
-<span id="cb15-345"><a href="#cb15-345"></a><span class="dt">void</span> write_y<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-346"><a href="#cb15-346"></a>    y<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb15-347"><a href="#cb15-347"></a><span class="op">}</span></span>
-<span id="cb15-348"><a href="#cb15-348"></a></span>
-<span id="cb15-349"><a href="#cb15-349"></a><span class="dt">void</span> read_x_then_y<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-350"><a href="#cb15-350"></a>    <span class="cf">while</span> <span class="op">(!</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
-<span id="cb15-351"><a href="#cb15-351"></a></span>
-<span id="cb15-352"><a href="#cb15-352"></a>    <span class="cf">if</span> <span class="op">(</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
-<span id="cb15-353"><a href="#cb15-353"></a>        <span class="op">++</span>z<span class="op">;</span></span>
-<span id="cb15-354"><a href="#cb15-354"></a><span class="op">}</span></span>
-<span id="cb15-355"><a href="#cb15-355"></a></span>
-<span id="cb15-356"><a href="#cb15-356"></a><span class="dt">void</span> read_y_then_x<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-357"><a href="#cb15-357"></a>    <span class="cf">while</span> <span class="op">(!</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
-<span id="cb15-358"><a href="#cb15-358"></a></span>
-<span id="cb15-359"><a href="#cb15-359"></a>    <span class="cf">if</span> <span class="op">(</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
-<span id="cb15-360"><a href="#cb15-360"></a>        <span class="op">++</span>z<span class="op">;</span></span>
-<span id="cb15-361"><a href="#cb15-361"></a><span class="op">}</span></span>
-<span id="cb15-362"><a href="#cb15-362"></a></span>
-<span id="cb15-363"><a href="#cb15-363"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb15-364"><a href="#cb15-364"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span>write_x<span class="op">);</span></span>
-<span id="cb15-365"><a href="#cb15-365"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span>write_y<span class="op">);</span></span>
-<span id="cb15-366"><a href="#cb15-366"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t3<span class="op">(</span>read_x_then_y<span class="op">);</span></span>
-<span id="cb15-367"><a href="#cb15-367"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t4<span class="op">(</span>read_y_then_x<span class="op">);</span></span>
-<span id="cb15-368"><a href="#cb15-368"></a></span>
-<span id="cb15-369"><a href="#cb15-369"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb15-370"><a href="#cb15-370"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb15-371"><a href="#cb15-371"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb15-372"><a href="#cb15-372"></a>    t4<span class="op">.</span>join<span class="op">();</span></span>
-<span id="cb15-373"><a href="#cb15-373"></a></span>
-<span id="cb15-374"><a href="#cb15-374"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"x = "</span> <span class="op">&lt;&lt;</span> x<span class="op">;</span></span>
-<span id="cb15-375"><a href="#cb15-375"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"y = "</span> <span class="op">&lt;&lt;</span> y<span class="op">;</span></span>
-<span id="cb15-376"><a href="#cb15-376"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"z = "</span> <span class="op">&lt;&lt;</span> z<span class="op">;</span></span>
-<span id="cb15-377"><a href="#cb15-377"></a><span class="op">}</span></span>
-<span id="cb15-378"><a href="#cb15-378"></a><span class="in">```</span></span>
-<span id="cb15-379"><a href="#cb15-379"></a></span>
-<span id="cb15-380"><a href="#cb15-380"></a>The release operation on <span class="in">`x`</span> in <span class="in">`t1`</span> synchronizes with the acquire operation on <span class="in">`x`</span> in <span class="in">`t3`</span>. Similarly, the release operation on <span class="in">`y`</span> in <span class="in">`t2`</span> synchonizes with <span class="in">`acquire`</span> operation in  thread <span class="in">`t4`</span>. However, writes to <span class="in">`x`</span> and <span class="in">`y`</span> happen in different threads. </span>
-<span id="cb15-381"><a href="#cb15-381"></a></span>
-<span id="cb15-382"><a href="#cb15-382"></a>So, <span class="in">`t3`</span> may find <span class="in">`x = true`</span> and <span class="in">`y=false`</span>. At the same time <span class="in">`t4`</span> may find <span class="in">`y=true`</span> and <span class="in">`x=false`</span>. Different threads have different views of the memory.</span>
-<span id="cb15-383"><a href="#cb15-383"></a></span>
-<span id="cb15-384"><a href="#cb15-384"></a><span class="fu">## Relaxed Memory Ordering</span></span>
-<span id="cb15-385"><a href="#cb15-385"></a></span>
-<span id="cb15-386"><a href="#cb15-386"></a>Operations on atomic types performed with relaxed ordering don't participate in *syhcronizes-with* relationships. The modification order of each variable is the only thing shared between threads that are using <span class="in">`memory_order_relaxed`</span>. </span>
-<span id="cb15-387"><a href="#cb15-387"></a></span>
-<span id="cb15-388"><a href="#cb15-388"></a><span class="fu">## References {.appendix}</span></span>
-<span id="cb15-389"><a href="#cb15-389"></a></span>
-<span id="cb15-390"><a href="#cb15-390"></a><span class="ss">- </span>*[The memory model in C++ - Rainier Grimm](https://www.youtube.com/watch?v=e0DsVqZLMzU&amp;t=2312s), Meeting C++ 2016.*</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb16" data-shortcodes="false"><pre class="sourceCode numberSource markdown number-lines code-with-copy"><code class="sourceCode markdown"><span id="cb16-1"><a href="#cb16-1"></a><span class="co">---</span></span>
+<span id="cb16-2"><a href="#cb16-2"></a><span class="an">title:</span><span class="co"> "C++ Atomics"</span></span>
+<span id="cb16-3"><a href="#cb16-3"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
+<span id="cb16-4"><a href="#cb16-4"></a><span class="an">date:</span><span class="co"> "2025-03-08"</span></span>
+<span id="cb16-5"><a href="#cb16-5"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
+<span id="cb16-6"><a href="#cb16-6"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
+<span id="cb16-7"><a href="#cb16-7"></a><span class="an">toc:</span><span class="co"> true</span></span>
+<span id="cb16-8"><a href="#cb16-8"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
+<span id="cb16-9"><a href="#cb16-9"></a><span class="co">---</span></span>
+<span id="cb16-10"><a href="#cb16-10"></a></span>
+<span id="cb16-11"><a href="#cb16-11"></a><span class="fu">## Introduction</span></span>
+<span id="cb16-12"><a href="#cb16-12"></a></span>
+<span id="cb16-13"><a href="#cb16-13"></a>Atomic operations are indivisible. Consider, for instance a shared variable <span class="in">`counter`</span> that is initialized to <span class="in">`0`</span>. Consider the assembly instructions corresponding to the increment operation <span class="in">`count++`</span>.</span>
+<span id="cb16-14"><a href="#cb16-14"></a></span>
+<span id="cb16-15"><a href="#cb16-15"></a><span class="in">```cpp</span></span>
+<span id="cb16-16"><a href="#cb16-16"></a><span class="dt">int</span> counter <span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
+<span id="cb16-17"><a href="#cb16-17"></a></span>
+<span id="cb16-18"><a href="#cb16-18"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb16-19"><a href="#cb16-19"></a>    counter<span class="op">++;</span></span>
+<span id="cb16-20"><a href="#cb16-20"></a></span>
+<span id="cb16-21"><a href="#cb16-21"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb16-22"><a href="#cb16-22"></a><span class="op">}</span></span>
+<span id="cb16-23"><a href="#cb16-23"></a><span class="in">```</span></span>
+<span id="cb16-24"><a href="#cb16-24"></a><span class="co">[</span><span class="ot">Play on Compiler Explorer</span><span class="co">](https://godbolt.org/z/cjhYK3hv9)</span></span>
+<span id="cb16-25"><a href="#cb16-25"></a></span>
+<span id="cb16-26"><a href="#cb16-26"></a>Look at the assembler code generated by the compiler and the instructions the CPU executes.</span>
+<span id="cb16-27"><a href="#cb16-27"></a></span>
+<span id="cb16-28"><a href="#cb16-28"></a><span class="in">```fasm</span></span>
+<span id="cb16-29"><a href="#cb16-29"></a><span class="in">counter:</span></span>
+<span id="cb16-30"><a href="#cb16-30"></a><span class="in">        .zero   4</span></span>
+<span id="cb16-31"><a href="#cb16-31"></a><span class="in">main:</span></span>
+<span id="cb16-32"><a href="#cb16-32"></a><span class="in">        push    rbp</span></span>
+<span id="cb16-33"><a href="#cb16-33"></a><span class="in">        mov     rbp, rsp</span></span>
+<span id="cb16-34"><a href="#cb16-34"></a><span class="in">        mov     eax, DWORD PTR counter[rip]</span></span>
+<span id="cb16-35"><a href="#cb16-35"></a><span class="in">        add     eax, 1</span></span>
+<span id="cb16-36"><a href="#cb16-36"></a><span class="in">        mov     DWORD PTR counter[rip], eax</span></span>
+<span id="cb16-37"><a href="#cb16-37"></a><span class="in">        mov     eax, 0</span></span>
+<span id="cb16-38"><a href="#cb16-38"></a><span class="in">        pop     rbp</span></span>
+<span id="cb16-39"><a href="#cb16-39"></a><span class="in">        ret</span></span>
+<span id="cb16-40"><a href="#cb16-40"></a><span class="in">```</span></span>
+<span id="cb16-41"><a href="#cb16-41"></a></span>
+<span id="cb16-42"><a href="#cb16-42"></a>The code increments a global counter. The statement on line <span class="in">`6`</span>, copies the value stored in the <span class="in">`counter`</span> to the <span class="in">`eax`</span> register, line <span class="in">`7`</span> adds <span class="in">`1`</span> to the value stored in <span class="in">`eax`</span>, and finally line <span class="in">`8`</span> copies back the contents of the <span class="in">`eax`</span> register to the <span class="in">`counter`</span> variable. So, a thread could execute line <span class="in">`6`</span> and then be scheduled out, and another thread execute all threee instructions after that. When the first thread finishes increment the result, the counter will be increment just once and thus the result will incorrect. </span>
+<span id="cb16-43"><a href="#cb16-43"></a></span>
+<span id="cb16-44"><a href="#cb16-44"></a>The following code does the same: it increments a global counter. This time, though, we use an atomic type and operations. </span>
+<span id="cb16-45"><a href="#cb16-45"></a></span>
+<span id="cb16-46"><a href="#cb16-46"></a><span class="in">```cpp</span></span>
+<span id="cb16-47"><a href="#cb16-47"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb16-48"><a href="#cb16-48"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> counter <span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
+<span id="cb16-49"><a href="#cb16-49"></a></span>
+<span id="cb16-50"><a href="#cb16-50"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb16-51"><a href="#cb16-51"></a>    counter<span class="op">++;</span></span>
+<span id="cb16-52"><a href="#cb16-52"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb16-53"><a href="#cb16-53"></a><span class="op">}</span></span>
+<span id="cb16-54"><a href="#cb16-54"></a><span class="in">```</span></span>
+<span id="cb16-55"><a href="#cb16-55"></a><span class="co">[</span><span class="ot">Play on Compiler Explorer</span><span class="co">](https://godbolt.org/z/rs9Wrzz3M)</span></span>
+<span id="cb16-56"><a href="#cb16-56"></a></span>
+<span id="cb16-57"><a href="#cb16-57"></a>I will explain the <span class="in">`std::atomic&lt;int&gt;`</span> type and the atomic increment operation later. The generated assembly code is the following:</span>
+<span id="cb16-58"><a href="#cb16-58"></a></span>
+<span id="cb16-59"><a href="#cb16-59"></a><span class="in">```fasm</span></span>
+<span id="cb16-60"><a href="#cb16-60"></a><span class="in">lock add        DWORD PTR counter[rip], 1</span></span>
+<span id="cb16-61"><a href="#cb16-61"></a><span class="in">```</span></span>
+<span id="cb16-62"><a href="#cb16-62"></a></span>
+<span id="cb16-63"><a href="#cb16-63"></a>Just one instruction has been generated to add <span class="in">`1`</span> to the value stored in the <span class="in">`counter`</span> variable. The lock prefix here means that the following instruction (in this case <span class="in">`add`</span>) is going to be executed atomically. Hence, a thread cannot be interrupted in the middle of incrementing the counter. </span>
+<span id="cb16-64"><a href="#cb16-64"></a></span>
+<span id="cb16-65"><a href="#cb16-65"></a>Atomic operations allow threads to read, modify and write indivisibly and can also be used as synchronization primitives. Atomic operations must be provided by the CPU (as in the <span class="in">`lock add`</span> instruction).</span>
+<span id="cb16-66"><a href="#cb16-66"></a></span>
+<span id="cb16-67"><a href="#cb16-67"></a><span class="fu">## Non-Blocking Data-Structures</span></span>
+<span id="cb16-68"><a href="#cb16-68"></a></span>
+<span id="cb16-69"><a href="#cb16-69"></a>Data-structures synchronized with locks are called **blocking data-structures** because threads are blocked (by the operating system), waiting until the locks become available. </span>
+<span id="cb16-70"><a href="#cb16-70"></a></span>
+<span id="cb16-71"><a href="#cb16-71"></a>Data-structures that don't use locks are called **non-blocking data structures**. Most (but not all) of them are lock-free.</span>
+<span id="cb16-72"><a href="#cb16-72"></a></span>
+<span id="cb16-73"><a href="#cb16-73"></a>A data-structure or algorithm is considered lock-free if each synchronized action completes in a finite number of steps, not allowing indefinite waiting for a condition to become true or false.</span>
+<span id="cb16-74"><a href="#cb16-74"></a></span>
+<span id="cb16-75"><a href="#cb16-75"></a>The types of lock-free data structures are the following:</span>
+<span id="cb16-76"><a href="#cb16-76"></a></span>
+<span id="cb16-77"><a href="#cb16-77"></a><span class="ss">- </span>**Obstruction-free**: A thread will complete its operation in a bounded number of steps if all other threads are suspended. </span>
+<span id="cb16-78"><a href="#cb16-78"></a></span>
+<span id="cb16-79"><a href="#cb16-79"></a><span class="ss">- </span>**Lock-free**: Atleast one thread will complete its operation in a bounded number of steps while multiple threads are working on the data-structure.</span>
+<span id="cb16-80"><a href="#cb16-80"></a></span>
+<span id="cb16-81"><a href="#cb16-81"></a><span class="ss">- </span>**Wait-free**: All threads will complete their operations in a bounded number of steps while multiple threads are working on the data-structure.</span>
+<span id="cb16-82"><a href="#cb16-82"></a></span>
+<span id="cb16-83"><a href="#cb16-83"></a><span class="fu">## Memory Access </span></span>
+<span id="cb16-84"><a href="#cb16-84"></a></span>
+<span id="cb16-85"><a href="#cb16-85"></a>Memory order refers to the order in which memory(that is, the variables in a program) are accessed. Memory can be either read or write(load and store). But, what is the actual order in which the variables of a program are accessed? For the following code, there are $3$ points of view: the written code order, the compiler-generated instructions order, and finally, the order in which the instructions are executed by the CPU. These $3$ orderings can all be the same or (more likely) different. </span>
+<span id="cb16-86"><a href="#cb16-86"></a></span>
+<span id="cb16-87"><a href="#cb16-87"></a>The first and obvious ordering is the one in the code. </span>
+<span id="cb16-88"><a href="#cb16-88"></a></span>
+<span id="cb16-89"><a href="#cb16-89"></a><span class="in">```cpp</span></span>
+<span id="cb16-90"><a href="#cb16-90"></a><span class="dt">void</span> func_1<span class="op">(</span><span class="dt">int</span><span class="op">&amp;</span> a<span class="op">,</span> <span class="dt">int</span><span class="op">&amp;</span> b<span class="op">){</span></span>
+<span id="cb16-91"><a href="#cb16-91"></a>    a <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb16-92"><a href="#cb16-92"></a>    b <span class="op">+=</span> <span class="dv">10</span><span class="op">;</span></span>
+<span id="cb16-93"><a href="#cb16-93"></a>    a <span class="op">+=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb16-94"><a href="#cb16-94"></a><span class="op">}</span></span>
+<span id="cb16-95"><a href="#cb16-95"></a><span class="in">```</span></span>
+<span id="cb16-96"><a href="#cb16-96"></a></span>
+<span id="cb16-97"><a href="#cb16-97"></a>The <span class="in">`func_1`</span> function first adds $1$ to the variable <span class="in">`a`</span>, then adds $10$ to the variable <span class="in">`b`</span> and finally adds $2$ to the variable <span class="in">`a`</span>. This is our intention and the order in which we define the statements to be executed. </span>
+<span id="cb16-98"><a href="#cb16-98"></a></span>
+<span id="cb16-99"><a href="#cb16-99"></a>When compiling the code to assembly, the compiler may change the order of the statements to make the generate code more efficient provided the outcome of the code execution is unchanged. For example, with the preceding code, the compiler could either do the two additions with variable <span class="in">`a`</span> first and then the addition with variable <span class="in">`b`</span>, or it could simply add <span class="in">`3`</span> to <span class="in">`a`</span> and <span class="in">`10`</span> to <span class="in">`b`</span>. </span>
+<span id="cb16-100"><a href="#cb16-100"></a></span>
+<span id="cb16-101"><a href="#cb16-101"></a><span class="in">```fasm</span></span>
+<span id="cb16-102"><a href="#cb16-102"></a><span class="in">func_1(int&amp;, int&amp;):</span></span>
+<span id="cb16-103"><a href="#cb16-103"></a><span class="in">        add     DWORD PTR [rdi], 1</span></span>
+<span id="cb16-104"><a href="#cb16-104"></a><span class="in">        add     DWORD PTR [rsi], 10</span></span>
+<span id="cb16-105"><a href="#cb16-105"></a><span class="in">        add     DWORD PTR [rdi], 2</span></span>
+<span id="cb16-106"><a href="#cb16-106"></a><span class="in">        ret</span></span>
+<span id="cb16-107"><a href="#cb16-107"></a><span class="in">```</span></span>
+<span id="cb16-108"><a href="#cb16-108"></a></span>
+<span id="cb16-109"><a href="#cb16-109"></a>If we define <span class="in">`func_2`</span> as:</span>
+<span id="cb16-110"><a href="#cb16-110"></a></span>
+<span id="cb16-111"><a href="#cb16-111"></a><span class="in">```cpp</span></span>
+<span id="cb16-112"><a href="#cb16-112"></a><span class="dt">void</span> func_2<span class="op">(</span><span class="dt">int</span><span class="op">&amp;</span> a<span class="op">,</span> <span class="dt">int</span><span class="op">&amp;</span> b<span class="op">){</span></span>
+<span id="cb16-113"><a href="#cb16-113"></a>    a <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb16-114"><a href="#cb16-114"></a>    a <span class="op">+=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb16-115"><a href="#cb16-115"></a>    b <span class="op">+=</span> <span class="dv">10</span><span class="op">;</span></span>
+<span id="cb16-116"><a href="#cb16-116"></a><span class="op">}</span></span>
+<span id="cb16-117"><a href="#cb16-117"></a><span class="in">```</span></span>
+<span id="cb16-118"><a href="#cb16-118"></a></span>
+<span id="cb16-119"><a href="#cb16-119"></a>the compiler generates:</span>
+<span id="cb16-120"><a href="#cb16-120"></a></span>
+<span id="cb16-121"><a href="#cb16-121"></a><span class="in">```cpp</span></span>
+<span id="cb16-122"><a href="#cb16-122"></a>func_2<span class="op">(</span><span class="dt">int</span><span class="op">&amp;,</span> <span class="dt">int</span><span class="op">&amp;):</span></span>
+<span id="cb16-123"><a href="#cb16-123"></a>        add     DWORD PTR <span class="op">[</span>rdi<span class="op">],</span> <span class="dv">3</span></span>
+<span id="cb16-124"><a href="#cb16-124"></a>        add     DWORD PTR <span class="op">[</span>rsi<span class="op">],</span> <span class="dv">10</span></span>
+<span id="cb16-125"><a href="#cb16-125"></a>        ret</span>
+<span id="cb16-126"><a href="#cb16-126"></a><span class="in">```</span></span>
+<span id="cb16-127"><a href="#cb16-127"></a>In this case, the CPU could execute the instructions out of order, as there is no dependency among the operations.</span>
+<span id="cb16-128"><a href="#cb16-128"></a></span>
+<span id="cb16-129"><a href="#cb16-129"></a>Consider <span class="in">`func_3(int&amp;, int&amp;)`</span> defined as:</span>
+<span id="cb16-130"><a href="#cb16-130"></a></span>
+<span id="cb16-131"><a href="#cb16-131"></a><span class="in">```cpp</span></span>
+<span id="cb16-132"><a href="#cb16-132"></a><span class="dt">void</span> func_3<span class="op">(</span><span class="dt">int</span><span class="op">&amp;</span> a<span class="op">,</span> <span class="dt">int</span> <span class="op">&amp;</span>b<span class="op">){</span></span>
+<span id="cb16-133"><a href="#cb16-133"></a>    a <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb16-134"><a href="#cb16-134"></a>    b <span class="op">+=</span> <span class="dv">10</span> <span class="op">+</span> a<span class="op">;</span></span>
+<span id="cb16-135"><a href="#cb16-135"></a>    a <span class="op">+=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb16-136"><a href="#cb16-136"></a><span class="op">}</span></span>
+<span id="cb16-137"><a href="#cb16-137"></a><span class="in">```</span></span>
+<span id="cb16-138"><a href="#cb16-138"></a></span>
+<span id="cb16-139"><a href="#cb16-139"></a>In this case, the operation on <span class="in">`b`</span> depends on the previous operation on <span class="in">`a`</span>, so the compiler cannot reorder the statements, and the generated code will be like the code we write (same order of operations).</span>
+<span id="cb16-140"><a href="#cb16-140"></a></span>
+<span id="cb16-141"><a href="#cb16-141"></a><span class="in">```fasm</span></span>
+<span id="cb16-142"><a href="#cb16-142"></a><span class="in">func_3(int&amp;, int&amp;):</span></span>
+<span id="cb16-143"><a href="#cb16-143"></a><span class="in">        mov     eax, DWORD PTR [rdi]</span></span>
+<span id="cb16-144"><a href="#cb16-144"></a><span class="in">        lea     edx, [rax+1]</span></span>
+<span id="cb16-145"><a href="#cb16-145"></a><span class="in">        add     eax, 11</span></span>
+<span id="cb16-146"><a href="#cb16-146"></a><span class="in">        mov     DWORD PTR [rdi], edx</span></span>
+<span id="cb16-147"><a href="#cb16-147"></a><span class="in">        add     DWORD PTR [rsi], eax</span></span>
+<span id="cb16-148"><a href="#cb16-148"></a><span class="in">        add     DWORD PTR [rdi], 2</span></span>
+<span id="cb16-149"><a href="#cb16-149"></a><span class="in">        ret</span></span>
+<span id="cb16-150"><a href="#cb16-150"></a><span class="in">```</span></span>
+<span id="cb16-151"><a href="#cb16-151"></a></span>
+<span id="cb16-152"><a href="#cb16-152"></a>To conclude, the source code order, the compiler generated object-code order and the actual exection order on a multi-core CPU will differ.</span>
+<span id="cb16-153"><a href="#cb16-153"></a></span>
+<span id="cb16-154"><a href="#cb16-154"></a><span class="fu">## Modification Order</span></span>
+<span id="cb16-155"><a href="#cb16-155"></a></span>
+<span id="cb16-156"><a href="#cb16-156"></a>Any entity with a type <span class="in">`T`</span> that has a lifetime and occupies storage in memory is an object. Every object in a C++ program has a modification order, consisting of all writes to that object from all the threads in the program, starting with the object's initialization. In multi-threaded code, the modification order may vary between runs, but in a given execution of the program, all threads must agree on the order.</span>
+<span id="cb16-157"><a href="#cb16-157"></a></span>
+<span id="cb16-158"><a href="#cb16-158"></a>If distinct threads see distinct sequences of values for a single variable, we have a data-race and UB.</span>
+<span id="cb16-159"><a href="#cb16-159"></a></span>
+<span id="cb16-160"><a href="#cb16-160"></a>Certain kinds of speculative execution aren't permitted. Once a thread has seen a particular entry in the modification order, subsequent reads from the same thread must return later values and subsequent writes to that object must occur later in the modification order. A read of an object that follows a write to that object in the same thread must either return the same value or another value that occurs later in the modification order. Although all threads must agree on the modification orders of each individual object, they may not necessarily agree on the relative ordering of operations on separate objects.</span>
+<span id="cb16-161"><a href="#cb16-161"></a></span>
+<span id="cb16-162"><a href="#cb16-162"></a><span class="fu">## Memory Model</span></span>
+<span id="cb16-163"><a href="#cb16-163"></a></span>
+<span id="cb16-164"><a href="#cb16-164"></a>Typically, each core in a multi-core processor has dedicated store buffers, its own L3 cache. A pair of cores often share the L2 cache. All cores share the L1 cache and the global main memory. So, the below picture is a more accurate mental model of a modern microprocessor. </span>
+<span id="cb16-165"><a href="#cb16-165"></a></span>
+<span id="cb16-166"><a href="#cb16-166"></a><span class="al">![Memory Model](multicore_processor.png)</span>{width="700px" height="500px" fig-align="center"}</span>
+<span id="cb16-167"><a href="#cb16-167"></a></span>
+<span id="cb16-168"><a href="#cb16-168"></a>Consider 2 globally declared atomic flags <span class="in">`flag1`</span> and <span class="in">`flag2`</span>. Assume that <span class="in">`thread_1`</span> executes on processor-1 and <span class="in">`thread_2`</span> executes on processor-2 and all reads and writes are atomic.</span>
+<span id="cb16-169"><a href="#cb16-169"></a></span>
+<span id="cb16-170"><a href="#cb16-170"></a>Essentially, <span class="in">`thread_1`</span> declares its intent to enter a critical section by setting <span class="in">`flag1 = 1`</span>. A <span class="in">`flag1.store(1)`</span> operation writes <span class="in">`flag1 = 1`</span> to the store buffer. Concurrently, <span class="in">`thread_2`</span> declares its intent to enter the critical section by setting <span class="in">`flag2 = 1`</span>. A <span class="in">`flag2.store(1)`</span> operation writes <span class="in">`flag2 = 1`</span> the processor's store buffer. </span>
+<span id="cb16-171"><a href="#cb16-171"></a></span>
+<span id="cb16-172"><a href="#cb16-172"></a><span class="in">`thread_1`</span> reads the value of <span class="in">`flag2`</span> from the global main memory, which is <span class="in">`0`</span> (since processor-2's buffer has not been flushed). Hence, the predicate <span class="in">`!flag2`</span> is satisfied and the <span class="in">`thread_1`</span> enters the critical section. Similarly, <span class="in">`thread_2`</span> reads the value of <span class="in">`flag1`</span> from the global main memory, which is also <span class="in">`0`</span> and enters the critical section at the same time. </span>
+<span id="cb16-173"><a href="#cb16-173"></a></span>
+<span id="cb16-174"><a href="#cb16-174"></a>$1$ nanosecond later, the contents of the store buffers on processor-1 and process-2 are flushed to main memory.</span>
+<span id="cb16-175"><a href="#cb16-175"></a></span>
+<span id="cb16-176"><a href="#cb16-176"></a>Thus, we need synchronization and some form of ordering to prevent undefined behavior.</span>
+<span id="cb16-177"><a href="#cb16-177"></a></span>
+<span id="cb16-178"><a href="#cb16-178"></a><span class="fu">### Sequential consistency</span></span>
+<span id="cb16-179"><a href="#cb16-179"></a></span>
+<span id="cb16-180"><a href="#cb16-180"></a><span class="in">`std::memory_order_seq_cst`</span> has two implications. The operations of a program(thread) will always be executed in source code order.</span>
+<span id="cb16-181"><a href="#cb16-181"></a></span>
+<span id="cb16-182"><a href="#cb16-182"></a>In a given execution, there is a single global ordering of all operations tagged <span class="in">`memory_order_seq`</span>, and all threads observe the same global order.</span>
+<span id="cb16-183"><a href="#cb16-183"></a></span>
+<span id="cb16-184"><a href="#cb16-184"></a><span class="in">```cpp</span></span>
+<span id="cb16-185"><a href="#cb16-185"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb16-186"><a href="#cb16-186"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb16-187"><a href="#cb16-187"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb16-188"><a href="#cb16-188"></a></span>
+<span id="cb16-189"><a href="#cb16-189"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> x <span class="op">=</span> ATOMIC_INT_LOCK_FREE<span class="op">;</span></span>
+<span id="cb16-190"><a href="#cb16-190"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> y <span class="op">=</span> ATOMIC_INT_LOCK_FREE<span class="op">;</span></span>
+<span id="cb16-191"><a href="#cb16-191"></a></span>
+<span id="cb16-192"><a href="#cb16-192"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-193"><a href="#cb16-193"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span></span>
+<span id="cb16-194"><a href="#cb16-194"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
+<span id="cb16-195"><a href="#cb16-195"></a>            x<span class="op">.</span>store<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
+<span id="cb16-196"><a href="#cb16-196"></a>            <span class="dt">int</span> result1 <span class="op">=</span> y<span class="op">.</span>load<span class="op">();</span></span>
+<span id="cb16-197"><a href="#cb16-197"></a>        <span class="op">}</span></span>
+<span id="cb16-198"><a href="#cb16-198"></a>    <span class="op">);</span></span>
+<span id="cb16-199"><a href="#cb16-199"></a></span>
+<span id="cb16-200"><a href="#cb16-200"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span></span>
+<span id="cb16-201"><a href="#cb16-201"></a>        <span class="op">[&amp;]()</span> <span class="op">{</span></span>
+<span id="cb16-202"><a href="#cb16-202"></a>            y<span class="op">.</span>store<span class="op">(</span><span class="dv">17</span><span class="op">);</span></span>
+<span id="cb16-203"><a href="#cb16-203"></a>            <span class="dt">int</span> result2 <span class="op">=</span> x<span class="op">.</span>load<span class="op">();</span></span>
+<span id="cb16-204"><a href="#cb16-204"></a>        <span class="op">}</span></span>
+<span id="cb16-205"><a href="#cb16-205"></a>    <span class="op">);</span></span>
+<span id="cb16-206"><a href="#cb16-206"></a><span class="op">}</span></span>
+<span id="cb16-207"><a href="#cb16-207"></a><span class="in">```</span></span>
+<span id="cb16-208"><a href="#cb16-208"></a></span>
+<span id="cb16-209"><a href="#cb16-209"></a>Sequential ordering is also the default memory ordering. </span>
+<span id="cb16-210"><a href="#cb16-210"></a></span>
+<span id="cb16-211"><a href="#cb16-211"></a><span class="in">`x.store(42)`</span> will always be performed before <span class="in">`y.load()`</span>. <span class="in">`y.store(17)`</span> will always be performed before <span class="in">`x.load()`</span>. That is the guarantee of the sequential consistency. And each thread sees operations of the other thread in the same order. This respects our intuition. </span>
+<span id="cb16-212"><a href="#cb16-212"></a></span>
+<span id="cb16-213"><a href="#cb16-213"></a>How many ways exist to perform these 4 operations? Extremely easy! There are 6 possibilities.</span>
+<span id="cb16-214"><a href="#cb16-214"></a></span>
+<span id="cb16-215"><a href="#cb16-215"></a><span class="al">![Sequential Memory Order](sequential_memory_order.png)</span>{fig-align="center"}</span>
+<span id="cb16-216"><a href="#cb16-216"></a></span>
+<span id="cb16-217"><a href="#cb16-217"></a>To further elaborate, consider the below snippet:</span>
+<span id="cb16-218"><a href="#cb16-218"></a></span>
+<span id="cb16-219"><a href="#cb16-219"></a><span class="in">```cpp</span></span>
+<span id="cb16-220"><a href="#cb16-220"></a><span class="co">// Ref: Asynchronous programming with C++</span></span>
+<span id="cb16-221"><a href="#cb16-221"></a><span class="co">// Javier Reguera Salgado</span></span>
+<span id="cb16-222"><a href="#cb16-222"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb16-223"><a href="#cb16-223"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb16-224"><a href="#cb16-224"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb16-225"><a href="#cb16-225"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb16-226"><a href="#cb16-226"></a></span>
+<span id="cb16-227"><a href="#cb16-227"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> x<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
+<span id="cb16-228"><a href="#cb16-228"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> y<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
+<span id="cb16-229"><a href="#cb16-229"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> z<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
+<span id="cb16-230"><a href="#cb16-230"></a></span>
+<span id="cb16-231"><a href="#cb16-231"></a><span class="dt">void</span> write_x<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-232"><a href="#cb16-232"></a>    x<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_seq_cst<span class="op">);</span></span>
+<span id="cb16-233"><a href="#cb16-233"></a><span class="op">}</span></span>
+<span id="cb16-234"><a href="#cb16-234"></a></span>
+<span id="cb16-235"><a href="#cb16-235"></a><span class="dt">void</span> write_y<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-236"><a href="#cb16-236"></a>    y<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_seq_cst<span class="op">);</span></span>
+<span id="cb16-237"><a href="#cb16-237"></a><span class="op">}</span></span>
+<span id="cb16-238"><a href="#cb16-238"></a></span>
+<span id="cb16-239"><a href="#cb16-239"></a><span class="dt">void</span> read_x_then_y<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-240"><a href="#cb16-240"></a>    <span class="cf">while</span> <span class="op">(!</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_seq_cst<span class="op">));</span></span>
+<span id="cb16-241"><a href="#cb16-241"></a></span>
+<span id="cb16-242"><a href="#cb16-242"></a>    <span class="cf">if</span> <span class="op">(</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_seq_cst<span class="op">))</span></span>
+<span id="cb16-243"><a href="#cb16-243"></a>        <span class="op">++</span>z<span class="op">;</span></span>
+<span id="cb16-244"><a href="#cb16-244"></a><span class="op">}</span></span>
+<span id="cb16-245"><a href="#cb16-245"></a></span>
+<span id="cb16-246"><a href="#cb16-246"></a><span class="dt">void</span> read_y_then_x<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-247"><a href="#cb16-247"></a>    <span class="cf">while</span> <span class="op">(!</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_seq_cst<span class="op">));</span></span>
+<span id="cb16-248"><a href="#cb16-248"></a></span>
+<span id="cb16-249"><a href="#cb16-249"></a>    <span class="cf">if</span> <span class="op">(</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_seq_cst<span class="op">))</span></span>
+<span id="cb16-250"><a href="#cb16-250"></a>        <span class="op">++</span>z<span class="op">;</span></span>
+<span id="cb16-251"><a href="#cb16-251"></a><span class="op">}</span></span>
+<span id="cb16-252"><a href="#cb16-252"></a></span>
+<span id="cb16-253"><a href="#cb16-253"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-254"><a href="#cb16-254"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span>write_x<span class="op">);</span></span>
+<span id="cb16-255"><a href="#cb16-255"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span>write_y<span class="op">);</span></span>
+<span id="cb16-256"><a href="#cb16-256"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t3<span class="op">(</span>read_x_then_y<span class="op">);</span></span>
+<span id="cb16-257"><a href="#cb16-257"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t4<span class="op">(</span>read_y_then_x<span class="op">);</span></span>
+<span id="cb16-258"><a href="#cb16-258"></a></span>
+<span id="cb16-259"><a href="#cb16-259"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-260"><a href="#cb16-260"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-261"><a href="#cb16-261"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-262"><a href="#cb16-262"></a>    t4<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-263"><a href="#cb16-263"></a></span>
+<span id="cb16-264"><a href="#cb16-264"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"x = "</span> <span class="op">&lt;&lt;</span> x<span class="op">;</span></span>
+<span id="cb16-265"><a href="#cb16-265"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"y = "</span> <span class="op">&lt;&lt;</span> y<span class="op">;</span></span>
+<span id="cb16-266"><a href="#cb16-266"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"z = "</span> <span class="op">&lt;&lt;</span> z<span class="op">;</span></span>
+<span id="cb16-267"><a href="#cb16-267"></a><span class="op">}</span></span>
+<span id="cb16-268"><a href="#cb16-268"></a><span class="in">```</span></span>
+<span id="cb16-269"><a href="#cb16-269"></a>Under no circumstances, the value of <span class="in">`z`</span> will be equal to <span class="in">`0`</span>. Either the <span class="in">`write_x`</span> goes before <span class="in">`write_y`</span> or <span class="in">`write_y`</span> goes before <span class="in">`write_x`</span>. All threads observe the same global order of events.</span>
+<span id="cb16-270"><a href="#cb16-270"></a></span>
+<span id="cb16-271"><a href="#cb16-271"></a><span class="fu">## Non-sequential memory ordering</span></span>
+<span id="cb16-272"><a href="#cb16-272"></a></span>
+<span id="cb16-273"><a href="#cb16-273"></a>On the opposite end of the spectrum is relaxed ordering. *In the absence of other ordering constraints, the only requirement is that threads agree on the modification order of each variable*. Operations on distinct variables can appear in different orders on different threads.</span>
+<span id="cb16-274"><a href="#cb16-274"></a></span>
+<span id="cb16-275"><a href="#cb16-275"></a><span class="in">```cpp</span></span>
+<span id="cb16-276"><a href="#cb16-276"></a><span class="co">// Ref: Concurrency in Action, Anthony Williams</span></span>
+<span id="cb16-277"><a href="#cb16-277"></a><span class="pp">#include</span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb16-278"><a href="#cb16-278"></a><span class="pp">#include</span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb16-279"><a href="#cb16-279"></a><span class="pp">#include</span><span class="im">&lt;assert.h&gt;</span></span>
+<span id="cb16-280"><a href="#cb16-280"></a></span>
+<span id="cb16-281"><a href="#cb16-281"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> x<span class="op">,</span>y<span class="op">;</span></span>
+<span id="cb16-282"><a href="#cb16-282"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> z<span class="op">;</span></span>
+<span id="cb16-283"><a href="#cb16-283"></a></span>
+<span id="cb16-284"><a href="#cb16-284"></a><span class="dt">void</span> write_x_then_y<span class="op">()</span></span>
+<span id="cb16-285"><a href="#cb16-285"></a><span class="op">{</span></span>
+<span id="cb16-286"><a href="#cb16-286"></a>    x<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_relaxed<span class="op">);</span>   <span class="co">// [1]</span></span>
+<span id="cb16-287"><a href="#cb16-287"></a>    y<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_relaxed<span class="op">);</span>   <span class="co">// [2]</span></span>
+<span id="cb16-288"><a href="#cb16-288"></a><span class="op">}</span></span>
+<span id="cb16-289"><a href="#cb16-289"></a></span>
+<span id="cb16-290"><a href="#cb16-290"></a><span class="dt">void</span> read_y_then_x<span class="op">()</span></span>
+<span id="cb16-291"><a href="#cb16-291"></a><span class="op">{</span></span>
+<span id="cb16-292"><a href="#cb16-292"></a>    <span class="cf">while</span><span class="op">(!</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">));</span>  <span class="co">//[3]</span></span>
+<span id="cb16-293"><a href="#cb16-293"></a>    <span class="cf">if</span><span class="op">(</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">))</span></span>
+<span id="cb16-294"><a href="#cb16-294"></a>        <span class="op">++</span>z<span class="op">;</span>                                    <span class="co">//[4]</span></span>
+<span id="cb16-295"><a href="#cb16-295"></a><span class="op">}</span></span>
+<span id="cb16-296"><a href="#cb16-296"></a></span>
+<span id="cb16-297"><a href="#cb16-297"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb16-298"><a href="#cb16-298"></a>    x <span class="op">=</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb16-299"><a href="#cb16-299"></a>    y <span class="op">=</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb16-300"><a href="#cb16-300"></a>    z <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb16-301"><a href="#cb16-301"></a>    <span class="bu">std::</span>thread<span class="op"> </span>a<span class="op">(</span>write_x_then_y<span class="op">);</span></span>
+<span id="cb16-302"><a href="#cb16-302"></a>    <span class="bu">std::</span>thread<span class="op"> </span>b<span class="op">(</span>read_y_then_x<span class="op">);</span></span>
+<span id="cb16-303"><a href="#cb16-303"></a>    a<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-304"><a href="#cb16-304"></a>    b<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-305"><a href="#cb16-305"></a>    <span class="ot">assert</span><span class="op">(</span>z<span class="op">.</span>load<span class="op">()!=</span><span class="dv">0</span><span class="op">);</span>                        <span class="co">//[5]</span></span>
+<span id="cb16-306"><a href="#cb16-306"></a><span class="op">}</span></span>
+<span id="cb16-307"><a href="#cb16-307"></a><span class="in">```</span></span>
+<span id="cb16-308"><a href="#cb16-308"></a></span>
+<span id="cb16-309"><a href="#cb16-309"></a>This time the <span class="in">`assert`</span> at <span class="in">`[5]`</span> can be false, because the <span class="in">`x.load()`</span> can read <span class="in">`false`</span>, even though the load of <span class="in">`y`</span> reads <span class="in">`true`</span> and the <span class="in">`store`</span> of <span class="in">`x`</span> happens before the <span class="in">`store`</span> of <span class="in">`y`</span>. </span>
+<span id="cb16-310"><a href="#cb16-310"></a></span>
+<span id="cb16-311"><a href="#cb16-311"></a><span class="in">`x`</span> and <span class="in">`y`</span> are different variables so there are no ordering guarantees relating to the visbility of variables. Relaxed operations on different variables can be freely reordered (provided they obey any happens before relationships in the same thread). They don't introduce synchronizes-with relationships.</span>
+<span id="cb16-312"><a href="#cb16-312"></a></span>
+<span id="cb16-313"><a href="#cb16-313"></a>Even though there is a happens-before relationship between the stores and between the loads, the <span class="in">`store`</span> of <span class="in">`y`</span> does not synchronize with the <span class="in">`load`</span> of <span class="in">`y`</span>. So, the reader thread can see the stores out of order.</span>
+<span id="cb16-314"><a href="#cb16-314"></a></span>
+<span id="cb16-315"><a href="#cb16-315"></a>There's another cool example I played around with, from Anthony William's book, <span class="co">[</span><span class="ot">Concurrency in Action</span><span class="co">](https://www.amazon.co.uk/Concurrency-Action-2E-Anthony-Williams/dp/1617294691/ref=sr_1_1?crid=XDM8P8PX83TE&amp;dib=eyJ2IjoiMSJ9.IYYYm5K7-DAC9QatR4JhacRupYhVCqhXKTMwjKypkLH2Ra8XhTokeONnDHFXgYAHeaZ__O2JHJG2xcuQO_NACM56oXNi6J2FDDpUqgGwHfA.UwWhBmhH2n059_YhK2AVjuHzezw0wWzzhfmhcgnOLOY&amp;dib_tag=se&amp;keywords=concurrency+in+action&amp;qid=1745649385&amp;sprefix=Concurrency+in+action%2Caps%2C65&amp;sr=8-1)</span>.</span>
+<span id="cb16-316"><a href="#cb16-316"></a></span>
+<span id="cb16-317"><a href="#cb16-317"></a></span>
+<span id="cb16-318"><a href="#cb16-318"></a></span>
+<span id="cb16-319"><a href="#cb16-319"></a><span class="fu">## Acquire-Release Semantic</span></span>
+<span id="cb16-320"><a href="#cb16-320"></a></span>
+<span id="cb16-321"><a href="#cb16-321"></a>A <span class="in">`release`</span> operation on an atomic synchronizes with an <span class="in">`acquire`</span> operation on the same atomic and additionally establishes an ordering constraint. So, we have a synchronizationation and a partial ordering in the acquire-release semantic.</span>
+<span id="cb16-322"><a href="#cb16-322"></a></span>
+<span id="cb16-323"><a href="#cb16-323"></a>So, what are typically <span class="in">`acquire`</span> and <span class="in">`release`</span> operations?</span>
+<span id="cb16-324"><a href="#cb16-324"></a></span>
+<span id="cb16-325"><a href="#cb16-325"></a><span class="ss">- </span>Any write operation such as <span class="in">`store`</span> or <span class="in">`clear`</span> must specify <span class="in">`std::memory_order_release`</span>. This flushes the core cache and publishes all updates before the release operation. So, any writes intra-thread prior to the release operation are visible to other susbcriber threads.</span>
+<span id="cb16-326"><a href="#cb16-326"></a></span>
+<span id="cb16-327"><a href="#cb16-327"></a><span class="ss">- </span>Any read operation such as <span class="in">`load`</span> or <span class="in">`test_and_set`</span> must specify <span class="in">`std::memory_order_acquire`</span>. This captures any all updates upto this point.  </span>
+<span id="cb16-328"><a href="#cb16-328"></a></span>
+<span id="cb16-329"><a href="#cb16-329"></a>Additionally,</span>
+<span id="cb16-330"><a href="#cb16-330"></a></span>
+<span id="cb16-331"><a href="#cb16-331"></a><span class="ss">- </span>Read and write operations cannot be moved to before an acquire operation. </span>
+<span id="cb16-332"><a href="#cb16-332"></a><span class="ss">- </span>Read and write operations cannot be moved to after a release operation.</span>
+<span id="cb16-333"><a href="#cb16-333"></a></span>
+<span id="cb16-334"><a href="#cb16-334"></a><span class="in">```cpp</span></span>
+<span id="cb16-335"><a href="#cb16-335"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb16-336"><a href="#cb16-336"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb16-337"><a href="#cb16-337"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb16-338"><a href="#cb16-338"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb16-339"><a href="#cb16-339"></a></span>
+<span id="cb16-340"><a href="#cb16-340"></a><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> mySharedItems<span class="op">;</span></span>
+<span id="cb16-341"><a href="#cb16-341"></a><span class="bu">std::</span>atomic_bool<span class="op"> </span>dataProduced<span class="op">;</span></span>
+<span id="cb16-342"><a href="#cb16-342"></a><span class="bu">std::</span>atomic_bool<span class="op"> </span>dataReadyToBeConsumed<span class="op">;</span></span>
+<span id="cb16-343"><a href="#cb16-343"></a></span>
+<span id="cb16-344"><a href="#cb16-344"></a><span class="dt">void</span> dataProducer<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-345"><a href="#cb16-345"></a>    mySharedItems <span class="op">=</span> <span class="op">{</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">3</span> <span class="op">};</span></span>
+<span id="cb16-346"><a href="#cb16-346"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"dataProduced.store(true)"</span><span class="op">;</span></span>
+<span id="cb16-347"><a href="#cb16-347"></a>    dataProduced<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb16-348"><a href="#cb16-348"></a><span class="op">}</span></span>
+<span id="cb16-349"><a href="#cb16-349"></a></span>
+<span id="cb16-350"><a href="#cb16-350"></a><span class="dt">void</span> deliveryBoy<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-351"><a href="#cb16-351"></a>    <span class="cf">while</span> <span class="op">(!</span>dataProduced<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
+<span id="cb16-352"><a href="#cb16-352"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"After dataProduced.load()"</span><span class="op">;</span></span>
+<span id="cb16-353"><a href="#cb16-353"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"Before dataReadyToBeConsumed.store(true)"</span><span class="op">;</span></span>
+<span id="cb16-354"><a href="#cb16-354"></a>    dataReadyToBeConsumed<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb16-355"><a href="#cb16-355"></a><span class="op">}</span></span>
+<span id="cb16-356"><a href="#cb16-356"></a></span>
+<span id="cb16-357"><a href="#cb16-357"></a><span class="dt">void</span> dataConsumer<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-358"><a href="#cb16-358"></a>    <span class="cf">while</span> <span class="op">(!</span>dataReadyToBeConsumed<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
+<span id="cb16-359"><a href="#cb16-359"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"After dataReadyToBeConsumed.load()"</span><span class="op">;</span></span>
+<span id="cb16-360"><a href="#cb16-360"></a>    mySharedItems<span class="op">[</span><span class="dv">1</span><span class="op">]</span> <span class="op">=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb16-361"><a href="#cb16-361"></a><span class="op">}</span></span>
+<span id="cb16-362"><a href="#cb16-362"></a></span>
+<span id="cb16-363"><a href="#cb16-363"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-364"><a href="#cb16-364"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span>dataProducer<span class="op">);</span></span>
+<span id="cb16-365"><a href="#cb16-365"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span>deliveryBoy<span class="op">);</span></span>
+<span id="cb16-366"><a href="#cb16-366"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t3<span class="op">(</span>dataConsumer<span class="op">);</span></span>
+<span id="cb16-367"><a href="#cb16-367"></a></span>
+<span id="cb16-368"><a href="#cb16-368"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-369"><a href="#cb16-369"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-370"><a href="#cb16-370"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-371"><a href="#cb16-371"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb16-372"><a href="#cb16-372"></a><span class="op">}</span></span>
+<span id="cb16-373"><a href="#cb16-373"></a><span class="in">```</span></span>
+<span id="cb16-374"><a href="#cb16-374"></a></span>
+<span id="cb16-375"><a href="#cb16-375"></a>The <span class="in">`store`</span> on line 13 synchronizes with the <span class="in">`load`</span> on line 17. That's the acquire-release semantic. It also establishes a partial ordering. Read or write operations prior to the <span class="in">`release`</span> on line 13 cannot be moved to after line 13. And <span class="in">`release`</span> operation on line 20 cannot be moved before <span class="in">`acquire`</span> operation on line 13.</span>
+<span id="cb16-376"><a href="#cb16-376"></a></span>
+<span id="cb16-377"><a href="#cb16-377"></a>The same for the <span class="in">`deliveryBoy`</span> and <span class="in">`dataConsumer`</span>. </span>
+<span id="cb16-378"><a href="#cb16-378"></a></span>
+<span id="cb16-379"><a href="#cb16-379"></a><span class="al">![Acquire-release semantics](acquire_release_semantics.png)</span>{fig-align="center"}</span>
+<span id="cb16-380"><a href="#cb16-380"></a></span>
+<span id="cb16-381"><a href="#cb16-381"></a>If you think about mutexes, a mutex <span class="in">`lock()`</span> is an acquire-operation. A mutex <span class="in">`unlock()`</span> is a release operation. Things inside the critical region cannot be moved to outside it. An <span class="in">`unlock()`</span> synchronizes with the next <span class="in">`lock()`</span>. Similarly, <span class="in">`wait`</span> and <span class="in">`notify`</span> are acquire and release operations. The starting of a thread and <span class="in">`join`</span> call on a thread are acquire and release operations.</span>
+<span id="cb16-382"><a href="#cb16-382"></a></span>
+<span id="cb16-383"><a href="#cb16-383"></a>Consider the same code as in the previous section for sequential consistency, but in this case, I use acquire-release semantics.</span>
+<span id="cb16-384"><a href="#cb16-384"></a></span>
+<span id="cb16-385"><a href="#cb16-385"></a><span class="in">```cpp</span></span>
+<span id="cb16-386"><a href="#cb16-386"></a><span class="co">// Asynchronous programming with C++</span></span>
+<span id="cb16-387"><a href="#cb16-387"></a><span class="co">// Javier Reguera Salgado</span></span>
+<span id="cb16-388"><a href="#cb16-388"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb16-389"><a href="#cb16-389"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb16-390"><a href="#cb16-390"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb16-391"><a href="#cb16-391"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb16-392"><a href="#cb16-392"></a></span>
+<span id="cb16-393"><a href="#cb16-393"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> x<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
+<span id="cb16-394"><a href="#cb16-394"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">bool</span><span class="op">&gt;</span> y<span class="op">{</span> <span class="kw">false</span> <span class="op">};</span></span>
+<span id="cb16-395"><a href="#cb16-395"></a><span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> z<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
+<span id="cb16-396"><a href="#cb16-396"></a></span>
+<span id="cb16-397"><a href="#cb16-397"></a><span class="dt">void</span> write_x<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-398"><a href="#cb16-398"></a>    x<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb16-399"><a href="#cb16-399"></a><span class="op">}</span></span>
+<span id="cb16-400"><a href="#cb16-400"></a></span>
+<span id="cb16-401"><a href="#cb16-401"></a><span class="dt">void</span> write_y<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-402"><a href="#cb16-402"></a>    y<span class="op">.</span>store<span class="op">(</span><span class="kw">true</span><span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb16-403"><a href="#cb16-403"></a><span class="op">}</span></span>
+<span id="cb16-404"><a href="#cb16-404"></a></span>
+<span id="cb16-405"><a href="#cb16-405"></a><span class="dt">void</span> read_x_then_y<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-406"><a href="#cb16-406"></a>    <span class="cf">while</span> <span class="op">(!</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
+<span id="cb16-407"><a href="#cb16-407"></a></span>
+<span id="cb16-408"><a href="#cb16-408"></a>    <span class="cf">if</span> <span class="op">(</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
+<span id="cb16-409"><a href="#cb16-409"></a>        <span class="op">++</span>z<span class="op">;</span></span>
+<span id="cb16-410"><a href="#cb16-410"></a><span class="op">}</span></span>
+<span id="cb16-411"><a href="#cb16-411"></a></span>
+<span id="cb16-412"><a href="#cb16-412"></a><span class="dt">void</span> read_y_then_x<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-413"><a href="#cb16-413"></a>    <span class="cf">while</span> <span class="op">(!</span>y<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">));</span></span>
+<span id="cb16-414"><a href="#cb16-414"></a></span>
+<span id="cb16-415"><a href="#cb16-415"></a>    <span class="cf">if</span> <span class="op">(</span>x<span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
+<span id="cb16-416"><a href="#cb16-416"></a>        <span class="op">++</span>z<span class="op">;</span></span>
+<span id="cb16-417"><a href="#cb16-417"></a><span class="op">}</span></span>
+<span id="cb16-418"><a href="#cb16-418"></a></span>
+<span id="cb16-419"><a href="#cb16-419"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb16-420"><a href="#cb16-420"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t1<span class="op">(</span>write_x<span class="op">);</span></span>
+<span id="cb16-421"><a href="#cb16-421"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t2<span class="op">(</span>write_y<span class="op">);</span></span>
+<span id="cb16-422"><a href="#cb16-422"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t3<span class="op">(</span>read_x_then_y<span class="op">);</span></span>
+<span id="cb16-423"><a href="#cb16-423"></a>    <span class="bu">std::</span>thread<span class="op"> </span>t4<span class="op">(</span>read_y_then_x<span class="op">);</span></span>
+<span id="cb16-424"><a href="#cb16-424"></a></span>
+<span id="cb16-425"><a href="#cb16-425"></a>    t1<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-426"><a href="#cb16-426"></a>    t2<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-427"><a href="#cb16-427"></a>    t3<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-428"><a href="#cb16-428"></a>    t4<span class="op">.</span>join<span class="op">();</span></span>
+<span id="cb16-429"><a href="#cb16-429"></a></span>
+<span id="cb16-430"><a href="#cb16-430"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"x = "</span> <span class="op">&lt;&lt;</span> x<span class="op">;</span></span>
+<span id="cb16-431"><a href="#cb16-431"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"y = "</span> <span class="op">&lt;&lt;</span> y<span class="op">;</span></span>
+<span id="cb16-432"><a href="#cb16-432"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"z = "</span> <span class="op">&lt;&lt;</span> z<span class="op">;</span></span>
+<span id="cb16-433"><a href="#cb16-433"></a><span class="op">}</span></span>
+<span id="cb16-434"><a href="#cb16-434"></a><span class="in">```</span></span>
+<span id="cb16-435"><a href="#cb16-435"></a></span>
+<span id="cb16-436"><a href="#cb16-436"></a>The release operation on <span class="in">`x`</span> in <span class="in">`t1`</span> synchronizes with the acquire operation on <span class="in">`x`</span> in <span class="in">`t3`</span>. Similarly, the release operation on <span class="in">`y`</span> in <span class="in">`t2`</span> synchonizes with <span class="in">`acquire`</span> operation in  thread <span class="in">`t4`</span>. However, writes to <span class="in">`x`</span> and <span class="in">`y`</span> happen in different threads. </span>
+<span id="cb16-437"><a href="#cb16-437"></a></span>
+<span id="cb16-438"><a href="#cb16-438"></a>So, <span class="in">`t3`</span> may find <span class="in">`x = true`</span> and <span class="in">`y=false`</span>. At the same time <span class="in">`t4`</span> may find <span class="in">`y=true`</span> and <span class="in">`x=false`</span>. Different threads have different views of the memory.</span>
+<span id="cb16-439"><a href="#cb16-439"></a></span>
+<span id="cb16-440"><a href="#cb16-440"></a><span class="fu">## Atomic types</span></span>
+<span id="cb16-441"><a href="#cb16-441"></a></span>
+<span id="cb16-442"><a href="#cb16-442"></a></span>
+<span id="cb16-443"><a href="#cb16-443"></a></span>
+<span id="cb16-444"><a href="#cb16-444"></a><span class="fu">## References {.appendix}</span></span>
+<span id="cb16-445"><a href="#cb16-445"></a></span>
+<span id="cb16-446"><a href="#cb16-446"></a><span class="ss">- </span>*[The memory model in C++ - Rainier Grimm](https://www.youtube.com/watch?v=e0DsVqZLMzU&amp;t=2312s), Meeting C++ 2016.*</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 
