@@ -10,15 +10,304 @@ toc-depth: 3
 
 # Introduction
 
-`shared_ptr<T>` is tricky to implement, since it is a wrapper over raw underlying pointer of type `T*` and a reference counter. This post is partly inspired by the fantastic book [C++ Memory Management](https://www.amazon.com/Memory-Management-leaner-memory-management-techniques/dp/1805129805) by *Patrice Roy*. The toy examples in this book are very instructive and I highly reckon you order a copy. 
+`shared_ptr<T>` is tricky to implement, since it is a wrapper over raw underlying pointer of type `T*` and a reference counter. This post is partly inspired by the fantastic book [C++ Memory Management](https://www.amazon.com/Memory-Management-leaner-memory-management-techniques/dp/1805129805) by *Patrice Roy*. The toy examples in this book are very instructive and I highly reckon you order a copy.
 
-The default constructor will define `shared_ptr<T>` to be empty, thus conceptually equivalent to a `nullptr`.
+If you follow the instructions in my [GitHub repo](https://github.com/quasar-chunawala/interview_data_structures), you should be able to build the source and run unit tests against my homegrown version of `shared_ptr<T>`.
 
-The parametrized constructor `shared_ptr<T>(T*)` that takes in the raw pointer as an argument has to be written carefully. This really represents the act of *taking ownership* of the pointee. The next step is to allocate memory for the reference counter. If this allocation fails, the constructor will thrrow. So, if an exception is thrown when allocating the counter, we delete the pointee.
+# Basic functionalities expected out of a `shared_ptr<T>` implementation.
 
-The copy constructor `shared_ptr<T>(const shared_ptr<T>& )` represents *sharing the ownership* of the pointee.
+```cpp
+#include <gtest/gtest.h>
+#include <thread>
+#include <atomic>
+#include "shared_ptr.h"
 
-The move constructor `shared_ptr<T>(shared_ptr<T>&&)` represents a *transfer of ownership* of the pointee.
+TEST(SharedPtrTest, ParametrizedCTorTest)
+{
+    /* Contructor that takes T* */
+    int* raw_ptr = new int(42);
+    dev::shared_ptr<int> p1(raw_ptr);
+    
+    EXPECT_EQ(*p1 == 42,true);
+    EXPECT_EQ(p1.get(), raw_ptr);
+
+    dev::shared_ptr<int> p2 = new int(17);
+    EXPECT_EQ(*p2 == 17,true);
+    EXPECT_EQ(p2.get() != nullptr, true);
+}
+
+TEST(SharedPtrTest, RefCountingTest){
+    int* raw_ptr = new int(42);
+    {
+        dev::shared_ptr ptr1 = raw_ptr;
+        EXPECT_EQ(ptr1.use_count() == 1, true);
+        {
+            dev::shared_ptr ptr2 = ptr1;
+            EXPECT_EQ(ptr1.use_count() == 2, true);
+            {
+                dev::shared_ptr ptr3 = ptr2;
+                EXPECT_EQ(ptr1.use_count() == 3, true);
+            }
+            EXPECT_EQ(ptr1.use_count() == 2, true);
+        }
+        EXPECT_EQ(ptr1.use_count() == 1, true);
+    }
+}
+
+TEST(SharedPtrTest, MultithreadedConstructionAndDestructionTest){
+    using namespace std::chrono_literals;
+    dev::shared_ptr ptr = new int(42);
+    std::atomic<bool> go{false};
+    EXPECT_EQ(ptr.use_count() == 1, true);
+
+    std::thread t1([&]{
+        dev::shared_ptr<int> ptr1 = ptr;
+        while(!go.load());
+        std::cout << "\nRef Count = " << ptr.use_count();
+        std::this_thread::sleep_for(1s);
+    });
+
+    std::thread t2([&]{
+        dev::shared_ptr<int> ptr2 = ptr;
+        while(!go.load());
+        std::cout << "\nRef Count = " << ptr.use_count();
+        std::this_thread::sleep_for(1s);
+    });
+
+    std::this_thread::sleep_for(1s);
+    go.store(true);
+    t1.join();
+    t2.join();
+    EXPECT_EQ(ptr.use_count() == 1, true);
+}
+
+TEST(SharedPtrTest, CopyConstructorTest){
+    /* Copy constructor */
+    int* raw_ptr = new int(42);
+    dev::shared_ptr<int> p1(raw_ptr);
+
+    dev::shared_ptr<int> p2 = p1;
+    EXPECT_EQ(*p2 == 42, true);
+    EXPECT_EQ(p2.get(), raw_ptr);
+}
+
+TEST(SharedPtrTest, MoveConstructorTest){
+    /* Move constructor*/
+    dev::shared_ptr<int> p1(new int(28));
+    dev::shared_ptr<int> p2 = std::move(p1);
+    dev::shared_ptr<int> p3 = std::move(p2);
+    EXPECT_EQ(*p3 == 28, true);
+}
+
+TEST(SharedPtrTest, CopyAssignmentTest){
+    /* Copy Assignment */
+    dev::shared_ptr<double> p1(new double(2.71828));
+    dev::shared_ptr<double> p2(new double(3.14159));
+
+    EXPECT_EQ(*p2 == 3.14159, true);
+    p2 = p1;
+    EXPECT_EQ(p2.get() == p1.get(), true );
+    EXPECT_EQ(*p2 == *p1, true);
+}
+
+TEST(SharedPtrTest, MoveAssignmentTest){
+    /* Move Assignment */
+    dev::shared_ptr<int> p1(new int(42));
+    dev::shared_ptr<int> p2(new int(28));
+    p2 = std::move(p1);
+    EXPECT_EQ(p2.get() != nullptr, true);
+    EXPECT_EQ(*p2 == 42, true);
+}
+
+/* reset() :  replaces the managed object */
+TEST(SharedPtrTest, ResetSharedPtr) {
+    dev::shared_ptr<int> ptr(new int(10));
+    ptr.reset(new int(20));
+    EXPECT_EQ(ptr != nullptr, true);
+    EXPECT_EQ(*ptr == 20, true);
+
+    // Self-reset test
+    ptr.reset(ptr.get());
+}
+
+/* swap() : swap the managed objects */
+TEST(SharedPtrTest, SwapTest){
+    int* first = new int(42);
+    int* second = new int(17);
+
+    dev::shared_ptr<int> p1(first);
+    dev::shared_ptr<int> p2(second);
+
+    swap(p1, p2);
+
+    EXPECT_EQ(p2.get() == first && p1.get() == second, true);
+    EXPECT_EQ(((*p1) == 17) && ((*p2) == 42), true);
+}
+
+// Observers
+/* get() : Returns a pointer to the managed object or nullptr*/
+TEST(SharedPtrTest, GetTest){
+    double* resource = new double(0.50);
+    dev::shared_ptr p(resource);
+
+    EXPECT_EQ(p.get() == resource, true);
+    EXPECT_EQ(*(p.get()) == 0.50, true);
+}
+
+// Pointer-like functions
+TEST(SharedPtrTest, IndirectionOperatorTest) {
+    /* indirection operator* to dereference pointer to managed object,
+       member access operator -> to call member function*/
+    struct X {
+        int _n;
+
+        X() = default;
+        X(int n) : _n{n} {}
+        ~X() = default;
+        int foo() { return _n; }
+    };
+
+    dev::shared_ptr<X> ptr(new X(10));
+    EXPECT_EQ((*ptr)._n == 10, true);
+    EXPECT_EQ(ptr->foo() == 10, true);
+}
+```
+
+# Modern C++ Implementation.
+
+```cpp
+#include<format>
+#include<atomic>
+
+namespace dev{
+    template<typename T>
+    class shared_ptr{
+        public:
+
+        /* Default constructor*/
+        shared_ptr() = default;
+
+        /* Parametrized constructor : Takes ownership of the pointee */
+        shared_ptr(T* ptr) 
+        : m_raw_underlying_ptr{ptr}
+        {
+            try{
+                m_ref_count_ptr = new std::atomic<unsigned long long>(1LL);
+            }catch(...){
+                delete ptr;
+                throw;
+            }
+        }
+
+        /* Copy constructor : Implements shared co-ownership of the pointee semantics */
+        shared_ptr(const shared_ptr& other)
+        : m_raw_underlying_ptr{other.m_raw_underlying_ptr}
+        , m_ref_count_ptr{other.m_ref_count_ptr}
+        {
+            if(m_ref_count_ptr)
+                ++(*m_ref_count_ptr);   //Atomic pre-increment
+        }
+
+        /* Move constructor : Represents the transfer of ownership */
+        shared_ptr(shared_ptr&& other)
+        : m_raw_underlying_ptr{ std::exchange(other.m_raw_underlying_ptr, nullptr)}
+        , m_ref_count_ptr{ std::exchange(other.m_ref_count_ptr, nullptr)}
+        {}
+
+        /* Swap : Swap two shared_ptr objects member by member */
+        void swap(shared_ptr& other){
+            using std::swap;
+            std::swap(m_raw_underlying_ptr, other.m_raw_underlying_ptr);
+            std::swap(m_ref_count_ptr, other.m_ref_count_ptr);
+        }
+
+        friend void swap(shared_ptr& lhs, shared_ptr& rhs){
+            lhs.swap(rhs);
+        }
+
+        /* Copy assignment operator : Release the current held resource
+           and share the ownership of the resource specified by args */
+        shared_ptr& operator=(const shared_ptr& other){
+            shared_ptr{ other }.swap(*this);
+            return *this;
+        }
+
+        /* Move assignment : Release the currently held resource
+           and transfer the ownership of resource specified in args */
+        shared_ptr& operator=(shared_ptr&& other){
+            shared_ptr{ std::move(other) }.swap(*this);
+            return *this;
+        }
+
+        ~shared_ptr(){
+            if(m_ref_count_ptr){
+                unsigned long long expected = m_ref_count_ptr->load();
+                
+                // Decrement the reference count
+                while(expected > 0 
+                    && !m_ref_count_ptr->compare_exchange_weak(expected, expected - 1));
+
+                auto desired = expected - 1;
+                if(desired == 0){   // We are the last user of *m_ref_underlying_ptr
+                    delete m_raw_underlying_ptr;
+                    delete m_ref_count_ptr;
+                }
+            }
+        }
+
+        /* get() - Returns the stored pointer */
+        T* get(){
+            return m_raw_underlying_ptr;
+        }
+
+        const T* get() const{
+            return m_raw_underlying_ptr;
+        }
+
+        T& operator*() noexcept {
+            return *m_raw_underlying_ptr;
+        }
+
+        const T& operator*() const noexcept{
+            return *m_raw_underlying_ptr;
+        }
+
+        T* operator->() noexcept{
+            return m_raw_underlying_ptr;
+        }
+        
+        const T* operator->() const noexcept{
+            return m_raw_underlying_ptr;
+        }
+
+        /* Comparison operator*/
+        bool operator==(const shared_ptr& other) const noexcept{
+            return (m_raw_underlying_ptr == other.m_raw_underlying_ptr);
+        }
+
+        bool operator!=(const shared_ptr& other) const noexcept{
+            return !(*this == other);
+        }
+
+        unsigned long long use_count() const noexcept{
+            if(m_ref_count_ptr)
+                return m_ref_count_ptr->load();
+            else
+                return 0;
+        }
+        
+        /* Replaces the managed resource */
+        void reset(T* ptr){
+            if(m_raw_underlying_ptr != ptr)
+                shared_ptr(ptr).swap(*this);
+        }
+
+        private:
+        T* m_raw_underlying_ptr{nullptr};
+        std::atomic<unsigned long long>* m_ref_count_ptr{nullptr};
+    };
+}
+```
 
 
 
