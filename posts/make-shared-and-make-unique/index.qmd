@@ -1,0 +1,79 @@
+---
+title: "A note on `make_shared<T>(Args&&...)` and `make_unique<T>(Args&&...)`"
+author: "Quasar"
+date: "2024-10-26"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# A note on `make_unique<T>(Args&&...)`
+
+Since C++14, `unique_ptr<T>` has been accpompanied by the factory function `make_unique<T>(Args&&...)` that perfectly forwards its arguments to the constructor of `T`. Why standard library implementors provide a separate factory function `make_unique<T>(Args&&...)`, when the constructor `unique_ptr<T>(T*)` does the same job? 
+
+`std::unique_ptr<T>` models ownership of the resource semantics. Calling `unique_ptr<T>(T*)` makes the client code responsible for supplying a pre-existing `T` object whose address is passed as an argument. 
+
+Consider the following code snippet:
+
+```cpp
+#include<iostream>
+#include<memory>
+
+template<typename T>
+class pair_allocator{
+    private:
+    std::unique_ptr<T> p1;
+    std::unique_ptr<T> p2;
+
+    public:
+    pair_allocator() = default;
+    pair_allocator(T x, T y)
+    : p1(new T(x))
+    , p2(new T(y))
+    {}
+
+    ~pair_allocator() = default;
+};
+```
+
+We know that, the member subobjects of a C++ object are constructed in the order of their declaration. So, `p1` is constructed before `p2`. Also, the allocation and construction operation `new T(x)` precedes the construction of `p1`. `new T(y)` precedes the construction of `p2`. 
+
+Denoting $A:=$ `new T(x)`, $B:=$ Construction of `p1`, $C:=$ `new T(y)`, $D:=$ Construction of `p2`. 
+
+If we see the rules laid out above, we could have the operations in the following order: $A \rightarrow B \rightarrow C \rightarrow D$, but we could also have $A \rightarrow C \rightarrow B \rightarrow D$ or $C \rightarrow A \rightarrow B \rightarrow D$, in which case the two calls to `new T(...)` occur prior to the construction of `p1` and `p2`. If this happens, then an exception thrown by the second call to `new T(...)` would lead to a memory leak, because we fail to release the memory allocated by the first call to `new T()`.
+
+The factory function `make_unique<T>(Args&&...)` is a wrapper over the operations `new T()` and `unique__ptr<T>()`, and so if the second call to `new T()` fails, the object `p1` goes out of scope, its destructor `~unique_ptr<T>()` in turn calls operator `delete T`, destroying the `T` object and releasing the memory held by `T`.
+
+If we modify the above snippet as:
+
+```cpp
+#include<iostream>
+#include<memory>
+
+template<typename T>
+class pair_allocator{
+    private:
+    std::unique_ptr<T> p1;
+    std::unique_ptr<T> p2;
+
+    public:
+    pair_allocator() = default;
+    pair_allocator(T x, T y)
+    : p1(make_unique<T>(x))
+    , p2(make_unique<T>(y))
+    {}
+
+    ~pair_allocator() = default;
+};
+```
+
+In this instance, the client code will never find itself with *floating results from calls to `new`*. `make_unique<T>` is therefore a security feature that prevents client code being exposed to ownerless resources.
+
+# A note on `make_shared<T>(Args&&...)`
+
+In modern C++, it is recommended practice to replace this:
+
+```cpp
+
+```
