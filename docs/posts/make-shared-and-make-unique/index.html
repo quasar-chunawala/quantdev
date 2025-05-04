@@ -196,6 +196,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
    
   <ul>
   <li><a href="#a-note-on-make_uniquetargs..." id="toc-a-note-on-make_uniquetargs..." class="nav-link active" data-scroll-target="#a-note-on-make_uniquetargs...">A note on <code>make_unique&lt;T&gt;(Args&amp;&amp;...)</code></a></li>
+  <li><a href="#a-note-on-make_sharedtargs..." id="toc-a-note-on-make_sharedtargs..." class="nav-link" data-scroll-target="#a-note-on-make_sharedtargs...">A note on <code>make_shared&lt;T&gt;(Args&amp;&amp;...)</code></a></li>
   </ul>
 </nav>
     </div>
@@ -252,6 +253,35 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-17"><a href="#cb2-17"></a>    <span class="op">~</span>pair_allocator<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
 <span id="cb2-18"><a href="#cb2-18"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>In this instance, the client code will never find itself with <em>floating results from calls to <code>new</code></em>. <code>make_unique&lt;T&gt;</code> is therefore a security feature that prevents client code being exposed to ownerless resources.</p>
+</section>
+<section id="a-note-on-make_sharedtargs..." class="level1">
+<h1>A note on <code>make_shared&lt;T&gt;(Args&amp;&amp;...)</code></h1>
+<p>In modern C++, it is recommended practice to replace this:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p<span class="op">(</span><span class="kw">new</span> T<span class="op">{</span> <span class="co">/* ... constructor args ... */</span> <span class="op">});</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>with</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p <span class="op">=</span> <span class="bu">std::</span>make_shared<span class="op">&lt;</span>T<span class="op">&gt;(</span> <span class="co">/* ... constructor args ... */</span><span class="op">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>One might wonder, why this is recommended practice? To understand why the factory function <code>make_shared&lt;T&gt;(/* ... ctor args ...*/)</code> is preferred to the constructor <code>shared_ptr&lt;T&gt;( new T( /*... ctor args ...*/) )</code>, we need to realize that with the <code>shared_ptr&lt;T&gt;(T*)</code> constructor, the client code is reponsible for the construction of the <code>T</code> object (pointee), and is then given to <code>shared_ptr&lt;T&gt;</code> under construction, which takes ownership of the pointer and allocates a shared counter <strong>separately</strong>. So, there are two separate allocations (the <code>T</code> object and the counter), probably on different cache lines.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The cache memory usually keeps 64-byte lines of memory. A cache line is also the smallest fundamental unit of data transfer between the CPU cache and the main memory. On most architectures, a cache line is 64 bytes or 128 bytes.</p>
+</div>
+</div>
+<p>Now, if we go through <code>make_shared&lt;T&gt;()</code>, this factory function is responsible for allocating both the <code>T</code> object and the counter, perfectly forwarding the constructor arguments received by the function to the constructor of <code>T</code>. Since, the same function performs both allocations, it can fuse them into a single allocation of a memory block that contains both the <code>T</code> object and the shared counter, <em>putting them both on the same cache line</em>. This can lead to enhanced performance characteristics, if a single thread tries to read from both the pointers (<code>T*</code> and the counter) in a short span of time.</p>
+<p>In most libraries, the factory function <code>make_shared&lt;T&gt;</code> is implemented as:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Args<span class="op">&gt;</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a><span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> make_shared<span class="op">(</span>Args<span class="op">&amp;&amp;...</span> args<span class="op">){</span></span>
+<span id="cb5-3"><a href="#cb5-3"></a>    <span class="cf">return</span> <span class="bu">std::</span>shared_ptr<span class="op">(</span></span>
+<span id="cb5-4"><a href="#cb5-4"></a>        <span class="kw">new</span> T<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>T<span class="op">&gt;(</span>args<span class="op">)...)</span></span>
+<span id="cb5-5"><a href="#cb5-5"></a>    <span class="op">);</span></span>
+<span id="cb5-6"><a href="#cb5-6"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 <!-- -->
@@ -545,77 +575,110 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 </script>
 <script src="https://giscus.app/client.js" data-repo="quasar-chunawala/quantdev" data-repo-id="R_kgDOL2t5-A" data-category="General" data-category-id="DIC_kwDOL2t5-M4ClndQ" data-mapping="title" data-reactions-enabled="1" data-emit-metadata="0" data-input-position="top" data-theme="light" data-lang="en" crossorigin="anonymous" async="">
 </script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
-<div class="sourceCode" id="cb3" data-shortcodes="false"><pre class="sourceCode numberSource markdown number-lines code-with-copy"><code class="sourceCode markdown"><span id="cb3-1"><a href="#cb3-1"></a><span class="co">---</span></span>
-<span id="cb3-2"><a href="#cb3-2"></a><span class="an">title:</span><span class="co"> "A note on `make_shared&lt;T&gt;(Args&amp;&amp;...)` and `make_unique&lt;T&gt;(Args&amp;&amp;...)`"</span></span>
-<span id="cb3-3"><a href="#cb3-3"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
-<span id="cb3-4"><a href="#cb3-4"></a><span class="an">date:</span><span class="co"> "2024-10-26"</span></span>
-<span id="cb3-5"><a href="#cb3-5"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
-<span id="cb3-6"><a href="#cb3-6"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
-<span id="cb3-7"><a href="#cb3-7"></a><span class="an">toc:</span><span class="co"> true</span></span>
-<span id="cb3-8"><a href="#cb3-8"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
-<span id="cb3-9"><a href="#cb3-9"></a><span class="co">---</span></span>
-<span id="cb3-10"><a href="#cb3-10"></a></span>
-<span id="cb3-11"><a href="#cb3-11"></a><span class="fu"># A note on `make_unique&lt;T&gt;(Args&amp;&amp;...)`</span></span>
-<span id="cb3-12"><a href="#cb3-12"></a></span>
-<span id="cb3-13"><a href="#cb3-13"></a>Since C++14, <span class="in">`unique_ptr&lt;T&gt;`</span> has been accpompanied by the factory function <span class="in">`make_unique&lt;T&gt;(Args&amp;&amp;...)`</span> that perfectly forwards its arguments to the constructor of <span class="in">`T`</span>. Why standard library implementors provide a separate factory function <span class="in">`make_unique&lt;T&gt;(Args&amp;&amp;...)`</span>, when the constructor <span class="in">`unique_ptr&lt;T&gt;(T*)`</span> does the same job? </span>
-<span id="cb3-14"><a href="#cb3-14"></a></span>
-<span id="cb3-15"><a href="#cb3-15"></a><span class="in">`std::unique_ptr&lt;T&gt;`</span> models ownership of the resource semantics. Calling <span class="in">`unique_ptr&lt;T&gt;(T*)`</span> makes the client code responsible for supplying a pre-existing <span class="in">`T`</span> object whose address is passed as an argument. </span>
-<span id="cb3-16"><a href="#cb3-16"></a></span>
-<span id="cb3-17"><a href="#cb3-17"></a>Consider the following code snippet:</span>
-<span id="cb3-18"><a href="#cb3-18"></a></span>
-<span id="cb3-19"><a href="#cb3-19"></a><span class="in">```cpp</span></span>
-<span id="cb3-20"><a href="#cb3-20"></a><span class="pp">#include</span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb3-21"><a href="#cb3-21"></a><span class="pp">#include</span><span class="im">&lt;memory&gt;</span></span>
-<span id="cb3-22"><a href="#cb3-22"></a></span>
-<span id="cb3-23"><a href="#cb3-23"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb3-24"><a href="#cb3-24"></a><span class="kw">class</span> pair_allocator<span class="op">{</span></span>
-<span id="cb3-25"><a href="#cb3-25"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb3-26"><a href="#cb3-26"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p1<span class="op">;</span></span>
-<span id="cb3-27"><a href="#cb3-27"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p2<span class="op">;</span></span>
-<span id="cb3-28"><a href="#cb3-28"></a></span>
-<span id="cb3-29"><a href="#cb3-29"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb3-30"><a href="#cb3-30"></a>    pair_allocator<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
-<span id="cb3-31"><a href="#cb3-31"></a>    pair_allocator<span class="op">(</span>T x<span class="op">,</span> T y<span class="op">)</span></span>
-<span id="cb3-32"><a href="#cb3-32"></a>    <span class="op">:</span> p1<span class="op">(</span><span class="kw">new</span> T<span class="op">(</span>x<span class="op">))</span></span>
-<span id="cb3-33"><a href="#cb3-33"></a>    <span class="op">,</span> p2<span class="op">(</span><span class="kw">new</span> T<span class="op">(</span>y<span class="op">))</span></span>
-<span id="cb3-34"><a href="#cb3-34"></a>    <span class="op">{}</span></span>
-<span id="cb3-35"><a href="#cb3-35"></a></span>
-<span id="cb3-36"><a href="#cb3-36"></a>    <span class="op">~</span>pair_allocator<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
-<span id="cb3-37"><a href="#cb3-37"></a><span class="op">};</span></span>
-<span id="cb3-38"><a href="#cb3-38"></a><span class="in">```</span></span>
-<span id="cb3-39"><a href="#cb3-39"></a></span>
-<span id="cb3-40"><a href="#cb3-40"></a>We know that, the member subobjects of a C++ object are constructed in the order of their declaration. So, <span class="in">`p1`</span> is constructed before <span class="in">`p2`</span>. Also, the allocation and construction operation <span class="in">`new T(x)`</span> precedes the construction of <span class="in">`p1`</span>. <span class="in">`new T(y)`</span> precedes the construction of <span class="in">`p2`</span>. </span>
-<span id="cb3-41"><a href="#cb3-41"></a></span>
-<span id="cb3-42"><a href="#cb3-42"></a>Denoting $A:=$ <span class="in">`new T(x)`</span>, $B:=$ Construction of <span class="in">`p1`</span>, $C:=$ <span class="in">`new T(y)`</span>, $D:=$ Construction of <span class="in">`p2`</span>. </span>
-<span id="cb3-43"><a href="#cb3-43"></a></span>
-<span id="cb3-44"><a href="#cb3-44"></a>If we see the rules laid out above, we could have the operations in the following order: $A \rightarrow B \rightarrow C \rightarrow D$, but we could also have $A \rightarrow C \rightarrow B \rightarrow D$ or $C \rightarrow A \rightarrow B \rightarrow D$, in which case the two calls to <span class="in">`new T(...)`</span> occur prior to the construction of <span class="in">`p1`</span> and <span class="in">`p2`</span>. If this happens, then an exception thrown by the second call to <span class="in">`new T(...)`</span> would lead to a memory leak, because we fail to release the memory allocated by the first call to <span class="in">`new T()`</span>.</span>
-<span id="cb3-45"><a href="#cb3-45"></a></span>
-<span id="cb3-46"><a href="#cb3-46"></a>The factory function <span class="in">`make_unique&lt;T&gt;(Args&amp;&amp;...)`</span> is a wrapper over the operations <span class="in">`new T()`</span> and <span class="in">`unique__ptr&lt;T&gt;()`</span>, and so if the second call to <span class="in">`new T()`</span> fails, the object <span class="in">`p1`</span> goes out of scope, its destructor <span class="in">`~unique_ptr&lt;T&gt;()`</span> in turn calls operator <span class="in">`delete T`</span>, destroying the <span class="in">`T`</span> object and releasing the memory held by <span class="in">`T`</span>.</span>
-<span id="cb3-47"><a href="#cb3-47"></a></span>
-<span id="cb3-48"><a href="#cb3-48"></a>If we modify the above snippet as:</span>
-<span id="cb3-49"><a href="#cb3-49"></a></span>
-<span id="cb3-50"><a href="#cb3-50"></a><span class="in">```cpp</span></span>
-<span id="cb3-51"><a href="#cb3-51"></a><span class="pp">#include</span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb3-52"><a href="#cb3-52"></a><span class="pp">#include</span><span class="im">&lt;memory&gt;</span></span>
-<span id="cb3-53"><a href="#cb3-53"></a></span>
-<span id="cb3-54"><a href="#cb3-54"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb3-55"><a href="#cb3-55"></a><span class="kw">class</span> pair_allocator<span class="op">{</span></span>
-<span id="cb3-56"><a href="#cb3-56"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb3-57"><a href="#cb3-57"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p1<span class="op">;</span></span>
-<span id="cb3-58"><a href="#cb3-58"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p2<span class="op">;</span></span>
-<span id="cb3-59"><a href="#cb3-59"></a></span>
-<span id="cb3-60"><a href="#cb3-60"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb3-61"><a href="#cb3-61"></a>    pair_allocator<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
-<span id="cb3-62"><a href="#cb3-62"></a>    pair_allocator<span class="op">(</span>T x<span class="op">,</span> T y<span class="op">)</span></span>
-<span id="cb3-63"><a href="#cb3-63"></a>    <span class="op">:</span> p1<span class="op">(</span>make_unique<span class="op">&lt;</span>T<span class="op">&gt;(</span>x<span class="op">))</span></span>
-<span id="cb3-64"><a href="#cb3-64"></a>    <span class="op">,</span> p2<span class="op">(</span>make_unique<span class="op">&lt;</span>T<span class="op">&gt;(</span>y<span class="op">))</span></span>
-<span id="cb3-65"><a href="#cb3-65"></a>    <span class="op">{}</span></span>
-<span id="cb3-66"><a href="#cb3-66"></a></span>
-<span id="cb3-67"><a href="#cb3-67"></a>    <span class="op">~</span>pair_allocator<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
-<span id="cb3-68"><a href="#cb3-68"></a><span class="op">};</span></span>
-<span id="cb3-69"><a href="#cb3-69"></a><span class="in">```</span></span>
-<span id="cb3-70"><a href="#cb3-70"></a></span>
-<span id="cb3-71"><a href="#cb3-71"></a>In this instance, the client code will never find itself with *floating results from calls to `new`*. <span class="in">`make_unique&lt;T&gt;`</span> is therefore a security feature that prevents client code being exposed to ownerless resources.</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb6" data-shortcodes="false"><pre class="sourceCode numberSource markdown number-lines code-with-copy"><code class="sourceCode markdown"><span id="cb6-1"><a href="#cb6-1"></a><span class="co">---</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a><span class="an">title:</span><span class="co"> "A note on `make_shared&lt;T&gt;(Args&amp;&amp;...)` and `make_unique&lt;T&gt;(Args&amp;&amp;...)`"</span></span>
+<span id="cb6-3"><a href="#cb6-3"></a><span class="an">author:</span><span class="co"> "Quasar"</span></span>
+<span id="cb6-4"><a href="#cb6-4"></a><span class="an">date:</span><span class="co"> "2024-10-26"</span></span>
+<span id="cb6-5"><a href="#cb6-5"></a><span class="an">categories:</span><span class="co"> [C++]      </span></span>
+<span id="cb6-6"><a href="#cb6-6"></a><span class="an">image:</span><span class="co"> "cpp.jpg"</span></span>
+<span id="cb6-7"><a href="#cb6-7"></a><span class="an">toc:</span><span class="co"> true</span></span>
+<span id="cb6-8"><a href="#cb6-8"></a><span class="an">toc-depth:</span><span class="co"> 3</span></span>
+<span id="cb6-9"><a href="#cb6-9"></a><span class="co">---</span></span>
+<span id="cb6-10"><a href="#cb6-10"></a></span>
+<span id="cb6-11"><a href="#cb6-11"></a><span class="fu"># A note on `make_unique&lt;T&gt;(Args&amp;&amp;...)`</span></span>
+<span id="cb6-12"><a href="#cb6-12"></a></span>
+<span id="cb6-13"><a href="#cb6-13"></a>Since C++14, <span class="in">`unique_ptr&lt;T&gt;`</span> has been accpompanied by the factory function <span class="in">`make_unique&lt;T&gt;(Args&amp;&amp;...)`</span> that perfectly forwards its arguments to the constructor of <span class="in">`T`</span>. Why standard library implementors provide a separate factory function <span class="in">`make_unique&lt;T&gt;(Args&amp;&amp;...)`</span>, when the constructor <span class="in">`unique_ptr&lt;T&gt;(T*)`</span> does the same job? </span>
+<span id="cb6-14"><a href="#cb6-14"></a></span>
+<span id="cb6-15"><a href="#cb6-15"></a><span class="in">`std::unique_ptr&lt;T&gt;`</span> models ownership of the resource semantics. Calling <span class="in">`unique_ptr&lt;T&gt;(T*)`</span> makes the client code responsible for supplying a pre-existing <span class="in">`T`</span> object whose address is passed as an argument. </span>
+<span id="cb6-16"><a href="#cb6-16"></a></span>
+<span id="cb6-17"><a href="#cb6-17"></a>Consider the following code snippet:</span>
+<span id="cb6-18"><a href="#cb6-18"></a></span>
+<span id="cb6-19"><a href="#cb6-19"></a><span class="in">```cpp</span></span>
+<span id="cb6-20"><a href="#cb6-20"></a><span class="pp">#include</span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb6-21"><a href="#cb6-21"></a><span class="pp">#include</span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb6-22"><a href="#cb6-22"></a></span>
+<span id="cb6-23"><a href="#cb6-23"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb6-24"><a href="#cb6-24"></a><span class="kw">class</span> pair_allocator<span class="op">{</span></span>
+<span id="cb6-25"><a href="#cb6-25"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb6-26"><a href="#cb6-26"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p1<span class="op">;</span></span>
+<span id="cb6-27"><a href="#cb6-27"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p2<span class="op">;</span></span>
+<span id="cb6-28"><a href="#cb6-28"></a></span>
+<span id="cb6-29"><a href="#cb6-29"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb6-30"><a href="#cb6-30"></a>    pair_allocator<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb6-31"><a href="#cb6-31"></a>    pair_allocator<span class="op">(</span>T x<span class="op">,</span> T y<span class="op">)</span></span>
+<span id="cb6-32"><a href="#cb6-32"></a>    <span class="op">:</span> p1<span class="op">(</span><span class="kw">new</span> T<span class="op">(</span>x<span class="op">))</span></span>
+<span id="cb6-33"><a href="#cb6-33"></a>    <span class="op">,</span> p2<span class="op">(</span><span class="kw">new</span> T<span class="op">(</span>y<span class="op">))</span></span>
+<span id="cb6-34"><a href="#cb6-34"></a>    <span class="op">{}</span></span>
+<span id="cb6-35"><a href="#cb6-35"></a></span>
+<span id="cb6-36"><a href="#cb6-36"></a>    <span class="op">~</span>pair_allocator<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb6-37"><a href="#cb6-37"></a><span class="op">};</span></span>
+<span id="cb6-38"><a href="#cb6-38"></a><span class="in">```</span></span>
+<span id="cb6-39"><a href="#cb6-39"></a></span>
+<span id="cb6-40"><a href="#cb6-40"></a>We know that, the member subobjects of a C++ object are constructed in the order of their declaration. So, <span class="in">`p1`</span> is constructed before <span class="in">`p2`</span>. Also, the allocation and construction operation <span class="in">`new T(x)`</span> precedes the construction of <span class="in">`p1`</span>. <span class="in">`new T(y)`</span> precedes the construction of <span class="in">`p2`</span>. </span>
+<span id="cb6-41"><a href="#cb6-41"></a></span>
+<span id="cb6-42"><a href="#cb6-42"></a>Denoting $A:=$ <span class="in">`new T(x)`</span>, $B:=$ Construction of <span class="in">`p1`</span>, $C:=$ <span class="in">`new T(y)`</span>, $D:=$ Construction of <span class="in">`p2`</span>. </span>
+<span id="cb6-43"><a href="#cb6-43"></a></span>
+<span id="cb6-44"><a href="#cb6-44"></a>If we see the rules laid out above, we could have the operations in the following order: $A \rightarrow B \rightarrow C \rightarrow D$, but we could also have $A \rightarrow C \rightarrow B \rightarrow D$ or $C \rightarrow A \rightarrow B \rightarrow D$, in which case the two calls to <span class="in">`new T(...)`</span> occur prior to the construction of <span class="in">`p1`</span> and <span class="in">`p2`</span>. If this happens, then an exception thrown by the second call to <span class="in">`new T(...)`</span> would lead to a memory leak, because we fail to release the memory allocated by the first call to <span class="in">`new T()`</span>.</span>
+<span id="cb6-45"><a href="#cb6-45"></a></span>
+<span id="cb6-46"><a href="#cb6-46"></a>The factory function <span class="in">`make_unique&lt;T&gt;(Args&amp;&amp;...)`</span> is a wrapper over the operations <span class="in">`new T()`</span> and <span class="in">`unique__ptr&lt;T&gt;()`</span>, and so if the second call to <span class="in">`new T()`</span> fails, the object <span class="in">`p1`</span> goes out of scope, its destructor <span class="in">`~unique_ptr&lt;T&gt;()`</span> in turn calls operator <span class="in">`delete T`</span>, destroying the <span class="in">`T`</span> object and releasing the memory held by <span class="in">`T`</span>.</span>
+<span id="cb6-47"><a href="#cb6-47"></a></span>
+<span id="cb6-48"><a href="#cb6-48"></a>If we modify the above snippet as:</span>
+<span id="cb6-49"><a href="#cb6-49"></a></span>
+<span id="cb6-50"><a href="#cb6-50"></a><span class="in">```cpp</span></span>
+<span id="cb6-51"><a href="#cb6-51"></a><span class="pp">#include</span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb6-52"><a href="#cb6-52"></a><span class="pp">#include</span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb6-53"><a href="#cb6-53"></a></span>
+<span id="cb6-54"><a href="#cb6-54"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb6-55"><a href="#cb6-55"></a><span class="kw">class</span> pair_allocator<span class="op">{</span></span>
+<span id="cb6-56"><a href="#cb6-56"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb6-57"><a href="#cb6-57"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p1<span class="op">;</span></span>
+<span id="cb6-58"><a href="#cb6-58"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p2<span class="op">;</span></span>
+<span id="cb6-59"><a href="#cb6-59"></a></span>
+<span id="cb6-60"><a href="#cb6-60"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb6-61"><a href="#cb6-61"></a>    pair_allocator<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb6-62"><a href="#cb6-62"></a>    pair_allocator<span class="op">(</span>T x<span class="op">,</span> T y<span class="op">)</span></span>
+<span id="cb6-63"><a href="#cb6-63"></a>    <span class="op">:</span> p1<span class="op">(</span>make_unique<span class="op">&lt;</span>T<span class="op">&gt;(</span>x<span class="op">))</span></span>
+<span id="cb6-64"><a href="#cb6-64"></a>    <span class="op">,</span> p2<span class="op">(</span>make_unique<span class="op">&lt;</span>T<span class="op">&gt;(</span>y<span class="op">))</span></span>
+<span id="cb6-65"><a href="#cb6-65"></a>    <span class="op">{}</span></span>
+<span id="cb6-66"><a href="#cb6-66"></a></span>
+<span id="cb6-67"><a href="#cb6-67"></a>    <span class="op">~</span>pair_allocator<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb6-68"><a href="#cb6-68"></a><span class="op">};</span></span>
+<span id="cb6-69"><a href="#cb6-69"></a><span class="in">```</span></span>
+<span id="cb6-70"><a href="#cb6-70"></a></span>
+<span id="cb6-71"><a href="#cb6-71"></a>In this instance, the client code will never find itself with *floating results from calls to `new`*. <span class="in">`make_unique&lt;T&gt;`</span> is therefore a security feature that prevents client code being exposed to ownerless resources.</span>
+<span id="cb6-72"><a href="#cb6-72"></a></span>
+<span id="cb6-73"><a href="#cb6-73"></a><span class="fu"># A note on `make_shared&lt;T&gt;(Args&amp;&amp;...)`</span></span>
+<span id="cb6-74"><a href="#cb6-74"></a></span>
+<span id="cb6-75"><a href="#cb6-75"></a>In modern C++, it is recommended practice to replace this:</span>
+<span id="cb6-76"><a href="#cb6-76"></a></span>
+<span id="cb6-77"><a href="#cb6-77"></a><span class="in">```cpp</span></span>
+<span id="cb6-78"><a href="#cb6-78"></a><span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p<span class="op">(</span><span class="kw">new</span> T<span class="op">{</span> <span class="co">/* ... constructor args ... */</span> <span class="op">});</span></span>
+<span id="cb6-79"><a href="#cb6-79"></a><span class="in">```</span></span>
+<span id="cb6-80"><a href="#cb6-80"></a></span>
+<span id="cb6-81"><a href="#cb6-81"></a>with</span>
+<span id="cb6-82"><a href="#cb6-82"></a></span>
+<span id="cb6-83"><a href="#cb6-83"></a><span class="in">```cpp</span></span>
+<span id="cb6-84"><a href="#cb6-84"></a><span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> p <span class="op">=</span> <span class="bu">std::</span>make_shared<span class="op">&lt;</span>T<span class="op">&gt;(</span> <span class="co">/* ... constructor args ... */</span><span class="op">)</span></span>
+<span id="cb6-85"><a href="#cb6-85"></a><span class="in">```</span></span>
+<span id="cb6-86"><a href="#cb6-86"></a></span>
+<span id="cb6-87"><a href="#cb6-87"></a>One might wonder, why this is recommended practice? To understand why the factory function <span class="in">`make_shared&lt;T&gt;(/* ... ctor args ...*/)`</span> is preferred to the constructor <span class="in">`shared_ptr&lt;T&gt;( new T( /*... ctor args ...*/) )`</span>, we need to realize that with the <span class="in">`shared_ptr&lt;T&gt;(T*)`</span> constructor, the client code is reponsible for the construction of the <span class="in">`T`</span> object (pointee), and is then given to <span class="in">`shared_ptr&lt;T&gt;`</span> under construction, which takes ownership of the pointer and allocates a shared counter **separately**. So, there are two separate allocations (the <span class="in">`T`</span> object and the counter), probably on different cache lines.</span>
+<span id="cb6-88"><a href="#cb6-88"></a></span>
+<span id="cb6-89"><a href="#cb6-89"></a>::: {.callout-note}</span>
+<span id="cb6-90"><a href="#cb6-90"></a>The cache memory usually keeps 64-byte lines of memory. A cache line is also the smallest fundamental unit of data transfer between the CPU cache and the main memory. On most architectures, a cache line is 64 bytes or 128 bytes. </span>
+<span id="cb6-91"><a href="#cb6-91"></a>:::</span>
+<span id="cb6-92"><a href="#cb6-92"></a></span>
+<span id="cb6-93"><a href="#cb6-93"></a>Now, if we go through <span class="in">`make_shared&lt;T&gt;()`</span>, this factory function is responsible for allocating both the <span class="in">`T`</span> object and the counter, perfectly forwarding the constructor arguments received by the function to the constructor of <span class="in">`T`</span>. Since, the same function performs both allocations, it can fuse them into a single allocation of a memory block that contains both the <span class="in">`T`</span> object and the shared counter, *putting them both on the same cache line*. This can lead to enhanced performance characteristics, if a single thread tries to read from both the pointers (`T*` and the counter) in a short span of time.</span>
+<span id="cb6-94"><a href="#cb6-94"></a></span>
+<span id="cb6-95"><a href="#cb6-95"></a>In most libraries, the factory function <span class="in">`make_shared&lt;T&gt;`</span> is implemented as:</span>
+<span id="cb6-96"><a href="#cb6-96"></a></span>
+<span id="cb6-97"><a href="#cb6-97"></a><span class="in">```cpp</span></span>
+<span id="cb6-98"><a href="#cb6-98"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Args<span class="op">&gt;</span></span>
+<span id="cb6-99"><a href="#cb6-99"></a><span class="bu">std::</span>shared_ptr<span class="op">&lt;</span>T<span class="op">&gt;</span> make_shared<span class="op">(</span>Args<span class="op">&amp;&amp;...</span> args<span class="op">){</span></span>
+<span id="cb6-100"><a href="#cb6-100"></a>    <span class="cf">return</span> <span class="bu">std::</span>shared_ptr<span class="op">(</span></span>
+<span id="cb6-101"><a href="#cb6-101"></a>        <span class="kw">new</span> T<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>T<span class="op">&gt;(</span>args<span class="op">)...)</span></span>
+<span id="cb6-102"><a href="#cb6-102"></a>    <span class="op">);</span></span>
+<span id="cb6-103"><a href="#cb6-103"></a><span class="op">}</span></span>
+<span id="cb6-104"><a href="#cb6-104"></a><span class="in">```</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 

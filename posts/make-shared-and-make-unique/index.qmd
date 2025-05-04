@@ -86,3 +86,19 @@ std::shared_ptr<T> p = std::make_shared<T>( /* ... constructor args ... */)
 
 One might wonder, why this is recommended practice? To understand why the factory function `make_shared<T>(/* ... ctor args ...*/)` is preferred to the constructor `shared_ptr<T>( new T( /*... ctor args ...*/) )`, we need to realize that with the `shared_ptr<T>(T*)` constructor, the client code is reponsible for the construction of the `T` object (pointee), and is then given to `shared_ptr<T>` under construction, which takes ownership of the pointer and allocates a shared counter **separately**. So, there are two separate allocations (the `T` object and the counter), probably on different cache lines.
 
+::: {.callout-note}
+The cache memory usually keeps 64-byte lines of memory. A cache line is also the smallest fundamental unit of data transfer between the CPU cache and the main memory. On most architectures, a cache line is 64 bytes or 128 bytes. 
+:::
+
+Now, if we go through `make_shared<T>()`, this factory function is responsible for allocating both the `T` object and the counter, perfectly forwarding the constructor arguments received by the function to the constructor of `T`. Since, the same function performs both allocations, it can fuse them into a single allocation of a memory block that contains both the `T` object and the shared counter, *putting them both on the same cache line*. This can lead to enhanced performance characteristics, if a single thread tries to read from both the pointers (`T*` and the counter) in a short span of time.
+
+In most libraries, the factory function `make_shared<T>` is implemented as:
+
+```cpp
+template<typename T, typename... Args>
+std::shared_ptr<T> make_shared(Args&&... args){
+    return std::shared_ptr(
+        new T(std::forward<T>(args)...)
+    );
+}
+```
