@@ -204,9 +204,9 @@ int main(){
 
 ## `std::input_iterator`
 
-`std::input_iterator` concept models the idea of a read-only iterator. Such an iterator, for example, can be used read packets data from a network socket or a disk file.
+`std::input_iterator` concept models the idea of a read-only iterator. Such an iterator, for example, can be used read packets data from a network socket. 
 
-Input iterators are also single-pass, but because they are expected to consume a finite number of values they must be comparable to some sentinel value such as `EOF`, `\0` etc.
+Input iterators are also single-pass, because once you've read a byte of data from a network socket, you can't read it again. They must also be comparable to some sentinel value such as `EOF`, `\0`, to signal the end of data etc.
 
 However, the equality comparison operator `bool operator==(It, Sen)` is only used by the algorithm operating on the container, and therefore it's the responsibility of the algorithm writer to supply an implementation of `bool operator==(It, Sen)`. This definition is not required in the container implementation.
 
@@ -222,23 +222,23 @@ struct SimpleInputIterator {
     using pointer = T*;
     using reference = T&;
 
-    pointer m_file_buffer_ptr;
+    pointer m_socket_fd;
 
     // Default constructor
     SimpleInputIterator() = default;
 
     // Constructor
     SimpleInputIterator(pointer start)
-        : m_file_buffer_ptr{start} {}
+        : m_socket_fd{start} {}
 
     // Dereference operator
     const T& operator*() const {
-        return *m_file_buffer_ptr;
+        return *m_socket_fd;
     }
 
     // Pre-increment
     SimpleInputIterator& operator++() {
-        ++m_file_buffer_ptr;
+        ++m_socket_fd;
         return (*this);
     }
 
@@ -268,3 +268,80 @@ int main(){
 
 `std::incrementable` concept informally means that `i == j` $\implies$ `++i == ++j`. Algorithms on incrementable types are multi-pass algorithms.
 
+You might use an iterator satisfying `std::forward_iterator` concept to traverse through a `std::forward_list` (a singly linked-list).
+
+```cpp
+#include <cstddef>
+#include <iterator>
+#include <concepts>
+
+template <typename T>
+struct list_node {
+    T m_data;
+    list_node* m_next;
+};
+
+template <typename T>
+struct SimpleForwardIterator {
+    using difference_type = std::ptrdiff_t;
+    using value_type = T; // The value type is T, not list_node<T>
+    using pointer = T*;
+    using reference = T&;
+
+    list_node<T>* m_node_ptr;
+
+    // Default constructor
+    SimpleForwardIterator() = default;
+
+    // Constructor
+    SimpleForwardIterator(list_node<T>* start)
+        : m_node_ptr{start} {}
+
+    // Dereference operator
+    reference operator*() const {
+        return m_node_ptr->m_data; // Return the data stored in the node
+    }
+
+    // Pre-increment
+    SimpleForwardIterator& operator++() {
+        m_node_ptr = m_node_ptr->m_next;
+        return *this;
+    }
+
+    // Post-increment
+    SimpleForwardIterator operator++(int) {
+        auto tmp = *this;
+        ++(*this);
+        return tmp;
+    }
+
+    // Equality comparison
+    bool operator==(const SimpleForwardIterator& other) const {
+        return m_node_ptr == other.m_node_ptr;
+    }
+
+    // Inequality comparison
+    bool operator!=(const SimpleForwardIterator& other) const {
+        return !(*this == other);
+    }
+};
+
+static_assert(std::forward_iterator<SimpleForwardIterator<int>>);
+
+int main() {
+    return 0;
+}
+```
+[Compiler Explorer](https://godbolt.org/z/edEr4oedn)
+
+## `std::bidirectional_iterator`
+
+A `std::list` is a doubly linked that supports both traversals in the forward as well as reverse direction. When we want to be able to move forward and backwards across our collection, we must implement an iterator satisfying `std::bidirectional_iterator` concept.
+
+You need to implement pre-increment, post-increment, pre-decrement and post-decrement operations.
+
+
+
+# References {.appendix}
+
+- [cpp iterators in depth](https://hitchcock.codes/blog/cpp-iterators-in-depth) by Braden Hitchcock.
