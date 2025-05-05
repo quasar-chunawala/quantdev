@@ -120,5 +120,151 @@ A new system of iterators based on concepts has been introduced.
 - [`std::random_access_iterator`](https://en.cppreference.com/w/cpp/iterator/random_access_iterator)
 - [`std::contiguous_iterator`](https://en.cppreference.com/w/cpp/iterator/contiguous_iterator)
 
+Before we deep-dive into these iterator concepts, let's understand [`std::sentinel_for`](https://en.cppreference.com/w/cpp/iterator/sentinel_for) concept.
 
+A sentinel signals the end of a sequence of values. Prior to C++20, when traversing a collection, the way you'd check if you've hit the end of the collection was to compare your current iterator with an `end()` iterator.
+
+```cpp
+#include<vector>
+
+int main(){
+    std::vector<double> v{1.0, 2.0, 3.0, 4.0, 5.0};
+
+    // Traverse a std::vector
+    for(auto it {v.begin()}; it!=v.end(); ++it){
+        std::cout << *it << "\n";
+    }
+}
+```
+
+Usually, this end iterator was just a case of your normal iterator that had some internal state identifying it as one past the last element of the container.
+
+Beginning C++20, you can actually use any type as a sentinel for an iterator so long as the type satisfies the `std::sentinel_for` concept. `std::sentinel_for` concept requires 
+
+## `std::input_or_output_iterator` 
+
+The `input_or_output_iterator` is the basis of the iterator concept taxonomy. It only requires that an iterator type `It` supports the operations for dereferencing and incrementing the iterator.
+
+
+
+## `std::output_iterator`
+
+`std::output_iterator` concept models the idea of a write-only iterator. E.g. such an iterator can be used to write to the standard output stream. Hence, they can only be dereferenced on the left-hand side of an assignment operator. 
+
+Since, they are single pass, we don't even need to implement an equality comparison operator, because they don't have an end iterator or sentinel value to compare against.
+
+```cpp
+#include <cstddef>
+#include <iterator>
+#include <concepts>
+
+template<typename T>
+struct SimpleOutputIterator {
+    using difference_type = std::ptrdiff_t;
+    using value_type = T;
+    using pointer = T*;
+
+    pointer m_buffer_ptr;
+
+    // Default constructor
+    SimpleOutputIterator() = default;
+
+    // Constructor
+    SimpleOutputIterator(pointer start)
+        : m_buffer_ptr{start} {}
+
+    // Dereference operator
+    T& operator*() {
+        return *m_buffer_ptr;
+    }
+
+    // Pre-increment
+    SimpleOutputIterator& operator++() {
+        ++m_buffer_ptr;
+        return (*this);
+    }
+
+    // Post-increment
+    SimpleOutputIterator operator++(int) {
+        auto tmp = *this;
+        ++(*this);
+        return tmp;
+    }
+
+};
+
+static_assert(std::output_iterator<SimpleOutputIterator<int>, int>);
+
+
+int main(){
+    return 0;
+}
+```
+[Compiler Explorer](https://godbolt.org/z/nEEh35q45)
+
+## `std::input_iterator`
+
+`std::input_iterator` concept models the idea of a read-only iterator. Such an iterator, for example, can be used read packets data from a network socket or a disk file.
+
+Input iterators are also single-pass, but because they are expected to consume a finite number of values they must be comparable to some sentinel value such as `EOF`, `\0` etc.
+
+However, the equality comparison operator `bool operator==(It, Sen)` is only used by the algorithm operating on the container, and therefore it's the responsibility of the algorithm writer to supply an implementation of `bool operator==(It, Sen)`. This definition is not required in the container implementation.
+
+```cpp
+#include <cstddef>
+#include <iterator>
+#include <concepts>
+
+template<typename T>
+struct SimpleInputIterator {
+    using difference_type = std::ptrdiff_t;
+    using value_type = T;
+    using pointer = T*;
+    using reference = T&;
+
+    pointer m_file_buffer_ptr;
+
+    // Default constructor
+    SimpleInputIterator() = default;
+
+    // Constructor
+    SimpleInputIterator(pointer start)
+        : m_file_buffer_ptr{start} {}
+
+    // Dereference operator
+    const T& operator*() const {
+        return *m_file_buffer_ptr;
+    }
+
+    // Pre-increment
+    SimpleInputIterator& operator++() {
+        ++m_file_buffer_ptr;
+        return (*this);
+    }
+
+    // Post-increment
+    SimpleInputIterator operator++(int) {
+        auto tmp = *this;
+        ++(*this);
+        return tmp;
+    }
+
+};
+
+static_assert(std::input_iterator<SimpleInputIterator<int>>);
+
+
+int main(){
+    return 0;
+}
+```
+[Compiler Explorer](https://godbolt.org/z/4ocGnaaPM)
+
+## `std::forward_iterator` 
+
+`std::forward_iterator` requires that the iterator type be an input (read-only) iterator and also be [std::incrementable](https://en.cppreference.com/w/cpp/iterator/incrementable).
+
+`std::input_iterator` only requires the iterator be `std::weakly_incrementable`. So while it supports the increment `operator++()`, if `i` and `j` are two instances of the iterator type `It`, `i == j` does not imply `++i == ++j`. That is, algorithms on weakly-incrementable types must be single-pass algorithms.
+
+`std::incrementable` concept informally means that `i == j` $\implies$ `++i == ++j`. Algorithms on incrementable types are multi-pass algorithms.
 
