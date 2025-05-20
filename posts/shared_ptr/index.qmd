@@ -175,9 +175,28 @@ TEST(SharedPtrTest, IndirectionOperatorTest) {
 }
 ```
 
-# Modern C++ Implementation.
+# Custom Implementation.
+
+Writing a homegrown version of `shared_ptr<T>` implementation is fun! The destructor is tricky to get right. The libc++ implementation of `shared_ptr<T>` and many others use an atomic reference counter. So, we have something like:
 
 ```cpp
+template<typename T>
+struct shared_ptr{
+    T* m_raw_underlying_ptr {nullptr};
+    std::atomic<unsigned long long> m_ref_count_ptr {nullptr};
+};
+```
+
+A naive algorithm for destruction could be that, if `*m_ref_count_ptr == 1`, call delete on both pointees, otherwise decrement the counter. It is possible that two threads enter the destructor concurrently with `*m_ref_count_ptr=2`, and neither thread sees `*m_ref_count_ptr==1` and the pointees are never destroyed.
+
+Another algorithm could be to decrement `*m_ref_count_ptr`. If `*m_ref_count_ptr==0`, invoke delete's. There is a possibility that two threads enter the destructor concurrently, with `*m_ref_count_ptr=2`, then both concurrently decrement `*m_ref_count_ptr` leading to the possibility of both seeing `*m_ref_count_ptr=0`, resulting in double deletion.
+
+One possible implementation of the destructor is the code-snip below.
+
+
+```cpp
+// Reference: C++ Memory Management
+// Patrice Roy, Packt 2025
 #include<format>
 #include<atomic>
 
@@ -314,6 +333,12 @@ namespace dev{
     };
 }
 ```
+
+You can play around the code files, build the project and run unit tests for this (naive) toy-implementation of `shared_ptr` by cloning my [GitHub repo](https://github.com/quasar-chunawala/interview_data_structures).
+
+## References {.appendix}
+
+- [C++ Memory Management](https://www.amazon.com/Memory-Management-leaner-memory-management-techniques/dp/1805129805) by Patrice Roy.
 
 
 
