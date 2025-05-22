@@ -1,0 +1,386 @@
+---
+title: "Virtualization"
+author: "Quasar"
+date: "2025-05-22"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# `virtual` functions
+
+The `virtual` keyword specifies that a non-static member function is `virtual` and supports dynamic dispatch. It may only appear in the initial declaration of a non-static member function (i.e., when it is declared in the class definition).
+
+```cpp
+#include <iostream>
+
+class Base
+{
+    public:
+    void foo(){
+        std::cout << "\n" << "Base::foo()";
+    }
+};
+
+class Derived : public Base{
+    public:
+    void foo(){
+        std::cout << "\n" << "Derived::foo()";
+    }
+};
+
+int main(){
+    Base base_obj;
+    Derived derived_obj;
+    Base* base_ptr{nullptr};
+
+    base_ptr = &base_obj;
+    base_ptr->foo();
+
+    base_ptr = &derived_obj;
+    base_ptr->foo();
+    return 0;
+}
+```
+Run at [Compiler Explorer](https://godbolt.org/z/jG9bG4Yrs)
+
+Output:
+```shell
+Base::foo()
+Base::foo()
+```
+
+The version of `foo` invoked is determined at compile time, based on the pointer type. 
+
+If we declare the `foo()` as a virtual method, then the version of `foo()` invoked is resolved dynamically on-the-fly depending on the type of object being pointed too  (pointee).
+
+```cpp
+#include <iostream>
+
+class Base
+{
+    public:
+    virtual void foo(){
+        std::cout << "\n" << "Base::foo()";
+    }
+};
+
+class Derived : public Base{
+    public:
+    void foo() override{    //override is optional
+        std::cout << "\n" << "Derived::foo()";
+    }
+};
+
+int main(){
+    Base b;
+    Derived d;
+    
+    // Virtual function call through reference
+    Base& br = b;   // the type of br is Base&
+    Base& dr = d;   // the type of dr is Base&
+    br.foo();       // Calls Base::foo()
+    dr.foo();       // Calls Derived::foo()
+
+    // Virtual function call through pointers
+    Base* bp = &b;  // type of bp is Base*
+    Base* dp = &d;  // type of dp is Base* as well
+    bp->foo();      // Calls Base::foo()
+    dp->foo();      // Calls Derived::foo()
+
+    // Non-virtual function calls
+    br.Base::foo();
+    dr.Base::foo();
+    return 0;
+}
+```
+
+Run at [Compiler Explorer](https://godbolt.org/z/aYhbofMPb)
+
+Output:
+```shell
+Base::foo()
+Derived::foo()
+Base::foo()
+Derived::foo()
+Base::foo()
+Base::foo()
+```
+
+A derived class `virtual` function is considered an override if and only if it has the same
+
+- name
+- parameter type list (but not the return type)
+- cv-qualifiers
+- ref-qualifiers
+
+```cpp
+#include <iostream>
+
+class Base
+{
+    public:
+    virtual void vf(){
+        std::cout << "\n" << "Base::vf()";
+    }
+};
+
+class Derived : public Base{
+    public:
+    void vf() const{
+        std::cout << "\n" << "Derived::vf() const";
+    }
+};
+
+int main(){
+    Base b;
+    Derived d;
+    const Derived const_d;
+
+    Base* bp{nullptr};
+
+    bp = &b;
+    bp->vf();
+
+    bp = &d;
+    bp->vf();
+    d.vf();
+    return 0;
+}
+```
+
+Output:
+```shell
+Base::vf()
+Base::vf()
+Derived::vf() const
+```
+
+In the above code snippet, the compiler does not treat `void Derived::vf() const` as an override for the base class virtual member function `void Base::vf()`. 
+
+## Dynamic dispatch
+
+A member function defined as `virtual` in the base class will be `virtual` in all child classes. 
+
+```cpp
+#include<iostream>
+struct A{
+    virtual void vf(){
+        std::cout << "\n" << "A::vf()";
+    }
+
+    void g(){
+        std::cout << "\n" << "A::g()";
+    }
+};
+ 
+struct B : A{
+    void vf() override{
+        std::cout << "\n" << "B::vf()";
+    }
+
+    void g(){
+        std::cout << "\n" << "B::g()";
+    }
+};
+
+struct C : B{
+    void vf() override{
+        std::cout << "\n" << "C::vf()";
+    }
+
+    void g(){
+        std::cout << "\n" << "C::g()";
+    }
+};
+
+struct D : C{
+    void g(){
+        std::cout << "\n" << "D::g()";
+    }
+};
+
+int main()
+{
+    A a; B b; C c; D d;
+    A* a_as_aptr = &a;
+    A* b_as_aptr = &b;
+    A* c_as_aptr = &c;
+    A* d_as_aptr = &d;
+
+    a_as_aptr->vf();
+    b_as_aptr->vf();
+    c_as_aptr->vf();
+    d_as_aptr->vf();
+
+    a_as_aptr->g();
+    b_as_aptr->g();
+    c_as_aptr->g();
+    d_as_aptr->g();
+}
+```
+
+Run at [Compiler Explorer](https://godbolt.org/z/zxeo53ah6)
+
+Output:
+```shell
+A::vf()
+B::vf()
+C::vf()
+C::vf()
+A::g()
+A::g()
+A::g()
+A::g()
+```
+
+Because `vf()` is a virtual function, the dynamic type (type of the pointee object) is used at run-time to resolve calls to `b_as_aptr->vf()` or `c_as_aptr->vf()`. With non-virtual functions such as `g()`, the compiler uses the static type to determine what function to call, and it can do so at compile-time.
+
+## `override`: a useful feature to prevent bugs
+
+Every time you define a method in the derived class that override `virtual` member function in the base class, as a good practice, tag it `override`. This way, you show that your intention for the derived class is to override the behavior of `vf` in the base class.
+
+```cpp
+#include<iostream>
+struct Base{
+    virtual void vf(){
+        std::cout << "\n" << "void Base::vf()";
+    }
+};
+
+struct Derived : public Base{
+    void vf() override{
+        std::cout << "\n" << "void Derived::vf()";
+    }
+};
+```
+
+If a function is declared with specifier `override` but does not override a base class `virtual` member function, the program is ill-formed and will not compile.
+
+```cpp
+#include<iostream>
+struct Base{
+    virtual void vf(){
+        std::cout << "\n" << "void Base::vf()";
+    }
+};
+
+struct Derived : public Base{
+    void vf(long) override{
+        std::cout << "\n" << "void Derived::vf()";
+    }
+};
+```
+Run at [Compiler Explorer](https://godbolt.org/z/jGcW14Gfs)
+
+`Base::vf()` does not need to be accessible or visible to be overriden. `Base::vf()` can be declared as `private`, or `Base` can be inherited using `private` inheritance.
+
+```cpp
+#include<iostream>
+class B
+{
+    virtual void do_f(){ // private member
+        std::cout << "\n" << "B::do_f()";
+    }
+    public:
+    void f() { do_f(); } // public interface
+};
+ 
+class D : public B
+{
+    void do_f() override{ // overrides B::do_f
+        std::cout << "\n" << "D::do_f()";
+    }
+};
+ 
+int main()
+{
+    D d;
+    B* bp = &d;
+    bp->f(); // internally calls D::do_f();
+}
+```
+Run at [Compiler Explorer](https://godbolt.org/z/Ge9vob6hG)
+
+# `virtual` destructors
+
+Consider the following code snippet, where we intend to use a class hierarchy polymorphically:
+
+```cpp
+#include<iostream>
+struct A{
+    A(){ std::cout << "\n" << "A()"; }
+    ~A(){ std::cout << "\n" << "~A()"; }
+};
+
+struct B : A{
+    B(){ std::cout << "\n" << "B()"; }
+    ~B(){ std::cout << "\n" << "~B()"; }
+};
+
+struct C : B{
+    C(){ std::cout << "\n" << "C()"; }
+    ~C(){ std::cout << "\n" << "~C()"; }
+};
+
+int main(){
+    A* c_as_aptr{new C()};
+    delete c_as_aptr;
+    return 0;
+}
+```
+Run at [Compiler Explorer](https://godbolt.org/z/GoTGsrKq8)
+
+Output:
+```shell
+A()
+B()
+C()
+~A()
+```
+
+`new C()` dynamically allocates memory on the heap and default-initializes a `C()` object in this memory block. The address of the newly constructed object is stored in `c_as_aptr` pointer variable.
+
+If we comment out line 19, we shall leak memory. All calls to `new` or `new[]` must be matched by corresponding calls to `delete` or `delete[]`. 
+
+`delete T` for a type `T` calls the destructor `~T()` and deallocates the memory space occupied by `T`. 
+
+Since the base-class destructor `~A()` is a non-virtual function, `delete c_as_aptr` has undefined behavior. In most implementations, the call to the destructor will be resolved like any non-virtual code, meaning that the destructor of the base class will be called but not the one of the derived class, resulting in a resources leak.
+
+Always make base classes' destructors virtual when they're meant to be manipulated polymorphically.
+
+```cpp
+#include<iostream>
+struct A{
+    A(){ std::cout << "\n" << "A()"; }
+    virtual ~A(){ std::cout << "\n" << "~A()"; }
+};
+
+struct B : A{
+    B(){ std::cout << "\n" << "B()"; }
+    ~B(){ std::cout << "\n" << "~B()"; }
+};
+
+struct C : B{
+    C(){ std::cout << "\n" << "C()"; }
+    ~C(){ std::cout << "\n" << "~C()"; }
+};
+
+int main(){
+    A* c_as_aptr{new C()};
+    delete c_as_aptr;
+    return 0;
+}
+```
+Run at [Compiler Explorer](https://godbolt.org/z/zh5rT9T5d)
+
+Output:
+```shell
+A()
+B()
+C()
+~C()
+~B()
+~A()
+```
