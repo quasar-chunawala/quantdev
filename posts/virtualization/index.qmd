@@ -706,7 +706,7 @@ B (0x0x7cb4a0bd8180) 0 nearly-empty
 
 ## `vtable` for `class D`
 
-`D` inherits from both `A` and `C`. 
+`D` inherits from both `A` and `C` (indirectly from `B`). 
 
 ```shell
 Vtable for D
@@ -749,6 +749,114 @@ A (0x0x7cb4a0bd82a0) 8 nearly-empty
 When a class inherits from multiple base classes ( as in the case of `class D` inheriting from both `A` and `C`), the memory layout of the derived class `D` includes subobjects for each of the base class. The `this` pointer must be adjusted to point to the correct subobject when calling a virtual function from one of the base classes. 
 
 The *vcall-offset* is an adjustment value that ensures that the `this` pointer points to the correct base class subobject, when a `virtual` function is invoked.
+
+The *vcall-offset* is stored in the `vtable` as an entry (in this case, `-8`). When a virtual function is called, the *vcall-offset* is added to the current `this` pointer to adjust it to the correct base class subobject. 
+
+If the `this` pointer points to the `D` subobject, adding the *vcall-offset* `-8` adjusts it to point to the `A` subobject inherited directly by `D`. 
+
+# Class memory layout
+The `pahole` utility is used to inspect the object memory layout in linux. Install `pahole` using your package manager:
+
+```shell
+[quantdev@quasar-arch virtual_tables]$ sudo pacman -S pahole
+```
+
+The output of running `pahole` on our binary is as follows:
+
+```shell
+[quantdev@quasar-arch virtual_tables]$ pahole main
+struct D : C, A {
+        /* struct C                   <ancestor>; */     /*     0     8 */
+        /* struct A                   <ancestor>; */     /*     8     8 */
+        void D(struct D *, const struct D  &);
+
+        void D(struct D *);
+
+        virtual void foo(struct D *);
+
+        virtual void bar(struct D *);
+
+        void d_bar(struct D *);
+
+        virtual void ~D(struct D *);
+
+        /* vtable has 2 entries: {
+           [0] = foo((null)), 
+           [4] = bar((null)), 
+        } */
+        /* size: 16, cachelines: 1, members: 2 */
+        /* last cacheline: 16 bytes */
+};
+struct C : B {
+        /* struct B                   <ancestor>; */     /*     0     8 */
+        void C(struct C *, const struct C  &);
+
+        void C(struct C *);
+
+        virtual void foo(struct C *);
+
+        void c_bar(const struct C  *);
+
+        virtual void bar(struct C *);
+
+        virtual void ~C(struct C *);
+
+        /* vtable has 2 entries: {
+           [0] = foo((null)), 
+           [4] = bar((null)), 
+        } */
+        /* size: 8, cachelines: 1, members: 1 */
+        /* last cacheline: 8 bytes */
+};
+struct A {
+        void A(struct A *, const struct A  &);
+
+        int ()(void) * *           _vptr.A;              /*     0     8 */
+        void A(struct A *);
+
+        virtual void foo(struct A *);
+
+        virtual void baz(struct A *);
+
+        virtual void ~A(struct A *);
+
+        /* vtable has 2 entries: {
+           [0] = foo((null)), 
+           [1] = baz((null)), 
+        } */
+        /* size: 8, cachelines: 1, members: 1 */
+        /* last cacheline: 8 bytes */
+};
+struct B {
+        void B(struct B *, const struct B  &);
+
+        int ()(void) * *           _vptr.B;              /*     0     8 */
+        void B(struct B *);
+
+        virtual void foo(struct B *);
+
+        virtual void baz(struct B *);
+
+        virtual void ~B(struct B *);
+
+        /* vtable has 2 entries: {
+           [0] = foo((null)), 
+           [1] = baz((null)), 
+        } */
+        /* size: 8, cachelines: 1, members: 1 */
+        /* last cacheline: 8 bytes */
+};
+```
+
+As an example, `struct D` has `size: 16` and consists of two subobjects `C` and `A`.
+
+```shell
+struct D {
+    struct C c; /* 0x0 */
+    struct A a; /* 0x8 */
+    /* size: 0x10, cachelines: 1, members: 2 */
+};
+```
 
 ## References {.appendix}
 

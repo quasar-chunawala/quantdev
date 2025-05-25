@@ -216,6 +216,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#vtable-for-class-b" id="toc-vtable-for-class-b" class="nav-link" data-scroll-target="#vtable-for-class-b"><code>vtable</code> for <code>class B</code></a></li>
   <li><a href="#vtable-for-class-c" id="toc-vtable-for-class-c" class="nav-link" data-scroll-target="#vtable-for-class-c"><code>vtable</code> for <code>class C</code></a></li>
   <li><a href="#vtable-for-class-d" id="toc-vtable-for-class-d" class="nav-link" data-scroll-target="#vtable-for-class-d"><code>vtable</code> for <code>class D</code></a></li>
+  </ul></li>
+  <li><a href="#class-memory-layout" id="toc-class-memory-layout" class="nav-link" data-scroll-target="#class-memory-layout">Class memory layout</a>
+  <ul class="collapse">
   
   </ul></li>
   </ul>
@@ -821,7 +824,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="vtable-for-class-d" class="level2">
 <h2 class="anchored" data-anchor-id="vtable-for-class-d"><code>vtable</code> for <code>class D</code></h2>
-<p><code>D</code> inherits from both <code>A</code> and <code>C</code>.</p>
+<p><code>D</code> inherits from both <code>A</code> and <code>C</code> (indirectly from <code>B</code>).</p>
 <div class="sourceCode" id="cb27"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb27-1"><a href="#cb27-1"></a>Vtable for D</span>
 <span id="cb27-2"><a href="#cb27-2"></a>D::_ZTV1D: 13 entries</span>
 <span id="cb27-3"><a href="#cb27-3"></a>0     (int (*)(...))0</span>
@@ -855,7 +858,103 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><code>48 (int (*)(...))D::bar</code> is a pointer to the overriding function of <code>C::bar()</code> - <code>D::bar()</code>.</p>
 <p>When a class inherits from multiple base classes ( as in the case of <code>class D</code> inheriting from both <code>A</code> and <code>C</code>), the memory layout of the derived class <code>D</code> includes subobjects for each of the base class. The <code>this</code> pointer must be adjusted to point to the correct subobject when calling a virtual function from one of the base classes.</p>
 <p>The <em>vcall-offset</em> is an adjustment value that ensures that the <code>this</code> pointer points to the correct base class subobject, when a <code>virtual</code> function is invoked.</p>
+<p>The <em>vcall-offset</em> is stored in the <code>vtable</code> as an entry (in this case, <code>-8</code>). When a virtual function is called, the <em>vcall-offset</em> is added to the current <code>this</code> pointer to adjust it to the correct base class subobject.</p>
+<p>If the <code>this</code> pointer points to the <code>D</code> subobject, adding the <em>vcall-offset</em> <code>-8</code> adjusts it to point to the <code>A</code> subobject inherited directly by <code>D</code>.</p>
 </section>
+</section>
+<section id="class-memory-layout" class="level1">
+<h1>Class memory layout</h1>
+<p>The <code>pahole</code> utility is used to inspect the object memory layout in linux. Install <code>pahole</code> using your package manager:</p>
+<div class="sourceCode" id="cb28"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb28-1"><a href="#cb28-1"></a>[quantdev@quasar-arch virtual_tables]$ sudo pacman -S pahole</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The output of running <code>pahole</code> on our binary is as follows:</p>
+<div class="sourceCode" id="cb29"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb29-1"><a href="#cb29-1"></a>[quantdev@quasar-arch virtual_tables]$ pahole main</span>
+<span id="cb29-2"><a href="#cb29-2"></a>struct D : C, A {</span>
+<span id="cb29-3"><a href="#cb29-3"></a>        /* struct C                   &lt;ancestor&gt;; */     /*     0     8 */</span>
+<span id="cb29-4"><a href="#cb29-4"></a>        /* struct A                   &lt;ancestor&gt;; */     /*     8     8 */</span>
+<span id="cb29-5"><a href="#cb29-5"></a>        void D(struct D *, const struct D  &amp;);</span>
+<span id="cb29-6"><a href="#cb29-6"></a></span>
+<span id="cb29-7"><a href="#cb29-7"></a>        void D(struct D *);</span>
+<span id="cb29-8"><a href="#cb29-8"></a></span>
+<span id="cb29-9"><a href="#cb29-9"></a>        virtual void foo(struct D *);</span>
+<span id="cb29-10"><a href="#cb29-10"></a></span>
+<span id="cb29-11"><a href="#cb29-11"></a>        virtual void bar(struct D *);</span>
+<span id="cb29-12"><a href="#cb29-12"></a></span>
+<span id="cb29-13"><a href="#cb29-13"></a>        void d_bar(struct D *);</span>
+<span id="cb29-14"><a href="#cb29-14"></a></span>
+<span id="cb29-15"><a href="#cb29-15"></a>        virtual void ~D(struct D *);</span>
+<span id="cb29-16"><a href="#cb29-16"></a></span>
+<span id="cb29-17"><a href="#cb29-17"></a>        /* vtable has 2 entries: {</span>
+<span id="cb29-18"><a href="#cb29-18"></a>           [0] = foo((null)), </span>
+<span id="cb29-19"><a href="#cb29-19"></a>           [4] = bar((null)), </span>
+<span id="cb29-20"><a href="#cb29-20"></a>        } */</span>
+<span id="cb29-21"><a href="#cb29-21"></a>        /* size: 16, cachelines: 1, members: 2 */</span>
+<span id="cb29-22"><a href="#cb29-22"></a>        /* last cacheline: 16 bytes */</span>
+<span id="cb29-23"><a href="#cb29-23"></a>};</span>
+<span id="cb29-24"><a href="#cb29-24"></a>struct C : B {</span>
+<span id="cb29-25"><a href="#cb29-25"></a>        /* struct B                   &lt;ancestor&gt;; */     /*     0     8 */</span>
+<span id="cb29-26"><a href="#cb29-26"></a>        void C(struct C *, const struct C  &amp;);</span>
+<span id="cb29-27"><a href="#cb29-27"></a></span>
+<span id="cb29-28"><a href="#cb29-28"></a>        void C(struct C *);</span>
+<span id="cb29-29"><a href="#cb29-29"></a></span>
+<span id="cb29-30"><a href="#cb29-30"></a>        virtual void foo(struct C *);</span>
+<span id="cb29-31"><a href="#cb29-31"></a></span>
+<span id="cb29-32"><a href="#cb29-32"></a>        void c_bar(const struct C  *);</span>
+<span id="cb29-33"><a href="#cb29-33"></a></span>
+<span id="cb29-34"><a href="#cb29-34"></a>        virtual void bar(struct C *);</span>
+<span id="cb29-35"><a href="#cb29-35"></a></span>
+<span id="cb29-36"><a href="#cb29-36"></a>        virtual void ~C(struct C *);</span>
+<span id="cb29-37"><a href="#cb29-37"></a></span>
+<span id="cb29-38"><a href="#cb29-38"></a>        /* vtable has 2 entries: {</span>
+<span id="cb29-39"><a href="#cb29-39"></a>           [0] = foo((null)), </span>
+<span id="cb29-40"><a href="#cb29-40"></a>           [4] = bar((null)), </span>
+<span id="cb29-41"><a href="#cb29-41"></a>        } */</span>
+<span id="cb29-42"><a href="#cb29-42"></a>        /* size: 8, cachelines: 1, members: 1 */</span>
+<span id="cb29-43"><a href="#cb29-43"></a>        /* last cacheline: 8 bytes */</span>
+<span id="cb29-44"><a href="#cb29-44"></a>};</span>
+<span id="cb29-45"><a href="#cb29-45"></a>struct A {</span>
+<span id="cb29-46"><a href="#cb29-46"></a>        void A(struct A *, const struct A  &amp;);</span>
+<span id="cb29-47"><a href="#cb29-47"></a></span>
+<span id="cb29-48"><a href="#cb29-48"></a>        int ()(void) * *           _vptr.A;              /*     0     8 */</span>
+<span id="cb29-49"><a href="#cb29-49"></a>        void A(struct A *);</span>
+<span id="cb29-50"><a href="#cb29-50"></a></span>
+<span id="cb29-51"><a href="#cb29-51"></a>        virtual void foo(struct A *);</span>
+<span id="cb29-52"><a href="#cb29-52"></a></span>
+<span id="cb29-53"><a href="#cb29-53"></a>        virtual void baz(struct A *);</span>
+<span id="cb29-54"><a href="#cb29-54"></a></span>
+<span id="cb29-55"><a href="#cb29-55"></a>        virtual void ~A(struct A *);</span>
+<span id="cb29-56"><a href="#cb29-56"></a></span>
+<span id="cb29-57"><a href="#cb29-57"></a>        /* vtable has 2 entries: {</span>
+<span id="cb29-58"><a href="#cb29-58"></a>           [0] = foo((null)), </span>
+<span id="cb29-59"><a href="#cb29-59"></a>           [1] = baz((null)), </span>
+<span id="cb29-60"><a href="#cb29-60"></a>        } */</span>
+<span id="cb29-61"><a href="#cb29-61"></a>        /* size: 8, cachelines: 1, members: 1 */</span>
+<span id="cb29-62"><a href="#cb29-62"></a>        /* last cacheline: 8 bytes */</span>
+<span id="cb29-63"><a href="#cb29-63"></a>};</span>
+<span id="cb29-64"><a href="#cb29-64"></a>struct B {</span>
+<span id="cb29-65"><a href="#cb29-65"></a>        void B(struct B *, const struct B  &amp;);</span>
+<span id="cb29-66"><a href="#cb29-66"></a></span>
+<span id="cb29-67"><a href="#cb29-67"></a>        int ()(void) * *           _vptr.B;              /*     0     8 */</span>
+<span id="cb29-68"><a href="#cb29-68"></a>        void B(struct B *);</span>
+<span id="cb29-69"><a href="#cb29-69"></a></span>
+<span id="cb29-70"><a href="#cb29-70"></a>        virtual void foo(struct B *);</span>
+<span id="cb29-71"><a href="#cb29-71"></a></span>
+<span id="cb29-72"><a href="#cb29-72"></a>        virtual void baz(struct B *);</span>
+<span id="cb29-73"><a href="#cb29-73"></a></span>
+<span id="cb29-74"><a href="#cb29-74"></a>        virtual void ~B(struct B *);</span>
+<span id="cb29-75"><a href="#cb29-75"></a></span>
+<span id="cb29-76"><a href="#cb29-76"></a>        /* vtable has 2 entries: {</span>
+<span id="cb29-77"><a href="#cb29-77"></a>           [0] = foo((null)), </span>
+<span id="cb29-78"><a href="#cb29-78"></a>           [1] = baz((null)), </span>
+<span id="cb29-79"><a href="#cb29-79"></a>        } */</span>
+<span id="cb29-80"><a href="#cb29-80"></a>        /* size: 8, cachelines: 1, members: 1 */</span>
+<span id="cb29-81"><a href="#cb29-81"></a>        /* last cacheline: 8 bytes */</span>
+<span id="cb29-82"><a href="#cb29-82"></a>};</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>As an example, <code>struct D</code> has <code>size: 16</code> and consists of two subobjects <code>C</code> and <code>A</code>.</p>
+<div class="sourceCode" id="cb30"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb30-1"><a href="#cb30-1"></a>struct D {</span>
+<span id="cb30-2"><a href="#cb30-2"></a>    struct C c; /* 0x0 */</span>
+<span id="cb30-3"><a href="#cb30-3"></a>    struct A a; /* 0x8 */</span>
+<span id="cb30-4"><a href="#cb30-4"></a>    /* size: 0x10, cachelines: 1, members: 2 */</span>
+<span id="cb30-5"><a href="#cb30-5"></a>};</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 </section>
 
