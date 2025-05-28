@@ -8575,7 +8575,7 @@ font-style: inherit;">}</span></span></code></pre></div>
   <media:content url="http://quantdev.blog/posts/unique_ptr/cpp.jpg" medium="image" type="image/jpeg"/>
 </item>
 <item>
-  <title>shared_ptr - A custom implementation</title>
+  <title>The inner workings of the shared_ptr</title>
   <dc:creator>Quasar </dc:creator>
   <link>http://quantdev.blog/posts/shared_ptr/index.html</link>
   <description><![CDATA[ 
@@ -9929,9 +9929,9 @@ font-style: inherit;">);</span></span>
 background-color: null;
 font-style: inherit;">}</span></span></code></pre></div>
 </section>
-<section id="custom-implementation." class="level1">
-<h1>Custom Implementation.</h1>
-<p>Writing a homegrown version of <code>shared_ptr&lt;T&gt;</code> implementation is fun! The destructor is tricky to get right. The libc++ implementation of <code>shared_ptr&lt;T&gt;</code> and many others use an atomic reference counter. So, we have something like:</p>
+<section id="a-minimalistic-implementation." class="level1">
+<h1>A minimalistic implementation.</h1>
+<p>Writing a homegrown version of <code>shared_ptr&lt;T&gt;</code> implementation is fun! You could have multiple handles (pointers) to the same shared resource(object). So, a <code>shared_ptr</code> object needs to track the reference count. The tracking is done through a <em>control block</em>. The control block holds meta-information. Since multiple <code>shared_ptr</code> share the same control block, the <code>shared_ptr</code> implementation only stores a pointer to the <em>control block</em>.</p>
 <div class="sourceCode" id="cb2" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
@@ -9957,7 +9957,25 @@ background-color: null;
 font-style: inherit;">nullptr</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span>
-<span id="cb2-4">    <span class="bu" style="color: null;
+<span id="cb2-4">    control_block_base<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> cb <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">nullptr</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb2-5"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb2-6"></span>
+<span id="cb2-7"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> control_block_base<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb2-8">    <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>atomic<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -9971,19 +9989,13 @@ font-style: inherit;">long</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;</span> <span class="va" style="color: #111111;
 background-color: null;
-font-style: inherit;">m_ref_count_ptr</span> <span class="op" style="color: #5E5E5E;
+font-style: inherit;">m_ref_count</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">{</span><span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">nullptr</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb2-5"><span class="op" style="color: #5E5E5E;
+font-style: inherit;">;</span></span>
+<span id="cb2-9"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span></code></pre></div>
-<p>A naive algorithm for destruction could be that, if <code>*m_ref_count_ptr == 1</code>, call delete on both pointees, otherwise decrement the counter. It is possible that two threads enter the destructor concurrently with <code>*m_ref_count_ptr=2</code>, and neither thread sees <code>*m_ref_count_ptr==1</code> and the pointees are never destroyed.</p>
-<p>Another algorithm could be to decrement <code>*m_ref_count_ptr</code>. If <code>*m_ref_count_ptr==0</code>, invoke delete’s. There is a possibility that two threads enter the destructor concurrently, with <code>*m_ref_count_ptr=2</code>, then both concurrently decrement <code>*m_ref_count_ptr</code> leading to the possibility of both seeing <code>*m_ref_count_ptr=0</code>, resulting in double deletion.</p>
-<p>One possible implementation of the destructor is the code-snip below.</p>
+<p>The libc++ implementation of <code>shared_ptr&lt;T&gt;</code> and many others use an atomic reference counter. So, we have something like:</p>
 <div class="sourceCode" id="cb3" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Reference: C++ Memory Management</span></span>
@@ -10870,6 +10882,12 @@ font-style: inherit;">};</span></span>
 background-color: null;
 font-style: inherit;">}</span></span></code></pre></div>
 <p>You can play around the code files, build the project and run unit tests for this (naive) toy-implementation of <code>shared_ptr</code> by cloning my <a href="https://github.com/quasar-chunawala/interview_data_structures">GitHub repo</a>.</p>
+<section id="writing-the-shared_ptrt-destructor" class="level2">
+<h2 class="anchored" data-anchor-id="writing-the-shared_ptrt-destructor">Writing the <code>~shared_ptr&lt;T&gt;()</code> destructor</h2>
+<p>The destructor is tricky to get right.</p>
+<p>A naive algorithm for destruction could be that, if <code>*m_ref_count_ptr == 1</code>, call delete on both pointees, otherwise decrement the counter. It is possible that two threads enter the destructor concurrently with <code>*m_ref_count_ptr=2</code>, and neither thread sees <code>*m_ref_count_ptr==1</code> and the pointees are never destroyed.</p>
+<p>Another algorithm could be to decrement <code>*m_ref_count_ptr</code>. If <code>*m_ref_count_ptr==0</code>, invoke delete’s. There is a possibility that two threads enter the destructor concurrently, with <code>*m_ref_count_ptr=2</code>, then both concurrently decrement <code>*m_ref_count_ptr</code> leading to the possibility of both seeing <code>*m_ref_count_ptr=0</code>, resulting in double deletion.</p>
+</section>
 </section>
 
 

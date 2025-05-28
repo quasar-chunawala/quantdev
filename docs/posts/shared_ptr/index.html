@@ -9,7 +9,7 @@
 <meta name="author" content="Quasar">
 <meta name="dcterms.date" content="2025-04-21">
 
-<title>quantdev.blog - shared_ptr - A custom implementation</title>
+<title>quantdev.blog - The inner workings of the shared_ptr</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -145,7 +145,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
  <span class="menu-text"></span></a>
   </li>  
   <li class="nav-item compact">
-    <a class="nav-link" href="https://twitter.com" rel="" target=""><i class="bi bi-twitter" role="img">
+    <a class="nav-link" href="http://linkedin.com/in/quasar-chunawala" rel="" target=""><i class="bi bi-linkedin" role="img">
 </i> 
  <span class="menu-text"></span></a>
   </li>  
@@ -165,7 +165,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <header id="title-block-header" class="quarto-title-block default page-columns page-full">
   <div class="quarto-title-banner page-columns page-full">
     <div class="quarto-title column-body">
-      <h1 class="title"><code>shared_ptr</code> - A custom implementation</h1>
+      <h1 class="title">The inner workings of the <code>shared_ptr</code></h1>
                                 <div class="quarto-categories">
                 <div class="quarto-category">C++</div>
               </div>
@@ -203,7 +203,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul>
   <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
   <li><a href="#basic-functionalities-expected-out-of-a-shared_ptrt-implementation." id="toc-basic-functionalities-expected-out-of-a-shared_ptrt-implementation." class="nav-link" data-scroll-target="#basic-functionalities-expected-out-of-a-shared_ptrt-implementation.">Basic functionalities expected out of a <code>shared_ptr&lt;T&gt;</code> implementation.</a></li>
-  <li><a href="#custom-implementation." id="toc-custom-implementation." class="nav-link" data-scroll-target="#custom-implementation.">Custom Implementation.</a></li>
+  <li><a href="#a-minimalistic-implementation." id="toc-a-minimalistic-implementation." class="nav-link" data-scroll-target="#a-minimalistic-implementation.">A minimalistic implementation.</a>
+  <ul class="collapse">
+  <li><a href="#writing-the-shared_ptrt-destructor" id="toc-writing-the-shared_ptrt-destructor" class="nav-link" data-scroll-target="#writing-the-shared_ptrt-destructor">Writing the <code>~shared_ptr&lt;T&gt;()</code> destructor</a></li>
+  </ul></li>
   
   </ul>
 </nav>
@@ -378,17 +381,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-155"><a href="#cb1-155"></a>    EXPECT_EQ<span class="op">(</span>ptr<span class="op">-&gt;</span>foo<span class="op">()</span> <span class="op">==</span> <span class="dv">10</span><span class="op">,</span> <span class="kw">true</span><span class="op">);</span></span>
 <span id="cb1-156"><a href="#cb1-156"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
-<section id="custom-implementation." class="level1">
-<h1>Custom Implementation.</h1>
-<p>Writing a homegrown version of <code>shared_ptr&lt;T&gt;</code> implementation is fun! The destructor is tricky to get right. The libc++ implementation of <code>shared_ptr&lt;T&gt;</code> and many others use an atomic reference counter. So, we have something like:</p>
+<section id="a-minimalistic-implementation." class="level1">
+<h1>A minimalistic implementation.</h1>
+<p>Writing a homegrown version of <code>shared_ptr&lt;T&gt;</code> implementation is fun! You could have multiple handles (pointers) to the same shared resource(object). So, a <code>shared_ptr</code> object needs to track the reference count. The tracking is done through a <em>control block</em>. The control block holds meta-information. Since multiple <code>shared_ptr</code> share the same control block, the <code>shared_ptr</code> implementation only stores a pointer to the <em>control block</em>.</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
 <span id="cb2-2"><a href="#cb2-2"></a><span class="kw">struct</span> shared_ptr<span class="op">{</span></span>
 <span id="cb2-3"><a href="#cb2-3"></a>    T<span class="op">*</span> <span class="va">m_raw_underlying_ptr</span> <span class="op">{</span><span class="kw">nullptr</span><span class="op">};</span></span>
-<span id="cb2-4"><a href="#cb2-4"></a>    <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">unsigned</span> <span class="dt">long</span> <span class="dt">long</span><span class="op">&gt;</span> <span class="va">m_ref_count_ptr</span> <span class="op">{</span><span class="kw">nullptr</span><span class="op">};</span></span>
-<span id="cb2-5"><a href="#cb2-5"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>A naive algorithm for destruction could be that, if <code>*m_ref_count_ptr == 1</code>, call delete on both pointees, otherwise decrement the counter. It is possible that two threads enter the destructor concurrently with <code>*m_ref_count_ptr=2</code>, and neither thread sees <code>*m_ref_count_ptr==1</code> and the pointees are never destroyed.</p>
-<p>Another algorithm could be to decrement <code>*m_ref_count_ptr</code>. If <code>*m_ref_count_ptr==0</code>, invoke delete’s. There is a possibility that two threads enter the destructor concurrently, with <code>*m_ref_count_ptr=2</code>, then both concurrently decrement <code>*m_ref_count_ptr</code> leading to the possibility of both seeing <code>*m_ref_count_ptr=0</code>, resulting in double deletion.</p>
-<p>One possible implementation of the destructor is the code-snip below.</p>
+<span id="cb2-4"><a href="#cb2-4"></a>    control_block_base<span class="op">*</span> cb <span class="op">{</span><span class="kw">nullptr</span><span class="op">};</span></span>
+<span id="cb2-5"><a href="#cb2-5"></a><span class="op">};</span></span>
+<span id="cb2-6"><a href="#cb2-6"></a></span>
+<span id="cb2-7"><a href="#cb2-7"></a><span class="kw">struct</span> control_block_base<span class="op">{</span></span>
+<span id="cb2-8"><a href="#cb2-8"></a>    <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">unsigned</span> <span class="dt">long</span> <span class="dt">long</span><span class="op">&gt;</span> <span class="va">m_ref_count</span><span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The libc++ implementation of <code>shared_ptr&lt;T&gt;</code> and many others use an atomic reference counter. So, we have something like:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="co">// Reference: C++ Memory Management</span></span>
 <span id="cb3-2"><a href="#cb3-2"></a><span class="co">// Patrice Roy, Packt 2025</span></span>
 <span id="cb3-3"><a href="#cb3-3"></a><span class="pp">#include</span><span class="im">&lt;format&gt;</span></span>
@@ -527,6 +532,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb3-136"><a href="#cb3-136"></a>    <span class="op">};</span></span>
 <span id="cb3-137"><a href="#cb3-137"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>You can play around the code files, build the project and run unit tests for this (naive) toy-implementation of <code>shared_ptr</code> by cloning my <a href="https://github.com/quasar-chunawala/interview_data_structures">GitHub repo</a>.</p>
+<section id="writing-the-shared_ptrt-destructor" class="level2">
+<h2 class="anchored" data-anchor-id="writing-the-shared_ptrt-destructor">Writing the <code>~shared_ptr&lt;T&gt;()</code> destructor</h2>
+<p>The destructor is tricky to get right.</p>
+<p>A naive algorithm for destruction could be that, if <code>*m_ref_count_ptr == 1</code>, call delete on both pointees, otherwise decrement the counter. It is possible that two threads enter the destructor concurrently with <code>*m_ref_count_ptr=2</code>, and neither thread sees <code>*m_ref_count_ptr==1</code> and the pointees are never destroyed.</p>
+<p>Another algorithm could be to decrement <code>*m_ref_count_ptr</code>. If <code>*m_ref_count_ptr==0</code>, invoke delete’s. There is a possibility that two threads enter the destructor concurrently, with <code>*m_ref_count_ptr=2</code>, then both concurrently decrement <code>*m_ref_count_ptr</code> leading to the possibility of both seeing <code>*m_ref_count_ptr=0</code>, resulting in double deletion.</p>
+</section>
 </section>
 
 
