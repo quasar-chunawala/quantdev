@@ -14,124 +14,202 @@ We can use C++ synchronization primitives to implement a basic thread-safe stack
 
 ## Thread-safe stack
 
-### Implementation Notes
-
+## Basic functionalities expected from a thread-safe stack
 
 ```cpp
-#include <iostream>
-#include <stack>
-#include <algorithm>
+#include <gtest/gtest.h>
+#include "threadsafe_stack.h"
 #include <thread>
-#include <mutex>
-#include <memory>
-#include <type_traits>
-#include <concepts>
-#include <shared_mutex>
+#include <vector>
+#include <algorithm>
 
-namespace dev {
-   
-    template<typename T>
+TEST(ThreadSafeStackTest, PushAndTopTest) {
+    dev::threadsafe_stack<int> stack;
+    stack.push(42);
+    EXPECT_EQ(stack.top(), 42);
+}
+
+TEST(ThreadSafeStackTest, PopTest) {
+    dev::threadsafe_stack<int> stack;
+    stack.push(42);
+    auto popped = stack.pop();
+    EXPECT_TRUE(popped.has_value());
+    EXPECT_EQ(popped.value(), 42);
+    EXPECT_TRUE(stack.empty());
+}
+
+TEST(ThreadSafeStackTest, EmptyTest) {
+    dev::threadsafe_stack<int> stack;
+    EXPECT_TRUE(stack.empty());
+    stack.push(42);
+    EXPECT_FALSE(stack.empty());
+}
+
+TEST(ThreadSafeStackTest, ConcurrentPushTest) {
+    dev::threadsafe_stack<int> stack;
+    std::vector<std::thread> threads;
+
+    for (int i = 0; i < 10; ++i) {
+        threads.emplace_back([&stack, i]() {
+            stack.push(i);
+        });
+    }
+
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    EXPECT_FALSE(stack.empty());
+    EXPECT_TRUE(stack.size() == 10);
+}
+
+TEST(ThreadSafeStackTest, ConcurrentPopTest) {
+    dev::threadsafe_stack<int> stack;
+    for (int i = 0; i < 10; ++i) {
+        stack.push(i);
+    }
+
+    std::vector<std::thread> threads;
+    std::vector<int> results;
+    std::mutex mtx;
+
+    for (int i = 0; i < 10; ++i) {
+        threads.emplace_back([&stack, &results, &mtx]() {
+            auto popped = stack.pop();
+            if (popped.has_value()) {
+                std::unique_lock<std::mutex> unique_lck(mtx);
+                results.push_back(popped.value());
+            }
+        });
+    }
+
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    EXPECT_EQ(results.size(), 10);
+}
+
+TEST(ThreadSafeStackTest, ConcurrentSwapTest){
+    dev::threadsafe_stack<int> evens, odds;
+    for(int i{0};i<5;++i)
+        evens.push(2*i);
     
-    class threadsafe_stack {
-    public:
-
-        using Mutex = std::shared_mutex;
-
-        /* Constructors */
+    for(int i{0};i<5;++i)
+        odds.push(2*i + 1);  
         
-        // Default constructor
-        threadsafe_stack() {}
+    dev::threadsafe_stack<int> evensCopy {evens};
+    dev::threadsafe_stack<int> oddsCopy {odds};            
 
-        /*
-        * This stack is copy-constructible. The copy constructor locks the mutex in the 
-        * source object and then copies the internal stack.
-        */
-        threadsafe_stack(const threadsafe_stack& other) {
-            std::unique_lock<Mutex> lck(other.mtx);
+    std::vector<std::thread> threads;
+
+    for(int j{0};j<2;++j){
+        threads.emplace_back([&evens, &odds](){
+            evens.swap(odds);
+        });
+    }
+
+    for(int j{0};j<2;++j)
+        threads[j].join();
+    
+    EXPECT_EQ(evens == evensCopy, true);
+    EXPECT_EQ(odds == oddsCopy, true);
+}
+```
+
+### Implementation Notes
+
+```cpp
+#include <stack>
+#include <mutex>
+#include <shared_mutex>
+#include <optional>
+
+namespace dev{
+    template<typename T>
+    class threadsafe_stack{
+        private:
+        std::stack<T> m_stack;
+        std::shared_mutex m_shared_mutex;
+
+        public:
+        using value_type = T;
+        using reference = T&;
+        using const_reference = const T&;
+
+        // default constructor
+        threadsafe_stack() = default;
+
+        // copy constructor
+        threadsafe_stack(const threadsafe_stack& other)
+        {
+            std::shared_lock<std::shared_mutex> shared_lck(const_cast<std::shared_mutex&>(other.m_shared_mutex));
             m_stack = other.m_stack;
         }
 
-        // Copy assignment
-        threadsafe_stack& operator=(const threadsafe_stack& other) = delete;
+        // copy assignment
+        threadsafe_stack& operator=(const threadsafe_stack& ) = delete;
 
-        ~threadsafe_stack() = default;
+        /**
+         * @brief Inserts an element at the top of the stack.
+         */
+        void push(const_reference element){
+            std::unique_lock unique_lck(m_shared_mutex);
+            if constexpr(std::is_nothrow_constructible_v<T>){
+                m_stack.push(std::move(element));
+            }
+            else{
+                m_stack.push(element);
+            }
+        }
 
-        /*
-        * pop() is a wrapper over std::stack<T>::top() and std::stack<T>::pop().
-        * This interface avoids any race conditions that occur between calls to top()
-        * and pop().
-        */
-        std::shared_ptr<T> pop()
-        {
-            std::unique_lock<Mutex> lck(mtx);
-            if (m_stack.empty())
-                throw std::exception("Exception - pop() invoked on an empty stack!");
-
-            auto result = std::make_shared<T>(std::move(m_stack.top()));
+        std::optional<T> pop(){
+            std::unique_lock<std::shared_mutex> unique_lck(m_shared_mutex);
+            if(m_stack.empty())
+                return std::nullopt;
+            
+            T element;
+            if constexpr(std::is_nothrow_move_constructible_v<T>){
+                element = std::move(m_stack.top());
+            }
+            else{
+                element = m_stack.top();
+            }
             m_stack.pop();
-            return result;
+            return element;
         }
 
-        void pop(T& result)
-        {
-            std::unique_lock<Mutex> lck(mtx);
-            if (m_stack.empty())
-                throw std::exception("Exception - pop() invoked on an empty stack");
-
-            result = std::move(m_stack.top());
-            m_stack.pop();
+        value_type top(){
+            std::shared_lock<std::shared_mutex> shared_lck(m_shared_mutex);
+            return m_stack.top();
         }
 
-        void push(T value)
-        {
-            std::unique_lock<Mutex> lck(mtx);
-            m_stack.push(std::move(value));
-        }
-
-        int size() {
-            std::shared_lock<Mutex> lck(mtx);
-            return m_stack.size();
-        }
-
-        /* 
-        * Acquire a std::shared_lock<Mtx> on the mutex, so multiple
-        * readers can read the stack.
-        */
-        bool empty() {
-            std::shared_lock<Mutex> lck(mtx);
+        bool empty(){
+            std::shared_lock<std::shared_mutex> shared_lck(m_shared_mutex);
             return m_stack.empty();
         }
 
-    private:
-        std::stack<T> m_stack;
-        Mutex mtx;
+        std::size_t size(){
+            std::shared_lock<std::shared_mutex> shared_lck(m_shared_mutex);
+            return m_stack.size();
+        }
+
+        void swap(threadsafe_stack& other){
+            std::scoped_lock<std::shared_mutex, std::shared_mutex> scoped_lck(m_shared_mutex, other.m_shared_mutex);
+            std::swap(m_stack, other.m_stack);
+        }
+
+        friend void swap(threadsafe_stack& lhs, threadsafe_stack& rhs){
+            lhs.swap(rhs);
+        }
+
+        friend bool operator==(threadsafe_stack& lhs, threadsafe_stack& rhs){
+            std::scoped_lock<std::shared_mutex, std::shared_mutex> scoped_lck(lhs.m_shared_mutex, rhs.m_shared_mutex);
+            if(lhs.m_stack.size() != rhs.m_stack.size())
+                return false;
+            return lhs.m_stack == rhs.m_stack;
+        }
     };
-}
-
-int main()
-{
-    dev::threadsafe_stack<int> stck;
-    
-    std::thread writer1(
-        [&stck]() {
-            for (int i{ 1 };i <= 1000;++i) {
-                stck.push(i);
-            }
-        }
-    );
-
-    std::thread writer2(
-        [&stck]() {
-            for (int i{ 1001 };i <= 2000;++i) {
-                stck.push(i);
-            }
-        }
-    );
-
-    writer1.join();
-    writer2.join();
-
-    std::cout << "\n" << "Stack size = " << stck.size();
 }
 ```
 
