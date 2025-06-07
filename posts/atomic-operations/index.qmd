@@ -266,11 +266,189 @@ int main() {
 	std::cout << "\n" << "z = " << z;
 }
 ```
-Under no circumstances, the value of `z` will be equal to `0`. Either the `write_x` goes before `write_y` or `write_y` goes before `write_x`. All threads observe the same global order of events.
+Because we are using `std::memory_order_seq_cst` when running the code, we note the following:
+
+- Operations in each thread are executed in the given order (no reordering of atomic operations)
+- `t1` and `t2` update `x` and `y` in order, and `t3` and `t4` see the same order. Without this property, `t3` could see `x` and `y` change in one order, but `t4` could see the opposite.
+- Any other memory ordering may print `z=0` because `t3` and `t4` could see changes to `x` and `y` in the opposite order. 
+
+Note that the order between operations in different threads is not guaranteed and instructions from different threads may be executed in any order, because the threads may be scheduled.
+
+## Acquire-Release Semantic
+
+Consider the same code as in the previous section for sequential consistency, but in this case, I use acquire-release semantics.
+
+```cpp
+// Ref: Asynchronous programming with C++, Javier Reguera Salgado
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <vector>
+
+std::atomic<bool> x{ false };
+std::atomic<bool> y{ false };
+std::atomic<int> z{ 0 };
+
+void write_x() {
+	x.store(true, std::memory_order_release);
+}
+
+void write_y() {
+	y.store(true, std::memory_order_release);
+}
+
+void read_x_then_y() {
+	while (!x.load(std::memory_order_acquire));
+
+	if (y.load(std::memory_order_acquire))
+		++z;
+}
+
+void read_y_then_x() {
+	while (!y.load(std::memory_order_acquire));
+
+	if (x.load(std::memory_order_acquire))
+		++z;
+}
+
+int main() {
+	std::thread t1(write_x);
+	std::thread t2(write_y);
+	std::thread t3(read_x_then_y);
+	std::thread t4(read_y_then_x);
+
+	t1.join();
+	t2.join();
+	t3.join();
+	t4.join();
+
+	std::cout << "\n" << "x = " << x;
+	std::cout << "\n" << "y = " << y;
+	std::cout << "\n" << "z = " << z;
+    assert(z.load()!=0);
+}
+```
+
+The release operation on `x` in `t1` synchronizes with the acquire operation on `x` in `t3`. Similarly, the release operation on `y` in `t2` synchonizes with `acquire` operation in  thread `t4`. However, writes to `x` and `y` happen in different threads. 
+
+So, `t3` may find `x = true` and `y=false`. At the same time `t4` may find `y=true` and `x=false`. Different threads have different views of the memory. So, it may happen that `assert(z.load()!=0)` may fire at the end of this code. Acquire-release doesn't imply a total-ordering.
+
+In order to see the benefit of *acquire-release* ordering, we need to consider two stores from the same thread such as the code snip below. We perform writes to `x` and `y` in the same thread. Here, `assert(z.load()!=0)` will never fire.
+
+```cpp
+// Ref: Asynchronous programming with C++, Javier Reguera Salgado
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <vector>
+
+std::atomic<bool> x{ false };
+std::atomic<bool> y{ false };
+std::atomic<int> z{ 0 };
+
+void write_x_then_y() {
+	x.store(true, std::memory_order_release);       //[1]
+    y.store(true, std::memory_order_release);       //[2]
+}
+
+void read_y_then_x() {
+    // spin-waiting for y to be set to true
+	while (!y.load(std::memory_order_acquire));     //[3]
+
+	if (x.load(std::memory_order_acquire))          //[4]
+		++z;
+}
+
+int main() {
+	std::thread t1(write_x_then_y);
+	std::thread t2(read_y_then_x);
+
+	t1.join();
+	t2.join();
+
+	std::cout << "\n" << "x = " << x;
+	std::cout << "\n" << "y = " << y;
+	std::cout << "\n" << "z = " << z;
+    assert(z.load()!=0);
+}
+```
+
+Eventually, the `load()` from `y`, `[3]` will see `true` as written by the store `[2]`. Because the `store` uses `std::memory_order_release` and the `load` uses `std::memory_order_acquire`, the `store` synchronizes with the `load`. The `store` to `x`, `[1]` happens before the `store` to `y`, `[2]` because they are in the same thread. Because the `store` to `y`, synchronizes with the `load` from `y`,  the `store` to `x` also happens before the `load` from `y` and by extension happens before the `load` from `x`. The `load` from `x` must read `true` and the `assert` can't fire.
+
+A `release` operation on an atomic synchronizes with an `acquire` operation on the same atomic and additionally establishes an ordering constraint. So, we have a synchronizationation and a partial ordering in the acquire-release semantic.
+
+So, what are typically `acquire` and `release` operations?
+
+- Any write operation such as `store` or `clear` must specify `std::memory_order_release`. This flushes the core cache and publishes all updates before the release operation. So, any writes within the same thread prior to the release operation are visible to other susbcriber threads.
+
+- Any read operation such as `load` or `test_and_set` must specify `std::memory_order_acquire`. This captures any all updates upto this point.  
+
+Additionally,
+
+- Read and write operations cannot be reordered to before an acquire operation. 
+- Read and write operations cannot be reordered to after a release operation.
+
+```cpp
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <vector>
+
+std::vector<int> mySharedItems;
+std::atomic_bool dataProduced;
+std::atomic_bool dataReadyToBeConsumed;
+
+void dataProducer() {
+	mySharedItems = { 1, 0, 3 };
+	std::cout << "\n" << "dataProduced.store(true)";
+	dataProduced.store(true, std::memory_order_release);
+}
+
+void deliveryBoy() {
+	while (!dataProduced.load(std::memory_order_acquire));
+	std::cout << "\n" << "After dataProduced.load()";
+	std::cout << "\n" << "Before dataReadyToBeConsumed.store(true)";
+	dataReadyToBeConsumed.store(true, std::memory_order_release);
+}
+
+void dataConsumer() {
+	while (!dataReadyToBeConsumed.load(std::memory_order_acquire));
+	std::cout << "\n" << "After dataReadyToBeConsumed.load()";
+	mySharedItems[1] = 2;
+}
+
+int main() {
+	std::thread t1(dataProducer);
+	std::thread t2(deliveryBoy);
+	std::thread t3(dataConsumer);
+
+	t1.join();
+	t2.join();
+	t3.join();
+	return 0;
+}
+```
+
+Output:
+
+```shell
+dataProduced.store(true)
+After dataProduced.load()
+Before dataReadyToBeConsumed.store(true)
+After dataReadyToBeConsumed.load()
+```
+
+The `store` on line 13 synchronizes with the `load` on line 17. That's the acquire-release semantic. It also establishes a partial ordering. Read or write operations prior to the `release` on line 13 cannot be moved to after line 13. And `release` operation on line 20 cannot be moved before `acquire` operation on line 13.
+
+The same for the `deliveryBoy` and `dataConsumer`. 
+
+![Acquire-release semantics](acquire_release_semantics.png){fig-align="center"}
+
+If you think about mutexes, a mutex `lock()` is an acquire-operation. A mutex `unlock()` is a release operation. Things inside the critical region cannot be moved to outside it. An `unlock()` synchronizes with the next `lock()`. Similarly, `wait` and `notify` are acquire and release operations. The starting of a thread and `join` call on a thread are acquire and release operations.
 
 ## Non-sequential memory ordering
 
-On the opposite end of the spectrum is relaxed ordering. *In the absence of other ordering constraints, the only requirement is that threads agree on the modification order of each variable*. Operations on distinct variables can appear in different orders on different threads.
+On the opposite end of the spectrum is relaxed ordering. *In the absence of other ordering constraints, the only requirement is that threads agree on the modification order of each variable*. Atomic operations on the same atomic variable in a single thread are not reordered. Operations on distinct variables can appear in different orders on different threads.
 
 ```cpp
 // Ref: Concurrency in Action, Anthony Williams
@@ -397,134 +575,7 @@ Output:
 
 This simple code-snippet shows that each thread sees a distinct sequence of values for the distinct variables `x`, `y`, and `z` when incremented `10` times each. Only the modification order of each variable is consistent amongst the threads.
 
-## Acquire-Release Semantic
 
-A `release` operation on an atomic synchronizes with an `acquire` operation on the same atomic and additionally establishes an ordering constraint. So, we have a synchronizationation and a partial ordering in the acquire-release semantic.
-
-So, what are typically `acquire` and `release` operations?
-
-- Any write operation such as `store` or `clear` must specify `std::memory_order_release`. This flushes the core cache and publishes all updates before the release operation. So, any writes intra-thread prior to the release operation are visible to other susbcriber threads.
-
-- Any read operation such as `load` or `test_and_set` must specify `std::memory_order_acquire`. This captures any all updates upto this point.  
-
-Additionally,
-
-- Read and write operations cannot be reordered to before an acquire operation. 
-- Read and write operations cannot be reordered to after a release operation.
-
-```cpp
-#include <iostream>
-#include <atomic>
-#include <thread>
-#include <vector>
-
-std::vector<int> mySharedItems;
-std::atomic_bool dataProduced;
-std::atomic_bool dataReadyToBeConsumed;
-
-void dataProducer() {
-	mySharedItems = { 1, 0, 3 };
-	std::cout << "\n" << "dataProduced.store(true)";
-	dataProduced.store(true, std::memory_order_release);
-}
-
-void deliveryBoy() {
-	while (!dataProduced.load(std::memory_order_acquire));
-	std::cout << "\n" << "After dataProduced.load()";
-	std::cout << "\n" << "Before dataReadyToBeConsumed.store(true)";
-	dataReadyToBeConsumed.store(true, std::memory_order_release);
-}
-
-void dataConsumer() {
-	while (!dataReadyToBeConsumed.load(std::memory_order_acquire));
-	std::cout << "\n" << "After dataReadyToBeConsumed.load()";
-	mySharedItems[1] = 2;
-}
-
-int main() {
-	std::thread t1(dataProducer);
-	std::thread t2(deliveryBoy);
-	std::thread t3(dataConsumer);
-
-	t1.join();
-	t2.join();
-	t3.join();
-	return 0;
-}
-```
-
-Output:
-
-```shell
-dataProduced.store(true)
-After dataProduced.load()
-Before dataReadyToBeConsumed.store(true)
-After dataReadyToBeConsumed.load()
-```
-
-The `store` on line 13 synchronizes with the `load` on line 17. That's the acquire-release semantic. It also establishes a partial ordering. Read or write operations prior to the `release` on line 13 cannot be moved to after line 13. And `release` operation on line 20 cannot be moved before `acquire` operation on line 13.
-
-The same for the `deliveryBoy` and `dataConsumer`. 
-
-![Acquire-release semantics](acquire_release_semantics.png){fig-align="center"}
-
-If you think about mutexes, a mutex `lock()` is an acquire-operation. A mutex `unlock()` is a release operation. Things inside the critical region cannot be moved to outside it. An `unlock()` synchronizes with the next `lock()`. Similarly, `wait` and `notify` are acquire and release operations. The starting of a thread and `join` call on a thread are acquire and release operations.
-
-Consider the same code as in the previous section for sequential consistency, but in this case, I use acquire-release semantics.
-
-```cpp
-// Ref: Asynchronous programming with C++, Javier Reguera Salgado
-#include <iostream>
-#include <atomic>
-#include <thread>
-#include <vector>
-
-std::atomic<bool> x{ false };
-std::atomic<bool> y{ false };
-std::atomic<int> z{ 0 };
-
-void write_x() {
-	x.store(true, std::memory_order_release);
-}
-
-void write_y() {
-	y.store(true, std::memory_order_release);
-}
-
-void read_x_then_y() {
-	while (!x.load(std::memory_order_acquire));
-
-	if (y.load(std::memory_order_acquire))
-		++z;
-}
-
-void read_y_then_x() {
-	while (!y.load(std::memory_order_acquire));
-
-	if (x.load(std::memory_order_acquire))
-		++z;
-}
-
-int main() {
-	std::thread t1(write_x);
-	std::thread t2(write_y);
-	std::thread t3(read_x_then_y);
-	std::thread t4(read_y_then_x);
-
-	t1.join();
-	t2.join();
-	t3.join();
-	t4.join();
-
-	std::cout << "\n" << "x = " << x;
-	std::cout << "\n" << "y = " << y;
-	std::cout << "\n" << "z = " << z;
-}
-```
-
-The release operation on `x` in `t1` synchronizes with the acquire operation on `x` in `t3`. Similarly, the release operation on `y` in `t2` synchonizes with `acquire` operation in  thread `t4`. However, writes to `x` and `y` happen in different threads. 
-
-So, `t3` may find `x = true` and `y=false`. At the same time `t4` may find `y=true` and `x=false`. Different threads have different views of the memory. So, it may happen that `z=0` at the end of this code.
 
 ## References {.appendix}
 
