@@ -20,313 +20,277 @@ Consider a single, fixed-size buffer as if it were connected end-to-end, such th
 
 What do we use SPSC FIFO queues for? In the industry, you often have a pipeline of processes. For example, you have one thread reading from sockets, another thread that handles the messages from the sockets and maybe processes them and produces a result and a third thread writes a response to the network. Those can be connected by SPSC FIFO queues. There's a couple of advantages to this. All these advantages and disadvantages are subject to measurement, so always measure. It may improve the throughput over just a single thread doing all $3$ of these operations, in fact, I'll be surprised if it didn't. It also should improve the resiliency of the application to spikes in message traffic. Some of the disadvantages are that you have to manage 3 threads and it probably uses more memory, because each of the FIFO queues needs place to store its messages.
 
-We all have come across circular FIFO queues. We usually have two cursors - `rear` and `front`. Items are pushed to the `rear` of the queue and popped off the `front` of the queue.
-
-![Circular FIFO Queue](circular_fifo_queue.jpg){fig-align="center" width=40% height=40%}
-
-When we `push(42)` into the FIFO queue, the `rear` cursor is incremented and each time we `pop()`, the `front` cursor is incremented. When the `front` cursor and the `rear` cursor are no longer equal, the FIFO queue is no longer empty. Eventually, we push so many values in, that the FIFO queue fills up. At this point, the `rear` cursor is `capacity` greater than the `front` cursor.
-
-The FIFO queue empty and queue full conditions use the remainder operator `%`. Division uses $20$ to $30$ cycles so it is a bit expensive. Another approach is to constrain the buffer size to an integral power of $2$, and use the bitwise `&` operator and that's a $1$ cycle operation. 
-
-### Implementation notes
-
+## Basic functionalities to expect from a thread-safe queue
 
 ```cpp
-#include <iostream>
-#include <queue>
+#include <gtest/gtest.h>
 #include <thread>
-#include <array>
-#include <numeric>
-#include <memory>
-#include <condition_variable>
-#include <mutex>
-#include <shared_mutex>
+#include <vector>
+#include "threadsafe_queue.h"
 
-namespace dev {
-    template<typename T>
-    class ring_buffer {
-    private:
-        enum {min_capacity = 128};
-        T* ring;
-        int m_front;
-        int m_rear;
-        int m_capacity;
+// Test default constructor
+TEST(ThreadSafeQueueTest, DefaultConstructorTest) {
+    dev::threadsafe_queue<int> queue;
+    EXPECT_EQ(queue.empty(), true);
+    EXPECT_EQ(queue.size(), 0);
+}
 
-    public:
-        /* Default constructor*/
-        ring_buffer() 
-            : m_front{0}
-            , m_rear{0}
-            , ring{nullptr}
-            , m_capacity{0}
-        { 
-            ring = static_cast<T*>(operator new(min_capacity));
-            m_capacity = min_capacity;
-        }
+// Test push and front
+TEST(ThreadSafeQueueTest, PushAndFrontTest) {
+    dev::threadsafe_queue<int> queue;
+    queue.push(42);
+    EXPECT_EQ(queue.front(), 42);
+    EXPECT_EQ(queue.size(), 1);
+    EXPECT_EQ(queue.empty(), false);
+}
 
-        ring_buffer(int capacity)
-            : m_front{ 0 }
-            , m_rear{ 0 }
-            , ring{ nullptr }
-            , m_capacity{ 0 }
-        {
-            ring = static_cast<T*>(operator new(capacity));
-            m_capacity = capacity;
-        }
+// Test push and back
+TEST(ThreadSafeQueueTest, PushAndBackTest) {
+    dev::threadsafe_queue<int> queue;
+    queue.push(10);
+    queue.push(20);
+    EXPECT_EQ(queue.back(), 20);
+    EXPECT_EQ(queue.size(), 2);
+}
 
-        /* Copy constructor - Perform a deep copy */
-        ring_buffer(const ring_buffer<T>& other)
-            : m_front{ 0 }
-            , m_rear{ 0 }
-            , ring{ nullptr }
-            , m_capacity{ 0 }
-        {
-            /* Allocation */
-            ring = static_cast<T*>(operator new(other.m_capacity));
+// Test try_pop (non-blocking)
+TEST(ThreadSafeQueueTest, TryPopTest) {
+    dev::threadsafe_queue<int> queue;
+    queue.push(42);
+    auto item = queue.try_pop();
+    EXPECT_TRUE(item.has_value());
+    EXPECT_EQ(item.value(), 42);
+    EXPECT_EQ(queue.empty(), true);
+}
 
-            m_capacity = other.m_capacity;
+// Test pop (blocking)
+TEST(ThreadSafeQueueTest, BlockingPopTest) {
+    dev::threadsafe_queue<int> queue;
 
-            /* Construction */
-            for (int i{0}; i < other.size(); ++i)
-            {
-                new (&ring[i]) T(other[i]);
-            }
-        }
+    std::thread producer([&queue]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        queue.push(42);
+    });
 
-        /* Swap */
-        friend void swap(ring_buffer<T>& lhs, ring_buffer<T>& rhs)
-        {
-            std::swap(lhs.m_front, rhs.m_front);
-            std::swap(lhs.m_rear, rhs.m_rear);
-            std::swap(lhs.m_capacity, rhs.m_capacity);
-            std::swap(lhs.ring, rhs.ring);
-        }
+    auto item = queue.pop();
+    EXPECT_EQ(item, 42);
+    EXPECT_EQ(queue.empty(), true);
 
-        /* Copy assignment */
-        ring_buffer<T>& operator=(const ring_buffer<T>& other)
-        {
-            ring_buffer<T> temp{ other };  //Copy-construct
-            swap(*this, temp);
-            return *this;
-        }
+    producer.join();
+}
 
-        T& front() {
-            if (empty())
-                throw std::exception("buffer is empty!");
-
-            return ring[m_front % m_capacity];
-        }
-
-        T& back() {
-            if (empty())
-                throw std::exception("buffer is empty!");
-
-            return ring[(m_rear - 1) % m_capacity];
-        }
-
-        T& operator[](int i) const {
-            if (empty())
-                throw std::exception("buffer is empty!");
-
-            return ring[(m_front + i) % m_capacity];
-        }
-
-        bool empty() const {
-            return m_front == m_rear;
-        }
-
-        bool full() const {
-            return size() == capacity();
-        }
-
-        void push(const T& value) {
-            if (full())
-                throw std::exception("buffer is full!");
-
-            new (&ring[m_rear % m_capacity]) T(value);
-            std::cout << "\n" << "pushed " << value << " to buffer";
-            ++m_rear;
-        }
-
-        void push(T&& value) {
-            if (full())
-                throw std::exception("buffer is full!");
-
-            new (&ring[m_rear % m_capacity]) T(std::move(value));
-            std::cout << "\n" << "pushed " << value << " to buffer";
-            ++m_rear;
-        }
-
-        void pop() {
-            if (empty())
-                throw std::exception("buffer is empty!");
-
-            T value = front();
-            ring[m_front % m_capacity].~T();
-            std::cout << "\n" << "popped " << value << " off buffer";
-            ++m_front;
-        }
-
-        int capacity() const{
-            return m_capacity;
-        }
-
-        int size() const {
-            return (m_rear - m_front);
-        }
-
-        void print() {
-            for (int i{ 0 };i < size();++i) {
-                std::cout << "\n" << "ring[" << i << "] = " << (*this)[i];
-            }
-        }
+// Test emplace
+TEST(ThreadSafeQueueTest, EmplaceTest) {
+    struct Point {
+        int x, y;
+        Point(int a, int b) : x(a), y(b) {}
     };
+
+    dev::threadsafe_queue<Point> queue;
+    queue.emplace(1, 2);
+    EXPECT_EQ(queue.front().x, 1);
+    EXPECT_EQ(queue.front().y, 2);
+}
+
+// Test thread safety with multiple producers and consumers
+TEST(ThreadSafeQueueTest, MultiThreadedTest) {
+    dev::threadsafe_queue<int> queue;
+    const int num_items = 100;
+
+    std::thread producer1([&queue]() {
+        for (int i = 0; i < num_items; ++i) {
+            queue.push(i);
+        }
+    });
+
+    std::thread producer2([&queue]() {
+        for (int i = num_items; i < 2 * num_items; ++i) {
+            queue.push(i);
+        }
+    });
+
+    std::vector<int> consumed_items;
+    std::mutex mtx;
+    std::thread consumer1([&queue, &consumed_items, &mtx]() {
+        for (int i = 0; i < num_items; ++i) {
+            {
+                std::unique_lock<std::mutex> unique_lck(mtx);
+                consumed_items.push_back(queue.pop());
+            }
+        }
+    });
+
+    std::thread consumer2([&queue, &consumed_items, &mtx]() {
+        for (int i = 0; i < num_items; ++i) {
+            {
+                std::unique_lock<std::mutex> unique_lck(mtx);
+                consumed_items.push_back(queue.pop());
+            }
+        }
+    });
+
+    producer1.join();
+    producer2.join();
+    consumer1.join();
+    consumer2.join();
+
+    EXPECT_EQ(consumed_items.size(), 2 * num_items);
+    EXPECT_EQ(queue.empty(), true);
+}
+
+// Test empty queue behavior
+TEST(ThreadSafeQueueTest, EmptyQueueTest) {
+    dev::threadsafe_queue<int> queue;
+    EXPECT_EQ(queue.empty(), true);
+    EXPECT_EQ(queue.size(), 0);
+
+    auto item = queue.try_pop();
+    EXPECT_FALSE(item.has_value());
+}
+
+// Test copy constructor
+TEST(ThreadSafeQueueTest, CopyConstructorTest) {
+    dev::threadsafe_queue<int> queue1;
+    queue1.push(42);
+    queue1.push(17);
+
+    dev::threadsafe_queue<int> queue2(queue1);
+    EXPECT_EQ(queue2.size(), 2);
+    EXPECT_EQ(queue2.front(), 42);
+    EXPECT_EQ(queue2.back(), 17);
+}
+
+// Test size
+TEST(ThreadSafeQueueTest, SizeTest) {
+    dev::threadsafe_queue<int> queue;
+    queue.push(1);
+    queue.push(2);
+    queue.push(3);
+    EXPECT_EQ(queue.size(), 3);
 }
 ```
 
-Running the above code-snippet, we find that there are several occassions when there are buffer overflows or underflows, and there are also data races. 
-
-## Building a thread-safe queue using condition variables
-
-You essentially have three groups of operations : those that query the state of the whole queue(`empty()` and `size()`), those that query the elements of the queue(`front()` and `back()`) and those that modify the queue (`push()`, `pop()` and `emplace()`). This is the same as we've seen for the stack container adapter, and we have the same issues regarding race conditions inherent in the interface. Consequently, we need to combine `front()` and `pop()` into a single function call, much as you combined `pop()` and `top()` for the stack. 
-
+## Basic `threadsafe_queue` implementation
 
 ```cpp
-namespace dev {
+// Ref: Asynchronous Programming with C++
+// Javier Reguara Salgado, Juan Antonio Rufes
+#include <iostream>
+#include <shared_mutex>
+#include <queue>
+#include <condition_variable>
+#include <optional>
+#include <type_traits>
+
+namespace dev{
     template<typename T>
-    class threadsafe_ring_buffer {
-    public:
-        threadsafe_ring_buffer() : m_ring_buffer{ring_buffer<T>()}
-        {}
+    class threadsafe_queue{
+        private:
+        std::queue<T> m_queue;
+        mutable std::mutex m_mutex;
+        std::condition_variable not_empty_;
 
-        threadsafe_ring_buffer(int capacity) : m_ring_buffer{ring_buffer<T>(capacity)}
-        {}
+        public:
+        using value_type = T;
+        using reference = T&;
+        using const_reference = const T&;
 
-        threadsafe_ring_buffer(const threadsafe_ring_buffer<T>& other)
+        threadsafe_queue() = default;
+
+        threadsafe_queue(const threadsafe_queue& other){
+            std::unique_lock<std::mutex> unique_lck(other.m_mutex);
+            m_queue = other.m_queue;
+        }
+
+        threadsafe_queue& operator=(const threadsafe_queue&) = delete;
+        
+        value_type front(){
+            std::unique_lock<std::mutex> unique_lck(m_mutex);
+            return m_queue.front();
+        }
+
+        value_type back(){
+            std::unique_lock<std::mutex> unique_lck(m_mutex);
+            return m_queue.back();
+        }
+
+        bool empty(){
+            std::unique_lock<std::mutex> unique_lck(m_mutex);
+            return m_queue.empty();
+        }
+
+        std::size_t size(){
+            std::unique_lock<std::mutex> unique_lck(m_mutex);
+            return m_queue.size();
+        }
+
+        // non-blocking
+        bool try_push(const_reference item){
+            std::unique_lock<std::mutex> unique_lck(m_mutex, std::try_to_lock);
+            if(!unique_lck)
+                return false;
+
+            if constexpr(std::is_nothrow_move_constructible_v<T>){
+                m_queue.push(std::move(item));
+            }else{
+                m_queue.push(item);
+            }
+            unique_lck.unlock();
+            not_empty_.notify_one();
+            return true;
+        }
+
+        // blocking
+        void push(const_reference item){
+            std::unique_lock<std::mutex> unique_lck(m_mutex);
+            m_queue.push(item);
+            unique_lck.unlock();
+            not_empty_.notify_one();
+        }
+
+        // non-blocking
+        std::optional<T> try_pop()
         {
-            std::shared_lock<std::shared_mutex> lck(mtx);
-            m_ring_buffer = other.m_ring_buffer;
-        }
-        threadsafe_ring_buffer<T>& operator=(const threadsafe_ring_buffer<T>& other) = delete;
+            std::unique_lock<std::mutex> unique_lck(m_mutex, std::try_to_lock);
+            if(!unique_lck || m_queue.empty())
+                return std::nullopt;
 
-        void wait_and_push(T new_value) {
-            std::unique_lock<std::shared_mutex> lck(mtx);
-            queue_not_full_cond.wait(lck, [this]() {return !m_ring_buffer.full();});
-            m_ring_buffer.push(new_value);
-            queue_not_empty_cond.notify_one();
-        }
-
-        bool try_push(T new_value) {
-            std::unique_lock<std::shared_mutex> lck(mtx);
-            if (!m_ring_buffer.full())
-                return false;
-
-            m_ring_buffer.push(new_value);
-            return true;
+            value_type item;
+            if constexpr(std::is_nothrow_move_assignable_v<T>){
+                item = std::move(m_queue.front());
+            }
+            else{
+                item = m_queue.front();
+            }
+            m_queue.pop();
+            return item;
         }
 
-        void wait_and_pop(T& value) {
-            std::unique_lock<std::shared_mutex> lck(mtx);
-            queue_not_empty_cond.wait(lck, [this]() { return !m_ring_buffer.empty();});
-            value = m_ring_buffer.front();
-            m_ring_buffer.pop();
-            queue_not_full_cond.notify_one();
+        // blocking
+        value_type pop(){
+            std::unique_lock<std::mutex> unique_lck(m_mutex);
+            not_empty_.wait(unique_lck, [this](){ return !m_queue.empty(); });
+
+            value_type item;
+            if constexpr(std::is_nothrow_move_assignable_v<T>){
+                item = std::move(m_queue.front());
+            }
+            else{
+                item = m_queue.front();
+            }
+            m_queue.pop();
+            return item;
         }
 
-        void try_pop(T& value) {
-            std::unique_lock<std::shared_mutex> lck(mtx);
-            if (m_ring_buffer.empty())
-                return false;
-
-            value = m_ring_buffer.front();
-            m_ring_buffer.pop();
-            return true;
+        // blocking
+        template<typename... Args>
+        void emplace(Args&&... args){
+            std::unique_lock<std::mutex> unique_lck(m_mutex);
+            m_queue.emplace(std::forward<Args>(args)...);
+            unique_lck.unlock();
+            not_empty_.notify_one();
         }
-
-        std::shared_ptr<T> wait_and_pop() {
-            std::unique_lock<std::shared_mutex> lck(mtx);
-            queue_not_empty_cond.wait([this]() { return !empty(); });
-            std::shared_ptr<T> result{ std::make_shared<T>(m_ring_buffer.front()) };
-            m_ring_buffer.pop();
-            return result;
-        }
-
-        std::shared_ptr<T> try_pop() {
-            std::unique_lock<std::shared_mutex> lck(mtx);
-            if (m_ring_buffer.empty())
-                return nullptr;
-
-            std::shared_ptr<T> result{ std::make_shared<T>(m_ring_buffer.front()) };
-            m_ring_buffer.pop();
-            return result;
-        }
-
-        bool empty() const {
-            std::shared_lock<std::shared_mutex> lck(mtx);
-            return m_ring_buffer.empty();
-        }
-
-        bool full() const {
-            std::shared_lock<std::shared_mutex> lck(mtx);
-            return m_ring_buffer.full();
-        }
-
-        int size() const {
-            std::shared_lock<std::shared_mutex> lck(mtx);
-            return m_ring_buffer.size();
-        }
-
-        int capacity() const {
-            std::shared_lock<std::shared_mutex> lck(mtx);
-            return m_ring_buffer.capacity();
-        }
-
-    private:
-        ring_buffer<T> m_ring_buffer;
-        mutable std::shared_mutex mtx;
-        std::condition_variable_any queue_not_empty_cond;
-        std::condition_variable_any queue_not_full_cond;
     };
-}
-
-int main()
-{
-    dev::threadsafe_ring_buffer<int> buffer(64);
-
-    std::thread producer(
-        [&]() {
-            for (int i{ 1 };i <= 1000;++i)
-            {
-                try {
-                    buffer.wait_and_push(i);
-                }
-                catch (std::exception e) {
-                    std::cout << "\n" << "buffer full!";
-                }
-            }
-        }
-    );
-
-    std::thread consumer(
-        [&]() {
-            for (int i{ 1 };i <= 1000;++i)
-            {
-                try {
-                    int value;
-                    buffer.wait_and_pop(value);
-                    std::this_thread::sleep_for(std::chrono::microseconds(1));
-                }
-                catch (std::exception e) {
-                    std::cout << "\n" << "buffer empty!";
-                }
-            }
-        }
-    );
-
-    producer.join();
-    consumer.join();
-    
-    std::cout << "\nFinished execution";
 }
 ```
 
