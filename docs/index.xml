@@ -10,7 +10,872 @@
 <atom:link href="http://quantdev.blog/index.xml" rel="self" type="application/rss+xml"/>
 <description>quantdev.blog</description>
 <generator>quarto-1.3.450</generator>
-<lastBuildDate>Wed, 21 May 2025 23:00:00 GMT</lastBuildDate>
+<lastBuildDate>Sat, 07 Jun 2025 23:00:00 GMT</lastBuildDate>
+<item>
+  <title>A bounded SPSC lock-free queue implementation</title>
+  <dc:creator>Quasar </dc:creator>
+  <link>http://quantdev.blog/posts/spsc_lockfree_queue/index.html</link>
+  <description><![CDATA[ 
+
+
+
+
+<section id="designing-the-spsc_queue-data-structure" class="level1">
+<h1>Designing the <code>spsc_queue</code> data-structure</h1>
+<p>There are several important performance considerations, when implementing an SPSC lock-free queue.</p>
+<section id="read_index-and-write_index-indices" class="level2">
+<h2 class="anchored" data-anchor-id="read_index-and-write_index-indices"><code>read_index</code> and <code>write_index</code> indices</h2>
+<p>A queue needs to keep track of the <code>read_index</code> (the head of the queue) and the <code>write_index</code> (the tail of the queue). These indices should be atomically incremented.</p>
+</section>
+<section id="why-lock-free-queues-should-be-bounded" class="level2">
+<h2 class="anchored" data-anchor-id="why-lock-free-queues-should-be-bounded">Why lock-free queues should be bounded?</h2>
+<p>Lock-free queues are generally bounded queues. Imagine a scenario where the underlying data-structure of a lock-free queue is <code>std::vector&lt;T&gt;</code> which can grow dynamically in size.</p>
+<div class="sourceCode" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb1-2">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>vector<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_buffer</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb1-3">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>atomic<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_write_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb1-4">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>atomic<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_read_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb1-5"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p>Now, a writer thread <code>W</code> that wants to write an element to the queue, performs <code>push_back()</code> on the vector. Assume that the vector’s <code>size() == capacity()</code>, so it is full. Internally the vector does the following steps:</p>
+<ul>
+<li><p>A new heap memory allocation is performed with a larger capacity equal to two times the original capacity.</p></li>
+<li><p>Move/copy construct elements of type <code>T</code> from the old memory block to the new memory block.</p></li>
+<li><p>Free the old memory block.</p></li>
+</ul>
+<p><code>m_buffer</code> is reassigned to the new memory block. Since there is more room for the new element, it Will be copied/moved to <code>m_buffer[write_index + 1]</code>.</p>
+<p>At this point a reader thread <code>R</code> wants to pop an element off the queue.</p>
+<p>The writer thread <code>W</code>, however, hasn’t synchronized with the reader thread <code>R</code>.</p>
+<p>So, the reader thread <code>R</code> accesses <code>m_buffer[read_index]</code>. However, in this thread <code>m_buffer</code> still refers to the old memory block. This is UB(undefined behavior).</p>
+<p>Consequently, lock-free queues are usually bounded and their size should be supplied at compile-time.</p>
+</section>
+<section id="cache-lines-and-cache-coherency." class="level2">
+<h2 class="anchored" data-anchor-id="cache-lines-and-cache-coherency.">Cache lines and cache coherency.</h2>
+<p>A cache-line is typically <img src="https://latex.codecogs.com/png.latex?64">-bytes on most machines.</p>
+<p>In a shared memory multiprocessor(SMP) system with a separate cache memory for each processor, it is possible to have many copies of shared data: one copy in the main memory and one in the local cache of each processor that requested it. When one of the copies of data is changed, the other copies must reflect that change. Cache coherence is the discipline which ensures that the changes in the values of shared operands(data) are propagated throughout the system in a timely fashion. To ensure data consistency across multiple caches, multiprocessor-capable Intel® processors follow the MESI (Modified/Exclusive/Shared/Invalid) protocol.</p>
+<p>In the MESI protocol, each cache line can be in one of these four distinct states: Modified, Exclusive, Shared, or Invalid.</p>
+<p>For simplicity, suppose there are <img src="https://latex.codecogs.com/png.latex?2"> cores - A and B. Further assume, that core A reads and writes to a variable <code>a</code>, core B reads and writes to a variable <code>b</code>, and <code>a</code> and <code>b</code> are close to each other in main memory - they are on the same cache line.</p>
+<p>Core A first reads the value of <code>a</code> from main memory. It therefore loads the entire cache line and marks it as <strong>exclusive</strong> access as it is the only core operating on this cache line. Core B decides to read the value of <code>b</code>. Since, <code>a</code> and <code>b</code> are close and reside on the same cache line, Core B loads the same cache line and both cores tag their cache lines as <strong>shared</strong> access.</p>
+<p>Now, let’s suppose core A decides to change the value of <code>a</code>. The core A stores this change only in its store buffer and marks its cache line as <strong>modified</strong>. It also communicates this change to core B, and this core in turn will mark its cache as <strong>invalidated</strong>.</p>
+<p>That’s how different cores ensure their caches are coherent with each other.</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="http://quantdev.blog/posts/spsc_lockfree_queue/https:/wiki.cdot.senecapolytechnic.ca/w/imgs/CPUCacheline.png" class="img-fluid figure-img"></p>
+<figcaption class="figure-caption">CPU Cache line</figcaption>
+</figure>
+</div>
+</section>
+<section id="false-sharing" class="level2">
+<h2 class="anchored" data-anchor-id="false-sharing">False Sharing</h2>
+<p>False-sharing occurs when threads on different processors modify different variables residing on the same cache-line.</p>
+<p>What happens now, when core B decides to re-read the value of <code>b</code>? Since, the cache line for core B is invalidated, it should now read the value of <code>b</code> from main memory again. This will force the core A to flush its store buffer, and then core B re-fetches the latest cache-line version from main memory. Both cores end up with the latest cache-line version in the <strong>shared</strong> state again.</p>
+<p>So, this imposes a cache miss to one core and an early buffer flush to another one, even though the two cores weren’t operating on the same memory location. This is called <strong>false-sharing</strong>.</p>
+</section>
+<section id="avoiding-false-sharing" class="level2">
+<h2 class="anchored" data-anchor-id="avoiding-false-sharing">Avoiding false sharing</h2>
+<p>To avoid false-sharing, the <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0154r1.html"><code>std::hardware_destructive_interference_size</code></a> constant defined in the <code>thread</code> header, is used to determine the cache-line size and is to be used with <code>alignas()</code>.</p>
+<p>So, we define our <code>spspc_queue</code> class as follows:</p>
+<div class="sourceCode" id="cb2" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Queueable T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb2-2">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb2-3">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">private</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span></span>
+<span id="cb2-4">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_type</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-5">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">value_type</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-6">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> reference <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;;</span></span>
+<span id="cb2-7"></span>
+<span id="cb2-8">        <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">static</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span><span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_capacity</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">static_cast</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;(</span>pow<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">))};</span></span>
+<span id="cb2-9">        T <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_buffer</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_capacity</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span></span>
+<span id="cb2-10">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">alignas</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>hardware_destructive_interference_size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>atomic<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_read_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb2-11">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">alignas</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>hardware_destructive_interference_size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>atomic<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_write_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb2-12">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+</section>
+<section id="implementing-try_push-and-try_pop-methods" class="level2">
+<h2 class="anchored" data-anchor-id="implementing-try_push-and-try_pop-methods">Implementing <code>try_push</code> and <code>try_pop</code> methods</h2>
+<div class="sourceCode" id="cb3" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;iostream&gt;</span></span>
+<span id="cb3-2"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;atomic&gt;</span></span>
+<span id="cb3-3"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;type_traits&gt;</span></span>
+<span id="cb3-4"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;concepts&gt;</span></span>
+<span id="cb3-5"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;vector&gt;</span></span>
+<span id="cb3-6"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;optional&gt;</span></span>
+<span id="cb3-7"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;thread&gt;</span></span>
+<span id="cb3-8"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;math.h&gt;</span></span>
+<span id="cb3-9"></span>
+<span id="cb3-10"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">namespace</span> dev<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb3-11">    </span>
+<span id="cb3-12">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb3-13">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">concept</span> Queueable <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>default_initializable<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>move_constructible<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;;</span></span>
+<span id="cb3-14"></span>
+<span id="cb3-15">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/**</span></span>
+<span id="cb3-16"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">     * </span><span class="an" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">@brief</span><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> The `spsc_queue` class provides a single-reader, single-writer</span></span>
+<span id="cb3-17"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">     * fifo queue. </span></span>
+<span id="cb3-18"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">     */</span></span>
+<span id="cb3-19">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Queueable T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb3-20">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb3-21">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">private</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span></span>
+<span id="cb3-22">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_type</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-23">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">value_type</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-24">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> reference <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;;</span></span>
+<span id="cb3-25"></span>
+<span id="cb3-26">        <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">static</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span><span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_capacity</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">static_cast</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;(</span>pow<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">))};</span></span>
+<span id="cb3-27">        T <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_buffer</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_capacity</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span></span>
+<span id="cb3-28">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">alignas</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>hardware_destructive_interference_size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>atomic<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_read_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb3-29">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">alignas</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>hardware_destructive_interference_size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>atomic<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_write_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb3-30"></span>
+<span id="cb3-31">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">public</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span></span>
+<span id="cb3-32">        spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">default</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-33">        spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">delete</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-34">        spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=(</span><span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">delete</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-35">        spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">delete</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-36">        spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=(</span>spsc_queue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">delete</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-37"></span>
+<span id="cb3-38">        <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/**</span></span>
+<span id="cb3-39"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">         * </span><span class="an" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">@brief</span><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> pushes an element onto the ringbuffer.</span></span>
+<span id="cb3-40"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">         * </span><span class="an" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">@param</span><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span><span class="cv" style="color: #5E5E5E;
+background-color: null;
+font-style: italic;">`element`</span><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> will be pushed to the queue unless the queue is not full</span></span>
+<span id="cb3-41"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">         */</span></span>
+<span id="cb3-42">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> U<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb3-43">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">requires</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>is_convertible_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span>U<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb3-44">        <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">bool</span> try_push<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>U<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;</span> element<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb3-45">            <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>write_index <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_write_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>load<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>memory_order_relaxed<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb3-46">            <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>next_write_index <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>write_index <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_capacity</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb3-47"></span>
+<span id="cb3-48">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">if</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>next_write_index <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!=</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_read_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>load<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>memory_order_acquire<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">))</span></span>
+<span id="cb3-49">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb3-50">                <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_buffer</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>write_index<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>forward<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>U<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;(</span>element<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb3-51">                <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_write_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>store<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>next_write_index<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>memory_order_release<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb3-52">                <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">true</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-53">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span>   </span>
+<span id="cb3-54">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">false</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-55">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb3-56">        </span>
+<span id="cb3-57">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>optional<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> try_pop<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb3-58">            <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>optional<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> result<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>nullopt<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb3-59">            <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>read_index <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_read_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>load<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>memory_order_relaxed<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb3-60"></span>
+<span id="cb3-61">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">if</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>read_index <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">==</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_write_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>load<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>memory_order_acquire<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">))</span></span>
+<span id="cb3-62">                <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> result<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-63"></span>
+<span id="cb3-64">            result <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>move<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_buffer</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>read_index<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]);</span></span>
+<span id="cb3-65">            <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_read_index</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>store<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">((</span>read_index <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_capacity</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">),</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>memory_order_release<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb3-66">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> result<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-67">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb3-68">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb3-69"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+
+
+</section>
+</section>
+
+ ]]></description>
+  <category>C++</category>
+  <guid>http://quantdev.blog/posts/spsc_lockfree_queue/index.html</guid>
+  <pubDate>Sat, 07 Jun 2025 23:00:00 GMT</pubDate>
+  <media:content url="http://quantdev.blog/posts/spsc_lockfree_queue/cpp.jpg" medium="image" type="image/jpeg"/>
+</item>
 <item>
   <title>Storage Durations in C++</title>
   <dc:creator>Quasar </dc:creator>
@@ -20220,7 +21085,7 @@ font-style: inherit;">};</span></span>
 <span id="cb2-119"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span></code></pre></div>
-<p>The use of a mutex to protect the entire stack data-structure limits the concurrency supported by this queue; although multiple threads might be blocked on the queue in various member functions, only one thread can be doing any work at the time. This restriction comes from the use of <code>std::queue&lt;T&gt;</code> in the implementation. If we write a detailed implementation of the data-structure, we can provide more fine-grained locking and allow a higher level of concurrency.</p>
+<p>It would be The use of a mutex to protect the entire stack data-structure limits the concurrency supported by this queue; although multiple threads might be blocked on the queue in various member functions, only one thread can be doing any work at the time. This restriction comes from the use of <code>std::queue&lt;T&gt;</code> in the implementation. If we write a detailed implementation of the data-structure, we can provide more fine-grained locking and allow a higher level of concurrency.</p>
 </section>
 <section id="semaphores" class="level2">
 <h2 class="anchored" data-anchor-id="semaphores">Semaphores</h2>
@@ -29561,48 +30426,6 @@ font-style: inherit;">}</span></span></code></pre></div>
   <guid>http://quantdev.blog/posts/crtp/index.html</guid>
   <pubDate>Sat, 28 Dec 2024 00:00:00 GMT</pubDate>
   <media:content url="http://quantdev.blog/posts/crtp/cpp.jpg" medium="image" type="image/jpeg"/>
-</item>
-<item>
-  <title>Rule of Five</title>
-  <dc:creator>Quasar </dc:creator>
-  <link>http://quantdev.blog/posts/rule-of-five/index.html</link>
-  <description><![CDATA[ 
-
-
-
-
-<section id="introduction" class="level1">
-<h1>Introduction</h1>
-<p>The <a href="https://en.cppreference.com/w/cpp/language/rule_of_three">rule-of-five</a> states that, if a class <code>C</code> has one of <strong>user-declared</strong></p>
-<ul>
-<li>Destructor <code>~C</code></li>
-<li>Copy constructor <code>C(const C&amp;)</code></li>
-<li>Copy assignment operator <code>C&amp; operator=(const C&amp;)</code></li>
-<li>Move constructor <code>C(C&amp;&amp;)</code></li>
-<li>Move assignment operator <code>C&amp; operator=(C&amp;&amp;)</code></li>
-</ul>
-<p>it should declare all five special member functions.</p>
-<p>User-declared <code>!=</code> User-provided. Any explicitly defaulted (<code>=default</code>) or deleted (<code>=delete</code>) functions count as user-declared.</p>
-<p>A function is <em>user-provided</em> if it is user-declared and not explicitly defaulted or deleted.</p>
-</section>
-<section id="hinnant-table" class="level1">
-<h1>Hinnant Table</h1>
-<p>The infamous <a href="https://howardhinnant.github.io">Hinnant table</a> elaborates the various special members implicitly generated by the compiler in the presence of <strong>user-declared</strong> special functions.</p>
-<div class="quarto-figure quarto-figure-center">
-<figure class="figure">
-<p><img src="http://quantdev.blog/posts/rule-of-five/hinnant.jpg" class="img-fluid figure-img"></p>
-<figcaption class="figure-caption">Hinnant table</figcaption>
-</figure>
-</div>
-
-
-</section>
-
- ]]></description>
-  <category>C++</category>
-  <guid>http://quantdev.blog/posts/rule-of-five/index.html</guid>
-  <pubDate>Fri, 27 Dec 2024 00:00:00 GMT</pubDate>
-  <media:content url="http://quantdev.blog/posts/rule-of-five/cpp.jpg" medium="image" type="image/jpeg"/>
 </item>
 </channel>
 </rss>
