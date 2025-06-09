@@ -16,7 +16,7 @@ There are several important performance considerations, when implementing an SPS
 
 A queue needs to keep track of the `read_index` (the head of the queue) and the `write_index` (the tail of the queue). These indices should be atomically incremented.
 
-## Why lock-free queues should be bounded?
+## Why implementing growing lock-free queues is much harder?
 
 Lock-free queues are generally bounded queues. Imagine a scenario where the underlying data-structure of a lock-free queue is `std::vector<T>` which can grow dynamically in size. 
 
@@ -44,15 +44,13 @@ The writer thread `W`, however, hasn't synchronized with the reader thread `R`.
 
 So, the reader thread `R` accesses `m_buffer[read_index]`. However, in this thread `m_buffer` still refers to the old memory block. This is UB(undefined behavior).
 
-Consequently, lock-free queues are usually bounded and their size should be supplied at compile-time. 
+Consequently, lock-free queues are usually bounded. You can implement growing lock-free queues, it's much harder and potentially has higher overhead compared to a fixed-capacity queue.
 
 ## Cache lines and cache coherency.
 
 A cache-line is typically $64$-bytes on most machines. 
 
-In a shared memory multiprocessor(SMP) system with a separate cache memory for each processor, it is possible to have many copies of shared data: one copy in the main memory and one in the local cache of each processor that requested it. When one of the copies of data is changed, the other copies must reflect that change. Cache coherence is the discipline which ensures that the changes in the values of shared operands(data) are propagated throughout the system in a timely fashion. To ensure data consistency across multiple caches, multiprocessor-capable Intel® processors follow the MESI (Modified/Exclusive/Shared/Invalid) protocol. 
-
-In the MESI protocol, each cache line can be in one of these four distinct states: Modified, Exclusive, Shared, or Invalid. 
+If cache line X is in the cache of multiple cores, and one of these cores mutates its data, then the change must be reflected in all the cores owning X via a cache coherency mechanism 
 
 For simplicity, suppose there are $2$ cores - A and B. Further assume, that core A reads and writes to a variable `a`, core B reads and writes to a variable `b`, and `a` and `b` are close to each other in main memory - they are on the same cache line.
 
@@ -72,6 +70,8 @@ What happens now, when core B decides to re-read the value of `b`? Since, the ca
 
 So, this imposes a cache miss to one core and an early buffer flush to another one, even though the two cores weren’t operating on the same memory location. This is called **false-sharing**.
 
+Keeping objects close in memory is often very desirable for performance reasons. False sharing is a potential risk for multithreaded applications that mutate data.
+
 ## Avoiding false sharing
 
 To avoid false-sharing, the [`std::hardware_destructive_interference_size`](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0154r1.html) constant defined in the `thread` header, is used to determine the cache-line size and is to be used with `alignas()`.
@@ -86,7 +86,7 @@ template<Queueable T, std::size_t N>
         using value_type = T;
         using reference = T&;
 
-        static constexpr std::size_t m_capacity {static_cast<std::size_t>(pow(2, N))};
+        static constexpr std::size_t m_capacity {1 << N};
         T m_buffer[m_capacity];
         alignas(std::hardware_destructive_interference_size) std::atomic<std::size_t> m_read_index{ 0 };
         alignas(std::hardware_destructive_interference_size) std::atomic<std::size_t> m_write_index{ 0 };
@@ -121,7 +121,7 @@ namespace dev{
         using value_type = T;
         using reference = T&;
 
-        static constexpr std::size_t m_capacity {static_cast<std::size_t>(pow(2, N))};
+        static constexpr std::size_t m_capacity {(1 << N)};
         T m_buffer[m_capacity];
         alignas(std::hardware_destructive_interference_size) std::atomic<std::size_t> m_read_index{ 0 };
         alignas(std::hardware_destructive_interference_size) std::atomic<std::size_t> m_write_index{ 0 };

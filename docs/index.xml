@@ -27,8 +27,8 @@
 <h2 class="anchored" data-anchor-id="read_index-and-write_index-indices"><code>read_index</code> and <code>write_index</code> indices</h2>
 <p>A queue needs to keep track of the <code>read_index</code> (the head of the queue) and the <code>write_index</code> (the tail of the queue). These indices should be atomically incremented.</p>
 </section>
-<section id="why-lock-free-queues-should-be-bounded" class="level2">
-<h2 class="anchored" data-anchor-id="why-lock-free-queues-should-be-bounded">Why lock-free queues should be bounded?</h2>
+<section id="why-implementing-growing-lock-free-queues-is-much-harder" class="level2">
+<h2 class="anchored" data-anchor-id="why-implementing-growing-lock-free-queues-is-much-harder">Why implementing growing lock-free queues is much harder?</h2>
 <p>Lock-free queues are generally bounded queues. Imagine a scenario where the underlying data-structure of a lock-free queue is <code>std::vector&lt;T&gt;</code> which can grow dynamically in size.</p>
 <div class="sourceCode" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><span class="kw" style="color: #003B4F;
 background-color: null;
@@ -95,13 +95,12 @@ font-style: inherit;">};</span></span></code></pre></div>
 <p>At this point a reader thread <code>R</code> wants to pop an element off the queue.</p>
 <p>The writer thread <code>W</code>, however, hasn’t synchronized with the reader thread <code>R</code>.</p>
 <p>So, the reader thread <code>R</code> accesses <code>m_buffer[read_index]</code>. However, in this thread <code>m_buffer</code> still refers to the old memory block. This is UB(undefined behavior).</p>
-<p>Consequently, lock-free queues are usually bounded and their size should be supplied at compile-time.</p>
+<p>Consequently, lock-free queues are usually bounded. You can implement growing lock-free queues, it’s much harder and potentially has higher overhead compared to a fixed-capacity queue.</p>
 </section>
 <section id="cache-lines-and-cache-coherency." class="level2">
 <h2 class="anchored" data-anchor-id="cache-lines-and-cache-coherency.">Cache lines and cache coherency.</h2>
 <p>A cache-line is typically <img src="https://latex.codecogs.com/png.latex?64">-bytes on most machines.</p>
-<p>In a shared memory multiprocessor(SMP) system with a separate cache memory for each processor, it is possible to have many copies of shared data: one copy in the main memory and one in the local cache of each processor that requested it. When one of the copies of data is changed, the other copies must reflect that change. Cache coherence is the discipline which ensures that the changes in the values of shared operands(data) are propagated throughout the system in a timely fashion. To ensure data consistency across multiple caches, multiprocessor-capable Intel® processors follow the MESI (Modified/Exclusive/Shared/Invalid) protocol.</p>
-<p>In the MESI protocol, each cache line can be in one of these four distinct states: Modified, Exclusive, Shared, or Invalid.</p>
+<p>If cache line X is in the cache of multiple cores, and one of these cores mutates its data, then the change must be reflected in all the cores owning X via a cache coherency mechanism</p>
 <p>For simplicity, suppose there are <img src="https://latex.codecogs.com/png.latex?2"> cores - A and B. Further assume, that core A reads and writes to a variable <code>a</code>, core B reads and writes to a variable <code>b</code>, and <code>a</code> and <code>b</code> are close to each other in main memory - they are on the same cache line.</p>
 <p>Core A first reads the value of <code>a</code> from main memory. It therefore loads the entire cache line and marks it as <strong>exclusive</strong> access as it is the only core operating on this cache line. Core B decides to read the value of <code>b</code>. Since, <code>a</code> and <code>b</code> are close and reside on the same cache line, Core B loads the same cache line and both cores tag their cache lines as <strong>shared</strong> access.</p>
 <p>Now, let’s suppose core A decides to change the value of <code>a</code>. The core A stores this change only in its store buffer and marks its cache line as <strong>modified</strong>. It also communicates this change to core B, and this core in turn will mark its cache as <strong>invalidated</strong>.</p>
@@ -118,6 +117,7 @@ font-style: inherit;">};</span></span></code></pre></div>
 <p>False-sharing occurs when threads on different processors modify different variables residing on the same cache-line.</p>
 <p>What happens now, when core B decides to re-read the value of <code>b</code>? Since, the cache line for core B is invalidated, it should now read the value of <code>b</code> from main memory again. This will force the core A to flush its store buffer, and then core B re-fetches the latest cache-line version from main memory. Both cores end up with the latest cache-line version in the <strong>shared</strong> state again.</p>
 <p>So, this imposes a cache miss to one core and an early buffer flush to another one, even though the two cores weren’t operating on the same memory location. This is called <strong>false-sharing</strong>.</p>
+<p>Keeping objects close in memory is often very desirable for performance reasons. False sharing is a potential risk for multithreaded applications that mutate data.</p>
 </section>
 <section id="avoiding-false-sharing" class="level2">
 <h2 class="anchored" data-anchor-id="avoiding-false-sharing">Avoiding false sharing</h2>
@@ -186,23 +186,13 @@ font-style: inherit;"> </span><span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_capacity</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">{</span><span class="kw" style="color: #003B4F;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">static_cast</span><span class="op" style="color: #5E5E5E;
+font-style: inherit;">1</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+font-style: inherit;">&lt;&lt;</span> N<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;(</span>pow<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> N<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">))};</span></span>
+font-style: inherit;">};</span></span>
 <span id="cb2-9">        T <span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_buffer</span><span class="op" style="color: #5E5E5E;
@@ -423,23 +413,13 @@ font-style: inherit;"> </span><span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_capacity</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">{</span><span class="kw" style="color: #003B4F;
+font-style: inherit;">{(</span><span class="dv" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">static_cast</span><span class="op" style="color: #5E5E5E;
+font-style: inherit;">1</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+font-style: inherit;">&lt;&lt;</span> N<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;(</span>pow<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> N<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">))};</span></span>
+font-style: inherit;">)};</span></span>
 <span id="cb3-27">        T <span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_buffer</span><span class="op" style="color: #5E5E5E;
