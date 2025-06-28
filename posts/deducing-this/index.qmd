@@ -75,7 +75,7 @@ struct vector{
     std::size_t m_capacity;
 
     vector()
-    : m_data{::new T[8]}
+    : m_data{new T[8]}
     , m_size{0}
     , m_capacity{8}
     {}
@@ -87,7 +87,7 @@ struct vector{
 
         Iterator() = default;
 
-        Iterator(U* ptr)
+        explicit Iterator(U* ptr)
         : m_ptr{ptr}
         {}
 
@@ -100,7 +100,16 @@ struct vector{
     auto begin(this auto&& self){
         return Iterator(self.m_data);
         //              ^----------
-        //               T* const
+        //               T* const, if self is const
+        //               T*, otherwise
+    }
+
+    auto end(this auto&& self){
+        return Iterator(self.m_data + self.m_size);
+    }
+
+    ~vector(){
+        delete[] m_data;
     }
 
 };
@@ -126,11 +135,11 @@ int main(){
     return 0;
 }
 ```
-[Compiler Explorer](https://godbolt.org/z/bjT571hYY)
+[Compiler Explorer](https://godbolt.org/z/o16zrj6GT)
 
 Instead of writing traditional `const` and non-`const` variants of `begin()`, we are using the deducing `this` feature to de-duplicate overloads.  
 
-While at the outset, this code might look fine, be warned that `std::is_same_v<decltype(cv.begin()),vector<double>::Iterator<const double>>` returns `false_type`. The reason is that `const` qualifiers on the top-level `Iterator` class are discarded when template argument deduction is performed on the implicit function-template powering the constructor call `Iterator(self.m_data)`. `T* m_data` of a `const` object becomes `T* const m_data`, that is `const` ends up on the top-level of that type. The client may write hostile code and modify the contents of the `const vector` through the iterator object. What we want is a pointer-to-`const T` instead of a `const`-pointer-to-`T`. 
+While at the outset, this code might look fine, be warned that `std::is_same_v<decltype(cv.begin()),vector<double>::Iterator<const double>>` returns `false_type`. `T* m_data` of a `const` object becomes `T* const m_data`, that is `const` ends up on the top-level of that type. `const` qualifiers on the top-level `Iterator` class are then discarded when template argument deduction is performed on the implicit function-template powering the constructor call `Iterator(self.m_data)`. The client may write hostile code and modify the contents of the `const vector` through the iterator object. What we want is a pointer-to-`const T` instead of a `const`-pointer-to-`T`. 
 
 We can branch on the `const`-ness of `self` and return the correct iterator type.
 
@@ -146,12 +155,6 @@ struct vector{
     std::size_t m_size;
     std::size_t m_capacity;
 
-    vector()
-    : m_data{::new T[8]}
-    , m_size{0}
-    , m_capacity{8}
-    {}
-
     template<typename U>
     struct Iterator{
         using difference_type = std::ptrdiff_t;
@@ -164,7 +167,7 @@ struct vector{
 
         Iterator() = default;
 
-        Iterator(U* ptr)
+        explicit Iterator(U* ptr)
         : m_ptr{ptr}
         {}
         
@@ -175,7 +178,7 @@ struct vector{
 
         Iterator operator++(int){
             auto temp {*this};
-            ++this;
+            ++m_ptr;
             return temp;
         }
 
@@ -187,16 +190,12 @@ struct vector{
             return *m_ptr;
         }
 
-        bool operator<=>(const Iterator& other){
+        auto operator<=>(const Iterator& other) const{
             return m_ptr<=>other.m_ptr;
         }
 
-        bool operator==(const Iterator& other){
-            return m_ptr == other.m_ptr;
-        }
-
-        bool operator!=(const Iterator& other){
-            return !(*this == other);
+        bool operator==(const Iterator& other) const{
+            return m_ptr==other.m_ptr;
         }
     };
 
@@ -205,7 +204,7 @@ struct vector{
 
     auto begin(this auto&& self){
         if constexpr(std::is_const_v<typename std::remove_reference_t<decltype(self)>>)
-            return const_iterator(const_cast<const T*>(self.m_data));
+            return const_iterator(self.m_data);
         else
             return iterator(self.m_data);
             
@@ -219,23 +218,28 @@ struct vector{
     }
 
     vector(std::size_t n, const T& x)
-    : m_data{ ::new T[n] }
+    : m_data{ static_cast<T*>(::operator new(sizeof(T) * n)) }
     , m_size{0}
     , m_capacity{n}
     {
         auto p{begin()};
         try{
-            for(;p!=begin()+n;++p)
+            for(;p != (begin()+n);++p)
                 new(static_cast<void*>(p.m_ptr)) T(x);
         }
         catch(...){
             for(auto q{begin()}; q!=p; ++q)
                 q.m_ptr->~T();
-            ::delete[] m_data;
+            ::operator delete (p.m_ptr);
             throw;
         }
 
         m_size = n;
+    }
+
+    ~vector(){
+        std::destroy(begin(), end());
+        ::operator delete (m_data);
     }
 };
 
@@ -265,7 +269,7 @@ int main(){
     return 0;
 }
 ```
-[Compiler Explorer](https://godbolt.org/z/f8T16czGr)
+[Compiler Explorer](https://godbolt.org/z/dc93Kz31E)
 
 # Propagating the value category of the owning object
 
