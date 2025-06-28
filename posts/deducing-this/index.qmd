@@ -202,7 +202,7 @@ struct vector{
     using const_iterator = Iterator<const T>;
 
     auto begin(this auto&& self){
-        if constexpr(std::is_const_v<typename std::remove_reference_t<decltype(self)>>)
+        if constexpr(std::is_const_v<std::remove_reference_t<decltype(self)>>)
             return const_iterator(self.m_data);
         else
             return iterator(self.m_data);
@@ -210,7 +210,7 @@ struct vector{
     }
 
     auto end(this auto&& self){
-        if constexpr(std::is_const_v<typename std::remove_reference_t<decltype(self)>>)
+        if constexpr(std::is_const_v<std::remove_reference_t<decltype(self)>>)
             return const_iterator(self.m_data + self.m_size);
         else
             return iterator(self.m_data);
@@ -229,7 +229,7 @@ struct vector{
         catch(...){
             for(auto q{begin()}; q!=p; ++q)
                 q.m_ptr->~T();
-            ::operator delete (p.m_ptr);
+            ::operator delete (m_data);
             throw;
         }
 
@@ -268,7 +268,59 @@ int main(){
     return 0;
 }
 ```
-[Compiler Explorer](https://godbolt.org/z/c7EfW67zP)
+[Compiler Explorer](https://godbolt.org/z/nhfhW6z14)
+
+# A small digression - `auto` deduction rules
+
+In the below code snippet, can you tell why the static assertion passes?
+
+```cpp
+#include <iostream>
+#include <concepts>
+#include <type_traits>
+
+template<typename T>
+struct Wrapper{
+    T* m_data;
+
+    Wrapper(const T& val)
+    : m_data{new T(val)}
+    {}
+
+    auto get(this Wrapper& self){
+        return self.m_data;
+    }
+
+    auto get(this Wrapper const& self){
+        return self.m_data;
+    }
+
+    auto get(this Wrapper&& self){
+        return self.m_data;
+    }
+
+    auto get(this Wrapper const&& self){
+        return self.m_data;
+    }
+};
+
+int main(){
+    Wrapper<int> wrapper{5};
+    const Wrapper<int> const_wrapper{42};
+
+    static_assert(std::is_same_v<
+        decltype(const_wrapper.get()),
+        int*
+    >);
+
+    // const_wrapper.m_data = new int(10);  m_data is immutable
+    *const_wrapper.m_data = 10;
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/bGMPYT6vh)
+
+The static assertion passes, because `get()` returns `auto`. It is, as if, we are returning by value. `auto` always deduces a non-`const`, non-reference object.
 
 # Propagating the value category of the owning object
 
