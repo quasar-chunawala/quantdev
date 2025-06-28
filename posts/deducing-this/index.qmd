@@ -324,7 +324,7 @@ The static assertion passes, because `get()` returns `auto`. It is, as if, we ar
 
 # Propagating the value category of the owning object
 
-Consider a simplified version of `optional<T>` which is a wrapper type for representing nullable `T` objects which may/may not contain a value. 
+Consider a highly simplified version of `optional<T>` which is a wrapper type for representing nullable `T` objects which may/may not contain a value. 
 
 ```cpp
 template<typename T>
@@ -333,9 +333,11 @@ struct optional{
     bool m_is_initialized;
 
     optional(T const& v)
-    : m_storage(v)
+    : m_storage{}
     , m_is_initialized(true)
-    {}
+    {
+        ::operator new (static_cast<void*>&m_storage) T(v));
+    }
 
     optional()
     : m_storage{}
@@ -351,16 +353,20 @@ From a design perspective, we would like that getters such as `optional<T>::get(
 ```cpp
 #include <utility>
 #include <iostream>
+#include <type_traits>
+
 template<typename T>
 struct optional{
-    bool m_is_initialized;
     T m_storage;
+    bool m_is_initialized;
 
     optional(T const& v)
-    : m_storage(v)
+    : m_storage{}
     , m_is_initialized(true)
-    {}
-
+    {
+        ::new (static_cast<void*>(&m_storage)) T(v); // placement new
+    }
+    
     optional()
     : m_storage{}
     , m_is_initialized{false}
@@ -368,10 +374,12 @@ struct optional{
 
     template<typename Self>
     decltype(auto) value(this Self&& self){
-        if constexpr(std::is_const_v<std::remove_reference_t<Self>>)
-            return static_cast<const T>(std::forward<decltype(self)>(self).m_storage);
-        else
+        if constexpr(std::is_const_v<std::remove_reference_t<Self>>){
+            // const T&& is rare
+            return static_cast<const T&>(self.m_storage);
+        } else {
             return std::forward<decltype(self)>(self).m_storage;
+        }
     }
 };
 
@@ -383,11 +391,11 @@ int main(){
     copt_d.value();
 
     optional<double>(17.0).value();
-    static_cast<optional<double> const&&>(optional<double>(28.0)).value();
+    static_cast<optional<double>&&>(optional<double>(28.0)).value();
     return 0;
 }
 ```
-[Compiler Explorer](https://godbolt.org/z/babTr9c39)
+[Compiler Explorer](https://compiler-explorer.com/z/1z9T6d1W9)
 
 One function template does it. This is equivalent to writing:
 
@@ -412,10 +420,12 @@ struct optional{
     /*
     template<typename Self>
     decltype(auto) value(this Self&& self){
-        if constexpr(std::is_const_v<std::remove_reference_t<Self>>)
-            return static_cast<const T>(std::forward<decltype(self)>(self).m_storage);
-        else
+        if constexpr(std::is_const_v<std::remove_reference_t<Self>>){
+            // const T&& is rare
+            return static_cast<const T&>(self.m_storage);
+        } else {
             return std::forward<decltype(self)>(self).m_storage;
+        }
     }
     */
     decltype(auto) value(this optional& self){

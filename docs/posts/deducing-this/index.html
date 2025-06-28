@@ -512,63 +512,71 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="propagating-the-value-category-of-the-owning-object" class="level1">
 <h1>Propagating the value category of the owning object</h1>
-<p>Consider a simplified version of <code>optional&lt;T&gt;</code> which is a wrapper type for representing nullable <code>T</code> objects which may/may not contain a value.</p>
+<p>Consider a highly simplified version of <code>optional&lt;T&gt;</code> which is a wrapper type for representing nullable <code>T</code> objects which may/may not contain a value.</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
 <span id="cb5-2"><a href="#cb5-2"></a><span class="kw">struct</span> optional<span class="op">{</span></span>
 <span id="cb5-3"><a href="#cb5-3"></a>    T <span class="va">m_storage</span><span class="op">;</span></span>
 <span id="cb5-4"><a href="#cb5-4"></a>    <span class="dt">bool</span> <span class="va">m_is_initialized</span><span class="op">;</span></span>
 <span id="cb5-5"><a href="#cb5-5"></a></span>
 <span id="cb5-6"><a href="#cb5-6"></a>    optional<span class="op">(</span>T <span class="at">const</span><span class="op">&amp;</span> v<span class="op">)</span></span>
-<span id="cb5-7"><a href="#cb5-7"></a>    <span class="op">:</span> <span class="va">m_storage</span><span class="op">(</span>v<span class="op">)</span></span>
+<span id="cb5-7"><a href="#cb5-7"></a>    <span class="op">:</span> <span class="va">m_storage</span><span class="op">{}</span></span>
 <span id="cb5-8"><a href="#cb5-8"></a>    <span class="op">,</span> <span class="va">m_is_initialized</span><span class="op">(</span><span class="kw">true</span><span class="op">)</span></span>
-<span id="cb5-9"><a href="#cb5-9"></a>    <span class="op">{}</span></span>
-<span id="cb5-10"><a href="#cb5-10"></a></span>
-<span id="cb5-11"><a href="#cb5-11"></a>    optional<span class="op">()</span></span>
-<span id="cb5-12"><a href="#cb5-12"></a>    <span class="op">:</span> <span class="va">m_storage</span><span class="op">{}</span></span>
-<span id="cb5-13"><a href="#cb5-13"></a>    <span class="op">,</span> <span class="va">m_is_initialized</span><span class="op">{</span><span class="kw">false</span><span class="op">}</span></span>
-<span id="cb5-14"><a href="#cb5-14"></a>    <span class="op">{}</span></span>
-<span id="cb5-15"><a href="#cb5-15"></a></span>
-<span id="cb5-16"><a href="#cb5-16"></a>    <span class="co">/* ... */</span></span>
-<span id="cb5-17"><a href="#cb5-17"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb5-9"><a href="#cb5-9"></a>    <span class="op">{</span></span>
+<span id="cb5-10"><a href="#cb5-10"></a>        <span class="op">::</span><span class="kw">operator</span> <span class="kw">new</span> <span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">void</span><span class="op">*&gt;&amp;</span><span class="va">m_storage</span><span class="op">)</span> T<span class="op">(</span>v<span class="op">));</span></span>
+<span id="cb5-11"><a href="#cb5-11"></a>    <span class="op">}</span></span>
+<span id="cb5-12"><a href="#cb5-12"></a></span>
+<span id="cb5-13"><a href="#cb5-13"></a>    optional<span class="op">()</span></span>
+<span id="cb5-14"><a href="#cb5-14"></a>    <span class="op">:</span> <span class="va">m_storage</span><span class="op">{}</span></span>
+<span id="cb5-15"><a href="#cb5-15"></a>    <span class="op">,</span> <span class="va">m_is_initialized</span><span class="op">{</span><span class="kw">false</span><span class="op">}</span></span>
+<span id="cb5-16"><a href="#cb5-16"></a>    <span class="op">{}</span></span>
+<span id="cb5-17"><a href="#cb5-17"></a></span>
+<span id="cb5-18"><a href="#cb5-18"></a>    <span class="co">/* ... */</span></span>
+<span id="cb5-19"><a href="#cb5-19"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>From a design perspective, we would like that getters such as <code>optional&lt;T&gt;::get()</code> should propagate the value-category of the owning object to it’s member data.</p>
 <div class="sourceCode" id="cb6"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="pp">#include </span><span class="im">&lt;utility&gt;</span></span>
 <span id="cb6-2"><a href="#cb6-2"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb6-3"><a href="#cb6-3"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb6-4"><a href="#cb6-4"></a><span class="kw">struct</span> optional<span class="op">{</span></span>
-<span id="cb6-5"><a href="#cb6-5"></a>    <span class="dt">bool</span> <span class="va">m_is_initialized</span><span class="op">;</span></span>
-<span id="cb6-6"><a href="#cb6-6"></a>    T <span class="va">m_storage</span><span class="op">;</span></span>
-<span id="cb6-7"><a href="#cb6-7"></a></span>
-<span id="cb6-8"><a href="#cb6-8"></a>    optional<span class="op">(</span>T <span class="at">const</span><span class="op">&amp;</span> v<span class="op">)</span></span>
-<span id="cb6-9"><a href="#cb6-9"></a>    <span class="op">:</span> <span class="va">m_storage</span><span class="op">(</span>v<span class="op">)</span></span>
-<span id="cb6-10"><a href="#cb6-10"></a>    <span class="op">,</span> <span class="va">m_is_initialized</span><span class="op">(</span><span class="kw">true</span><span class="op">)</span></span>
-<span id="cb6-11"><a href="#cb6-11"></a>    <span class="op">{}</span></span>
-<span id="cb6-12"><a href="#cb6-12"></a></span>
-<span id="cb6-13"><a href="#cb6-13"></a>    optional<span class="op">()</span></span>
-<span id="cb6-14"><a href="#cb6-14"></a>    <span class="op">:</span> <span class="va">m_storage</span><span class="op">{}</span></span>
-<span id="cb6-15"><a href="#cb6-15"></a>    <span class="op">,</span> <span class="va">m_is_initialized</span><span class="op">{</span><span class="kw">false</span><span class="op">}</span></span>
-<span id="cb6-16"><a href="#cb6-16"></a>    <span class="op">{}</span></span>
-<span id="cb6-17"><a href="#cb6-17"></a></span>
-<span id="cb6-18"><a href="#cb6-18"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Self<span class="op">&gt;</span></span>
-<span id="cb6-19"><a href="#cb6-19"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> value<span class="op">(</span><span class="kw">this</span> Self<span class="op">&amp;&amp;</span> self<span class="op">){</span></span>
-<span id="cb6-20"><a href="#cb6-20"></a>        <span class="cf">if</span> <span class="kw">constexpr</span><span class="op">(</span><span class="bu">std::</span>is_const_v<span class="op">&lt;</span><span class="bu">std::</span>remove_reference_t<span class="op">&lt;</span>Self<span class="op">&gt;&gt;)</span></span>
-<span id="cb6-21"><a href="#cb6-21"></a>            <span class="cf">return</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="at">const</span> T<span class="op">&gt;(</span><span class="bu">std::</span>forward<span class="op">&lt;</span><span class="kw">decltype</span><span class="op">(</span>self<span class="op">)&gt;(</span>self<span class="op">).</span><span class="va">m_storage</span><span class="op">);</span></span>
-<span id="cb6-22"><a href="#cb6-22"></a>        <span class="cf">else</span></span>
-<span id="cb6-23"><a href="#cb6-23"></a>            <span class="cf">return</span> <span class="bu">std::</span>forward<span class="op">&lt;</span><span class="kw">decltype</span><span class="op">(</span>self<span class="op">)&gt;(</span>self<span class="op">).</span><span class="va">m_storage</span><span class="op">;</span></span>
-<span id="cb6-24"><a href="#cb6-24"></a>    <span class="op">}</span></span>
-<span id="cb6-25"><a href="#cb6-25"></a><span class="op">};</span></span>
-<span id="cb6-26"><a href="#cb6-26"></a></span>
-<span id="cb6-27"><a href="#cb6-27"></a><span class="dt">int</span> main<span class="op">(){</span></span>
-<span id="cb6-28"><a href="#cb6-28"></a>    optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> opt_d<span class="op">(</span><span class="fl">42.0</span><span class="op">);</span></span>
-<span id="cb6-29"><a href="#cb6-29"></a>    opt_d<span class="op">.</span>value<span class="op">();</span></span>
-<span id="cb6-30"><a href="#cb6-30"></a></span>
-<span id="cb6-31"><a href="#cb6-31"></a>    <span class="at">const</span> optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> copt_d<span class="op">(</span><span class="fl">5.0</span><span class="op">);</span></span>
-<span id="cb6-32"><a href="#cb6-32"></a>    copt_d<span class="op">.</span>value<span class="op">();</span></span>
-<span id="cb6-33"><a href="#cb6-33"></a></span>
-<span id="cb6-34"><a href="#cb6-34"></a>    optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;(</span><span class="fl">17.0</span><span class="op">).</span>value<span class="op">();</span></span>
-<span id="cb6-35"><a href="#cb6-35"></a>    <span class="kw">static_cast</span><span class="op">&lt;</span>optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> <span class="at">const</span><span class="op">&amp;&amp;&gt;(</span>optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;(</span><span class="fl">28.0</span><span class="op">)).</span>value<span class="op">();</span></span>
-<span id="cb6-36"><a href="#cb6-36"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb6-37"><a href="#cb6-37"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p><a href="https://godbolt.org/z/babTr9c39">Compiler Explorer</a></p>
+<span id="cb6-3"><a href="#cb6-3"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
+<span id="cb6-4"><a href="#cb6-4"></a></span>
+<span id="cb6-5"><a href="#cb6-5"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb6-6"><a href="#cb6-6"></a><span class="kw">struct</span> optional<span class="op">{</span></span>
+<span id="cb6-7"><a href="#cb6-7"></a>    T <span class="va">m_storage</span><span class="op">;</span></span>
+<span id="cb6-8"><a href="#cb6-8"></a>    <span class="dt">bool</span> <span class="va">m_is_initialized</span><span class="op">;</span></span>
+<span id="cb6-9"><a href="#cb6-9"></a></span>
+<span id="cb6-10"><a href="#cb6-10"></a>    optional<span class="op">(</span>T <span class="at">const</span><span class="op">&amp;</span> v<span class="op">)</span></span>
+<span id="cb6-11"><a href="#cb6-11"></a>    <span class="op">:</span> <span class="va">m_storage</span><span class="op">{}</span></span>
+<span id="cb6-12"><a href="#cb6-12"></a>    <span class="op">,</span> <span class="va">m_is_initialized</span><span class="op">(</span><span class="kw">true</span><span class="op">)</span></span>
+<span id="cb6-13"><a href="#cb6-13"></a>    <span class="op">{</span></span>
+<span id="cb6-14"><a href="#cb6-14"></a>        <span class="op">::</span><span class="kw">new</span> <span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">void</span><span class="op">*&gt;(&amp;</span><span class="va">m_storage</span><span class="op">))</span> T<span class="op">(</span>v<span class="op">);</span> <span class="co">// placement new</span></span>
+<span id="cb6-15"><a href="#cb6-15"></a>    <span class="op">}</span></span>
+<span id="cb6-16"><a href="#cb6-16"></a>    </span>
+<span id="cb6-17"><a href="#cb6-17"></a>    optional<span class="op">()</span></span>
+<span id="cb6-18"><a href="#cb6-18"></a>    <span class="op">:</span> <span class="va">m_storage</span><span class="op">{}</span></span>
+<span id="cb6-19"><a href="#cb6-19"></a>    <span class="op">,</span> <span class="va">m_is_initialized</span><span class="op">{</span><span class="kw">false</span><span class="op">}</span></span>
+<span id="cb6-20"><a href="#cb6-20"></a>    <span class="op">{}</span></span>
+<span id="cb6-21"><a href="#cb6-21"></a></span>
+<span id="cb6-22"><a href="#cb6-22"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Self<span class="op">&gt;</span></span>
+<span id="cb6-23"><a href="#cb6-23"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> value<span class="op">(</span><span class="kw">this</span> Self<span class="op">&amp;&amp;</span> self<span class="op">){</span></span>
+<span id="cb6-24"><a href="#cb6-24"></a>        <span class="cf">if</span> <span class="kw">constexpr</span><span class="op">(</span><span class="bu">std::</span>is_const_v<span class="op">&lt;</span><span class="bu">std::</span>remove_reference_t<span class="op">&lt;</span>Self<span class="op">&gt;&gt;){</span></span>
+<span id="cb6-25"><a href="#cb6-25"></a>            <span class="co">// const T&amp;&amp; is rare</span></span>
+<span id="cb6-26"><a href="#cb6-26"></a>            <span class="cf">return</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="at">const</span> T<span class="op">&amp;&gt;(</span>self<span class="op">.</span><span class="va">m_storage</span><span class="op">);</span></span>
+<span id="cb6-27"><a href="#cb6-27"></a>        <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb6-28"><a href="#cb6-28"></a>            <span class="cf">return</span> <span class="bu">std::</span>forward<span class="op">&lt;</span><span class="kw">decltype</span><span class="op">(</span>self<span class="op">)&gt;(</span>self<span class="op">).</span><span class="va">m_storage</span><span class="op">;</span></span>
+<span id="cb6-29"><a href="#cb6-29"></a>        <span class="op">}</span></span>
+<span id="cb6-30"><a href="#cb6-30"></a>    <span class="op">}</span></span>
+<span id="cb6-31"><a href="#cb6-31"></a><span class="op">};</span></span>
+<span id="cb6-32"><a href="#cb6-32"></a></span>
+<span id="cb6-33"><a href="#cb6-33"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb6-34"><a href="#cb6-34"></a>    optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> opt_d<span class="op">(</span><span class="fl">42.0</span><span class="op">);</span></span>
+<span id="cb6-35"><a href="#cb6-35"></a>    opt_d<span class="op">.</span>value<span class="op">();</span></span>
+<span id="cb6-36"><a href="#cb6-36"></a></span>
+<span id="cb6-37"><a href="#cb6-37"></a>    <span class="at">const</span> optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> copt_d<span class="op">(</span><span class="fl">5.0</span><span class="op">);</span></span>
+<span id="cb6-38"><a href="#cb6-38"></a>    copt_d<span class="op">.</span>value<span class="op">();</span></span>
+<span id="cb6-39"><a href="#cb6-39"></a></span>
+<span id="cb6-40"><a href="#cb6-40"></a>    optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;(</span><span class="fl">17.0</span><span class="op">).</span>value<span class="op">();</span></span>
+<span id="cb6-41"><a href="#cb6-41"></a>    <span class="kw">static_cast</span><span class="op">&lt;</span>optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;&amp;&amp;&gt;(</span>optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;(</span><span class="fl">28.0</span><span class="op">)).</span>value<span class="op">();</span></span>
+<span id="cb6-42"><a href="#cb6-42"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb6-43"><a href="#cb6-43"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/1z9T6d1W9">Compiler Explorer</a></p>
 <p>One function template does it. This is equivalent to writing:</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="pp">#include </span><span class="im">&lt;utility&gt;</span></span>
 <span id="cb7-2"><a href="#cb7-2"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
@@ -590,44 +598,46 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb7-18"><a href="#cb7-18"></a>    <span class="co">/*</span></span>
 <span id="cb7-19"><a href="#cb7-19"></a><span class="co">    template&lt;typename Self&gt;</span></span>
 <span id="cb7-20"><a href="#cb7-20"></a><span class="co">    decltype(auto) value(this Self&amp;&amp; self){</span></span>
-<span id="cb7-21"><a href="#cb7-21"></a><span class="co">        if constexpr(std::is_const_v&lt;std::remove_reference_t&lt;Self&gt;&gt;)</span></span>
-<span id="cb7-22"><a href="#cb7-22"></a><span class="co">            return static_cast&lt;const T&gt;(std::forward&lt;decltype(self)&gt;(self).m_storage);</span></span>
-<span id="cb7-23"><a href="#cb7-23"></a><span class="co">        else</span></span>
-<span id="cb7-24"><a href="#cb7-24"></a><span class="co">            return std::forward&lt;decltype(self)&gt;(self).m_storage;</span></span>
-<span id="cb7-25"><a href="#cb7-25"></a><span class="co">    }</span></span>
-<span id="cb7-26"><a href="#cb7-26"></a><span class="co">    */</span></span>
-<span id="cb7-27"><a href="#cb7-27"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> value<span class="op">(</span><span class="kw">this</span> optional<span class="op">&amp;</span> self<span class="op">){</span></span>
-<span id="cb7-28"><a href="#cb7-28"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"value(this optional&amp;)"</span><span class="op">;</span></span>
-<span id="cb7-29"><a href="#cb7-29"></a>        <span class="cf">return</span> self<span class="op">.</span><span class="va">m_storage</span><span class="op">;</span></span>
-<span id="cb7-30"><a href="#cb7-30"></a>    <span class="op">}</span></span>
-<span id="cb7-31"><a href="#cb7-31"></a></span>
-<span id="cb7-32"><a href="#cb7-32"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> value<span class="op">(</span><span class="kw">this</span> optional <span class="at">const</span><span class="op">&amp;</span> self<span class="op">){</span></span>
-<span id="cb7-33"><a href="#cb7-33"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"value(this optional const&amp;)"</span><span class="op">;</span></span>
-<span id="cb7-34"><a href="#cb7-34"></a>        <span class="cf">return</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="at">const</span> T<span class="op">&gt;(</span>self<span class="op">.</span><span class="va">m_storage</span><span class="op">);</span></span>
-<span id="cb7-35"><a href="#cb7-35"></a>    <span class="op">}</span></span>
-<span id="cb7-36"><a href="#cb7-36"></a></span>
-<span id="cb7-37"><a href="#cb7-37"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> value<span class="op">(</span><span class="kw">this</span> optional<span class="op">&amp;&amp;</span> self<span class="op">){</span></span>
-<span id="cb7-38"><a href="#cb7-38"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"value(this optional &amp;&amp;)"</span><span class="op">;</span></span>
-<span id="cb7-39"><a href="#cb7-39"></a>        <span class="cf">return</span> <span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span>self<span class="op">).</span><span class="va">m_storage</span><span class="op">);</span></span>
-<span id="cb7-40"><a href="#cb7-40"></a>    <span class="op">}</span></span>
-<span id="cb7-41"><a href="#cb7-41"></a></span>
-<span id="cb7-42"><a href="#cb7-42"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> value<span class="op">(</span><span class="kw">this</span> optional <span class="at">const</span><span class="op">&amp;&amp;</span> self<span class="op">){</span></span>
-<span id="cb7-43"><a href="#cb7-43"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"value(this optional const &amp;&amp;)"</span><span class="op">;</span></span>
-<span id="cb7-44"><a href="#cb7-44"></a>        <span class="cf">return</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="at">const</span> T<span class="op">&gt;((</span><span class="bu">std::</span>move<span class="op">(</span>self<span class="op">).</span><span class="va">m_storage</span><span class="op">));</span></span>
-<span id="cb7-45"><a href="#cb7-45"></a>    <span class="op">}</span></span>
-<span id="cb7-46"><a href="#cb7-46"></a><span class="op">};</span></span>
-<span id="cb7-47"><a href="#cb7-47"></a></span>
-<span id="cb7-48"><a href="#cb7-48"></a><span class="dt">int</span> main<span class="op">(){</span></span>
-<span id="cb7-49"><a href="#cb7-49"></a>    optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> opt_d<span class="op">(</span><span class="fl">42.0</span><span class="op">);</span></span>
-<span id="cb7-50"><a href="#cb7-50"></a>    opt_d<span class="op">.</span>value<span class="op">();</span></span>
-<span id="cb7-51"><a href="#cb7-51"></a></span>
-<span id="cb7-52"><a href="#cb7-52"></a>    <span class="at">const</span> optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> copt_d<span class="op">(</span><span class="fl">5.0</span><span class="op">);</span></span>
-<span id="cb7-53"><a href="#cb7-53"></a>    copt_d<span class="op">.</span>value<span class="op">();</span></span>
-<span id="cb7-54"><a href="#cb7-54"></a></span>
-<span id="cb7-55"><a href="#cb7-55"></a>    optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;(</span><span class="fl">17.0</span><span class="op">).</span>value<span class="op">();</span></span>
-<span id="cb7-56"><a href="#cb7-56"></a>    <span class="kw">static_cast</span><span class="op">&lt;</span>optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> <span class="at">const</span><span class="op">&amp;&amp;&gt;(</span>optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;(</span><span class="fl">28.0</span><span class="op">)).</span>value<span class="op">();</span></span>
-<span id="cb7-57"><a href="#cb7-57"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb7-58"><a href="#cb7-58"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb7-21"><a href="#cb7-21"></a><span class="co">        if constexpr(std::is_const_v&lt;std::remove_reference_t&lt;Self&gt;&gt;){</span></span>
+<span id="cb7-22"><a href="#cb7-22"></a><span class="co">            // const T&amp;&amp; is rare</span></span>
+<span id="cb7-23"><a href="#cb7-23"></a><span class="co">            return static_cast&lt;const T&amp;&gt;(self.m_storage);</span></span>
+<span id="cb7-24"><a href="#cb7-24"></a><span class="co">        } else {</span></span>
+<span id="cb7-25"><a href="#cb7-25"></a><span class="co">            return std::forward&lt;decltype(self)&gt;(self).m_storage;</span></span>
+<span id="cb7-26"><a href="#cb7-26"></a><span class="co">        }</span></span>
+<span id="cb7-27"><a href="#cb7-27"></a><span class="co">    }</span></span>
+<span id="cb7-28"><a href="#cb7-28"></a><span class="co">    */</span></span>
+<span id="cb7-29"><a href="#cb7-29"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> value<span class="op">(</span><span class="kw">this</span> optional<span class="op">&amp;</span> self<span class="op">){</span></span>
+<span id="cb7-30"><a href="#cb7-30"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"value(this optional&amp;)"</span><span class="op">;</span></span>
+<span id="cb7-31"><a href="#cb7-31"></a>        <span class="cf">return</span> self<span class="op">.</span><span class="va">m_storage</span><span class="op">;</span></span>
+<span id="cb7-32"><a href="#cb7-32"></a>    <span class="op">}</span></span>
+<span id="cb7-33"><a href="#cb7-33"></a></span>
+<span id="cb7-34"><a href="#cb7-34"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> value<span class="op">(</span><span class="kw">this</span> optional <span class="at">const</span><span class="op">&amp;</span> self<span class="op">){</span></span>
+<span id="cb7-35"><a href="#cb7-35"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"value(this optional const&amp;)"</span><span class="op">;</span></span>
+<span id="cb7-36"><a href="#cb7-36"></a>        <span class="cf">return</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="at">const</span> T<span class="op">&gt;(</span>self<span class="op">.</span><span class="va">m_storage</span><span class="op">);</span></span>
+<span id="cb7-37"><a href="#cb7-37"></a>    <span class="op">}</span></span>
+<span id="cb7-38"><a href="#cb7-38"></a></span>
+<span id="cb7-39"><a href="#cb7-39"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> value<span class="op">(</span><span class="kw">this</span> optional<span class="op">&amp;&amp;</span> self<span class="op">){</span></span>
+<span id="cb7-40"><a href="#cb7-40"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"value(this optional &amp;&amp;)"</span><span class="op">;</span></span>
+<span id="cb7-41"><a href="#cb7-41"></a>        <span class="cf">return</span> <span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span>self<span class="op">).</span><span class="va">m_storage</span><span class="op">);</span></span>
+<span id="cb7-42"><a href="#cb7-42"></a>    <span class="op">}</span></span>
+<span id="cb7-43"><a href="#cb7-43"></a></span>
+<span id="cb7-44"><a href="#cb7-44"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> value<span class="op">(</span><span class="kw">this</span> optional <span class="at">const</span><span class="op">&amp;&amp;</span> self<span class="op">){</span></span>
+<span id="cb7-45"><a href="#cb7-45"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"value(this optional const &amp;&amp;)"</span><span class="op">;</span></span>
+<span id="cb7-46"><a href="#cb7-46"></a>        <span class="cf">return</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="at">const</span> T<span class="op">&gt;((</span><span class="bu">std::</span>move<span class="op">(</span>self<span class="op">).</span><span class="va">m_storage</span><span class="op">));</span></span>
+<span id="cb7-47"><a href="#cb7-47"></a>    <span class="op">}</span></span>
+<span id="cb7-48"><a href="#cb7-48"></a><span class="op">};</span></span>
+<span id="cb7-49"><a href="#cb7-49"></a></span>
+<span id="cb7-50"><a href="#cb7-50"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb7-51"><a href="#cb7-51"></a>    optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> opt_d<span class="op">(</span><span class="fl">42.0</span><span class="op">);</span></span>
+<span id="cb7-52"><a href="#cb7-52"></a>    opt_d<span class="op">.</span>value<span class="op">();</span></span>
+<span id="cb7-53"><a href="#cb7-53"></a></span>
+<span id="cb7-54"><a href="#cb7-54"></a>    <span class="at">const</span> optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> copt_d<span class="op">(</span><span class="fl">5.0</span><span class="op">);</span></span>
+<span id="cb7-55"><a href="#cb7-55"></a>    copt_d<span class="op">.</span>value<span class="op">();</span></span>
+<span id="cb7-56"><a href="#cb7-56"></a></span>
+<span id="cb7-57"><a href="#cb7-57"></a>    optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;(</span><span class="fl">17.0</span><span class="op">).</span>value<span class="op">();</span></span>
+<span id="cb7-58"><a href="#cb7-58"></a>    <span class="kw">static_cast</span><span class="op">&lt;</span>optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> <span class="at">const</span><span class="op">&amp;&amp;&gt;(</span>optional<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;(</span><span class="fl">28.0</span><span class="op">)).</span>value<span class="op">();</span></span>
+<span id="cb7-59"><a href="#cb7-59"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb7-60"><a href="#cb7-60"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p><a href="https://godbolt.org/z/nK4TqnaP6">Compiler Explorer</a></p>
 </section>
 <section id="getter-return-types" class="level1">
