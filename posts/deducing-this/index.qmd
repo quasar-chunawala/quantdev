@@ -374,12 +374,7 @@ struct optional{
 
     template<typename Self>
     decltype(auto) value(this Self&& self){
-        if constexpr(std::is_const_v<std::remove_reference_t<Self>>){
-            // const T&& is rare
-            return static_cast<const T&>(self.m_storage);
-        } else {
-            return std::forward<decltype(self)>(self).m_storage;
-        }
+        return std::forward<decltype(self)>(self).m_storage;
     }
 };
 
@@ -395,7 +390,7 @@ int main(){
     return 0;
 }
 ```
-[Compiler Explorer](https://compiler-explorer.com/z/1z9T6d1W9)
+[Compiler Explorer](https://compiler-explorer.com/z/EjzzfsrGs)
 
 One function template does it. This is equivalent to writing:
 
@@ -420,12 +415,7 @@ struct optional{
     /*
     template<typename Self>
     decltype(auto) value(this Self&& self){
-        if constexpr(std::is_const_v<std::remove_reference_t<Self>>){
-            // const T&& is rare
-            return static_cast<const T&>(self.m_storage);
-        } else {
-            return std::forward<decltype(self)>(self).m_storage;
-        }
+        return std::forward<decltype(self)>(self).m_storage;
     }
     */
     decltype(auto) value(this optional& self){
@@ -435,7 +425,7 @@ struct optional{
 
     decltype(auto) value(this optional const& self){
         std::cout << "\n" << "value(this optional const&)";
-        return static_cast<const T>(self.m_storage);
+        return (self.m_storage);
     }
 
     decltype(auto) value(this optional&& self){
@@ -445,7 +435,7 @@ struct optional{
 
     decltype(auto) value(this optional const&& self){
         std::cout << "\n" << "value(this optional const &&)";
-        return static_cast<const T>((std::move(self).m_storage));
+        return (std::move(self).m_storage);
     }
 };
 
@@ -461,52 +451,9 @@ int main(){
     return 0;
 }
 ```
-[Compiler Explorer](https://godbolt.org/z/nK4TqnaP6)
+[Compiler Explorer](https://compiler-explorer.com/z/oeGvjE418)
 
 # Getter return types
 
-We can employ a little recipe for the return type. We needed to propagate both `const`-ness and the value category of the owning object `option<T>` to its `T m_data` data-member. 
-
-Instead of branching on `const`-ness of `optional`, we could use `std::forward_like<T,U>` defined in the `<utility>` header.
-
-```cpp
-#include <utility>
-#include <iostream>
-
-template<typename T>
-struct optional{
-    T m_storage;
-    bool m_is_initialized;
-
-    optional(T const& v)
-    : m_storage(v)
-    , m_is_initialized(true)
-    {}
-
-    optional()
-    : m_storage{}
-    , m_is_initialized{false}
-    {}
-
-    
-    template<typename Self>
-    auto value(this Self&& self) -> decltype(auto){
-        return std::forward_like<Self>(self.m_storage);
-    }
-
-};
-
-int main(){
-    optional<double> opt_d(42.0);
-    double result1 = opt_d.value();
-
-    const optional<double> copt_d(5.0);
-    copt_d.value();
-
-    optional<double>(17.0).value();
-    static_cast<optional<double> const&&>(optional<double>(28.0)).value();
-    return 0;
-}
-```
-[Compiler Explorer](https://godbolt.org/z/GKj9W16v1)
+If we need to propagate both `const`-ness and the value category of the owning object `o` to its `T m_data` data-member,  we could use `std::forward_like<T,U>` defined in the `<utility>` header.
 
