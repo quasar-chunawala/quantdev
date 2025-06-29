@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.3.450">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Quasar">
+<meta name="dcterms.date" content="2025-06-29">
+
+<title>quantdev.blog - C++ Type erasure</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<script src="../../site_libs/quarto-html/quarto.js"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 20,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&family=Source+Code+Pro:ital,wght@0,200..900;1,200..900&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap')
+</style>
+<script async="" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9993009899870547" crossorigin="anonymous"></script>
+
+
+<link rel="stylesheet" href="../../styles.css">
+</head>
+
+<body class="nav-fixed">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg navbar-dark ">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">quantdev.blog</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../../about.html" rel="" target="">
+ <span class="menu-text">About</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../sell_side_quant_critical_path.html" rel="" target="">
+ <span class="menu-text">Sell-side Quant</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../roadmap.html" rel="" target="">
+ <span class="menu-text">C++ Roadmap</span></a>
+  </li>  
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/quasar-chunawala" rel="" target=""><i class="bi bi-github" role="img">
+</i> 
+ <span class="menu-text"></span></a>
+  </li>  
+  <li class="nav-item compact">
+    <a class="nav-link" href="http://linkedin.com/in/quasar-chunawala" rel="" target=""><i class="bi bi-linkedin" role="img">
+</i> 
+ <span class="menu-text"></span></a>
+  </li>  
+  <li class="nav-item compact">
+    <a class="nav-link" href="../../index.xml" rel="" target=""><i class="bi bi-rss" role="img">
+</i> 
+ <span class="menu-text"></span></a>
+  </li>  
+</ul>
+            <div class="quarto-navbar-tools">
+</div>
+          </div> <!-- /navcollapse -->
+      </div> <!-- /container-fluid -->
+    </nav>
+</header>
+<!-- content -->
+<header id="title-block-header" class="quarto-title-block default page-columns page-full">
+  <div class="quarto-title-banner page-columns page-full">
+    <div class="quarto-title column-body">
+      <h1 class="title">C++ Type erasure</h1>
+                                <div class="quarto-categories">
+                <div class="quarto-category">C++</div>
+              </div>
+                  </div>
+  </div>
+    
+  
+  <div class="quarto-title-meta">
+
+      <div>
+      <div class="quarto-title-meta-heading">Author</div>
+      <div class="quarto-title-meta-contents">
+               <p>Quasar </p>
+            </div>
+    </div>
+      
+      <div>
+      <div class="quarto-title-meta-heading">Published</div>
+      <div class="quarto-title-meta-contents">
+        <p class="date">June 29, 2025</p>
+      </div>
+    </div>
+    
+      
+    </div>
+    
+  
+  </header><div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
+  <li><a href="#how-does-type-erasure-look-like" id="toc-how-does-type-erasure-look-like" class="nav-link" data-scroll-target="#how-does-type-erasure-look-like">How does type erasure look like?</a></li>
+  <li><a href="#type-erasure-as-a-design-pattern" id="toc-type-erasure-as-a-design-pattern" class="nav-link" data-scroll-target="#type-erasure-as-a-design-pattern">Type erasure as a design pattern</a></li>
+  <li><a href="#how-does-type-erasure-work" id="toc-how-does-type-erasure-work" class="nav-link" data-scroll-target="#how-does-type-erasure-work">How does type erasure work?</a></li>
+  <li><a href="#the-mechanism-of-type-erasure" id="toc-the-mechanism-of-type-erasure" class="nav-link" data-scroll-target="#the-mechanism-of-type-erasure">The mechanism of type erasure</a></li>
+  <li><a href="#type-erasure-implementations" id="toc-type-erasure-implementations" class="nav-link" data-scroll-target="#type-erasure-implementations">Type erasure implementations</a></li>
+  <li><a href="#type-erasure-using-inheritance---the-basic-mechanics" id="toc-type-erasure-using-inheritance---the-basic-mechanics" class="nav-link" data-scroll-target="#type-erasure-using-inheritance---the-basic-mechanics">Type erasure using inheritance - the basic mechanics</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content quarto-banner-title-block" id="quarto-document-content">
+
+
+
+
+<section id="introduction" class="level1">
+<h1>Introduction</h1>
+<p>Type erasure is a programming technique by which the explicit type information is removed from the program. It is a type of <em>abstraction</em> that ensures that the program does not explicitly depend on some of the data-types. You might wonder, how is it, that a program is written in a strongly typed language but does not use the actual types?</p>
+</section>
+<section id="how-does-type-erasure-look-like" class="level1">
+<h1>How does type erasure look like?</h1>
+<p>Let’s see what a program with explicit types looks like. Consider a smart pointer such as <a href="https://en.cppreference.com/w/cpp/memory/unique_ptr.html"><code>std::unique_ptr&lt;T,Deleter&gt;</code></a> in the standard library that models exclusive ownership of the managed resource.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb1-2"><a href="#cb1-2"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> ptr<span class="op">{</span><span class="kw">new</span> <span class="dt">int</span><span class="op">{</span><span class="dv">10</span><span class="op">}};</span></span>
+<span id="cb1-3"><a href="#cb1-3"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Here is a unique pointer. It creates and deletes an <code>int</code>. The deletion is not explicitly visible, in fact nothing here tells you how the deletion will take place. But, it’s done by calling a callable object <code>std::default_delete</code>, which is the default deleter and under the hood, it calls the default <code>delete ptr</code>.</p>
+<p>Suppose, however, we are interested to allocate/deallocate memory from our own heap/memory pool. In such case, we’d have to override the global <code>new</code> operator and pass the <code>Heap*</code> pointer. That’s what will be used for allocations.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">class</span> Heap<span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a>    <span class="co">/* ... */</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a>    <span class="dt">void</span> allocate<span class="op">(</span><span class="dt">size_t</span> size<span class="op">);</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a>    <span class="dt">void</span> deallocate<span class="op">(</span><span class="dt">void</span><span class="op">*</span> ptr_to_block<span class="op">);</span></span>
+<span id="cb2-5"><a href="#cb2-5"></a><span class="op">};</span></span>
+<span id="cb2-6"><a href="#cb2-6"></a></span>
+<span id="cb2-7"><a href="#cb2-7"></a><span class="dt">void</span><span class="op">*</span> <span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="dt">size_t</span> n<span class="op">,</span> Heap<span class="op">*</span> heap<span class="op">){</span></span>
+<span id="cb2-8"><a href="#cb2-8"></a>    <span class="cf">return</span> heap<span class="op">-&gt;</span>allocate<span class="op">(</span>n<span class="op">);</span></span>
+<span id="cb2-9"><a href="#cb2-9"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Notice that, you don’t have <code>operator delete()</code> with arguments. You can write one, it will compile, but you can’t invoke it. In order to actually release memory on the heap, you have to do something else. You have to write your own custom deleter.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="kw">struct</span> MyDeleter<span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a>    <span class="co">/* ... */</span></span>
+<span id="cb3-3"><a href="#cb3-3"></a>    Heap<span class="op">*</span> <span class="va">heap_</span><span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a>    </span>
+<span id="cb3-5"><a href="#cb3-5"></a>    MyDeleter<span class="op">(</span>Heap<span class="op">*</span> heap<span class="op">)</span> <span class="op">:</span> <span class="va">heap_</span><span class="op">(</span>heap<span class="op">)</span></span>
+<span id="cb3-6"><a href="#cb3-6"></a>    <span class="op">{}</span></span>
+<span id="cb3-7"><a href="#cb3-7"></a></span>
+<span id="cb3-8"><a href="#cb3-8"></a>    <span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb3-9"><a href="#cb3-9"></a>    <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span>T<span class="op">*</span> ptr<span class="op">){</span></span>
+<span id="cb3-10"><a href="#cb3-10"></a>        ptr<span class="op">-&gt;~</span>T<span class="op">();</span>                  <span class="co">// invoke d'tor</span></span>
+<span id="cb3-11"><a href="#cb3-11"></a>        <span class="va">heap_</span><span class="op">-&gt;</span>deallocate<span class="op">(</span>ptr<span class="op">);</span>     <span class="co">// release memory</span></span>
+<span id="cb3-12"><a href="#cb3-12"></a>    <span class="op">}</span></span>
+<span id="cb3-13"><a href="#cb3-13"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The function call <code>operator()</code> is overloaded and it accepts a pointer-to-<code>T</code>. It invokes the destructor <code>~T()</code> and releases the memory occupied on the heap. The destructor has to be explicitly invoked, because you can’t call <code>operator delete</code> with arguments. Now, how do you hook this up to the <code>unique_ptr</code>? You pass it as a constructor argument. But, we also need to refer to a different type <code>unique_ptr&lt;int,MyDeleter&gt;</code>.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb4-2"><a href="#cb4-2"></a>    Heap myHeap<span class="op">;</span></span>
+<span id="cb4-3"><a href="#cb4-3"></a></span>
+<span id="cb4-4"><a href="#cb4-4"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span>MyDeleter<span class="op">&gt;</span> ptr<span class="op">{</span><span class="kw">new</span> <span class="op">(&amp;</span>heap<span class="op">)</span> <span class="dt">int</span><span class="op">(</span><span class="dv">10</span><span class="op">),</span> MyDeleter<span class="op">(&amp;</span>heap<span class="op">)};</span></span>
+<span id="cb4-5"><a href="#cb4-5"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This creates and deletes an <code>int</code> on the heap.</p>
+<p>Notice that, <code>unique_ptr</code>s to the same type, but with different deleters are different types too. So, for example, you can’t assign from one to the other. You can actually deduce the <code>Deleter</code> type. If you have a <code>unique_ptr</code> object, you can actually interrogate it’s <code>deleter_type</code>. The <code>deleter_type</code> is embedded in the <code>unique_ptr</code> type.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb5-3"><a href="#cb5-3"></a></span>
+<span id="cb5-4"><a href="#cb5-4"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb5-5"><a href="#cb5-5"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> p<span class="op">{</span><span class="kw">new</span> <span class="dt">int</span><span class="op">(</span><span class="dv">10</span><span class="op">)};</span></span>
+<span id="cb5-6"><a href="#cb5-6"></a>    <span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="kw">decltype</span><span class="op">(</span>p<span class="op">)::</span><span class="dt">deleter_type</span><span class="op">,</span><span class="bu">std::</span>default_delete<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;&gt;);</span></span>
+<span id="cb5-7"><a href="#cb5-7"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb5-8"><a href="#cb5-8"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/GaPsecqGh">Compiler Explorer</a></p>
+<p>Now, let’s look at the <a href="https://en.cppreference.com/w/cpp/memory/shared_ptr.html"><code>shared_ptr&lt;T&gt;</code></a> and contrast it with <code>unique_ptr</code>. If you don’t specify any deleters, they look exactly the same:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="bu">std::</span>unique_ptr<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> u_ptr<span class="op">{</span> <span class="kw">new</span> <span class="dt">int</span><span class="op">(</span><span class="dv">10</span><span class="op">)</span> <span class="op">};</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a><span class="bu">std::</span>shared_ptr<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> <span class="va">s_ptr</span><span class="op">{</span> <span class="kw">new</span> <span class="dt">int</span><span class="op">(</span><span class="dv">10</span><span class="op">)</span> <span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>If you do specify a deleter, there’s a big difference. The constructor looks exactly the same.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb7-2"><a href="#cb7-2"></a>    Heap myHeap<span class="op">;</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span>MyDeleter<span class="op">&gt;</span>  u_ptr<span class="op">{</span> <span class="kw">new</span> <span class="op">(&amp;</span>heap<span class="op">)</span> <span class="dt">int</span><span class="op">(</span><span class="dv">10</span><span class="op">),</span> MyDeleter<span class="op">(&amp;</span>heap<span class="op">)</span> <span class="op">};</span></span>
+<span id="cb7-4"><a href="#cb7-4"></a>    <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span>            <span class="va">s_ptr</span><span class="op">{</span> <span class="kw">new</span> <span class="op">(&amp;</span>heap<span class="op">)</span> <span class="dt">int</span><span class="op">(</span><span class="dv">10</span><span class="op">),</span> MyDeleter<span class="op">(&amp;</span>heap<span class="op">)</span> <span class="op">};</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>But, in the <code>unique_ptr</code> the type of the deleter is the second template argument, whereas with the <code>shared_ptr</code> there is no mention of the deleter with the type. So, if you have an object of type <code>shared_ptr</code>, you cannot deduce which deleter was used to construct it. All <code>shared_ptr</code> instances with the same pointer type <code>T*</code>, are of the same type, even if they have different deleters.</p>
+<p>So, the deleter type has been erased. That’s what it means to erase a type. Observe that the constructor call site is the last mention of the deleter type. From this point forward, you won’t see this type again.</p>
+<p>Since, shared pointers with different deleters have the same type, you can assign one to the other.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb8-2"><a href="#cb8-2"></a>    Heap myHeap<span class="op">;</span></span>
+<span id="cb8-3"><a href="#cb8-3"></a>    <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span>    p<span class="op">{</span> <span class="kw">new</span> <span class="dt">int</span><span class="op">(</span><span class="dv">10</span><span class="op">)</span> <span class="op">};</span></span>
+<span id="cb8-4"><a href="#cb8-4"></a>    <span class="bu">std::</span>shared_ptr<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span>    q<span class="op">{</span> <span class="kw">new</span> <span class="op">(&amp;</span>myHeap<span class="op">)</span> <span class="dt">int</span><span class="op">(</span><span class="dv">10</span><span class="op">),</span> MyDeleter<span class="op">(&amp;</span>myHeap<span class="op">)</span> <span class="op">};</span></span>
+<span id="cb8-5"><a href="#cb8-5"></a>    q <span class="op">=</span> p<span class="op">;</span>      <span class="co">// Ok, they are the same type</span></span>
+<span id="cb8-6"><a href="#cb8-6"></a><span class="op">}</span><span class="co">// Proper deleters are called</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Also, when each shared pointer goes out of scope, the correct deleter is invoked. So, erased types are not explicitly visible in the program; they are hidden somewhere.</p>
+</section>
+<section id="type-erasure-as-a-design-pattern" class="level1">
+<h1>Type erasure as a design pattern</h1>
+<p>The ultimate type-erased object in C++ is <code>std::function</code>. Another one is <code>std::any</code>.</p>
+<p><code>std::function&lt;F&gt;</code> is a type that is instantiated from the signature of a callable.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb9-2"><a href="#cb9-2"></a><span class="pp">#include </span><span class="im">&lt;functional&gt;</span></span>
+<span id="cb9-3"><a href="#cb9-3"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb9-4"><a href="#cb9-4"></a><span class="pp">#include </span><span class="im">&lt;numeric&gt;</span></span>
+<span id="cb9-5"><a href="#cb9-5"></a><span class="pp">#include </span><span class="im">&lt;algorithm&gt;</span></span>
+<span id="cb9-6"><a href="#cb9-6"></a><span class="pp">#include </span><span class="im">&lt;cmath&gt;</span></span>
+<span id="cb9-7"><a href="#cb9-7"></a></span>
+<span id="cb9-8"><a href="#cb9-8"></a><span class="dt">double</span> gravitational_potential<span class="op">(</span><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> x<span class="op">){</span></span>
+<span id="cb9-9"><a href="#cb9-9"></a>    <span class="dt">double</span> r_squared <span class="op">=</span> <span class="bu">std::</span>accumulate<span class="op">(</span>x<span class="op">.</span>begin<span class="op">(),</span>x<span class="op">.</span>end<span class="op">(),</span><span class="fl">0.0</span><span class="op">,[](</span><span class="dt">double</span> accum<span class="op">,</span> <span class="dt">double</span> element<span class="op">){</span></span>
+<span id="cb9-10"><a href="#cb9-10"></a>        accum <span class="op">+=</span> element <span class="op">*</span> element<span class="op">;</span></span>
+<span id="cb9-11"><a href="#cb9-11"></a>        <span class="cf">return</span> accum<span class="op">;</span></span>
+<span id="cb9-12"><a href="#cb9-12"></a>    <span class="op">});</span></span>
+<span id="cb9-13"><a href="#cb9-13"></a>    <span class="dt">double</span> r <span class="op">=</span> sqrt<span class="op">(</span>r_squared<span class="op">);</span></span>
+<span id="cb9-14"><a href="#cb9-14"></a></span>
+<span id="cb9-15"><a href="#cb9-15"></a>    <span class="at">const</span> <span class="dt">double</span> G <span class="op">=</span> <span class="fl">6.6743e-11</span><span class="op">;</span></span>
+<span id="cb9-16"><a href="#cb9-16"></a>    <span class="at">const</span> <span class="dt">double</span> M <span class="op">=</span> <span class="fl">5.972e+24</span><span class="op">;</span></span>
+<span id="cb9-17"><a href="#cb9-17"></a>    <span class="dt">double</span> potential <span class="op">=</span> <span class="op">-</span>G<span class="op">*</span>M<span class="op">/</span>r<span class="op">;</span></span>
+<span id="cb9-18"><a href="#cb9-18"></a>    <span class="cf">return</span> potential<span class="op">;</span></span>
+<span id="cb9-19"><a href="#cb9-19"></a><span class="op">};</span></span>
+<span id="cb9-20"><a href="#cb9-20"></a></span>
+<span id="cb9-21"><a href="#cb9-21"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb9-22"><a href="#cb9-22"></a>    <span class="bu">std::</span>function<span class="op">&lt;</span><span class="dt">double</span><span class="op">(</span><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;)&gt;</span> scalarValuedFunc<span class="op">;</span></span>
+<span id="cb9-23"><a href="#cb9-23"></a></span>
+<span id="cb9-24"><a href="#cb9-24"></a>    <span class="co">// the paraboloid z = x_0^2 + x_1^2 + ... + x_{n-1}^2 </span></span>
+<span id="cb9-25"><a href="#cb9-25"></a>    scalarValuedFunc <span class="op">=</span> <span class="op">[](</span><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;</span> x<span class="op">){</span></span>
+<span id="cb9-26"><a href="#cb9-26"></a>        <span class="cf">return</span> <span class="bu">std::</span>accumulate<span class="op">(</span>x<span class="op">.</span>begin<span class="op">(),</span>x<span class="op">.</span>end<span class="op">(),</span><span class="fl">0.0</span><span class="op">,[](</span><span class="dt">double</span> accum<span class="op">,</span> <span class="dt">double</span> element<span class="op">){</span></span>
+<span id="cb9-27"><a href="#cb9-27"></a>            accum <span class="op">+=</span> element <span class="op">*</span> element<span class="op">;</span></span>
+<span id="cb9-28"><a href="#cb9-28"></a>            <span class="cf">return</span> accum<span class="op">;</span></span>
+<span id="cb9-29"><a href="#cb9-29"></a>        <span class="op">});</span></span>
+<span id="cb9-30"><a href="#cb9-30"></a>    <span class="op">};</span></span>
+<span id="cb9-31"><a href="#cb9-31"></a></span>
+<span id="cb9-32"><a href="#cb9-32"></a>    <span class="co">// Gravitational potential U at the point (x_0,...,x_{n-1}) in space</span></span>
+<span id="cb9-33"><a href="#cb9-33"></a>    scalarValuedFunc <span class="op">=</span> gravitational_potential<span class="op">;</span></span>
+<span id="cb9-34"><a href="#cb9-34"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb9-35"><a href="#cb9-35"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/b8K3Go5nh">Compiler Explorer</a></p>
+<p>The lambda and the free-standing function have different types. <code>scalarValuedFunc</code> has only one type, but can store any of these callable objects. Our <code>std::function</code> has only one type, and somehow, we can stick all these different types into it.</p>
+<p>If you look at it from the design point of view, what it does is, it abstracts away all the behavior of the type you erase, except the set of behaviors you consider relevant. It’s a very flexible abstraction. In my case, I say, what’s relevant is, I can invoke this type with a <code>vector</code> of reals and I get back a real. That’s the only behavior of this type, that to me, at this moment is relevant. All other behavior is abstracted away.</p>
+<p>Fundamentally, type erasure is an abstraction technique that allows you to separate interface from implementation, and when we talk about the interface, it’s actually a subset of the interface. It’s a subset of the interface, that we deem relevant for our particular problem.</p>
+<p>Inheritance does the same thing. But, inheritance is significantly less flexible. Firstly, with inheritance, the interface you inherit - that has to be the whole interface, you can’t pick and choose. You can separate it from the implementation, but you don’t get to pick and choose like half of the interface. Second, it is much more intrusive. You can’t take an arbitrary class with the same interface and say, I want to use it through inheritance. No, you have to derive it from the base class.</p>
+</section>
+<section id="how-does-type-erasure-work" class="level1">
+<h1>How does type erasure work?</h1>
+<p>Consider the following C code.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb10-1"><a href="#cb10-1"></a><span class="dt">void</span> qsort<span class="op">(</span><span class="dt">void</span><span class="op">*</span> base<span class="op">,</span> <span class="dt">size_t</span> nmemb<span class="op">,</span> <span class="dt">size_t</span> size<span class="op">,</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a><span class="dt">int</span> <span class="op">(*</span>compare<span class="op">)(</span><span class="dt">const</span> <span class="dt">void</span><span class="op">*,</span> <span class="dt">const</span> <span class="dt">void</span><span class="op">*)</span>        <span class="co">// no mention of specific types</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a><span class="op">);</span></span>
+<span id="cb10-4"><a href="#cb10-4"></a></span>
+<span id="cb10-5"><a href="#cb10-5"></a><span class="dt">int</span> less<span class="op">(</span><span class="dt">const</span> <span class="dt">void</span><span class="op">*</span> a<span class="op">,</span> <span class="dt">const</span> <span class="dt">void</span><span class="op">*</span> b<span class="op">){</span></span>
+<span id="cb10-6"><a href="#cb10-6"></a>    <span class="cf">return</span> <span class="op">*(</span><span class="dt">const</span> <span class="dt">int</span><span class="op">*)</span>a <span class="op">-</span> <span class="op">*(</span><span class="dt">const</span> <span class="dt">int</span><span class="op">*)</span>b<span class="op">;</span>     <span class="co">// type information recovered</span></span>
+<span id="cb10-7"><a href="#cb10-7"></a><span class="op">}</span></span>
+<span id="cb10-8"><a href="#cb10-8"></a></span>
+<span id="cb10-9"><a href="#cb10-9"></a><span class="dt">int</span> a<span class="op">[</span><span class="dv">10</span><span class="op">]</span> <span class="op">=</span> <span class="op">[</span><span class="dv">1</span><span class="op">,</span> <span class="dv">10</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">9</span><span class="op">,</span> <span class="dv">3</span><span class="op">,</span> <span class="dv">8</span><span class="op">,</span> <span class="dv">4</span><span class="op">,</span> <span class="dv">7</span><span class="op">,</span> <span class="dv">5</span><span class="op">,</span> <span class="dv">6</span><span class="op">];</span></span>
+<span id="cb10-10"><a href="#cb10-10"></a>qsort<span class="op">(</span>a<span class="op">,</span> <span class="dv">10</span><span class="op">,</span> size<span class="op">(</span><span class="dt">int</span><span class="op">),</span> less<span class="op">);</span>                  <span class="co">// type of less erased here</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><code>qsort()</code> comes from the standard C library. It takes <code>void*</code> pointer-to-array, <code>size_t</code> array count, <code>size_t</code> size of types you are trying to sort, and a comparator. The comparison function takes <code>void*</code>. It is used to compare whatever types you are actually sorting. Inside <code>qsort</code>, there is no mention of the type that you are going to sort.</p>
+<p>The function call site is the last time in your execution flow, where you have the mention of the type <code>int</code>. From that moment on, there is no mention of <code>int</code> during the sorting process.</p>
+<p>When you write the comparison function, the signature <code>int (*)(void*, void*)</code> is fixed. But, you know what you are writing this for. You are writing a comparator for <code>int</code>s. So, inside the function, I am going to recover the type information. So, the entire type erasure mechanism is seen here. The type is known at the invocation point and its the last time it is known. This is type erasure in C. The general code does not depend on which type we are sorting. All interfaces are completely generic and do not contain any type information.</p>
+<p>I still need to perform a type dependent action at some point.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb11-1"><a href="#cb11-1"></a><span class="dt">int</span> less<span class="op">(</span><span class="dt">const</span> <span class="dt">void</span><span class="op">*</span> a<span class="op">,</span> <span class="dt">const</span> <span class="dt">void</span><span class="op">*</span> b<span class="op">){</span></span>
+<span id="cb11-2"><a href="#cb11-2"></a>    <span class="cf">return</span> <span class="op">*(</span><span class="dt">const</span> <span class="dt">int</span><span class="op">*)</span>a <span class="op">-</span> <span class="op">*(</span><span class="dt">const</span> <span class="dt">int</span><span class="op">*)</span>b<span class="op">;</span>     <span class="co">// type information recovered</span></span>
+<span id="cb11-3"><a href="#cb11-3"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>So, I have to generate some code that has a type-less or type agnostic interface, but the code itself is aware of the types. This act of recovering the types from typeless information is called reification (recovery). The comparator <code>int less(void*, void*)</code> performs the reification and executes type dependent code. Type reification in C is manual. From an understanding point of view, the only thing C++ adds to this, is that C++ automatically generates type reification functions.</p>
+</section>
+<section id="the-mechanism-of-type-erasure" class="level1">
+<h1>The mechanism of type erasure</h1>
+<p>The general code does not depend on the erased type. The call site is the last place where the actual type is known. Type is reified when type dependent action is performed. The type is hidden in the code of the function that performs this action. The function is invoked through a type-agnostic interface. The type dependent code converts from the abstract to the concrete type. In C++, we can have the compiler generate the type dependent code.</p>
+</section>
+<section id="type-erasure-implementations" class="level1">
+<h1>Type erasure implementations</h1>
+<p>There are 3 main ways to do type erasure in C++:</p>
+<ul>
+<li>Using inheritance</li>
+<li>Using <code>static</code> functions</li>
+<li>Using <code>v_table</code></li>
+</ul>
+<p>We are going to use <code>std::shared_ptr</code> as an example for this blog-post, and we are going to focus on the deleter.</p>
+</section>
+<section id="type-erasure-using-inheritance---the-basic-mechanics" class="level1">
+<h1>Type erasure using inheritance - the basic mechanics</h1>
+<p>Consider a type-erased smart pointer:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb12-2"><a href="#cb12-2"></a></span>
+<span id="cb12-3"><a href="#cb12-3"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb12-4"><a href="#cb12-4"></a><span class="kw">class</span> smart_ptr<span class="op">{</span></span>
+<span id="cb12-5"><a href="#cb12-5"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb12-6"><a href="#cb12-6"></a>    T<span class="op">*</span> <span class="va">m_underlying_ptr</span><span class="op">;</span></span>
+<span id="cb12-7"><a href="#cb12-7"></a>    <span class="co">// control_block* cb;</span></span>
+<span id="cb12-8"><a href="#cb12-8"></a>    <span class="co">// something about the deleter</span></span>
+<span id="cb12-9"><a href="#cb12-9"></a></span>
+<span id="cb12-10"><a href="#cb12-10"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb12-11"><a href="#cb12-11"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Deleter<span class="op">&gt;</span></span>
+<span id="cb12-12"><a href="#cb12-12"></a></span>
+<span id="cb12-13"><a href="#cb12-13"></a>    <span class="co">// Constructor</span></span>
+<span id="cb12-14"><a href="#cb12-14"></a>    smart_ptr<span class="op">(</span>T<span class="op">*</span> ptr<span class="op">,</span> Deleter deleter<span class="op">)</span></span>
+<span id="cb12-15"><a href="#cb12-15"></a>    <span class="op">:</span> <span class="va">m_underlying_ptr</span><span class="op">{</span>ptr<span class="op">}</span></span>
+<span id="cb12-16"><a href="#cb12-16"></a>  <span class="co">//, ???  </span></span>
+<span id="cb12-17"><a href="#cb12-17"></a>    <span class="op">{}</span></span>
+<span id="cb12-18"><a href="#cb12-18"></a></span>
+<span id="cb12-19"><a href="#cb12-19"></a>    <span class="co">// Destructor</span></span>
+<span id="cb12-20"><a href="#cb12-20"></a>    <span class="op">~</span>smart_ptr<span class="op">(){</span></span>
+<span id="cb12-21"><a href="#cb12-21"></a>        <span class="co">// delete m_underlying_ptr using deleter</span></span>
+<span id="cb12-22"><a href="#cb12-22"></a>    <span class="op">}</span></span>
+<span id="cb12-23"><a href="#cb12-23"></a></span>
+<span id="cb12-24"><a href="#cb12-24"></a>    <span class="co">// Pointer like functions</span></span>
+<span id="cb12-25"><a href="#cb12-25"></a>    <span class="at">const</span> T<span class="op">*</span> <span class="kw">operator</span><span class="op">-&gt;()</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb12-26"><a href="#cb12-26"></a>        <span class="cf">return</span> <span class="va">m_underlying_ptr</span><span class="op">;</span></span>
+<span id="cb12-27"><a href="#cb12-27"></a>    <span class="op">}</span></span>
+<span id="cb12-28"><a href="#cb12-28"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/8oq3Kf361">Compiler Explorer</a></p>
+<p>This smart pointer design has the constructor <code>smart_ptr(T*, Deleter )</code> from a raw pointer and the second argument as we have already seen is the deleter. Something happens in the constructor on the account of the fact, that the deleter is present. In the destructor, the correct deletion is done. Even though, nothing in this type itself depends on this type <code>Deleter</code>. It’s nowhere in its type.</p>
+<p>The template has only one template parameter - there is no delter in the type of the smart pointer. There is no way to deduce <code>deleter</code> type from the <code>smart_ptr</code> type. The constructor is the last place where the type <code>deleter</code> is known. From this point on, the type is erased and the code is generic.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1"></a><span class="co">// Constructor</span></span>
+<span id="cb13-2"><a href="#cb13-2"></a>smart_ptr<span class="op">(</span>T<span class="op">*</span> ptr<span class="op">,</span> Deleter deleter<span class="op">)</span> <span class="op">:</span> <span class="va">m_underlying_ptr</span><span class="op">{</span> ptr <span class="op">}</span></span>
+<span id="cb13-3"><a href="#cb13-3"></a><span class="co">//, ???  </span></span>
+<span id="cb13-4"><a href="#cb13-4"></a><span class="op">{}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The templated constructor must generate some <code>Deleter</code>-specific code and hook it up to the generic call in the destructor. This is your last opportunity to perform some action that explicitly depends explicitly on <code>Deleter</code> type. It must generate some code that has type agnostic interface but type-dependent implementation.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    text: function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+<script src="https://giscus.app/client.js" data-repo="quasar-chunawala/quantdev" data-repo-id="R_kgDOL2t5-A" data-category="General" data-category-id="DIC_kwDOL2t5-M4ClndQ" data-mapping="title" data-reactions-enabled="1" data-emit-metadata="0" data-input-position="top" data-theme="light" data-lang="en" crossorigin="anonymous" async="">
+</script>
+</div> <!-- /content -->
+
+
+
+</body></html>

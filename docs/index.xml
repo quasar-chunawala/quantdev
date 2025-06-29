@@ -10,7 +10,1192 @@
 <atom:link href="http://quantdev.blog/index.xml" rel="self" type="application/rss+xml"/>
 <description>quantdev.blog</description>
 <generator>quarto-1.3.450</generator>
-<lastBuildDate>Thu, 19 Jun 2025 23:00:00 GMT</lastBuildDate>
+<lastBuildDate>Sat, 28 Jun 2025 23:00:00 GMT</lastBuildDate>
+<item>
+  <title>C++ Type erasure</title>
+  <dc:creator>Quasar </dc:creator>
+  <link>http://quantdev.blog/posts/type-erasure/index.html</link>
+  <description><![CDATA[ 
+
+
+
+
+<section id="introduction" class="level1">
+<h1>Introduction</h1>
+<p>Type erasure is a programming technique by which the explicit type information is removed from the program. It is a type of <em>abstraction</em> that ensures that the program does not explicitly depend on some of the data-types. You might wonder, how is it, that a program is written in a strongly typed language but does not use the actual types?</p>
+</section>
+<section id="how-does-type-erasure-look-like" class="level1">
+<h1>How does type erasure look like?</h1>
+<p>Let’s see what a program with explicit types looks like. Consider a smart pointer such as <a href="https://en.cppreference.com/w/cpp/memory/unique_ptr.html"><code>std::unique_ptr&lt;T,Deleter&gt;</code></a> in the standard library that models exclusive ownership of the managed resource.</p>
+<div class="sourceCode" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb1-2">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>unique_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}};</span></span>
+<span id="cb1-3"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>Here is a unique pointer. It creates and deletes an <code>int</code>. The deletion is not explicitly visible, in fact nothing here tells you how the deletion will take place. But, it’s done by calling a callable object <code>std::default_delete</code>, which is the default deleter and under the hood, it calls the default <code>delete ptr</code>.</p>
+<p>Suppose, however, we are interested to allocate/deallocate memory from our own heap/memory pool. In such case, we’d have to override the global <code>new</code> operator and pass the <code>Heap*</code> pointer. That’s what will be used for allocations.</p>
+<div class="sourceCode" id="cb2" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> Heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb2-2">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/* ... */</span></span>
+<span id="cb2-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> allocate<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span> size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb2-4">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> deallocate<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> ptr_to_block<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb2-5"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb2-6"></span>
+<span id="cb2-7"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">operator</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span> n<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb2-8">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span>allocate<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>n<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb2-9"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>Notice that, you don’t have <code>operator delete()</code> with arguments. You can write one, it will compile, but you can’t invoke it. In order to actually release memory on the heap, you have to do something else. You have to write your own custom deleter.</p>
+<div class="sourceCode" id="cb3" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> MyDeleter<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb3-2">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/* ... */</span></span>
+<span id="cb3-3">    Heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">heap_</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-4">    </span>
+<span id="cb3-5">    MyDeleter<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>Heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">heap_</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb3-6">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{}</span></span>
+<span id="cb3-7"></span>
+<span id="cb3-8">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb3-9">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()(</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb3-10">        ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;~</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span>                  <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// invoke d'tor</span></span>
+<span id="cb3-11">        <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">heap_</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span>deallocate<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span>     <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// release memory</span></span>
+<span id="cb3-12">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb3-13"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>The function call <code>operator()</code> is overloaded and it accepts a pointer-to-<code>T</code>. It invokes the destructor <code>~T()</code> and releases the memory occupied on the heap. The destructor has to be explicitly invoked, because you can’t call <code>operator delete</code> with arguments. Now, how do you hook this up to the <code>unique_ptr</code>? You pass it as a constructor argument. But, we also need to refer to a different type <code>unique_ptr&lt;int,MyDeleter&gt;</code>.</p>
+<div class="sourceCode" id="cb4" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb4-2">    Heap myHeap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb4-3"></span>
+<span id="cb4-4">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>unique_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span>MyDeleter<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">),</span> MyDeleter<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)};</span></span>
+<span id="cb4-5"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>This creates and deletes an <code>int</code> on the heap.</p>
+<p>Notice that, <code>unique_ptr</code>s to the same type, but with different deleters are different types too. So, for example, you can’t assign from one to the other. You can actually deduce the <code>Deleter</code> type. If you have a <code>unique_ptr</code> object, you can actually interrogate it’s <code>deleter_type</code>. The <code>deleter_type</code> is embedded in the <code>unique_ptr</code> type.</p>
+<div class="sourceCode" id="cb5" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;iostream&gt;</span></span>
+<span id="cb5-2"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;memory&gt;</span></span>
+<span id="cb5-3"></span>
+<span id="cb5-4"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb5-5">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>unique_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)};</span></span>
+<span id="cb5-6">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">static_assert</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>is_same_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">decltype</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)::</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">deleter_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>default_delete<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;&gt;);</span></span>
+<span id="cb5-7">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-8"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/GaPsecqGh">Compiler Explorer</a></p>
+<p>Now, let’s look at the <a href="https://en.cppreference.com/w/cpp/memory/shared_ptr.html"><code>shared_ptr&lt;T&gt;</code></a> and contrast it with <code>unique_ptr</code>. If you don’t specify any deleters, they look exactly the same:</p>
+<div class="sourceCode" id="cb6" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>unique_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> u_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb6-2"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>shared_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">s_ptr</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p>If you do specify a deleter, there’s a big difference. The constructor looks exactly the same.</p>
+<div class="sourceCode" id="cb7" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb7-2">    Heap myHeap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb7-3">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>unique_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span>MyDeleter<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span>  u_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">),</span> MyDeleter<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb7-4">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>shared_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span>            <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">s_ptr</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">),</span> MyDeleter<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>heap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb7-5"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>But, in the <code>unique_ptr</code> the type of the deleter is the second template argument, whereas with the <code>shared_ptr</code> there is no mention of the deleter with the type. So, if you have an object of type <code>shared_ptr</code>, you cannot deduce which deleter was used to construct it. All <code>shared_ptr</code> instances with the same pointer type <code>T*</code>, are of the same type, even if they have different deleters.</p>
+<p>So, the deleter type has been erased. That’s what it means to erase a type. Observe that the constructor call site is the last mention of the deleter type. From this point forward, you won’t see this type again.</p>
+<p>Since, shared pointers with different deleters have the same type, you can assign one to the other.</p>
+<div class="sourceCode" id="cb8" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb8-2">    Heap myHeap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb8-3">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>shared_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span>    p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb8-4">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>shared_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span>    q<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>myHeap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">),</span> MyDeleter<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>myHeap<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb8-5">    q <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>      <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Ok, they are the same type</span></span>
+<span id="cb8-6"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Proper deleters are called</span></span></code></pre></div>
+<p>Also, when each shared pointer goes out of scope, the correct deleter is invoked. So, erased types are not explicitly visible in the program; they are hidden somewhere.</p>
+</section>
+<section id="type-erasure-as-a-design-pattern" class="level1">
+<h1>Type erasure as a design pattern</h1>
+<p>The ultimate type-erased object in C++ is <code>std::function</code>. Another one is <code>std::any</code>.</p>
+<p><code>std::function&lt;F&gt;</code> is a type that is instantiated from the signature of a callable.</p>
+<div class="sourceCode" id="cb9" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;iostream&gt;</span></span>
+<span id="cb9-2"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;functional&gt;</span></span>
+<span id="cb9-3"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;vector&gt;</span></span>
+<span id="cb9-4"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;numeric&gt;</span></span>
+<span id="cb9-5"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;algorithm&gt;</span></span>
+<span id="cb9-6"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;cmath&gt;</span></span>
+<span id="cb9-7"></span>
+<span id="cb9-8"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> gravitational_potential<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>vector<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb9-9">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> r_squared <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>accumulate<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>begin<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(),</span>x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>end<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(),</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,[](</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> accum<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> element<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb9-10">        accum <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+=</span> element <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> element<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-11">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> accum<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-12">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">});</span></span>
+<span id="cb9-13">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> r <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> sqrt<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>r_squared<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb9-14"></span>
+<span id="cb9-15">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> G <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">6.6743e-11</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-16">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> M <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5.972e+24</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-17">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> potential <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>G<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>M<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span>r<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-18">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> potential<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-19"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb9-20"></span>
+<span id="cb9-21"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb9-22">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>function<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>vector<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;)&gt;</span> scalarValuedFunc<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-23"></span>
+<span id="cb9-24">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// the paraboloid z = x_0^2 + x_1^2 + ... + x_{n-1}^2 </span></span>
+<span id="cb9-25">    scalarValuedFunc <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[](</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>vector<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb9-26">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>accumulate<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>begin<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(),</span>x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>end<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(),</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,[](</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> accum<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> element<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb9-27">            accum <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+=</span> element <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> element<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-28">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> accum<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-29">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">});</span></span>
+<span id="cb9-30">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb9-31"></span>
+<span id="cb9-32">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Gravitational potential U at the point (x_0,...,x_{n-1}) in space</span></span>
+<span id="cb9-33">    scalarValuedFunc <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> gravitational_potential<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-34">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-35"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/b8K3Go5nh">Compiler Explorer</a></p>
+<p>The lambda and the free-standing function have different types. <code>scalarValuedFunc</code> has only one type, but can store any of these callable objects. Our <code>std::function</code> has only one type, and somehow, we can stick all these different types into it.</p>
+<p>If you look at it from the design point of view, what it does is, it abstracts away all the behavior of the type you erase, except the set of behaviors you consider relevant. It’s a very flexible abstraction. In my case, I say, what’s relevant is, I can invoke this type with a <code>vector</code> of reals and I get back a real. That’s the only behavior of this type, that to me, at this moment is relevant. All other behavior is abstracted away.</p>
+<p>Fundamentally, type erasure is an abstraction technique that allows you to separate interface from implementation, and when we talk about the interface, it’s actually a subset of the interface. It’s a subset of the interface, that we deem relevant for our particular problem.</p>
+<p>Inheritance does the same thing. But, inheritance is significantly less flexible. Firstly, with inheritance, the interface you inherit - that has to be the whole interface, you can’t pick and choose. You can separate it from the implementation, but you don’t get to pick and choose like half of the interface. Second, it is much more intrusive. You can’t take an arbitrary class with the same interface and say, I want to use it through inheritance. No, you have to derive it from the base class.</p>
+</section>
+<section id="how-does-type-erasure-work" class="level1">
+<h1>How does type erasure work?</h1>
+<p>Consider the following C code.</p>
+<div class="sourceCode" id="cb10" style="background: #f1f3f5;"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb10-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> qsort<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> base<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span> nmemb<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span> size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span></span>
+<span id="cb10-2"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(*</span>compare<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*)</span>        <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// no mention of specific types</span></span>
+<span id="cb10-3"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb10-4"></span>
+<span id="cb10-5"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> less<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> a<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> b<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb10-6">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*)</span>a <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*)</span>b<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>     <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// type information recovered</span></span>
+<span id="cb10-7"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb10-8"></span>
+<span id="cb10-9"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> a<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">9</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">8</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">7</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">6</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span></span>
+<span id="cb10-10">qsort<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>a<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">),</span> less<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span>                  <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// type of less erased here</span></span></code></pre></div>
+<p><code>qsort()</code> comes from the standard C library. It takes <code>void*</code> pointer-to-array, <code>size_t</code> array count, <code>size_t</code> size of types you are trying to sort, and a comparator. The comparison function takes <code>void*</code>. It is used to compare whatever types you are actually sorting. Inside <code>qsort</code>, there is no mention of the type that you are going to sort.</p>
+<p>The function call site is the last time in your execution flow, where you have the mention of the type <code>int</code>. From that moment on, there is no mention of <code>int</code> during the sorting process.</p>
+<p>When you write the comparison function, the signature <code>int (*)(void*, void*)</code> is fixed. But, you know what you are writing this for. You are writing a comparator for <code>int</code>s. So, inside the function, I am going to recover the type information. So, the entire type erasure mechanism is seen here. The type is known at the invocation point and its the last time it is known. This is type erasure in C. The general code does not depend on which type we are sorting. All interfaces are completely generic and do not contain any type information.</p>
+<p>I still need to perform a type dependent action at some point.</p>
+<div class="sourceCode" id="cb11" style="background: #f1f3f5;"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb11-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> less<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> a<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> b<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb11-2">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*)</span>a <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*)</span>b<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>     <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// type information recovered</span></span>
+<span id="cb11-3"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>So, I have to generate some code that has a type-less or type agnostic interface, but the code itself is aware of the types. This act of recovering the types from typeless information is called reification (recovery). The comparator <code>int less(void*, void*)</code> performs the reification and executes type dependent code. Type reification in C is manual. From an understanding point of view, the only thing C++ adds to this, is that C++ automatically generates type reification functions.</p>
+</section>
+<section id="the-mechanism-of-type-erasure" class="level1">
+<h1>The mechanism of type erasure</h1>
+<p>The general code does not depend on the erased type. The call site is the last place where the actual type is known. Type is reified when type dependent action is performed. The type is hidden in the code of the function that performs this action. The function is invoked through a type-agnostic interface. The type dependent code converts from the abstract to the concrete type. In C++, we can have the compiler generate the type dependent code.</p>
+</section>
+<section id="type-erasure-implementations" class="level1">
+<h1>Type erasure implementations</h1>
+<p>There are 3 main ways to do type erasure in C++:</p>
+<ul>
+<li>Using inheritance</li>
+<li>Using <code>static</code> functions</li>
+<li>Using <code>v_table</code></li>
+</ul>
+<p>We are going to use <code>std::shared_ptr</code> as an example for this blog-post, and we are going to focus on the deleter.</p>
+</section>
+<section id="type-erasure-using-inheritance---the-basic-mechanics" class="level1">
+<h1>Type erasure using inheritance - the basic mechanics</h1>
+<p>Consider a type-erased smart pointer:</p>
+<div class="sourceCode" id="cb12" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;iostream&gt;</span></span>
+<span id="cb12-2"></span>
+<span id="cb12-3"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb12-4"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> smart_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb12-5">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">private</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span></span>
+<span id="cb12-6">    T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_underlying_ptr</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb12-7">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// control_block* cb;</span></span>
+<span id="cb12-8">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// something about the deleter</span></span>
+<span id="cb12-9"></span>
+<span id="cb12-10">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">public</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span></span>
+<span id="cb12-11">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> Deleter<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb12-12"></span>
+<span id="cb12-13">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Constructor</span></span>
+<span id="cb12-14">    smart_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Deleter deleter<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb12-15">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_underlying_ptr</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span>ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb12-16">  <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//, ???  </span></span>
+<span id="cb12-17">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{}</span></span>
+<span id="cb12-18"></span>
+<span id="cb12-19">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Destructor</span></span>
+<span id="cb12-20">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">~</span>smart_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb12-21">        <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// delete m_underlying_ptr using deleter</span></span>
+<span id="cb12-22">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb12-23"></span>
+<span id="cb12-24">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Pointer like functions</span></span>
+<span id="cb12-25">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;()</span> <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb12-26">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_underlying_ptr</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb12-27">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb12-28"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/8oq3Kf361">Compiler Explorer</a></p>
+<p>This smart pointer design has the constructor <code>smart_ptr(T*, Deleter )</code> from a raw pointer and the second argument as we have already seen is the deleter. Something happens in the constructor on the account of the fact, that the deleter is present. In the destructor, the correct deletion is done. Even though, nothing in this type itself depends on this type <code>Deleter</code>. It’s nowhere in its type.</p>
+<p>The template has only one template parameter - there is no delter in the type of the smart pointer. There is no way to deduce <code>deleter</code> type from the <code>smart_ptr</code> type. The constructor is the last place where the type <code>deleter</code> is known. From this point on, the type is erased and the code is generic.</p>
+<div class="sourceCode" id="cb13" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Constructor</span></span>
+<span id="cb13-2">smart_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Deleter deleter<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_underlying_ptr</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> ptr <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb13-3"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//, ???  </span></span>
+<span id="cb13-4"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{}</span></span></code></pre></div>
+<p>The templated constructor must generate some <code>Deleter</code>-specific code and hook it up to the generic call in the destructor. This is your last opportunity to perform some action that explicitly depends explicitly on <code>Deleter</code> type. It must generate some code that has type agnostic interface but type-dependent implementation.</p>
+
+
+</section>
+
+ ]]></description>
+  <category>C++</category>
+  <guid>http://quantdev.blog/posts/type-erasure/index.html</guid>
+  <pubDate>Sat, 28 Jun 2025 23:00:00 GMT</pubDate>
+  <media:content url="http://quantdev.blog/posts/type-erasure/cpp.jpg" medium="image" type="image/jpeg"/>
+</item>
 <item>
   <title>deducing this</title>
   <dc:creator>Quasar </dc:creator>
@@ -29796,91 +30981,6 @@ font-style: inherit;">}</span></span></code></pre></div>
   <guid>http://quantdev.blog/posts/pricing-under-collateral/index.html</guid>
   <pubDate>Mon, 27 Jan 2025 00:00:00 GMT</pubDate>
   <media:content url="http://quantdev.blog/posts/pricing-under-collateral/image.jpg" medium="image" type="image/jpeg"/>
-</item>
-<item>
-  <title>IRS, Caps, Floors and Swaptions</title>
-  <dc:creator>Quasar </dc:creator>
-  <link>http://quantdev.blog/posts/irs_caps_floors_and_swaptions/index.html</link>
-  <description><![CDATA[ 
-
-
-
-
-<section id="irs-caps-floors-and-swaptions" class="level1">
-<h1>IRS, Caps, Floors and Swaptions</h1>
-<section id="fundamentals" class="level2">
-<h2 class="anchored" data-anchor-id="fundamentals">Fundamentals</h2>
-<p>I review here a few basic definitions relevant to the interest-rate world.</p>
-<div id="def-zero-coupon-bond" class="theorem definition">
-<p><span class="theorem-title"><strong>Definition 1 (Zero-coupon bond.) </strong></span>A <img src="https://latex.codecogs.com/png.latex?T">-maturity zero-coupon bond (pure discount bond) is a contract that guarantees its holder the payment of <img src="https://latex.codecogs.com/png.latex?1%5C$"> at time <img src="https://latex.codecogs.com/png.latex?T">, with no intermediate payments. The contract value at time <img src="https://latex.codecogs.com/png.latex?t%20%3C%20T"> is denoted by <img src="https://latex.codecogs.com/png.latex?P(t,T)">. Clearly, <img src="https://latex.codecogs.com/png.latex?P(T,T)%20=%201"> <img src="https://latex.codecogs.com/png.latex?%5Cforall%20T%5Cin%5B0,%5Cinfty)">.</p>
-</div>
-<div id="def-continuously-compounded-spot-interest-rate" class="theorem definition">
-<p><span class="theorem-title"><strong>Definition 2 (Continuously-compounded spot interest rate.) </strong></span>The continuously-compounded spot interest rate prevailing at time <img src="https://latex.codecogs.com/png.latex?t"> for the maturity <img src="https://latex.codecogs.com/png.latex?T"> is denoted by <img src="https://latex.codecogs.com/png.latex?R(t,T)"> and is the constant rate at which an investment of <img src="https://latex.codecogs.com/png.latex?P(t,T)"> units of currency at time <img src="https://latex.codecogs.com/png.latex?t"> accrues continuously to yield a unit amount of currency at maturity <img src="https://latex.codecogs.com/png.latex?T">.</p>
-<p><span id="eq-continuously-compounded-spot-interest-rate"><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0AR(t,T)%20:=%20-%20%5Cfrac%7B%5Cln%20P(t,T)%7D%7B%5Ctau(t,T)%7D%0A%5Cend%7Balign*%7D%0A%5Ctag%7B1%7D"></span></p>
-<p>The continuously-compounded interest rate is therefore a constant rate that is consistent with the zero-coupon-bond prices such that:</p>
-<p><span id="eq-zero-coupon-bond-price-equation-1"><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0Ae%5E%7BR(t,T)%5Ctau(t,T)%7DP(t,T)%20=%201%0A%5Cend%7Balign*%7D%0A%5Ctag%7B2%7D"></span></p>
-<p>from which we can express the bond price in terms of the continuously compounded rate <img src="https://latex.codecogs.com/png.latex?R">:</p>
-<p><span id="eq-zero-coupon-bond-price-equation-2"><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0AP(t,T)%20=%20e%5E%7B-R(t,T)%5Ctau(t,T)%7D%0A%5Cend%7Balign*%7D%0A%5Ctag%7B3%7D"></span></p>
-</div>
-<div id="def-simply-compounded-spot-interest-rate" class="theorem definition">
-<p><span class="theorem-title"><strong>Definition 3 (Simply-compounded spot interest rate.) </strong></span>The simply-compounded spot interest rate prevailing at time <img src="https://latex.codecogs.com/png.latex?t"> for the maturity <img src="https://latex.codecogs.com/png.latex?T"> is denoted <img src="https://latex.codecogs.com/png.latex?L(t,T)"> and is the constant rate at which an investment has to be made to produce an amount of one unit of currency at maturity, starting from <img src="https://latex.codecogs.com/png.latex?P(t,T)"> units of currency at time <img src="https://latex.codecogs.com/png.latex?t">, when accruing occurs proportionally to the investment time.</p>
-<p><span id="eq-simply-compounded-spot-interest-rate"><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0AP(t,T)(1%20+%20L(t,T)%5Ctau(t,T))%20=%201%0A%5Cend%7Balign*%7D%0A%5Ctag%7B4%7D"></span></p>
-<p>So, the bond price can be expressed in terms of <img src="https://latex.codecogs.com/png.latex?L"> as:</p>
-<p><span id="eq-bond-price-in-terms-of-a-simply-compounded-spot-rate"><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0AP(t,T)%20=%20%5Cfrac%7B1%7D%7B1%20+%20L(t,T)%5Ctau(t,T)%7D%0A%5Cend%7Balign*%7D%0A%5Ctag%7B5%7D"></span></p>
-</div>
-<div id="def-annually-compounded-spot-interest-rate" class="theorem definition">
-<p><span class="theorem-title"><strong>Definition 4 (Annually-compounded spot interest rate.) </strong></span>The annually-compounded spot interest rate prevailing at time <img src="https://latex.codecogs.com/png.latex?t"> for the maturity <img src="https://latex.codecogs.com/png.latex?T"> is denoted by <img src="https://latex.codecogs.com/png.latex?Y(t,T)"> and is the constant (annualized) rate at which an investment has to be made to produce an amount of one unit of currency at maturity, starting from <img src="https://latex.codecogs.com/png.latex?P(t,T)"> units of currency at time <img src="https://latex.codecogs.com/png.latex?t">, reinvesting the obtained amounts once a year. We have:</p>
-<p><span id="eq-annually-compounded-spot-interest-rate"><img src="https://latex.codecogs.com/png.latex?%0AP(t,T)(1+Y(t,T))%5E%7B%5Ctau(t,T)%7D%20=%201%0A%5Ctag%7B6%7D"></span></p>
-</div>
-<p>Equivalently,</p>
-<p><span id="eq-annually-compounded-spot-interest-rate-as-func-of-bond-price"><img src="https://latex.codecogs.com/png.latex?%0AY(t,T)%20=%20%5Cleft%5B%5Cfrac%7B1%7D%7BP(t,T)%7D%5Cright%5D%5E%7B%5Cfrac%7B1%7D%7B%5Ctau(t,T)%7D%7D%20-%201%0A%5Ctag%7B7%7D"></span></p>
-<div id="def-zero-coupon-curve" class="theorem definition">
-<p><span class="theorem-title"><strong>Definition 5 (Zero-coupon curve.) </strong></span>The zero-coupon curve(sometimes also referred to as the <em>yield curve</em>) at time <img src="https://latex.codecogs.com/png.latex?t"> is the graph of the function</p>
-<p><span id="eq-zero-coupon-curve"><img src="https://latex.codecogs.com/png.latex?%0AT%20%5Cmapsto%20%5Cbegin%7Bcases%7D%0AL(t,T)%20&amp;%20t%20%3C%20T%20%5Cleq%20t%20+%201%20%5Ctext%7B%20years%20%7D%5C%5C%0AY(t,T)%20&amp;%20T%20%5Cgeq%20t%20+%201%5Ctext%7B%20years%20%7D%0A%5Cend%7Bcases%7D%0A%5Ctag%7B8%7D"></span></p>
-</div>
-<div id="def-discounting-curve" class="theorem definition">
-<p><span class="theorem-title"><strong>Definition 6 (Discounting Curve.) </strong></span>The discounting curve at time <img src="https://latex.codecogs.com/png.latex?t"> is the plot of the function:</p>
-<p><span id="eq-discounting-curve"><img src="https://latex.codecogs.com/png.latex?%0AT%20%5Cmapsto%20P(t,T),%20%5Cquad%20T%20%3E%20t%0A%5Ctag%7B9%7D"></span></p>
-<p>Such a curve is also referred to as the term structure of discount factors.</p>
-</div>
-<div id="def-simply-compounded-forward-rate" class="theorem definition">
-<p><span class="theorem-title"><strong>Definition 7 (Simply-compounded forward interest rate.) </strong></span>The simply compounded forward interest rate prevailing at time <img src="https://latex.codecogs.com/png.latex?t"> for the expiry <img src="https://latex.codecogs.com/png.latex?T%20%3E%20t">, maturity <img src="https://latex.codecogs.com/png.latex?S%20%3E%20T"> and is defined by:</p>
-<p><span id="eq-simply-compounded-forward-interest-rate"><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0AF(t;T,S)%20:=%20%5Cfrac%7B1%7D%7B%5Ctau(T,S)%7D%5Cleft(%5Cfrac%7BP(t,T)%7D%7BP(t,S)%7D%20-%201%5Cright)%0A%5Cend%7Balign*%7D%0A%5Ctag%7B10%7D"></span></p>
-</div>
-<div id="def-instantaneous-forward-rate" class="theorem definition">
-<p><span class="theorem-title"><strong>Definition 8 (Instantaneous forward rate.) </strong></span>The instantaneous forward interest rate prevailing at time <img src="https://latex.codecogs.com/png.latex?t"> for the maturity <img src="https://latex.codecogs.com/png.latex?T%20%3E%20t"> is denoted by <img src="https://latex.codecogs.com/png.latex?f(t,T)"> and is defined by:</p>
-<p><span id="eq-instantaneous-forward-rate"><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0Af(t,T)%20&amp;=%20%5Clim_%7BS%20%5Cto%20T%5E+%7D%20F(t;T,S)%20%5C%5C%0A&amp;=%20%5Clim_%7BS%20%5Cto%20T%5E+%7D%20%5Cfrac%7B1%7D%7B%5Ctau(T,S)%7D%5Cfrac%7BP(t,T)%20-%20P(t,S)%7D%7BP(t,T)%7D%20%5C%5C%0A&amp;=%20-%5Cfrac%7B1%7D%7BP(t,T)%7D%5Clim_%7BS%20%5Cto%20T%5E+%7D%20%5Cfrac%7BP(t,S)%20-%20P(t,T)%7D%7B%5Ctau(T,S)%7D%5C%5C%0A&amp;=%20-%5Cfrac%7B1%7D%7BP(t,T)%7D%5Clim_%7Bh%5Cto%200%7D%20%5Cfrac%7BP(t,T+h)%20-%20P(t,T)%7D%7Bh%7D%5C%5C%0A&amp;=%20-%5Cfrac%7B1%7D%7BP(t,T)%7D%20%5Cfrac%7B%5Cpartial%7D%7BT%7D(P(t,T))%5C%5C%0A&amp;=%20-%20%5Cfrac%7B%5Cpartial%7D%7B%5Cpartial%20T%7D(%5Cln%20P(t,T))%0A%5Cend%7Balign*%7D%0A%5Ctag%7B11%7D"></span></p>
-<p>so we also have:</p>
-<p><span id="eq-discount-curve-and-instantaneous-forward-rate"><img src="https://latex.codecogs.com/png.latex?%0AP(t,T)%20=%20%5Cexp%5Cleft(-%5Cint_%7Bt%7D%5ET%20f(t,u)du%5Cright)%0A%5Ctag%7B12%7D"></span></p>
-</div>
-</section>
-<section id="classical-libor-rate-model" class="level2">
-<h2 class="anchored" data-anchor-id="classical-libor-rate-model">Classical LIBOR Rate Model</h2>
-<p>Let’s start with the classical LIBOR rate model. Suppose that bank B enters into a contract at time <img src="https://latex.codecogs.com/png.latex?t"> with bank A, to borrow 1 EUR at time <img src="https://latex.codecogs.com/png.latex?T_0"> and return 1 EUR plus the interest cost at time <img src="https://latex.codecogs.com/png.latex?T_1">. What’s the fair interest rate, that bank A and bank B can agree on? The MTM value to bank A is:</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0AV(t)%20&amp;=%20P(t,T_0)%20%5Cmathbb%7BE%7D%5E%7BT_0%7D%5B-1%7C%5Cmathcal%7BF%7D_t%5D%20+%20P(t,T_1)%5Cmathbb%7BE%7D%5E%7BT_1%7D%5B1+%5Ctau%20K%7C%5Cmathcal%7BF%7D_t%5D%5C%5C%0A0%20&amp;=%20-P(t,T_0)%20+%20P(t,T_1)(1+%5Ctau%20K)%0A%5Cend%7Balign*%7D%0A"></p>
-<p>where <img src="https://latex.codecogs.com/png.latex?%5Ctau=%5Ctau(T_0,T_1)"> is the day-count fraction between <img src="https://latex.codecogs.com/png.latex?%5BT_0,T_1%5D"></p>
-</section>
-<section id="spot-libor-rate" class="level2">
-<h2 class="anchored" data-anchor-id="spot-libor-rate">Spot LIBOR Rate</h2>
-<p>The fair rate for an interbank lending deal with trade date <img src="https://latex.codecogs.com/png.latex?t">, starting date <img src="https://latex.codecogs.com/png.latex?T_0"> (typically 0d or 2d after <img src="https://latex.codecogs.com/png.latex?T">) and maturity date <img src="https://latex.codecogs.com/png.latex?T_1"> is:</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0AL(t;T_0,T_1)%20=%20%5Cfrac%7B1%7D%7B%5Ctau%7D%5Cleft%5B%5Cfrac%7BP(t,T_0)%7D%7BP(t,T_1)%20-%201%7D%5Cright%5D%0A%5Cend%7Balign*%7D%0A"></p>
-<p>Panel banks submit daily estimates for interbank lending rates to the calculation agent. The relevant periods <img src="https://latex.codecogs.com/png.latex?%5BT_0,T_1%5D"> considered are <img src="https://latex.codecogs.com/png.latex?1m">, <img src="https://latex.codecogs.com/png.latex?3m">, <img src="https://latex.codecogs.com/png.latex?6m"> and <img src="https://latex.codecogs.com/png.latex?12m">. LIBOR rate fixings used to be the most important reference rates for interest rate derivatives. Nowadays, overnight rates have become the key reference rates.</p>
-</section>
-</section>
-
-
-<div id="quarto-appendix" class="default"><section id="references" class="level1 appendix"><h2 class="anchored quarto-appendix-heading">References</h2><div class="quarto-appendix-contents">
-
-<ul>
-<li><em>Chapter 1, <a href="https://www.amazon.co.uk/Interest-Rate-Models-Practice-Inflation/dp/3540221492">Interest Rate Models - Theory and Practice</a>, Damiano Brigo and Fabio Mercurio.</em></li>
-</ul>
-
-
-</div></section></div> ]]></description>
-  <category>Rates Modelling</category>
-  <guid>http://quantdev.blog/posts/irs_caps_floors_and_swaptions/index.html</guid>
-  <pubDate>Fri, 24 Jan 2025 00:00:00 GMT</pubDate>
-  <media:content url="http://quantdev.blog/posts/irs_caps_floors_and_swaptions/image.jpg" medium="image" type="image/jpeg"/>
 </item>
 </channel>
 </rss>

@@ -1,0 +1,266 @@
+---
+title: "C++ Type erasure"
+author: "Quasar"
+date: "2025-06-29"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Introduction
+
+Type erasure is a programming technique by which the explicit type information is removed from the program. It is a type of *abstraction* that ensures that the program does not explicitly depend on some of the data-types. You might wonder, how is it, that a program is written in a strongly typed language but does not use the actual types? 
+
+# How does type erasure look like?
+
+Let's see what a program with explicit types looks like. Consider a smart pointer such as [`std::unique_ptr<T,Deleter>`](https://en.cppreference.com/w/cpp/memory/unique_ptr.html) in the standard library that models exclusive ownership of the managed resource. 
+
+```cpp
+int main(){
+    std::unique_ptr<int> ptr{new int{10}};
+}
+```
+
+Here is a unique pointer. It creates and deletes an `int`. The deletion is not explicitly visible, in fact nothing here tells you how the deletion will take place. But, it's done by calling a callable object `std::default_delete`, which is the default deleter and under the hood, it calls the default `delete ptr`.  
+
+Suppose, however, we are interested to allocate/deallocate memory from our own heap/memory pool. In such case, we'd have to override the global `new` operator and pass the `Heap*` pointer. That's what will be used for allocations.
+
+```cpp
+class Heap{
+    /* ... */
+    void allocate(size_t size);
+    void deallocate(void* ptr_to_block);
+};
+
+void* operator new(size_t n, Heap* heap){
+    return heap->allocate(n);
+}
+```
+Notice that, you don't have `operator delete()` with arguments. You can write one, it will compile, but you can't invoke it. In order to actually release memory on the heap, you have to do something else. You have to write your own custom deleter.
+
+```cpp
+struct MyDeleter{
+    /* ... */
+    Heap* heap_;
+    
+    MyDeleter(Heap* heap) : heap_(heap)
+    {}
+
+    template <typename T>
+    void operator()(T* ptr){
+        ptr->~T();                  // invoke d'tor
+        heap_->deallocate(ptr);     // release memory
+    }
+}
+```
+
+The function call `operator()` is overloaded and it accepts a pointer-to-`T`. It invokes the destructor `~T()` and releases the memory occupied on the heap. The destructor has to be explicitly invoked, because you can't call `operator delete` with arguments. Now, how do you hook this up to the `unique_ptr`? You pass it as a constructor argument. But, we also need to refer to a different type `unique_ptr<int,MyDeleter>`. 
+
+```cpp
+int main(){
+    Heap myHeap;
+
+    std::unique_ptr<int,MyDeleter> ptr{new (&heap) int(10), MyDeleter(&heap)};
+}
+```
+
+This creates and deletes an `int` on the heap. 
+
+Notice that, `unique_ptr`s to the same type, but with different deleters are different types too. So, for example, you can't assign from one to the other. You can actually deduce the `Deleter` type. If you have a `unique_ptr` object, you can actually interrogate it's `deleter_type`. The `deleter_type` is embedded in the `unique_ptr` type.
+
+```cpp
+#include <iostream>
+#include <memory>
+
+int main(){
+    std::unique_ptr<int> p{new int(10)};
+    static_assert(std::is_same_v<decltype(p)::deleter_type,std::default_delete<int>>);
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/GaPsecqGh)
+
+Now, let's look at the [`shared_ptr<T>`](https://en.cppreference.com/w/cpp/memory/shared_ptr.html) and contrast it with `unique_ptr`. If you don't specify any deleters, they look exactly the same:
+
+```cpp
+std::unique_ptr<int> u_ptr{ new int(10) };
+std::shared_ptr<int> s_ptr{ new int(10) };
+```
+
+If you do specify a deleter, there's a big difference. The constructor looks exactly the same.
+
+```cpp
+int main(){
+    Heap myHeap;
+    std::unique_ptr<int,MyDeleter>  u_ptr{ new (&heap) int(10), MyDeleter(&heap) };
+    std::shared_ptr<int>            s_ptr{ new (&heap) int(10), MyDeleter(&heap) };
+}
+```
+
+But, in the `unique_ptr` the type of the deleter is the second template argument, whereas with the `shared_ptr` there is no mention of the deleter with the type. So, if you have an object of type `shared_ptr`, you cannot deduce which deleter was used to construct it. All `shared_ptr` instances with the same pointer type `T*`, are of the same type, even if they have different deleters.
+
+So, the deleter type has been erased. That's what it means to erase a type. Observe that the constructor call site is the last mention of the deleter type. From this point forward, you won't see this type again. 
+
+Since, shared pointers with different deleters have the same type, you can assign one to the other. 
+
+```cpp
+int main(){
+    Heap myHeap;
+    std::shared_ptr<int>    p{ new int(10) };
+    std::shared_ptr<int>    q{ new (&myHeap) int(10), MyDeleter(&myHeap) };
+    q = p;      // Ok, they are the same type
+}// Proper deleters are called
+```
+
+Also, when each shared pointer goes out of scope, the correct deleter is invoked. So, erased types are not explicitly visible in the program; they are hidden somewhere.  
+
+# Type erasure as a design pattern
+
+The ultimate type-erased object in C++ is `std::function`. Another one is `std::any`. 
+
+`std::function<F>` is a type that is instantiated from the signature of a callable.
+
+```cpp
+#include <iostream>
+#include <functional>
+#include <vector>
+#include <numeric>
+#include <algorithm>
+#include <cmath>
+
+double gravitational_potential(std::vector<double> x){
+    double r_squared = std::accumulate(x.begin(),x.end(),0.0,[](double accum, double element){
+        accum += element * element;
+        return accum;
+    });
+    double r = sqrt(r_squared);
+
+    const double G = 6.6743e-11;
+    const double M = 5.972e+24;
+    double potential = -G*M/r;
+    return potential;
+};
+
+int main(){
+    std::function<double(std::vector<double>)> scalarValuedFunc;
+
+    // the paraboloid z = x_0^2 + x_1^2 + ... + x_{n-1}^2 
+    scalarValuedFunc = [](std::vector<double> x){
+        return std::accumulate(x.begin(),x.end(),0.0,[](double accum, double element){
+            accum += element * element;
+            return accum;
+        });
+    };
+
+    // Gravitational potential U at the point (x_0,...,x_{n-1}) in space
+    scalarValuedFunc = gravitational_potential;
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/b8K3Go5nh)
+
+The lambda and the free-standing function have different types. `scalarValuedFunc` has only one type, but can store any of these callable objects. Our `std::function` has only one type, and somehow, we can stick all these different types into it. 
+
+If you look at it from the design point of view, what it does is, it abstracts away all the behavior of the type you erase, except the set of behaviors you consider relevant. It's a very flexible abstraction. In my case, I say, what's relevant is, I can invoke this type with a `vector` of reals and I get back a real. That's the only behavior of this type, that to me, at this moment is relevant. All other behavior is abstracted away. 
+
+Fundamentally, type erasure is an abstraction technique that allows you to separate interface from implementation, and when we talk about the interface, it's actually a subset of the interface. It's a subset of the interface, that we deem relevant for our particular problem.
+
+Inheritance does the same thing. But, inheritance is significantly less flexible. Firstly, with inheritance, the interface you inherit - that has to be the whole interface, you can't pick and choose. You can separate it from the implementation, but you don't get to pick and choose like half of the interface. Second, it is much more intrusive. You can't take an arbitrary class with the same interface and say, I want to use it through inheritance. No, you have to derive it from the base class.
+
+# How does type erasure work?
+
+Consider the following C code.
+
+```c
+void qsort(void* base, size_t nmemb, size_t size,
+int (*compare)(const void*, const void*)        // no mention of specific types
+);
+
+int less(const void* a, const void* b){
+    return *(const int*)a - *(const int*)b;     // type information recovered
+}
+
+int a[10] = [1, 10, 2, 9, 3, 8, 4, 7, 5, 6];
+qsort(a, 10, size(int), less);                  // type of less erased here
+```
+
+`qsort()` comes from the standard C library. It takes `void*` pointer-to-array, `size_t` array count, `size_t` size of types you are trying to sort, and a comparator. The comparison function takes `void*`. It is used to compare whatever types you are actually sorting. Inside `qsort`, there is no mention of the type that you are going to sort. 
+
+The function call site is the last time in your execution flow, where you have the mention of the type `int`. From that moment on, there is no mention of `int` during the sorting process.
+
+When you write the comparison function, the signature `int (*)(void*, void*)` is fixed. But, you know what you are writing this for. You are writing a comparator for `int`s. So, inside the function, I am going to recover the type information. So, the entire type erasure mechanism is seen here. The type is known at the invocation point and its the last time it is known. This is type erasure in C. The general code does not depend on which type we are sorting. All interfaces are completely generic and do not contain any type information. 
+
+I still need to perform a type dependent action at some point. 
+
+```c
+int less(const void* a, const void* b){
+    return *(const int*)a - *(const int*)b;     // type information recovered
+}
+```
+
+So, I have to generate some code that has a type-less or type agnostic interface, but the code itself is aware of the types. This act of recovering the types from typeless information is called reification (recovery). The comparator `int less(void*, void*)` performs the reification and executes type dependent code. Type reification in C is manual. From an understanding point of view, the only thing C++ adds to this, is that C++ automatically generates type reification functions.
+
+# The mechanism of type erasure
+
+The general code does not depend on the erased type. The call site is the last place where the actual type is known. Type is reified when type dependent action is performed. The type is hidden in the code of the function that performs this action. The function is invoked through a type-agnostic interface. The type dependent code converts from the abstract to the concrete type. In C++, we can have the compiler generate the type dependent code. 
+
+# Type erasure implementations
+
+There are 3 main ways to do type erasure in C++:
+
+- Using inheritance 
+- Using `static` functions
+- Using `v_table`
+
+We are going to use `std::shared_ptr` as an example for this blog-post, and we are going to focus on the deleter. 
+
+# Type erasure using inheritance - the basic mechanics
+
+Consider a type-erased smart pointer:
+
+```cpp
+#include <iostream>
+
+template<typename T>
+class smart_ptr{
+    private:
+    T* m_underlying_ptr;
+    // control_block* cb;
+    // something about the deleter
+
+    public:
+    template<typename Deleter>
+
+    // Constructor
+    smart_ptr(T* ptr, Deleter deleter)
+    : m_underlying_ptr{ptr}
+  //, ???  
+    {}
+
+    // Destructor
+    ~smart_ptr(){
+        // delete m_underlying_ptr using deleter
+    }
+
+    // Pointer like functions
+    const T* operator->() const{
+        return m_underlying_ptr;
+    }
+};
+```
+[Compiler Explorer](https://compiler-explorer.com/z/8oq3Kf361)
+
+This smart pointer design has the constructor `smart_ptr(T*, Deleter )` from a raw pointer and the second argument as we have already seen is the deleter. Something happens in the constructor on the account of the fact, that the deleter is present. In the destructor, the correct deletion is done. Even though, nothing in this type itself depends on this type `Deleter`. It's nowhere in its type. 
+
+The template has only one template parameter - there is no delter in the type of the smart pointer. There is no way to deduce `deleter` type from the `smart_ptr` type. The constructor is the last place where the type `deleter` is known. From this point on, the type is erased and the code is generic. 
+
+```cpp
+// Constructor
+smart_ptr(T* ptr, Deleter deleter) : m_underlying_ptr{ ptr }
+//, ???  
+{}
+```
+
+The templated constructor must generate some `Deleter`-specific code and hook it up to the generic call in the destructor. This is your last opportunity to perform some action that explicitly depends explicitly on `Deleter` type. It must generate some code that has type agnostic interface but type-dependent implementation.
+
