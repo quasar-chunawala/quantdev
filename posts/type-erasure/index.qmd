@@ -10,6 +10,8 @@ toc-depth: 3
 
 # Introduction
 
+Once you instantiate a `std::function` object, how is it, that *you are able to stick objects of different actual types e.g. an anonymous lambda, a free-standing function or a function-pointer (with only a common function signature)* to it? This is achieved through **type erasure**.
+
 Type erasure is a programming technique by which the explicit type information is removed from the program. It is a type of *abstraction* that ensures that the program does not explicitly depend on some of the data-types. You might wonder, how is it, that a program is written in a strongly typed language but does not use the actual types? 
 
 # How does type erasure look like?
@@ -201,46 +203,111 @@ int less(const void* a, const void* b){
 
 So, I have to generate some code that has a type-less or type agnostic interface, but the code itself is aware of the types. This act of recovering the types from typeless information is called reification (recovery). The comparator `int less(void*, void*)` performs the reification and executes type dependent code. Type reification in C is manual. From an understanding point of view, the only thing C++ adds to this, is that C++ automatically generates type reification functions.
 
-# The mechanism of type erasure
-
 The general code does not depend on the erased type. The call site is the last place where the actual type is known. Type is reified when type dependent action is performed. The type is hidden in the code of the function that performs this action. The function is invoked through a type-agnostic interface. The type dependent code converts from the abstract to the concrete type. In C++, we can have the compiler generate the type dependent code. 
 
-# Type erasure implementations
+# Type erasure - the basic mechanics 
 
-There are 3 main ways to do type erasure in C++:
+The classic type erasure pattern can be realized by first coding up a *type-agnostic interface* (a `Concept` class). Then we use an `Impl` class that wraps up the concrete type & provides the *type-dependent implementation*. Finally, we use dynamic polymorphism via virtual functions, but the caller only sees the interface. Finally, we use dynamic polymorphism via virtual functions, but the caller only sees the interface.
 
-- Using inheritance 
-- Using `static` functions
-- Using `v_table`
+```cpp
+// Type erasure 101
+#include <iostream>
+#include <memory>
 
-We are going to use `std::shared_ptr` as an example for this blog-post, and we are going to focus on the deleter. 
+namespace dev{
+    class function{
+        public:
 
-# Type erasure using inheritance - the basic mechanics
+        function()
+        : ptr{nullptr}
+        {}
 
-Consider a type-erased smart pointer:
+        template<typename Callable>
+        function(Callable callable)
+        : ptr{std::make_unique<Impl<Callable>>(callable)}
+        {}
+
+        void operator()(){
+            (*ptr)();
+        }
+        // Type-agnostic interface
+        struct Concept{
+            virtual void operator()() = 0;
+            virtual ~Concept(){}
+        };
+
+        // Type-dependent implementation
+        template<typename Callable>
+        struct Impl : public Concept{
+
+            Impl(Callable callable)
+            : m_callable(callable)
+            {}
+
+            void operator()() override{
+                m_callable();
+            }
+            Callable m_callable;
+        };
+
+        std::unique_ptr<Concept> ptr;
+    };
+};
+
+void foo(){
+    std::cout << "\n" << "foo()";
+}
+
+void bar(){
+    std::cout << "\n" << "bar()";
+}
+
+int main(){
+    dev::function f;
+    f = [](){
+        std::cout << "\n" << "Anonymous lambda";
+    };
+    f();
+
+    f = foo;
+    f();
+
+    void(*func_ptr)();
+    func_ptr = bar;
+    f = func_ptr;
+    f();
+    return 0;
+}
+```
+[Compiler Explorer](https://godbolt.org/z/EfdTKc4hz)
+
+# Type erasure - Adding support for a custom deleter to the `shared_ptr`
+
+Suppose we'd like to add support for a custom deleter to the `shared_ptr`. 
 
 ```cpp
 #include <iostream>
 
 template<typename T>
-class smart_ptr{
+class shared_ptr{
+
     private:
     T* m_underlying_ptr;
-    // control_block* cb;
+    std::atomic<unsigned long>* m_ref_count;
     // something about the deleter
 
     public:
+    // Templated constructor
     template<typename Deleter>
-
-    // Constructor
-    smart_ptr(T* ptr, Deleter deleter)
+    shared_ptr(T* ptr, Deleter deleter)
     : m_underlying_ptr{ptr}
-  //, ???  
+    // ???  
     {}
 
     // Destructor
-    ~smart_ptr(){
-        // delete m_underlying_ptr using deleter
+    ~shared_ptr(){
+        // Decrement the ref-count. If m_ref_count == 0, 
+        // delete m_underlying_ptr using deleter 
     }
 
     // Pointer like functions
@@ -251,16 +318,119 @@ class smart_ptr{
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/8oq3Kf361)
 
-This smart pointer design has the constructor `smart_ptr(T*, Deleter )` from a raw pointer and the second argument as we have already seen is the deleter. Something happens in the constructor on the account of the fact, that the deleter is present. In the destructor, the correct deletion is done. Even though, nothing in this type itself depends on this type `Deleter`. It's nowhere in its type. 
+We add a templated constructor `shared_ptr(T*, Deleter )` that accepts a raw pointer and a custom deleter as the second argument to the design of our `shared_ptr`.
 
-The template has only one template parameter - there is no delter in the type of the smart pointer. There is no way to deduce `deleter` type from the `smart_ptr` type. The constructor is the last place where the type `deleter` is known. From this point on, the type is erased and the code is generic. 
+Let's now write a `Concept` and `Impl` class that support destruction using an instance of the custom `Deleter` type.
 
 ```cpp
-// Constructor
-smart_ptr(T* ptr, Deleter deleter) : m_underlying_ptr{ ptr }
-//, ???  
-{}
+    struct destroy_wrapper // RAII class
+    {
+        /* ... */
+
+        // Concept class
+        struct destroyer_base
+        {
+            virtual void operator()(void* ptr) = 0;
+            virtual ~destroyer_base() = default;
+        };
+
+        // Impl class
+        template<typename Deleter>
+        struct destroyer : public destroyer_base
+        {
+            explicit destroyer(Deleter deleter)
+              : destroyer_base()
+              , m_deleter{ deleter }
+            {
+            }
+
+            void operator()(T* ptr) override { m_deleter(ptr); }
+
+            Deleter m_deleter;
+        };
+
+        ~destroy_wrapper() {}
+        std::unique_ptr<destroyer_base> m_destroyer_ptr;
+    };
 ```
 
-The templated constructor must generate some `Deleter`-specific code and hook it up to the generic call in the destructor. This is your last opportunity to perform some action that explicitly depends explicitly on `Deleter` type. It must generate some code that has type agnostic interface but type-dependent implementation.
+The `destroyer_base` is the *Concept* class and the `destroyer` is its type-dependent implementation.
+
+The wrapper class `destroyer_wrapper` wraps objects of different  types (`destoyer<Deleter>`) into a common wrapper and treats them as though they are the same unified interface. 
+
+```cpp
+template<typename T>
+class shared_ptr
+{
+    private:
+    T* m_underlying_ptr;
+    std::atomic<unsigned long>* m_ref_count_ptr;
+    destroyer_wrapper* m_destroyer_ptr;
+
+    public:
+    // Templated constructor
+    template<typename Deleter>
+    shared_ptr(T* ptr, Deleter&& deleter)
+    : m_underlying_ptr{ ptr }
+    , m_ref_count_ptr{ nullptr }
+    , m_destroyer_ptr{ nullptr }
+    {
+        try{
+            m_destroyer_ptr = new destroy_wrapper(std::forward<Deleter>(deleter));
+            m_ref_count_ptr->store(1u);
+        } catch(std::exception& ex) {
+            delete ptr;
+            throw ex;
+        }
+    }
+
+    /* ... */
+
+    struct destroy_wrapper // RAII class
+    {
+        template<typename Deleter>
+        explicit destroy_wrapper(Deleter&& deleter)
+          : m_destroyer_ptr{ std::make_unique<destroyer>(std::forward<Deleter>(deleter)) }
+        {
+        }
+        // destroy_wrapper is a wrapper over a unique_ptr<destroyer_base>.
+        // It is intended to be move-constructible ONLY.
+        destroy_wrapper(destroy_wrapper&& other) noexcept
+          : m_destroyer_ptr{ std::exchange(other.m_destroyer_ptr, nullptr) }
+        {
+        }
+
+        void operator()(pointer ptr)
+        {
+            (*m_destroyer_ptr)(ptr); // Virtual polymorphism
+        }
+
+        struct destroyer_base
+        {
+            virtual void operator()(pointer ptr) = 0;
+            virtual ~destroyer_base() = default;
+        };
+
+        template<typename Deleter>
+        struct destroyer : public destroyer_base
+        {
+            explicit destroyer(Deleter deleter)
+              : destroyer_base()
+              , m_deleter{ deleter }
+            {
+            }
+
+            void operator()(pointer ptr) override { m_deleter(ptr); }
+
+            Deleter m_deleter;
+        };
+
+        ~destroy_wrapper() {}
+        std::unique_ptr<destroyer_base> m_destroyer_ptr;
+    };
+};
+```
+
+
+
 
