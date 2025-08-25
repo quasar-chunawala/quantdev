@@ -1,0 +1,150 @@
+---
+title: "Challenging exercises in Template Metaprogramming"
+author: "Quasar"
+date: "2025-08-23"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Challenging exercises in Template Metaprogramming
+
+## Building your own `std::index_sequence`
+
+The below helper functions are extremely useful when working with tuples.
+
+```cpp
+template<size_t I, typename IndexSequenceT>
+struct push_front_index_sequence;
+
+template<size_t I, size_t... Is>
+struct push_front_index_sequence<I, std::index_sequence<Is...>>{
+    using type = std::index_sequence<I,Is...>;
+    static constexpr auto value = std::index_sequence<I,Is...>{};
+};
+
+template<size_t I, typename IndexSequence>
+using push_front_index_sequence_t = push_front_index_sequence<I,IndexSequence>::type;
+
+template<size_t I, typename IndexSequence>
+struct push_back_index_sequence;
+
+template<size_t I, size_t... Is>
+struct push_back_index_sequence<I, std::index_sequence<Is...>>{
+    using type = std::index_sequence<Is...,I>;
+    static constexpr auto value = std::index_sequence<Is...,I>{};
+};
+
+template<typename IndexSequence>
+struct pop_front_index_sequence;
+
+template<size_t First, size_t... Rest>
+struct pop_front_index_sequence<std::index_sequence<First,Rest...>>{
+    using type = std::index_sequence<Rest...>;
+    static constexpr auto value = std::index_sequence<Rest...>{};
+};
+
+template<size_t First, size_t... Rest>
+constexpr size_t get_front_index_sequence(std::index_sequence<First,Rest...> idx_seq){
+    return First;
+}
+
+template<size_t I, typename IndexSequence>
+using push_back_index_sequence_t = push_back_index_sequence<I,IndexSequence>::type;
+
+template<typename IndexSequence>
+struct reverse_index_sequence;
+
+template<size_t Head>
+struct reverse_index_sequence<std::index_sequence<Head>>{
+    using type = std::index_sequence<Head>;
+    static constexpr auto value = std::index_sequence<Head>{};
+};
+
+template<size_t Head, size_t... Tail>
+struct reverse_index_sequence<std::index_sequence<Head,Tail...>> : push_back_index_sequence<Head, typename reverse_index_sequence<std::index_sequence<Tail...>>::type>{};
+```
+
+## Implementing `transform` for a `std::tuple{t1,t2,...,tn}`
+
+```cpp
+template<typename TupleT, typename Func, size_t... Is>
+constexpr auto transform_impl(TupleT tup, Func func, std::index_sequence<Is...> indexes){
+    return std::make_tuple(func(std::get<Is>(tup))...);
+}
+
+// transform
+template<typename TupleT, typename Fn>
+constexpr auto transform(Fn func, TupleT tup)
+{
+    constexpr auto index_seq = std::make_index_sequence<std::tuple_size_v<TupleT>>{};
+    return transform_impl(tup, func, index_seq);
+}
+```
+
+## Implementing `select_tuple` for a `std::tuple{t1,...,tn}`
+
+```cpp
+// select_tuple
+template<typename TupleT, size_t... Is>
+constexpr auto select_tuple(TupleT tuple, std::index_sequence<Is...> idx_sequence)
+{
+    return std::make_tuple((std::get<Is>(tuple))...);
+}
+```
+
+## Reversing a tuple
+
+```cpp
+template<typename TupleT, size_t... Is>
+constexpr auto reverse_tuple_impl(TupleT tuple, std::index_sequence<Is...> idx_seq){
+    constexpr auto rev_idx_seq = reverse_index_sequence<std::index_sequence<Is...>>::value;
+    return select_tuple(tuple, rev_idx_seq);
+}
+
+template<typename TupleT>
+constexpr auto reverse_tuple(TupleT tuple){
+    constexpr std::index_sequence idx_sequence = std::make_index_sequence<std::tuple_size_v<TupleT>>{};
+    return reverse_tuple_impl(tuple, idx_sequence);
+}
+```
+
+## Implementing tuple concatenation
+
+```cpp
+template<typename TupleT1, typename TupleT2, size_t... I1s, size_t... I2s>
+constexpr auto cat_tuple_impl(TupleT1 tuple1, TupleT2 tuple2, std::index_sequence<I1s...> seq1, std::index_sequence<I2s...> seq2){
+    return std::make_tuple(std::get<I1s>(tuple1)...,std::get<I2s>(tuple2)...);
+}
+
+template<typename TupleT1, typename TupleT2>
+constexpr auto cat_tuple(TupleT1 t1, TupleT2 t2)
+{
+    constexpr std::index_sequence seq1 = std::make_index_sequence<std::tuple_size_v<TupleT1>>{};
+    constexpr std::index_sequence seq2 = std::make_index_sequence<std::tuple_size_v<TupleT2>>{};
+    return cat_tuple_impl(t1, t2, seq1, seq2);
+}
+```
+
+## Implementing `zip` for a pair of tuples
+
+```cpp
+template<typename TupleT1, typename TupleT2, size_t... I1s, size_t... I2s>
+constexpr auto zip_tuple_impl(TupleT1 tuple1, TupleT2 tuple2, std::index_sequence<I1s...> seq1, std::index_sequence<I2s...> seq2){
+    return std::make_tuple(std::make_tuple(std::get<I1s>(tuple1), std::get<I2s>(tuple2))...);
+}
+
+template<typename TupleT1, typename TupleT2>
+constexpr auto zip_tuple(TupleT1 t1, TupleT2 t2){
+    constexpr std::index_sequence seq1 = std::make_index_sequence<std::tuple_size_v<TupleT1>>{};
+    constexpr std::index_sequence seq2 = std::make_index_sequence<std::tuple_size_v<TupleT2>>{};
+    return zip_tuple_impl(t1, t2, seq1, seq2);
+}
+```
+
+
+
+
+
+
