@@ -10,22 +10,112 @@ toc-depth: 3
 
 # Challenging exercises in Template Metaprogramming
 
-## Building your own `std::index_sequence`
+## Typelists and `std::index_sequence`
 
-The below helper functions are extremely useful when working with tuples.
+For type metaprogramming, the central data structures are the *typelist* and `std::index_sequence`. A `TypeList` is just a static list of types. A `std::index_sequence` is an integer sequence known at compile-time. `TypeList`s and `std::index_sequence`s differ from run-time data structures, such as `std::list`, in that they don't allow mutation. Adding an element to a `TypeList`, does not change the original `TypeList`: rather it creates a new typelist without modifying the original. If you are familar with functional programming languages like Haskell and F\#, there's a lot of parallel between working with typelists in C++ and lists in those languages.
+
+## Implementing a `TypeList`
+
+A `TypeList` is implemented as a class template. A particular instance of a typelist is a template specialization that encodes the contents of the typelist as template arguments.
+
+```cpp
+template<typename... Ts>
+struct TypeList{
+    using type = TypeList<Ts...>;
+    static constexpr auto value = TypeList<Ts...>{};
+};
+
+using SignedIntegralTypes = TypeList<signed char, short, 
+                            int, long, long long>;
+```
+
+`make_index_sequence` metafunction is used to create an integer sequence.
+
+```cpp
+constexpr std::index_seq seq = std::make_index_sequence<1,2,3,4,5>{};
+```
+
+## Manipulating `TypeList` and `index_sequence`
+
+Manipulating the typelist and `index_sequence` typically requires breaking the typelist into parts, generally by separting the first element in the list (the head) from the remaining elements in the list (the tail). 
+
+```cpp
+template<typename List>
+struct front;
+
+template<typename Head, typename... Tail>
+struct front<TypeList<Head,Tail...>>{
+    using type = Head;
+    static constexpr auto value = Head{};
+};
+
+template<typename List>
+struct seq_front;
+
+template<size_t First, size_t... Rest>
+struct seq_front<std::index_sequence<First,Rest...>>{
+    static constexpr size_t value = First;
+};
+
+int main(){
+    static_assert(std::is_same_v<front<TypeList<int,float>>::type, int>);
+    constexpr auto seq_front_result = seq_front<std::index_sequence<1,5,8,12>>::value;
+    std::cout << std::format("\nseq_front result = {}", seq_front_result);
+}
+```
+
+[Compiler Explorer](https://compiler-explorer.com/z/1W5rMr3nr)
+
+The above implementation splits the typelist elements into the head and tail and then forms a new `TypeList` specialization from the elements in the tail.
+
+## Implementing `pop_front`
+
+The `pop_front` metafunction removes the first element from the typelist. Its implementation splits the typelist elements into the head and tail and then forms a new typelist from the elements in the tail.
+
+```cpp
+template<typename List>
+struct pop_front;
+
+template<typename Head, typename... Tail>
+struct pop_front<TypeList<Head,Tail...>>{
+    using type = TypeList<Tail...>;
+    static constexpr auto value = TypeList<Tail...>{};
+};
+
+template<typename List>
+struct seq_pop_front;
+
+template<size_t First, size_t... Rest>
+struct seq_pop_front<std::index_sequence<First,Rest...>>{
+    using type = std::index_sequence<Rest...>;
+    static constexpr auto value = std::index_sequence<Rest...>{};
+};
+```
+
+[Compiler Explorer](https://compiler-explorer.com/z/565qdc3cY)
+
+## Implementing `push_front`
+
+We can also insert elements onto the front of the typelist by capturing all of the existing elements into a template parameter pack, then creating a new `TypeList` specialization containing all of those elements:
 
 ```cpp
 template<size_t I, typename IndexSequenceT>
-struct push_front_index_sequence;
+struct seq_push_front;
 
 template<size_t I, size_t... Is>
-struct push_front_index_sequence<I, std::index_sequence<Is...>>{
+struct seq_push_front<I, std::index_sequence<Is...>>{
     using type = std::index_sequence<I,Is...>;
     static constexpr auto value = std::index_sequence<I,Is...>{};
 };
 
 template<size_t I, typename IndexSequence>
-using push_front_index_sequence_t = push_front_index_sequence<I,IndexSequence>::type;
+using seq_push_front_t = seq_push_front<I,IndexSequence>::type;
+```
+
+The below helper functions are extremely useful when working with tuples.
+
+```cpp
+
 
 template<size_t I, typename IndexSequence>
 struct push_back_index_sequence;
