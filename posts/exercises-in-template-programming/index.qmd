@@ -99,6 +99,15 @@ struct seq_pop_front<std::index_sequence<First,Rest...>>{
 We can also insert elements onto the front of the typelist by capturing all of the existing elements into a template parameter pack, then creating a new `TypeList` specialization containing all of those elements:
 
 ```cpp
+template<typename Element, typename List>
+struct push_front;
+
+template<typename T, typename... Ts>
+struct push_front<T, TypeList<Ts...>>{
+    using type = TypeList<T,Ts...>;
+    static constexpr auto value = TypeList<T,Ts...>{};
+};
+
 template<size_t I, typename IndexSequenceT>
 struct seq_push_front;
 
@@ -112,36 +121,108 @@ template<size_t I, typename IndexSequence>
 using seq_push_front_t = seq_push_front<I,IndexSequence>::type;
 ```
 
-The below helper functions are extremely useful when working with tuples.
+## Implementing `push_back`
 
 ```cpp
-
-
 template<size_t I, typename IndexSequence>
-struct push_back_index_sequence;
+struct seq_push_back;
 
 template<size_t I, size_t... Is>
-struct push_back_index_sequence<I, std::index_sequence<Is...>>{
+struct seq_push_back<I, std::index_sequence<Is...>>{
     using type = std::index_sequence<Is...,I>;
     static constexpr auto value = std::index_sequence<Is...,I>{};
 };
 
-template<typename IndexSequence>
-struct pop_front_index_sequence;
+template<size_t I, typename IndexSequence>
+using seq_push_back_t = push_back_index_sequence<I,IndexSequence>::type;
+```
 
-template<size_t First, size_t... Rest>
-struct pop_front_index_sequence<std::index_sequence<First,Rest...>>{
-    using type = std::index_sequence<Rest...>;
-    static constexpr auto value = std::index_sequence<Rest...>{};
+## Typelist algorithms
+
+The fundamental typelist operations `front`, `push_front`, `back` and `push_back` can be composed to create more interesting typelist manipulations. For example, we can replace the first element in a typelist by applying `push_front` to the result of `pop_front`.
+
+Going further, we can implement algorithms - searches, transformations, reversals as metafunctions operating on typelists.
+
+### Indexing
+
+One of the most fundamental operations on a typelist is to extract a specific element of the list. Let us code up a metafunction to extract the $N$th element.
+
+```cpp
+template<size_t I, typename List>
+struct nth_element;
+
+template<typename First, typename... Rest>
+struct nth_element<1,TypeList<First, Rest...>>{
+    using type = First;
 };
 
-template<size_t First, size_t... Rest>
-constexpr size_t get_front_index_sequence(std::index_sequence<First,Rest...> idx_seq){
-    return First;
-}
+template<size_t N, typename First, typename... Rest>
+struct nth_element<N, TypeList<First, Rest...>> : nth_element<N-1, TypeList<Rest...>>{};
 
-template<size_t I, typename IndexSequence>
-using push_back_index_sequence_t = push_back_index_sequence<I,IndexSequence>::type;
+template<size_t N, typename List, size_t... Is>
+struct seq_nth_element;
+
+template<size_t I, size_t... Is>
+struct seq_nth_element<1,std::index_sequence<I,Is...>>{
+    static constexpr auto value = I;
+};
+
+template<size_t N, size_t I, size_t... Is>
+struct seq_nth_element<N, std::index_sequence<I,Is...>> : seq_nth_element<N-1,std::index_sequence<Is...>>{};
+```
+
+[Compiler Explorer](https://compiler-explorer.com/z/oWanY6Y78)
+
+## Implementing `find_if`
+
+Many typelist algorithms search for data within the typelist. This too can be easily achieved with a recursive template metaprogram.
+
+```cpp
+#include <utility>
+#include <memory>
+#include <format>
+#include <iostream>
+
+template<typename List, template<size_t I> typename Predicate, size_t... Is>
+struct seq_find_if;
+
+template<template<size_t > typename Predicate>
+struct seq_find_if<std::index_sequence<>,Predicate> {
+    using type = std::false_type;
+};
+
+template<size_t First, template<size_t > typename Predicate, size_t... Is>
+struct seq_find_if<std::index_sequence<First, Is...>,Predicate> {
+    static constexpr bool is_true = Predicate<First>::value;
+    static constexpr bool more_elements_to_check = (sizeof...(Is) > 0);
+    using type = std::conditional<
+        is_true, 
+        std::integral_constant<size_t,First>, 
+        typename std::conditional<more_elements_to_check, typename seq_find_if<std::index_sequence<Is...>,Predicate>::type, std::false_type>::type
+    >::type;
+};
+
+template<size_t N>
+struct my_predicate{
+    using type = std::conditional<(N % 2 == 0),std::true_type, std::false_type>::type;
+    static constexpr bool value = (N % 2 == 0);
+};
+
+int main(){
+    static_assert(std::is_same_v<
+        seq_find_if<std::index_sequence<1,2,3,4>,my_predicate>::type,
+        std::integral_constant<size_t,2>
+    >);
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/rEvb6d9eG)
+
+## Reversing a `TypeList` and `index_sequence`
+
+When typelists have some ordering among their elements, it is convenient to be able to reverse the ordering of the elements in the typelist when applying some algorithms. The `reverse` algorithm implements this metafunction:
+
+```cpp
+
 
 template<typename IndexSequence>
 struct reverse_index_sequence;
