@@ -295,6 +295,103 @@ struct seq_transform<Func, std::index_sequence<Is...>>{
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/PrvW7beTE)
 
+## Basic `std::tuple` design
+
+A tuple is an arbitrary collection of heterogenous data. It is a recursive data-structure. A `tuple` has a static component and a run-time component. The list of types are baked into the tuple definition at compile-time. The actual values/objects held by the tuple can be objects known at run-time.
+
+We will design a `tuple` class template. Implementing your own version `tuple` type is a good exercise to flex your metaprogramming muscles. 
+
+```cpp
+#include <utility>
+#include <memory>
+#include <format>
+#include <iostream>
+#include <cassert>
+
+namespace dev 
+{
+    // TypeList definition
+    template<typename... Ts>
+    struct TypeList{
+        using type = TypeList<Ts...>;
+        static constexpr auto value = TypeList<Ts...>{};
+    };
+
+    // TypeList Indexing 
+    template<size_t I, typename List>
+    struct nth_element;
+
+    template<typename First, typename... Rest>
+    struct nth_element<1,TypeList<First, Rest...>>{
+        using type = First;
+    };
+
+    template<size_t N, typename First, typename... Rest>
+    struct nth_element<N, TypeList<First, Rest...>> : nth_element<N-1, TypeList<Rest...>>{};
+
+    // Implement tuple. This is a forward declaration.
+    template <typename... Types>
+    class tuple;
+
+    // Base case
+    template <>
+    class tuple<> { };
+
+    template<typename Head, typename... Tail>
+    requires std::is_trivially_default_constructible_v<Head>
+    class tuple<Head, Tail...>{
+        using type = TypeList<Head, Tail...>;
+
+        private:
+        Head m_head;
+        tuple<Tail...> m_tail;
+
+        public:
+        tuple()
+        : m_head{}
+        , m_tail{}
+        {}
+
+        tuple(Head head, Tail... tail)
+        : m_head{head}
+        , m_tail{tail...}
+        {}
+
+        Head head() const{
+            return m_head;
+        }
+
+        tuple<Tail...> tail() const{
+            return m_tail;
+        }
+
+        constexpr auto empty(){
+            return std::tuple<>();
+        }
+
+        constexpr auto initialize(Head head, Tail... tail){
+            m_head = head;
+            if constexpr(sizeof...(Tail))
+                m_tail.initialize(tail...);
+        }
+    };
+
+    // Implement get
+    template <unsigned N, typename... Types>
+    auto get(const tuple<Types...>& tuple) {
+        if constexpr(N == 0)
+            return tuple.head();
+        else
+            return get<N-1>(tuple.tail());
+    }
+}
+int main(){
+    dev::tuple<int> tup;
+    assert(get<0>(tup) == 0);
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/ETdd181Mh)
+
 ## Implementing `transform` for a `std::tuple{t1,t2,...,tn}`
 
 ```cpp
@@ -328,7 +425,7 @@ constexpr auto select_tuple(TupleT tuple, std::index_sequence<Is...> idx_sequenc
 ```cpp
 template<typename TupleT, size_t... Is>
 constexpr auto reverse_tuple_impl(TupleT tuple, std::index_sequence<Is...> idx_seq){
-    constexpr auto rev_idx_seq = reverse_index_sequence<std::index_sequence<Is...>>::value;
+    constexpr auto rev_idx_seq = seq_reverse<std::index_sequence<Is...>>::value;
     return select_tuple(tuple, rev_idx_seq);
 }
 
