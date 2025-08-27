@@ -40,6 +40,7 @@ constexpr std::index_seq seq = std::make_index_sequence<1,2,3,4,5>{};
 Manipulating the typelist and `index_sequence` typically requires breaking the typelist into parts, generally by separting the first element in the list (the head) from the remaining elements in the list (the tail). 
 
 ```cpp
+// front implementation
 template<typename List>
 struct front;
 
@@ -124,6 +125,20 @@ using seq_push_front_t = seq_push_front<I,IndexSequence>::type;
 ## Implementing `push_back`
 
 ```cpp
+// push_back implementation
+template<typename Element, typename List>
+struct push_back;
+
+template<typename Element>
+struct push_back<Element, TypeList<>>{
+    using type = TypeList<Element>;
+};
+
+template<typename Element, typename... Ts>
+struct push_back<Element, TypeList<Ts...>>{
+    using type = TypeList<Ts...,Element>;
+};
+
 template<size_t I, typename IndexSequence>
 struct seq_push_back;
 
@@ -222,20 +237,36 @@ int main(){
 When typelists have some ordering among their elements, it is convenient to be able to reverse the ordering of the elements in the typelist when applying some algorithms. The `reverse` algorithm implements this metafunction:
 
 ```cpp
+template<typename List>
+struct reverse;
 
+// basis case
+template<typename Head>
+struct reverse<TypeList<Head>>{
+    using type = TypeList<Head>;
+};
+
+template<typename... Ts>
+struct reverse<TypeList<Ts...>>{
+    using front_el = front<TypeList<Ts...>>::type;
+    using tail = pop_front<TypeList<Ts...>>::type;
+    using type = push_back<front_el, typename reverse<tail>::type>::type;
+};
 
 template<typename IndexSequence>
-struct reverse_index_sequence;
+struct seq_reverse;
 
 template<size_t Head>
-struct reverse_index_sequence<std::index_sequence<Head>>{
+struct seq_reverse<std::index_sequence<Head>>{
     using type = std::index_sequence<Head>;
     static constexpr auto value = std::index_sequence<Head>{};
 };
 
 template<size_t Head, size_t... Tail>
-struct reverse_index_sequence<std::index_sequence<Head,Tail...>> : push_back_index_sequence<Head, typename reverse_index_sequence<std::index_sequence<Tail...>>::type>{};
+struct seq_reverse<std::index_sequence<Head,Tail...>> : seq_reverse<Head, typename reverse_index_sequence<std::index_sequence<Tail...>>::type>{};
 ```
+
+[Compiler Explorer](https://compiler-explorer.com/z/5j4nTqacz)
 
 ## Implementing `transform` for a `std::tuple{t1,t2,...,tn}`
 
