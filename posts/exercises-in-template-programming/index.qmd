@@ -332,6 +332,154 @@ struct seq_uniq<std::index_sequence<First,Rest...>>{
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/fYdznc13P)
 
+### Implementing Merge Sort
+
+We can write a cool metafunction to implement merge sort. I'd encourage you to try this as a challenge. Let's see what you've got!
+
+```cpp
+template<typename V>
+struct MergeSort{
+    using type = typename MergeVecs<
+        typename MergeSort<typename SplitVec<V>::left>::type,
+        typename MergeSort<typename SplitVec<V>::right>::type
+    >::type;
+};
+
+int main(){
+    static_assert(
+        std::is_same_v<
+            MergeSort<Vec<2, 4, 1, 5, 7, 9, 4, 5>>::type,
+            Vec<1, 2, 4, 4, 5, 5, 7, 9>
+        >
+    );
+}
+```
+
+Here's my implementation of merge-sort:
+
+```cpp
+template<size_t... Is>
+using Vec = std::index_sequence<Is...>;
+
+template<typename List, typename Indexer>
+struct SelectVec;
+
+template<size_t... Is, size_t... Js>
+struct SelectVec<std::index_sequence<Is...>, std::index_sequence<Js...>>{
+    using type = std::index_sequence<seq_nth_element<Is,typename std::index_sequence<Js...>>::value...>;
+};
+
+template<size_t Start,typename List, typename Indexer>
+struct VecSliceHelper;
+
+template<size_t Start, size_t... Is, size_t... Js>
+struct VecSliceHelper<Start, std::index_sequence<Is...>, std::index_sequence<Js...>>{
+    using type = std::index_sequence<seq_nth_element<Start + Js,typename std::index_sequence<Is...>>::value...>;
+};
+
+template<size_t Start, size_t End, typename V>
+struct VecSlice;
+
+template<size_t Start, size_t End, size_t... Is>
+struct VecSlice<Start, End, Vec<Is...>>{
+    static constexpr size_t num_elements = End - Start + 1;
+    using s = std::make_index_sequence<num_elements>;
+    using type = VecSliceHelper<Start, Vec<Is...>, s>::type;
+};
+
+template<typename V>
+struct SplitVec;
+
+template<size_t I1, size_t I2>
+struct SplitVec<Vec<I1, I2>>{
+    using left = Vec<I1>;
+    using right = Vec<I2>;
+};
+
+template<size_t... Is>
+struct SplitVec<Vec<Is...>>{
+    static constexpr size_t N = sizeof...(Is);
+    static constexpr size_t mid = N / 2;
+    using left = VecSlice<1,mid,Vec<Is...>>::type;
+    using right = VecSlice<mid+1,N,Vec<Is...>>::type;
+};
+
+template<typename Vec1, typename Vec2, typename Result >
+struct MergeHelper;
+
+// Base cases
+template<size_t... I>
+struct MergeHelper<Vec<>, Vec<>, Vec<I...>>{
+    using type = Vec<I...>;
+};
+
+// When no elements remain in right subarray
+template<size_t... I1, size_t... I>
+struct MergeHelper<Vec<I1...>, Vec<>, Vec<I...>>{
+    static constexpr size_t element = seq_front<Vec<I1...>>::value;
+    using tail = seq_pop_front<Vec<I1...>>::type;
+    using result = seq_push_back<element, Vec<I...>>::type;
+    using type = MergeHelper<tail, Vec<>, result>::type;
+};
+
+// When no elements remain in left subarray
+template<size_t... I2, size_t... I>
+struct MergeHelper<Vec<>, Vec<I2...>, Vec<I...>>{
+    static constexpr size_t element = seq_front<Vec<I2...>>::value;
+    using tail = seq_pop_front<Vec<I2...>>::type;
+    using result = seq_push_back<element, Vec<I...>>::type;
+    using type = MergeHelper<tail, Vec<>, result>::type;
+};
+
+// compare the head elements of both vectors, 
+// pop off the smaller of the two and insert it into the results array
+template<size_t... I1, size_t... I2, size_t... I>
+struct MergeHelper<Vec<I1...>, Vec<I2...>, Vec<I...>>{
+    using left = Vec<I1...>; using right = Vec<I2...>;
+    using left_tail = seq_pop_front<left>::type;
+    using right_tail = seq_pop_front<right>::type;
+    using result = Vec<I...>;
+
+    static constexpr size_t p = seq_front<Vec<I1...>>::value;
+    static constexpr size_t q = seq_front<Vec<I2...>>::value;
+    using type = std::conditional<
+        p < q,
+        typename MergeHelper<left_tail, right, typename seq_push_back<p, result>::type>::type,
+        typename MergeHelper<left, right_tail, typename seq_push_back<q, result>::type>::type
+    >::type;
+};
+
+template<typename Vec1, typename Vec2>
+struct Merge;
+
+template<size_t... Is, size_t... Js>
+struct Merge<Vec<Is...>,Vec<Js...>>
+{
+    using type = MergeHelper<Vec<Is...>,Vec<Js...>,Vec<>>::type;
+};
+
+template<typename V>
+struct MergeSort;
+
+template<>
+struct MergeSort<Vec<>>{
+    using type = Vec<>;
+};
+
+template<size_t I>
+struct MergeSort<Vec<I>>{
+    using type = Vec<I>;
+};
+
+template<size_t... Is>
+struct MergeSort<Vec<Is...>>{
+    using type = Merge<
+        typename MergeSort<typename SplitVec<Vec<Is...>>::left>::type,
+        typename MergeSort<typename SplitVec<Vec<Is...>>::right>::type
+    >::type;
+};
+```
+[Compiler Explorer](https://compiler-explorer.com/z/G1vnenYaP)
 
 ## Basic `std::tuple` design
 
