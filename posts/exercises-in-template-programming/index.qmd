@@ -481,6 +481,141 @@ struct MergeSort<Vec<Is...>>{
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/G1vnenYaP)
 
+### Implementing `zip`
+
+Let's say you have a bunch of compile-time vectors. We'd want to write a metafunction that takes multiple vectors and zips them with `*`. For example, given the input:
+
+```cpp
+Vector<1,2,3>, Vector<4,5,6>, Vector<7,8,9>
+```
+
+produce:
+
+```cpp
+Vector<28,80,162>
+```
+
+That is:
+
+```cpp
+Vector<1*4*7, 2*5*8, 3*6*9>
+```
+
+You can try writing your implementation using the below as a starting point:
+
+```cpp
+#include <type_traits>
+#include <iostream>
+#include <utility>
+
+// DEFINITION: Compile-time integer vector defined as: 
+template<int... I>
+struct Vector;
+
+// The code below will assume a 'zip' metafunction is used, but feel free to use a different approach. 
+// If you do, please adjust the static assert accordingly. 
+
+int main(){
+    static_assert(std::is_same<
+            zip<Vector<1, 2, 3>, Vector<4, 5, 6>, Vector<7, 8, 9>>::type,
+            Vector<1*4*7,2*5*8,3*6*9>>::value, "");
+}
+```
+
+Put on your thinking cap and happy coding! When you're done with your attempt, you can take a look below at my solution:
+
+```cpp
+#include <type_traits>
+#include <iostream>
+#include <utility>
+
+// DEFINITION: Compile-time integer vector defined as: 
+template<int... I>
+struct Vector;
+
+// The code below will assume a 'zip' metafunction is used, but feel free to use a different approach. 
+// If you do, please adjust the static assert accordingly. 
+
+// A getter for the nth-element of the compile-time sequence 
+// of integers
+template<size_t N, typename List>
+struct get;
+
+// Base case
+template<int Head, int... Tail>
+struct get<0, Vector<Head,Tail...>>{
+    static constexpr auto value = Head;  
+};
+
+// get<N,Vector<I1,I2,...>> inherits from get<N-1,Vector<I2,...>>
+template<size_t N, int Head, int... Tail>
+struct get<N, Vector<Head,Tail...>> : get<N-1,Vector<Tail...>>{};
+
+
+template<int... I>
+struct front{
+    static constexpr auto value = get<0, Vector<I...>>::value;
+};
+
+template<typename List>
+struct pop_front;
+
+template<int I, int... Is>
+struct pop_front<Vector<I,Is...>>{
+    using type = Vector<Is...>;
+};
+
+// Let's design a metafunction zip that accepts a variadic pack
+// of Vector's.
+// Template declaration
+template<typename... Vectors>
+struct zip;
+
+// Partial specialization
+template<int... Is>
+struct zip<Vector<Is...>>{
+    using type = Vector<Is...>;
+};
+
+template<typename Indexes, typename V, typename... List>
+struct zip_impl;
+
+template<size_t... Is, int... Elements>
+struct zip_impl<std::index_sequence<Is...>, Vector<Elements...>>{
+    using type = Vector<Elements...>;
+};
+
+template<size_t... Is, int... Elements, typename... Vectors>
+struct zip_impl<std::index_sequence<Is...>,Vector<Elements...>, Vectors...>{
+    using first = Vector<Elements...>;
+    using rest = typename zip_impl<std::index_sequence<Is...>, Vectors...>::type;
+    using type = Vector<(get<Is, first>::value * get<Is, rest>::value)...>;
+};
+
+template<int... Is, typename... Vectors>
+struct zip<Vector<Is...>, Vectors...>{
+    static constexpr size_t N = sizeof...(Is);
+    using seq = std::make_index_sequence<N>;
+    using type = zip_impl<seq,Vector<Is...>,Vectors...>::type;
+};
+
+// TEST
+int main() {
+
+    // Test case #1
+    static_assert(get<0,Vector<1,2,3>>::value == 1);
+    static_assert(std::is_same<
+        zip<Vector<1, 2, 3>, Vector<4, 5, 6>, Vector<7, 8, 9>>::type,
+        Vector<1*4*7,2*5*8,3*6*9>>::value, "");
+    
+    // TASK: Add more test cases here
+    
+    // TASK: Ensure it compiles before submission
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/7bqq6vY1o)
+
 ## Basic `std::tuple` design
 
 A tuple is an arbitrary collection of heterogenous data. It is a recursive data-structure. A `tuple` has a static component and a run-time component. The list of types are baked into the tuple definition at compile-time. The actual values/objects held by the tuple can be objects known at run-time.
