@@ -1,0 +1,171 @@
+---
+title: "A short note on the Dupire PDE"
+author: "Quasar"
+date: "2025-10-01"
+categories: [Volatility Modeling]      
+image: "image.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Introduction
+
+For each strike $K$ and maturity $T$, we need to solve backward parabolic Black-Scholes PDE in the variables $(S,t)$, to find the option prices. It is possible to find the same option price by solving a dual problem, namely a forward equation in the variables $(K,T)$, given the present spot value and time, known as the *dual Black-Scholes equation* or **Dupire's PDE**.
+
+# Derivation of the Dupire PDE
+
+Recall, that the Fokker-Planck PDE describes the dynamics of the transition probability density forward in time. We represent the transition probability density function by $p(x,t)$. Were we to be more rigorous, we should write $p(x,t|x_0, t_0)$. The call option price has a similar representation. It is a function of strike $K$ and expiration $T$, given the current spot value $S_t$ and current time $t$. So, its a function $C(K,T | S_t, t)$; we can suppress the variables $(S_t, t)$ and write $C(K,T)$. This is standard terminology in the industry. 
+
+The call option payoff at maturity $T$ is given by:
+
+$$
+\begin{aligned}
+C(K,T|S_T,T) = (S_T - K)^{+}
+\end{aligned}
+$$
+
+We can't exactly apply Ito's formula, but there is the Tanaka-Meyer formula - an implication of which is that we can use Ito's lemma for the absolute value function and the maximum function.  
+
+$$
+\begin{aligned}
+d(S_T - K)^{+} &= \frac{\partial }{\partial S_T}(S_T - K)^{+}dS_T + \frac{1}{2}\frac{\partial^2}{\partial S_T^2} (S_T - K)^{+} dS_T^2 
+\end{aligned}
+$$
+
+We can write:
+
+$$
+\begin{align*}
+\frac{\partial}{\partial S_T}(S_T - K)^{+} = 1_{S_T > K} \frac{\partial}{\partial S_T} (S_T - K) = 1_{S_T > K}
+\end{align*}
+$$
+
+Now, we calculate the second derivative:
+
+$$
+\begin{align*}
+\frac{\partial}{\partial^2 S_T}(S_T - K)^{+} = \frac{\partial}{\partial S_T} 1_{S_T > K} = \delta(S_T - K)
+\end{align*}
+$$
+
+The indicator function goes from $0$ to $1$ at $K$, so the derivative at $K$ is $\infty$ and $0$ otherwise, and this is basically the definition of the Dirac-Delta function. Now, we can substitute these derivatives into the Tanaka formula and get:
+
+$$
+\begin{align*}
+d(S_T - K)^{+} &= 1_{S_T > K} dS_T + \frac{1}{2}\delta(S_T - K)dS_T^2 
+\end{align*}
+$$
+
+Next, let's calculate the partial derivatives of the payoff with respect to $K$. We have:
+
+$$
+\begin{align*}
+\frac{\partial}{\partial K}(S_T - K)^{+} = 1_{S_T > K} \frac{\partial}{\partial K} (S_T - K) = -1_{S_T > K}
+\end{align*}
+$$
+
+Differentiating this result again with respect to $K$:
+
+$$
+\begin{align*}
+\frac{\partial^2}{\partial K^2} (S_T - K)^{+} &= - \frac{\partial}{\partial K} 1_{S_T > K} \\
+&= -\frac{\partial}{\partial K}1_{S_T - K > 0} \\
+&= -\frac{\partial}{\partial K}H(S_T - K) 
+\end{align*}
+$$
+
+Define $y = (S_T - K)$. We have:
+
+$$
+\begin{align*}
+\frac{\partial^2}{\partial K^2} (S_T - K)^{+} &=  -\frac{\partial}{\partial K}H(S_T - K) \\
+&=-\frac{\partial H(y)}{\partial y}\cdot \frac{\partial y}{\partial K}\\
+&=-\delta(y)\frac{\partial}{\partial K}(S_T - K)\\
+&=\delta(S_T - K)
+\end{align*}
+$$
+
+Now, substituting for $dS_T$ and $dS_T^2$ in Ito's lemma, we have:
+
+$$
+\begin{align*}
+d(S_T - K)^{+} &= 1_{S_T > K}(rS_T dT + \sigma(S_T, T)S_TdW_T) + \frac{1}{2}\delta(S_T - K) \sigma(S_T,T)^2 S_T^2 dT\\
+&= \left(rS_T 1_{S_T > K} + \frac{1}{2}\delta(S_T - K)\sigma(S_T,T)^2 S_T^2 \right)dT + 1_{S_T > K} \sigma(S_T, T) S_T dW_T
+\end{align*}
+$$
+
+Taking expectations on both sides, the $dB_T$ becomes zero. So, we have:
+
+$$
+\begin{align*}
+\mathbb{E}^{\mathbb{Q}}\left[d(S_T - K)^{+}\right] =\mathbb{E}^{Q}\left[rS_T1_{S_T > K} + \frac{1}{2}\sigma(S_T,T)^2 S_T^2\right]dT
+\end{align*}
+$$
+
+We are left with just the $dT$ term. Now, we can shift $dT$ to the LHS (interchange expectation and the derivative) to get:
+
+$$
+\begin{align*}
+\frac{\partial}{\partial T}\mathbb{E}^{Q}\left[d(S_T - K)^{+}\right] &=\mathbb{E}^{Q}\left[rS_T1_{S_T > K} + \frac{1}{2}\sigma(S_T,T)^2 S_T^2\right]\\
+&= rS_T \mathbb{E}^{Q}\left[1_{S_T > K}\right] + \frac{1}{2}\mathbb{E}^{Q}\left[\sigma(S_T,T)^2 S_T^2\right]
+\end{align*}
+$$
+
+Let's try to express the first term on the RHS by the call option price. We can write the payoff as:
+
+$$
+\begin{align*}
+(S_T - K)1_{S_T > K}  = S_T 1_{S_T > K} - K 1_{S_T > K}
+\end{align*}
+$$
+
+Now, we can rearrange the terms to get what we want:
+
+$$
+\begin{align*}
+S_T1_{S_T > K} = (S_T - K) 1_{S_T > K} + K1_{S_T > K}
+\end{align*}
+$$
+
+We now take expectation on both sides, so we get:
+
+$$
+\begin{align*}
+\mathbb{E}^Q[S_T 1_{S_T > K}] &= \mathbb{E}^{Q}[(S_T - K)1_{S_T > K}] + K\mathbb{E}^{Q}[1_{S_T > K}]
+\end{align*}
+$$
+
+Recall that:
+
+$$
+\begin{align*}
+C_{K,T} &= e^{-rT} \mathbb{E}^{Q}[(S_T - K)1_{S_T > K}] \\
+\implies e^{rT} C(K,T) &= \mathbb{E}^{Q}[(S_T - K)1_{S_T > K}] 
+\end{align*}
+$$
+
+So, our first expression is then the undiscounted value of the call option. Now, the second expression has got the indicator or the heavyside function, which we know is the derivative of the payoff. Let's reproduce the risk-neutral valuation formula. 
+
+$$
+\begin{align*}
+\frac{\partial}{\partial K} C_{K,T} &= e^{-rT} \mathbb{E}^{Q}\left[\frac{\partial}{\partial K} (S_T - K)^{+}\right]\\
+&= - e^{-rT} \mathbb{E}^{Q}[1_{S_T > K}]
+\end{align*}
+$$
+
+So, we can replace the second expectation term $\mathbb{E}^{Q}[1_{S_T > K}]$ by $-e^{rT}\frac{\partial C_{K,T}}{\partial K}$. So, we have:
+
+$$
+\begin{align*}
+\mathbb{E}^Q[S_T 1_{S_T > K}] &= e^{rT}C(K,T) - Ke^{rT}\frac{\partial C}{\partial K} 
+\end{align*}
+$$
+
+Let's mmove to the second expectation term:
+
+$$
+\begin{align*}
+\frac{\partial}{\partial T}\mathbb{E}^{Q}\left[d(S_T - K)^{+}\right] &= re^{rT}C(K,T) - rKe^{rT}\frac{\partial C}{\partial K} + \frac{1}{2}\mathbb{E}^Q\left[\sigma(T,S_T)^2 S_T^2 \delta(S_T - K)\right]
+\end{align*}
+$$
+
