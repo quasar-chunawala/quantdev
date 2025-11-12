@@ -406,25 +406,60 @@ One of the important functions of the `promise_type` is that it determines what 
 The first thing that the compiler expects from us the `get_return_object()` function. The return type of this function is the same as the return type of the coroutine.
 
 ```cpp
+#include <coroutine>
+#include <print>
+
 struct Task{
     struct promise_type{
         Task get_return_object(){
+            std::println("get_return_object()");
             return Task{ *this };
         }
 
-        void return_void noexcept {}
+        void return_void() noexcept {
+            std::println("return_void()");
+        }
 
-        void unhandled_exception noexcept {}
+        void unhandled_exception() noexcept {
+            std::println("unhandled_exception()");
+        }
 
         std::suspend_always initial_suspend() noexcept{
+            std::println("initial_suspend()");
             return {};
         }
 
         std::suspend_always final_suspend() noexcept{
+            std::println("final_suspend()");
             return {};
         }
     };
+
+    explicit Task(promise_type&){
+        std::println("Task(promise_type&)");
+    }
+
+    ~Task() noexcept{
+        std::println("~Task()");
+    }
 };
+
+Task coro_func(){
+    co_return;
+}
+
+int main(){
+    coro_func();
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/xoqanYjMT)
+
+Output:
+```shell
+get_return_object()
+Task(promise_type&)
+initial_suspend()
+~Task()
 ```
 
 The `get_return_object()` method is implicitly called when the coroutine starts executing. Its upto the `promise_type` to provide an implementation of this method that constructs the return object that will be handed back to the caller. The `Task` object is stored on the heap. You don't see this in the source code anywhere. When the coroutine reaches its first suspension point, and control flow is returned back to the caller, then the caller will receive this object.
@@ -434,6 +469,8 @@ The next thing we need to specify is the `return_void()` function. This is a cus
 The next one we need is `unhandled_exception()` and similar to the `return_void()`, this function is a customization point for handling, what happens when the coroutine throws an exception. We leave it empty for now.
 
 We need to implement two more functions `initial_suspend()` and `final_suspend()`. These are basically the customization points that allow us to execute some code, both when the coroutine first starts executing and shortly before the coroutine ends execution. Here, we are returning `std::suspend_always` which basically means that at these points, I want to go into suspension.
+In a typical implementation, you either return `std::suspend_always`, which means you pause execution at this point and hand control back to the caller always, or you return `std::suspend_never`, which basically means you just go on and continue executing the coroutine.
+
 
 
 
