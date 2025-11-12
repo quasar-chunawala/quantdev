@@ -330,7 +330,7 @@ This looks very similar to the sequential code, except that we use this `co_awai
 
 **Suspended computation**. A second use-case is that coroutines support lazy evaluation. Just as in the fibonacci example, sometimes we want to avoid doing unecessary evaluation. Lazy evaluation doesn't do any work unless it's absolutely necessary. This can also potentially make your code more efficient. Lazy evaluation also supports programming with infinite lists. 
 
-## The smallest coroutine
+## The simplest coroutine
 
 The following code is the simplest implementation of a coroutine:
 
@@ -356,7 +356,13 @@ Our first coroutine will just return nothing. It will not do anything else. Sadl
       |     ^~~~~~~~~
 ```
 
-Looking at C++ reference, we see that the return type of a coroutine must define a type named `promise_type`. Following the reference advice, we can write a new version of our coroutine.
+Looking at C++ reference, we see that the return type of a coroutine must define a type named `promise_type`. 
+
+### The `promise_type`
+
+Why do we need a promise? The `promise_type` is the second important piece in the coroutine mechanism. We can draw an analogy from futures and promises which are essential blocks for achieving asynchronous programming in C++. The future is the thing, that the function that does the asynchronous computation, hands out back to the caller, that the caller can use to retrieve the result by invoking the `get()` member function. The future has the role of the return object. But, you need something that remains on the producer-side. The asynchronous function holds on to the promise, and that's where it puts the results that will be given to the caller, when it calls `get()` on the future. The idea behind the `promise_type` for coroutines is similar. The promise is where the coroutine's return value is stored, and it provides functions to control the coroutine's behavior at startup and completion of t he coroutine. The promise is the interface through which the caller interacts with the coroutine.
+
+Following the reference advice, we can write a new version of our coroutine.
 
 ```cpp
 #include <coroutine>
@@ -378,5 +384,24 @@ int main(){
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/G957defsr)
 
+Note that the return type of a coroutine can have any name (I call it `Task`, so that it makes intuitive sense). Compiling the preceding code again gives us errors. All errors are about missing functions in the `promise_type`:
 
+```shell
+<source>: In function 'Task coro_func()':
+<source>:11:5: error: no member named 'return_void' in
+'std::__n4861::__coroutine_traits_impl<Task, void>::promise_type' {aka 'Task::promise_type'}
+   11 |     co_return;
+      |     ^~~~~~~~~
+<source>:10:6: error: no member named 'unhandled_exception' in
+'std::__n4861::__coroutine_traits_impl<Task, void>::promise_type' {aka 'Task::promise_type'}
+   10 | Task coro_func(){
+      |      ^~~~~~~~~
+<source>:10:6: error: no member named 'get_return_object' in
+'std::__n4861::__coroutine_traits_impl<Task, void>::promise_type' {aka 'Task::promise_type'}
+```
 
+One of the important functions of the `promise_type` is that it determines what happens at certain key points in the coroutine's life. It determines, what happens at the startup and completion of execution of the coroutine. 
+
+### Implementing the `promise_type`
+
+The first thing that the compiler expects from us the `get_return_object()` function. 
