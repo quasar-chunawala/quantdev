@@ -1102,9 +1102,318 @@ font-style: inherit;">);</span></span>
 <span id="cb9-26"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span></code></pre></div>
-
-
+<p>Now, we don’t have exception handling, because we have spread our logic over a number of callbacks. We are only left with <code>if</code> statements. If the reading all went fine, we can write the data back by shrinking the buffer, requesting that the <code>write</code> is performed at some time, not necessarily now - maybe later. When this <code>write</code> is performed, we would like to call another callback <code>done</code>. We don’t wait until this callback is called or <code>write</code> is performed. At this point, we just make an association. It is possible, that at a future time, the <code>write</code> succeeds and then the callback <code>done</code> is called. So, we have to define it.</p>
+<div class="sourceCode" id="cb10" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> session<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>Socket sock<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb10-2">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> State<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> Socket sock<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> buffer<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1024</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb10-3">    </span>
+<span id="cb10-4">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Heap allocate the state</span></span>
+<span id="cb10-5">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> state <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>make_shared<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>State<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;(</span>sock<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> buffer<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb10-6"></span>
+<span id="cb10-7">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> on_read_finished_callback <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>state<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">](</span></span>
+<span id="cb10-8">        error_code ec<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> </span>
+<span id="cb10-9">        <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span> len</span>
+<span id="cb10-10">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb10-11">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb10-12">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> done <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>state<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">](</span>error_code ec<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span> len<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb10-13">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb10-14">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">if</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(!</span>ec<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb10-15">                log<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="cb10-16">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb10-17">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">if</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(!</span>ec<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb10-18">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb10-19">            <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Perform an asynchronous write</span></span>
+<span id="cb10-20">            state<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span>socket<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>async_write<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span> </span>
+<span id="cb10-21">                state<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span>buffer<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> </span>
+<span id="cb10-22">                done </span>
+<span id="cb10-23">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span>    </span>
+<span id="cb10-24">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb10-25">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb10-26"></span>
+<span id="cb10-27">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Perform an asynchronous read </span></span>
+<span id="cb10-28">    state<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span>socket<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>async_read<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span> state<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span>buffer<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> </span>
+<span id="cb10-29">                             on_read_finished_callback <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb10-30"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p><code>done</code> has a similar structure. It takes two arguments - the error code that tells if the <code>write</code> went fine and the number of bytes written <code>len</code>. If there were no errors on <code>write</code> and everything went fine, we can do the logging. Implicitly,</p>
+<p>So, the <code>session</code> makes two associations:</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0A%5Ctext%7BOn%20finishing%20read%7D%20&amp;%5Cmapsto%20%5Ctexttt%7Bon%5C_finished%5C_read%5C_callback%7D%20%5C%5C%0A%5Ctext%7BOn%20finishing%20write%7D%20&amp;%5Cmapsto%20%5Ctexttt%7Bdone%7D%20%5C%5C%0A%5Ctext%7BAccepting%20a%20new%20client%20connection%7D%20&amp;%5Cmapsto%20%5Ctexttt%7Bsession%7D%0A%5Cend%7Balign*%7D%0A"></p>
+<p>And implicitly there is a third association even though we cannot see it here - this entire function <code>session</code> is most likely a callback, in response to an event like <img src="https://latex.codecogs.com/png.latex?%5Ctext%7BOn%20client%20connection%20established%7D">. So, the server will be many different associations of events to callbacks at different levels.</p>
+<p>Pay attention to the <code>state</code>. We said that, we wanted to allocate it on the heap and manage it through a <code>shared_ptr</code>. We pass this <code>shared_ptr&lt;State&gt;</code> by value to every single callback. This way, I make sure that the last one who touches this session turns off the lights and deallocates <code>state</code>.</p>
+<p>While this is a toy-example, in real production code, there can be a long sequence of steps and calling lambdas inside lambdas can obfuscate the meaning of the code. We already see a weird inversion of control flow, when reading the code.</p>
+<p>One thing to note before I go to coroutines is that, even though those things happen asynchronously, there is a sequence to it, that is not violated. We only perform a <code>write</code> when we know that the <code>read</code> has succeeded. We only perform the <code>log</code> after the <code>write</code> has succeeded.</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0A%5Ctexttt%7Bread%7D%20%5Cto%20%5Ctexttt%7Bwrite%7D%20%5Cto%20%5Ctexttt%7Blog%7D%0A"></p>
+<p>As an application programmer we determine, when we yield control to the system other sessions. It’s not that the system pre-empts this task.</p>
+<p>A coroutine implementation of the same echo’ing session would look like this:</p>
+<div class="sourceCode" id="cb11" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb11-1">Task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> session<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>Socket sock<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb11-2">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> buffer<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1024</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span></span>
+<span id="cb11-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> len <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">co_await</span> sock<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>async_read<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">({</span>buffer<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">});</span></span>
+<span id="cb11-4">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">co_await</span> sock<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>async_write<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">({</span>buffer<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span>len<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">});</span></span>
+<span id="cb11-5">    log<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>buffer<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb11-6"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>This looks very similar to the sequential code, except that we use this <code>co_await</code> keyword. You have clear indication of the points where the coroutine will be suspended. Also, note that previously the function <code>session</code> returned <code>void</code>. Now, we are returning something - a <code>Task&lt;void&gt;</code>. This will be a handle to the coroutine and it’s how the outside world will be communicating with the coroutine.</p>
+<p><strong>Suspended computation</strong>. A second use-case is that coroutines support lazy evaluation. Just as in the fibonacci example, sometimes we want to avoid doing unecessary evaluation. Lazy evaluation doesn’t do any work unless it’s absolutely necessary. This can also potentially make your code more efficient. Lazy evaluation also supports programming with infinite lists.</p>
 </section>
+</section>
+<section id="the-smallest-coroutine" class="level2">
+<h2 class="anchored" data-anchor-id="the-smallest-coroutine">The smallest coroutine</h2>
+<p>The following code is the simplest implementation of a coroutine:</p>
+<div class="sourceCode" id="cb12" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;coroutine&gt;</span></span>
+<span id="cb12-2"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> coro_func<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb12-3">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">co_return</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb12-4"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb12-5"></span>
+<span id="cb12-6"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb12-7">    coro_func<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="cb12-8"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/W3GoWPoEs">Compiler Explorer</a></p>
+<p>Our first coroutine will just return nothing. It will not do anything else. Sadly, the preceding code is too simple for a functional coroutine and it will not compile. When compiling with <code>gcc 15.2</code>, we get the following error:</p>
+<div class="sourceCode" id="cb13" style="background: #f1f3f5;"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb13-1">&lt;source&gt;: In function 'void coro_func()':</span>
+<span id="cb13-2">&lt;source&gt;:4:5: error: unable to find the promise type for this coroutine</span>
+<span id="cb13-3">    4 |     co_return;</span>
+<span id="cb13-4">      |     ^~~~~~~~~</span></code></pre></div>
+<p>Looking at C++ reference, we see that the return type of a coroutine must define a type named <code>promise_type</code>. Following the reference advice, we can write a new version of our coroutine.</p>
+<div class="sourceCode" id="cb14" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;coroutine&gt;</span></span>
+<span id="cb14-2"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> Task</span>
+<span id="cb14-3"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb14-4">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span></span>
+<span id="cb14-5">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb14-6"></span>
+<span id="cb14-7">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb14-8"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb14-9"></span>
+<span id="cb14-10">Task coro_func<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb14-11">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">co_return</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb14-12"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb14-13"></span>
+<span id="cb14-14"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb14-15">    coro_func<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="cb14-16"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/G957defsr">Compiler Explorer</a></p>
+
+
 </section>
 
  ]]></description>

@@ -253,3 +253,130 @@ void session(Socket sock){
                              on_read_finished_callback );
 }
 ```
+
+Now, we don't have exception handling, because we have spread our logic over a number of callbacks. We are only left with `if` statements. If the reading all went fine, we can write the data back by shrinking the buffer, requesting that the `write` is performed at some time, not necessarily now - maybe later. When this `write` is performed, we would like to call another callback `done`. We don't wait until this callback is called or `write` is performed. At this point, we just make an association. It is possible, that at a future time, the `write` succeeds and then the callback `done` is called. So, we have to define it.
+
+```cpp
+void session(Socket sock){
+    struct State{ Socket sock; char buffer[1024]; };
+    
+    // Heap allocate the state
+    auto state = std::make_shared<State>(sock, buffer);
+
+    auto on_read_finished_callback = [state](
+        error_code ec, 
+        size_t len
+    )
+    {
+        auto done = [state](error_code ec, size_t len)
+        {
+            if(!ec)
+                log();
+        }
+        if(!ec)
+        {
+            // Perform an asynchronous write
+            state->socket.async_write( 
+                state->buffer, 
+                done 
+            );    
+        }
+    }
+
+    // Perform an asynchronous read 
+    state->socket.async_read( state->buffer, 
+                             on_read_finished_callback );
+}
+```
+
+`done` has a similar structure. It takes two arguments - the error code that tells if the `write` went fine and the number of bytes written `len`. If there were no errors on `write` and everything went fine, we can do the logging. Implicitly, 
+
+So, the `session` makes two associations: 
+
+$$
+\begin{align*}
+\text{On finishing read} &\mapsto \texttt{on\_finished\_read\_callback} \\
+\text{On finishing write} &\mapsto \texttt{done} \\
+\text{Accepting a new client connection} &\mapsto \texttt{session}
+\end{align*}
+$$
+
+And implicitly there is a third association even though we cannot see it here - this entire function `session` is most likely a callback, in response to an event like $\text{On client connection established}$. So, the server will be many different associations of events to callbacks at different levels. 
+
+Pay attention to the `state`. We said that, we wanted to allocate it on the heap and manage it through a `shared_ptr`. We pass this `shared_ptr<State>` by value to every single callback. This way, I make sure that the last one who touches this session turns off the lights and deallocates `state`. 
+
+While this is a toy-example, in real production code, there can be a long sequence of steps and calling lambdas inside lambdas can obfuscate the meaning of the code. We already see a weird inversion of control flow, when reading the code.
+
+One thing to note before I go to coroutines is that, even though those things happen asynchronously, there is a sequence to it, that is not violated. We only perform a `write` when we know that the `read` has succeeded. We only perform the `log` after the `write` has succeeded. 
+
+$$
+\texttt{read} \to \texttt{write} \to \texttt{log}
+$$
+
+As an application programmer we determine, when we yield control to the system other sessions. It's not that the system pre-empts this task. 
+
+A coroutine implementation of the same echo'ing session would look like this:
+
+```cpp
+Task<void> session(Socket sock){
+    char buffer[1024];
+    int len = co_await sock.async_read({buffer});
+    co_await sock.async_write({buffer,len});
+    log(buffer);
+}
+```
+
+This looks very similar to the sequential code, except that we use this `co_await` keyword. You have clear indication of the points where the coroutine will be suspended. Also, note that previously the function `session` returned `void`. Now, we are returning something - a `Task<void>`. This will be a handle to the coroutine and it's how the outside world will be communicating with the coroutine. 
+
+**Suspended computation**. A second use-case is that coroutines support lazy evaluation. Just as in the fibonacci example, sometimes we want to avoid doing unecessary evaluation. Lazy evaluation doesn't do any work unless it's absolutely necessary. This can also potentially make your code more efficient. Lazy evaluation also supports programming with infinite lists. 
+
+## The smallest coroutine
+
+The following code is the simplest implementation of a coroutine:
+
+```cpp
+#include <coroutine>
+void coro_func(){
+    co_return;
+}
+
+int main(){
+    coro_func();
+}
+```
+
+[Compiler Explorer](https://compiler-explorer.com/z/W3GoWPoEs)
+
+Our first coroutine will just return nothing. It will not do anything else. Sadly, the preceding code is too simple for a functional coroutine and it will not compile. When compiling with `gcc 15.2`, we get the following error:
+
+```shell
+<source>: In function 'void coro_func()':
+<source>:4:5: error: unable to find the promise type for this coroutine
+    4 |     co_return;
+      |     ^~~~~~~~~
+```
+
+Looking at C++ reference, we see that the return type of a coroutine must define a type named `promise_type`. Following the reference advice, we can write a new version of our coroutine.
+
+```cpp
+#include <coroutine>
+struct Task
+{
+    struct promise_type
+    {
+
+    };
+};
+
+Task coro_func(){
+    co_return;
+}
+
+int main(){
+    coro_func();
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/G957defsr)
+
+
+

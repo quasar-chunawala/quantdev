@@ -210,6 +210,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#how-to-turn-a-function-into-a-coroutine" id="toc-how-to-turn-a-function-into-a-coroutine" class="nav-link" data-scroll-target="#how-to-turn-a-function-into-a-coroutine">How to turn a function into a coroutine?</a></li>
   <li><a href="#use-cases-for-coroutines" id="toc-use-cases-for-coroutines" class="nav-link" data-scroll-target="#use-cases-for-coroutines">Use-cases for coroutines</a></li>
   </ul></li>
+  <li><a href="#the-smallest-coroutine" id="toc-the-smallest-coroutine" class="nav-link" data-scroll-target="#the-smallest-coroutine">The smallest coroutine</a></li>
   </ul>
 </nav>
     </div>
@@ -449,9 +450,102 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb9-24"><a href="#cb9-24"></a>    state<span class="op">-&gt;</span>socket<span class="op">.</span>async_read<span class="op">(</span> state<span class="op">-&gt;</span>buffer<span class="op">,</span> </span>
 <span id="cb9-25"><a href="#cb9-25"></a>                             on_read_finished_callback <span class="op">);</span></span>
 <span id="cb9-26"><a href="#cb9-26"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-
-
+<p>Now, we don’t have exception handling, because we have spread our logic over a number of callbacks. We are only left with <code>if</code> statements. If the reading all went fine, we can write the data back by shrinking the buffer, requesting that the <code>write</code> is performed at some time, not necessarily now - maybe later. When this <code>write</code> is performed, we would like to call another callback <code>done</code>. We don’t wait until this callback is called or <code>write</code> is performed. At this point, we just make an association. It is possible, that at a future time, the <code>write</code> succeeds and then the callback <code>done</code> is called. So, we have to define it.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1"></a><span class="dt">void</span> session<span class="op">(</span>Socket sock<span class="op">){</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a>    <span class="kw">struct</span> State<span class="op">{</span> Socket sock<span class="op">;</span> <span class="dt">char</span> buffer<span class="op">[</span><span class="dv">1024</span><span class="op">];</span> <span class="op">};</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a>    </span>
+<span id="cb10-4"><a href="#cb10-4"></a>    <span class="co">// Heap allocate the state</span></span>
+<span id="cb10-5"><a href="#cb10-5"></a>    <span class="kw">auto</span> state <span class="op">=</span> <span class="bu">std::</span>make_shared<span class="op">&lt;</span>State<span class="op">&gt;(</span>sock<span class="op">,</span> buffer<span class="op">);</span></span>
+<span id="cb10-6"><a href="#cb10-6"></a></span>
+<span id="cb10-7"><a href="#cb10-7"></a>    <span class="kw">auto</span> on_read_finished_callback <span class="op">=</span> <span class="op">[</span>state<span class="op">](</span></span>
+<span id="cb10-8"><a href="#cb10-8"></a>        error_code ec<span class="op">,</span> </span>
+<span id="cb10-9"><a href="#cb10-9"></a>        <span class="dt">size_t</span> len</span>
+<span id="cb10-10"><a href="#cb10-10"></a>    <span class="op">)</span></span>
+<span id="cb10-11"><a href="#cb10-11"></a>    <span class="op">{</span></span>
+<span id="cb10-12"><a href="#cb10-12"></a>        <span class="kw">auto</span> done <span class="op">=</span> <span class="op">[</span>state<span class="op">](</span>error_code ec<span class="op">,</span> <span class="dt">size_t</span> len<span class="op">)</span></span>
+<span id="cb10-13"><a href="#cb10-13"></a>        <span class="op">{</span></span>
+<span id="cb10-14"><a href="#cb10-14"></a>            <span class="cf">if</span><span class="op">(!</span>ec<span class="op">)</span></span>
+<span id="cb10-15"><a href="#cb10-15"></a>                log<span class="op">();</span></span>
+<span id="cb10-16"><a href="#cb10-16"></a>        <span class="op">}</span></span>
+<span id="cb10-17"><a href="#cb10-17"></a>        <span class="cf">if</span><span class="op">(!</span>ec<span class="op">)</span></span>
+<span id="cb10-18"><a href="#cb10-18"></a>        <span class="op">{</span></span>
+<span id="cb10-19"><a href="#cb10-19"></a>            <span class="co">// Perform an asynchronous write</span></span>
+<span id="cb10-20"><a href="#cb10-20"></a>            state<span class="op">-&gt;</span>socket<span class="op">.</span>async_write<span class="op">(</span> </span>
+<span id="cb10-21"><a href="#cb10-21"></a>                state<span class="op">-&gt;</span>buffer<span class="op">,</span> </span>
+<span id="cb10-22"><a href="#cb10-22"></a>                done </span>
+<span id="cb10-23"><a href="#cb10-23"></a>            <span class="op">);</span>    </span>
+<span id="cb10-24"><a href="#cb10-24"></a>        <span class="op">}</span></span>
+<span id="cb10-25"><a href="#cb10-25"></a>    <span class="op">}</span></span>
+<span id="cb10-26"><a href="#cb10-26"></a></span>
+<span id="cb10-27"><a href="#cb10-27"></a>    <span class="co">// Perform an asynchronous read </span></span>
+<span id="cb10-28"><a href="#cb10-28"></a>    state<span class="op">-&gt;</span>socket<span class="op">.</span>async_read<span class="op">(</span> state<span class="op">-&gt;</span>buffer<span class="op">,</span> </span>
+<span id="cb10-29"><a href="#cb10-29"></a>                             on_read_finished_callback <span class="op">);</span></span>
+<span id="cb10-30"><a href="#cb10-30"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><code>done</code> has a similar structure. It takes two arguments - the error code that tells if the <code>write</code> went fine and the number of bytes written <code>len</code>. If there were no errors on <code>write</code> and everything went fine, we can do the logging. Implicitly,</p>
+<p>So, the <code>session</code> makes two associations:</p>
+<p><span class="math display">\[
+\begin{align*}
+\text{On finishing read} &amp;\mapsto \texttt{on\_finished\_read\_callback} \\
+\text{On finishing write} &amp;\mapsto \texttt{done} \\
+\text{Accepting a new client connection} &amp;\mapsto \texttt{session}
+\end{align*}
+\]</span></p>
+<p>And implicitly there is a third association even though we cannot see it here - this entire function <code>session</code> is most likely a callback, in response to an event like <span class="math inline">\(\text{On client connection established}\)</span>. So, the server will be many different associations of events to callbacks at different levels.</p>
+<p>Pay attention to the <code>state</code>. We said that, we wanted to allocate it on the heap and manage it through a <code>shared_ptr</code>. We pass this <code>shared_ptr&lt;State&gt;</code> by value to every single callback. This way, I make sure that the last one who touches this session turns off the lights and deallocates <code>state</code>.</p>
+<p>While this is a toy-example, in real production code, there can be a long sequence of steps and calling lambdas inside lambdas can obfuscate the meaning of the code. We already see a weird inversion of control flow, when reading the code.</p>
+<p>One thing to note before I go to coroutines is that, even though those things happen asynchronously, there is a sequence to it, that is not violated. We only perform a <code>write</code> when we know that the <code>read</code> has succeeded. We only perform the <code>log</code> after the <code>write</code> has succeeded.</p>
+<p><span class="math display">\[
+\texttt{read} \to \texttt{write} \to \texttt{log}
+\]</span></p>
+<p>As an application programmer we determine, when we yield control to the system other sessions. It’s not that the system pre-empts this task.</p>
+<p>A coroutine implementation of the same echo’ing session would look like this:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1"></a>Task<span class="op">&lt;</span><span class="dt">void</span><span class="op">&gt;</span> session<span class="op">(</span>Socket sock<span class="op">){</span></span>
+<span id="cb11-2"><a href="#cb11-2"></a>    <span class="dt">char</span> buffer<span class="op">[</span><span class="dv">1024</span><span class="op">];</span></span>
+<span id="cb11-3"><a href="#cb11-3"></a>    <span class="dt">int</span> len <span class="op">=</span> <span class="cf">co_await</span> sock<span class="op">.</span>async_read<span class="op">({</span>buffer<span class="op">});</span></span>
+<span id="cb11-4"><a href="#cb11-4"></a>    <span class="cf">co_await</span> sock<span class="op">.</span>async_write<span class="op">({</span>buffer<span class="op">,</span>len<span class="op">});</span></span>
+<span id="cb11-5"><a href="#cb11-5"></a>    log<span class="op">(</span>buffer<span class="op">);</span></span>
+<span id="cb11-6"><a href="#cb11-6"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This looks very similar to the sequential code, except that we use this <code>co_await</code> keyword. You have clear indication of the points where the coroutine will be suspended. Also, note that previously the function <code>session</code> returned <code>void</code>. Now, we are returning something - a <code>Task&lt;void&gt;</code>. This will be a handle to the coroutine and it’s how the outside world will be communicating with the coroutine.</p>
+<p><strong>Suspended computation</strong>. A second use-case is that coroutines support lazy evaluation. Just as in the fibonacci example, sometimes we want to avoid doing unecessary evaluation. Lazy evaluation doesn’t do any work unless it’s absolutely necessary. This can also potentially make your code more efficient. Lazy evaluation also supports programming with infinite lists.</p>
 </section>
+</section>
+<section id="the-smallest-coroutine" class="level2">
+<h2 class="anchored" data-anchor-id="the-smallest-coroutine">The smallest coroutine</h2>
+<p>The following code is the simplest implementation of a coroutine:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1"></a><span class="pp">#include </span><span class="im">&lt;coroutine&gt;</span></span>
+<span id="cb12-2"><a href="#cb12-2"></a><span class="dt">void</span> coro_func<span class="op">(){</span></span>
+<span id="cb12-3"><a href="#cb12-3"></a>    <span class="cf">co_return</span><span class="op">;</span></span>
+<span id="cb12-4"><a href="#cb12-4"></a><span class="op">}</span></span>
+<span id="cb12-5"><a href="#cb12-5"></a></span>
+<span id="cb12-6"><a href="#cb12-6"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb12-7"><a href="#cb12-7"></a>    coro_func<span class="op">();</span></span>
+<span id="cb12-8"><a href="#cb12-8"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/W3GoWPoEs">Compiler Explorer</a></p>
+<p>Our first coroutine will just return nothing. It will not do anything else. Sadly, the preceding code is too simple for a functional coroutine and it will not compile. When compiling with <code>gcc 15.2</code>, we get the following error:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb13-1"><a href="#cb13-1"></a>&lt;source&gt;: In function 'void coro_func()':</span>
+<span id="cb13-2"><a href="#cb13-2"></a>&lt;source&gt;:4:5: error: unable to find the promise type for this coroutine</span>
+<span id="cb13-3"><a href="#cb13-3"></a>    4 |     co_return;</span>
+<span id="cb13-4"><a href="#cb13-4"></a>      |     ^~~~~~~~~</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Looking at C++ reference, we see that the return type of a coroutine must define a type named <code>promise_type</code>. Following the reference advice, we can write a new version of our coroutine.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1"></a><span class="pp">#include </span><span class="im">&lt;coroutine&gt;</span></span>
+<span id="cb14-2"><a href="#cb14-2"></a><span class="kw">struct</span> Task</span>
+<span id="cb14-3"><a href="#cb14-3"></a><span class="op">{</span></span>
+<span id="cb14-4"><a href="#cb14-4"></a>    <span class="kw">struct</span> <span class="dt">promise_type</span></span>
+<span id="cb14-5"><a href="#cb14-5"></a>    <span class="op">{</span></span>
+<span id="cb14-6"><a href="#cb14-6"></a></span>
+<span id="cb14-7"><a href="#cb14-7"></a>    <span class="op">};</span></span>
+<span id="cb14-8"><a href="#cb14-8"></a><span class="op">};</span></span>
+<span id="cb14-9"><a href="#cb14-9"></a></span>
+<span id="cb14-10"><a href="#cb14-10"></a>Task coro_func<span class="op">(){</span></span>
+<span id="cb14-11"><a href="#cb14-11"></a>    <span class="cf">co_return</span><span class="op">;</span></span>
+<span id="cb14-12"><a href="#cb14-12"></a><span class="op">}</span></span>
+<span id="cb14-13"><a href="#cb14-13"></a></span>
+<span id="cb14-14"><a href="#cb14-14"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb14-15"><a href="#cb14-15"></a>    coro_func<span class="op">();</span></span>
+<span id="cb14-16"><a href="#cb14-16"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/G957defsr">Compiler Explorer</a></p>
+
+
 </section>
 
 </main> <!-- /main -->
