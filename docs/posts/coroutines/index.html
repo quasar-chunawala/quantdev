@@ -922,6 +922,133 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="what-is-an-awaitable" class="level2">
 <h2 class="anchored" data-anchor-id="what-is-an-awaitable">What is an awaitable?</h2>
 <p>An <em>awaitable</em> is any object, I can call <code>co_await</code> on. You can think of <code>co_await</code> like an operator, and its argument as an <em>awaitable</em>. The way to think about the operator <code>co_await</code> is that these are opportunities for suspension. These are the points where the coroutine can be paused, and the control-flow can be handed back to the caller. The awaitable controls what happens at these points. Similar to, how the <code>promise_type</code> provides hooks to control what happens at startup or when you return from the coroutine, the awaitable provides these hooks for what happens when we go into suspension. They may decide not to suspend at all, and let the execution just continue. Not every <code>co_await</code> call necessary suspends. It’s totally upto the coroutine-writer. Let’s try to implement such an awaitable.</p>
+<div class="sourceCode" id="cb29"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb29-1"><a href="#cb29-1"></a><span class="kw">struct</span> Awaitable<span class="op">{</span></span>
+<span id="cb29-2"><a href="#cb29-2"></a>    <span class="dt">bool</span> await_ready<span class="op">();</span></span>
+<span id="cb29-3"><a href="#cb29-3"></a>    <span class="dt">void</span> await_suspend<span class="op">(</span><span class="bu">std::</span>coroutine_handle<span class="op">&lt;</span><span class="dt">promise_type</span><span class="op">&gt;);</span></span>
+<span id="cb29-4"><a href="#cb29-4"></a>    <span class="dt">void</span> await_resume<span class="op">(</span><span class="bu">std::</span>coroutine_handle<span class="op">&lt;</span><span class="dt">promise_type</span><span class="op">&gt;);</span></span>
+<span id="cb29-5"><a href="#cb29-5"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The first function is <code>.await_ready()</code> which returns a <code>bool</code>. This determines whether we do actually go into suspension or we just say, <em>yeah, we are ready, and we don’t want to go into suspension</em>, we want to continue execution and in that case we just return <code>true</code>.</p>
+<p>The next function is <code>.await_suspend()</code> and that is the customization point that will get executed shortly before the coroutine function goes to sleep.</p>
+<p>The next function is <code>.await_resume()</code> and that is the customization point that will get execute just after the coroutine is resumed.</p>
+<p>The following code shows our implementation of the <code>await_transform</code> function and the <code>Awaitable</code> struct:</p>
+<div class="sourceCode" id="cb30"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb30-1"><a href="#cb30-1"></a><span class="kw">auto</span> await_transform<span class="op">(</span><span class="bu">std::</span>string<span class="op">)</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb30-2"><a href="#cb30-2"></a>    <span class="kw">struct</span> Awaitable<span class="op">{</span></span>
+<span id="cb30-3"><a href="#cb30-3"></a>        <span class="dt">promise_type</span><span class="op">&amp;</span> promise<span class="op">;</span></span>
+<span id="cb30-4"><a href="#cb30-4"></a></span>
+<span id="cb30-5"><a href="#cb30-5"></a>        <span class="dt">bool</span> await_ready<span class="op">()</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb30-6"><a href="#cb30-6"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span>    <span class="co">// Says, yeah we are ready</span></span>
+<span id="cb30-7"><a href="#cb30-7"></a>                            <span class="co">// we don't need to sleep. Just go on.</span></span>
+<span id="cb30-8"><a href="#cb30-8"></a>        <span class="op">}</span></span>
+<span id="cb30-9"><a href="#cb30-9"></a></span>
+<span id="cb30-10"><a href="#cb30-10"></a>        <span class="bu">std::</span>string<span class="op"> </span>await_resume<span class="op">()</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb30-11"><a href="#cb30-11"></a>            <span class="cf">return</span> <span class="bu">std::</span>move<span class="op">(</span>promise<span class="op">.</span>input_data<span class="op">);</span></span>
+<span id="cb30-12"><a href="#cb30-12"></a>        <span class="op">}</span></span>
+<span id="cb30-13"><a href="#cb30-13"></a></span>
+<span id="cb30-14"><a href="#cb30-14"></a>        <span class="dt">void</span> await_suspend<span class="op">(</span><span class="bu">std::</span>coroutine_handle<span class="op">&lt;</span><span class="dt">promise_type</span><span class="op">&gt;)</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{}</span></span>
+<span id="cb30-15"><a href="#cb30-15"></a></span>
+<span id="cb30-16"><a href="#cb30-16"></a>    <span class="op">};</span></span>
+<span id="cb30-17"><a href="#cb30-17"></a></span>
+<span id="cb30-18"><a href="#cb30-18"></a>    <span class="cf">return</span> Awaitable<span class="op">(*</span><span class="kw">this</span><span class="op">);</span></span>
+<span id="cb30-19"><a href="#cb30-19"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This is the code for the full example of the waiting coroutine:</p>
+<div class="sourceCode" id="cb31"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb31-1"><a href="#cb31-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb31-2"><a href="#cb31-2"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
+<span id="cb31-3"><a href="#cb31-3"></a><span class="pp">#include </span><span class="im">&lt;coroutine&gt;</span></span>
+<span id="cb31-4"><a href="#cb31-4"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb31-5"><a href="#cb31-5"></a></span>
+<span id="cb31-6"><a href="#cb31-6"></a><span class="kw">struct</span> Task<span class="op">{</span></span>
+<span id="cb31-7"><a href="#cb31-7"></a>    <span class="kw">struct</span> <span class="dt">promise_type</span><span class="op">{</span></span>
+<span id="cb31-8"><a href="#cb31-8"></a>        <span class="bu">std::</span>string<span class="op"> </span>input_data<span class="op">{};</span></span>
+<span id="cb31-9"><a href="#cb31-9"></a></span>
+<span id="cb31-10"><a href="#cb31-10"></a>        Task get_return_object<span class="op">()</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb31-11"><a href="#cb31-11"></a>            <span class="bu">std::</span>println<span class="op">(</span><span class="st">"get_return_object"</span><span class="op">);</span></span>
+<span id="cb31-12"><a href="#cb31-12"></a>            <span class="cf">return</span> Task<span class="op">{</span> <span class="op">*</span><span class="kw">this</span> <span class="op">};</span></span>
+<span id="cb31-13"><a href="#cb31-13"></a>        <span class="op">}</span> </span>
+<span id="cb31-14"><a href="#cb31-14"></a></span>
+<span id="cb31-15"><a href="#cb31-15"></a>        <span class="dt">void</span> return_void<span class="op">()</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb31-16"><a href="#cb31-16"></a>            <span class="bu">std::</span>println<span class="op">(</span><span class="st">"return_void"</span><span class="op">);</span></span>
+<span id="cb31-17"><a href="#cb31-17"></a>        <span class="op">}</span></span>
+<span id="cb31-18"><a href="#cb31-18"></a></span>
+<span id="cb31-19"><a href="#cb31-19"></a>        <span class="bu">std::</span>suspend_always<span class="op"> </span>initial_suspend<span class="op">()</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb31-20"><a href="#cb31-20"></a>            <span class="bu">std::</span>println<span class="op">(</span><span class="st">"initial_suspend"</span><span class="op">);</span></span>
+<span id="cb31-21"><a href="#cb31-21"></a>            <span class="cf">return</span> <span class="op">{};</span></span>
+<span id="cb31-22"><a href="#cb31-22"></a>        <span class="op">}</span></span>
+<span id="cb31-23"><a href="#cb31-23"></a></span>
+<span id="cb31-24"><a href="#cb31-24"></a>        <span class="bu">std::</span>suspend_always<span class="op"> </span>final_suspend<span class="op">()</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb31-25"><a href="#cb31-25"></a>            <span class="bu">std::</span>println<span class="op">(</span><span class="st">"final_suspend"</span><span class="op">);</span></span>
+<span id="cb31-26"><a href="#cb31-26"></a>            <span class="cf">return</span> <span class="op">{};</span></span>
+<span id="cb31-27"><a href="#cb31-27"></a>        <span class="op">}</span></span>
+<span id="cb31-28"><a href="#cb31-28"></a>        <span class="dt">void</span> unhandled_exception<span class="op">()</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb31-29"><a href="#cb31-29"></a>            <span class="bu">std::</span>println<span class="op">(</span><span class="st">"unhandled_exception"</span><span class="op">);</span></span>
+<span id="cb31-30"><a href="#cb31-30"></a>        <span class="op">}</span></span>
+<span id="cb31-31"><a href="#cb31-31"></a></span>
+<span id="cb31-32"><a href="#cb31-32"></a>        <span class="bu">std::</span>suspend_always<span class="op"> </span>yield_value<span class="op">(</span><span class="bu">std::</span>string<span class="op"> </span>msg<span class="op">)</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb31-33"><a href="#cb31-33"></a>            <span class="bu">std::</span>println<span class="op">(</span><span class="st">"yield_value"</span><span class="op">);</span></span>
+<span id="cb31-34"><a href="#cb31-34"></a>            <span class="co">//output_data = std::move(msg);</span></span>
+<span id="cb31-35"><a href="#cb31-35"></a>            <span class="cf">return</span> <span class="op">{};</span></span>
+<span id="cb31-36"><a href="#cb31-36"></a>        <span class="op">}</span></span>
+<span id="cb31-37"><a href="#cb31-37"></a></span>
+<span id="cb31-38"><a href="#cb31-38"></a>        <span class="kw">auto</span> await_transform<span class="op">(</span><span class="bu">std::</span>string<span class="op">)</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb31-39"><a href="#cb31-39"></a>            <span class="kw">struct</span> Awaitable<span class="op">{</span></span>
+<span id="cb31-40"><a href="#cb31-40"></a>                <span class="dt">promise_type</span><span class="op">&amp;</span> promise<span class="op">;</span></span>
+<span id="cb31-41"><a href="#cb31-41"></a></span>
+<span id="cb31-42"><a href="#cb31-42"></a>                <span class="dt">bool</span> await_ready<span class="op">()</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb31-43"><a href="#cb31-43"></a>                    <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span>    <span class="co">// Says, yeah we are ready</span></span>
+<span id="cb31-44"><a href="#cb31-44"></a>                                    <span class="co">// we don't need to sleep. Just go on.</span></span>
+<span id="cb31-45"><a href="#cb31-45"></a>                <span class="op">}</span></span>
+<span id="cb31-46"><a href="#cb31-46"></a></span>
+<span id="cb31-47"><a href="#cb31-47"></a>                <span class="bu">std::</span>string<span class="op"> </span>await_resume<span class="op">()</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb31-48"><a href="#cb31-48"></a>                    <span class="cf">return</span> <span class="bu">std::</span>move<span class="op">(</span>promise<span class="op">.</span>input_data<span class="op">);</span></span>
+<span id="cb31-49"><a href="#cb31-49"></a>                <span class="op">}</span></span>
+<span id="cb31-50"><a href="#cb31-50"></a></span>
+<span id="cb31-51"><a href="#cb31-51"></a>                <span class="dt">void</span> await_suspend<span class="op">(</span><span class="bu">std::</span>coroutine_handle<span class="op">&lt;</span><span class="dt">promise_type</span><span class="op">&gt;)</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{}</span></span>
+<span id="cb31-52"><a href="#cb31-52"></a></span>
+<span id="cb31-53"><a href="#cb31-53"></a>            <span class="op">};</span></span>
+<span id="cb31-54"><a href="#cb31-54"></a></span>
+<span id="cb31-55"><a href="#cb31-55"></a>            <span class="cf">return</span> Awaitable<span class="op">(*</span><span class="kw">this</span><span class="op">);</span></span>
+<span id="cb31-56"><a href="#cb31-56"></a>        <span class="op">}</span></span>
+<span id="cb31-57"><a href="#cb31-57"></a>    <span class="op">};</span></span>
+<span id="cb31-58"><a href="#cb31-58"></a></span>
+<span id="cb31-59"><a href="#cb31-59"></a>    <span class="bu">std::</span>coroutine_handle<span class="op">&lt;</span><span class="dt">promise_type</span><span class="op">&gt;</span> handle<span class="op">{};</span></span>
+<span id="cb31-60"><a href="#cb31-60"></a></span>
+<span id="cb31-61"><a href="#cb31-61"></a>    <span class="kw">explicit</span> Task<span class="op">(</span><span class="dt">promise_type</span><span class="op">&amp;</span> promise<span class="op">)</span></span>
+<span id="cb31-62"><a href="#cb31-62"></a>    <span class="op">:</span> handle<span class="op">{</span> <span class="bu">std::</span>coroutine_handle<span class="op">&lt;</span><span class="dt">promise_type</span><span class="op">&gt;::</span>from_promise<span class="op">(</span>promise<span class="op">)}</span></span>
+<span id="cb31-63"><a href="#cb31-63"></a>    <span class="op">{</span></span>
+<span id="cb31-64"><a href="#cb31-64"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Task(promise_type&amp;) ctor"</span><span class="op">);</span></span>
+<span id="cb31-65"><a href="#cb31-65"></a>    <span class="op">}</span></span>
+<span id="cb31-66"><a href="#cb31-66"></a></span>
+<span id="cb31-67"><a href="#cb31-67"></a>    <span class="op">~</span>Task<span class="op">()</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb31-68"><a href="#cb31-68"></a>        <span class="cf">if</span><span class="op">(</span>handle<span class="op">)</span></span>
+<span id="cb31-69"><a href="#cb31-69"></a>            handle<span class="op">.</span>destroy<span class="op">();</span></span>
+<span id="cb31-70"><a href="#cb31-70"></a></span>
+<span id="cb31-71"><a href="#cb31-71"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"~Task()"</span><span class="op">);</span></span>
+<span id="cb31-72"><a href="#cb31-72"></a>    <span class="op">}</span></span>
+<span id="cb31-73"><a href="#cb31-73"></a></span>
+<span id="cb31-74"><a href="#cb31-74"></a>    <span class="dt">void</span> put<span class="op">(</span><span class="bu">std::</span>string<span class="op"> </span>msg<span class="op">){</span></span>
+<span id="cb31-75"><a href="#cb31-75"></a>        handle<span class="op">.</span>promise<span class="op">().</span>input_data <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span>msg<span class="op">);</span></span>
+<span id="cb31-76"><a href="#cb31-76"></a>        <span class="cf">if</span><span class="op">(!</span>handle<span class="op">.</span>done<span class="op">())</span></span>
+<span id="cb31-77"><a href="#cb31-77"></a>            handle<span class="op">.</span>resume<span class="op">();</span></span>
+<span id="cb31-78"><a href="#cb31-78"></a>    <span class="op">}</span></span>
+<span id="cb31-79"><a href="#cb31-79"></a><span class="op">};</span></span>
+<span id="cb31-80"><a href="#cb31-80"></a></span>
+<span id="cb31-81"><a href="#cb31-81"></a>Task coro_func<span class="op">(){</span></span>
+<span id="cb31-82"><a href="#cb31-82"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="cf">co_await</span> <span class="bu">std::</span>string<span class="op">{};</span></span>
+<span id="cb31-83"><a href="#cb31-83"></a>    <span class="cf">co_return</span><span class="op">;</span></span>
+<span id="cb31-84"><a href="#cb31-84"></a><span class="op">}</span></span>
+<span id="cb31-85"><a href="#cb31-85"></a></span>
+<span id="cb31-86"><a href="#cb31-86"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb31-87"><a href="#cb31-87"></a>    <span class="kw">auto</span> task <span class="op">=</span> coro_func<span class="op">();</span></span>
+<span id="cb31-88"><a href="#cb31-88"></a>    task<span class="op">.</span>put<span class="op">(</span><span class="st">"To boldly go where no man has gone before"</span><span class="op">);</span></span>
+<span id="cb31-89"><a href="#cb31-89"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb31-90"><a href="#cb31-90"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/fTvvYcsjn">Compiler Explorer</a></p>
+<p>Output:</p>
+<div class="sourceCode" id="cb32"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb32-1"><a href="#cb32-1"></a>get_return_object</span>
+<span id="cb32-2"><a href="#cb32-2"></a>Task(promise_type&amp;) ctor</span>
+<span id="cb32-3"><a href="#cb32-3"></a>initial_suspend</span>
+<span id="cb32-4"><a href="#cb32-4"></a>To boldly go where no man has gone beforereturn_void</span>
+<span id="cb32-5"><a href="#cb32-5"></a>final_suspend</span>
+<span id="cb32-6"><a href="#cb32-6"></a>~Task()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>

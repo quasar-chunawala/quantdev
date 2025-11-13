@@ -812,5 +812,146 @@ Let's explore more about what this error message means.
 
 An *awaitable* is any object, I can call `co_await` on. You can think of `co_await` like an operator, and its argument as an *awaitable*. The way to think about the operator `co_await` is that these are opportunities for suspension. These are the points where the coroutine can be paused, and the control-flow can be handed back to the caller. The awaitable controls what happens at these points. Similar to, how the `promise_type` provides hooks to control what happens at startup or when you return from the coroutine, the awaitable provides these hooks for what happens when we go into suspension. They may decide not to suspend at all, and let the execution just continue. Not every `co_await` call necessary suspends. It's totally upto the coroutine-writer. Let's try to implement such an awaitable.
 
+```cpp
+struct Awaitable{
+    bool await_ready();
+    void await_suspend(std::coroutine_handle<promise_type>);
+    void await_resume(std::coroutine_handle<promise_type>);
+};
+```
 
+The first function is `.await_ready()` which returns a `bool`. This determines whether we do actually go into suspension or we just say, *yeah, we are ready, and we don't want to go into suspension*, we want to continue execution and in that case we just return `true`.
 
+The next function is `.await_suspend()` and that is the customization point that will get executed shortly before the coroutine function goes to sleep. 
+
+The next function is `.await_resume()` and that is the customization point that will get execute just after the coroutine is resumed.
+
+The following code shows our implementation of the `await_transform` function and the `Awaitable` struct:
+
+```cpp
+auto await_transform(std::string) noexcept{
+    struct Awaitable{
+        promise_type& promise;
+
+        bool await_ready() const noexcept{
+            return true;    // Says, yeah we are ready
+                            // we don't need to sleep. Just go on.
+        }
+
+        std::string await_resume() const noexcept{
+            return std::move(promise.input_data);
+        }
+
+        void await_suspend(std::coroutine_handle<promise_type>) const noexcept{}
+
+    };
+
+    return Awaitable(*this);
+}
+```
+
+This is the code for the full example of the waiting coroutine:
+
+```cpp
+#include <print>
+#include <string>
+#include <coroutine>
+#include <iostream>
+
+struct Task{
+    struct promise_type{
+        std::string input_data{};
+
+        Task get_return_object() noexcept{
+            std::println("get_return_object");
+            return Task{ *this };
+        } 
+
+        void return_void() noexcept{
+            std::println("return_void");
+        }
+
+        std::suspend_always initial_suspend() noexcept{
+            std::println("initial_suspend");
+            return {};
+        }
+
+        std::suspend_always final_suspend() noexcept{
+            std::println("final_suspend");
+            return {};
+        }
+        void unhandled_exception() noexcept{
+            std::println("unhandled_exception");
+        }
+
+        std::suspend_always yield_value(std::string msg) noexcept{
+            std::println("yield_value");
+            //output_data = std::move(msg);
+            return {};
+        }
+
+        auto await_transform(std::string) noexcept{
+            struct Awaitable{
+                promise_type& promise;
+
+                bool await_ready() const noexcept{
+                    return true;    // Says, yeah we are ready
+                                    // we don't need to sleep. Just go on.
+                }
+
+                std::string await_resume() const noexcept{
+                    return std::move(promise.input_data);
+                }
+
+                void await_suspend(std::coroutine_handle<promise_type>) const noexcept{}
+
+            };
+
+            return Awaitable(*this);
+        }
+    };
+
+    std::coroutine_handle<promise_type> handle{};
+
+    explicit Task(promise_type& promise)
+    : handle{ std::coroutine_handle<promise_type>::from_promise(promise)}
+    {
+        std::println("Task(promise_type&) ctor");
+    }
+
+    ~Task() noexcept{
+        if(handle)
+            handle.destroy();
+
+        std::println("~Task()");
+    }
+
+    void put(std::string msg){
+        handle.promise().input_data = std::move(msg);
+        if(!handle.done())
+            handle.resume();
+    }
+};
+
+Task coro_func(){
+    std::cout << co_await std::string{};
+    co_return;
+}
+
+int main(){
+    auto task = coro_func();
+    task.put("To boldly go where no man has gone before");
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/fTvvYcsjn)
+
+Output:
+```shell
+get_return_object
+Task(promise_type&) ctor
+initial_suspend
+To boldly go where no man has gone beforereturn_void
+final_suspend
+~Task()
+```
