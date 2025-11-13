@@ -955,3 +955,82 @@ To boldly go where no man has gone beforereturn_void
 final_suspend
 ~Task()
 ```
+
+## Coroutine Generators
+
+A **generator** is a coroutine that generates a sequence of elements by repeatedly resuming itself from the point that it was suspended.
+
+A generator can be seen as an infinite list, because it can generate an arbitrary number of elements.
+
+I present below the source code for a simple `FibonacciGenerator`. 
+
+```cpp
+#include <print>
+#include <string>
+#include <coroutine>
+#include <iostream>
+#include <utility>
+
+struct Generator{
+    struct promise_type{
+        int fibo_n{0};
+
+        Generator get_return_object() noexcept{
+            return Generator{ *this };
+        } 
+
+        void return_void() noexcept{}
+
+        std::suspend_always initial_suspend() noexcept{
+            return {};
+        }
+
+        std::suspend_always final_suspend() noexcept{
+            return {};
+        }
+        void unhandled_exception() noexcept{}
+
+        std::suspend_always yield_value(int n) noexcept{
+            fibo_n = n;
+            return {};
+        }
+    };
+
+    std::coroutine_handle<promise_type> handle{};
+
+    explicit Generator(promise_type& promise)
+    : handle{ std::coroutine_handle<promise_type>::from_promise(promise)}
+    {}
+
+    ~Generator() noexcept{
+        if(handle)
+            handle.destroy();
+    }
+
+    int next(){
+        if(!handle.done())
+            handle.resume();
+        return handle.promise().fibo_n;
+    }
+};
+
+Generator makeFibonacciGenerator(){
+    int i1{0};
+    int i2{1};
+    while(true){
+        co_yield i1;
+        i1 = std::exchange(i2, i1 + i2);
+    }
+    co_return;
+}
+
+int main(){
+    auto fibo_gen = makeFibonacciGenerator();
+    std::println("The first 10 numbers the Fibonacci sequence are : ");
+    for(int i{1}; i<=10; ++i){
+        std::println("F[{}] = {}", i, fibo_gen.next());
+    }
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/5vv9eh7r5)
