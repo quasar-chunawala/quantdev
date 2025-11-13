@@ -716,5 +716,92 @@ void put(std::string msg){
 }
 ```
 
+We need to add the `input_data` variable to the promise structure. But, just with those changes to our first example and the coroutine handle from the previous example, the code cannot be compiled.
+
+
+```cpp
+#include <print>
+#include <string>
+#include <coroutine>
+#include <iostream>
+
+struct Task{
+    struct promise_type{
+        std::string input_data{};
+
+        Task get_return_object() noexcept{
+            std::println("get_return_object");
+            return Task{ *this };
+        } 
+
+        void return_void() noexcept{
+            std::println("return_void");
+        }
+
+        std::suspend_always initial_suspend() noexcept{
+            std::println("initial_suspend");
+            return {};
+        }
+
+        std::suspend_always final_suspend() noexcept{
+            std::println("final_suspend");
+            return {};
+        }
+        void unhandled_exception() noexcept{
+            std::println("unhandled_exception");
+        }
+
+        std::suspend_always yield_value(std::string msg) noexcept{
+            std::println("yield_value");
+            //output_data = std::move(msg);
+            return {};
+        }
+    };
+
+    std::coroutine_handle<promise_type> handle{};
+
+    explicit Task(promise_type& promise)
+    : handle{ std::coroutine_handle<promise_type>::from_promise(promise)}
+    {
+        std::println("Task(promise_type&) ctor");
+    }
+
+    ~Task() noexcept{
+        if(handle)
+            handle.destroy();
+
+        std::println("~Task()");
+    }
+
+    void put(std::string msg){
+        handle.promise().input_data = std::move(msg);
+        if(!handle.done())
+            handle.resume();
+    }
+};
+
+Task coro_func(){
+    std::cout << co_await std::string{};
+    co_return;
+}
+
+int main(){
+    auto task = coro_func();
+    task.put("To boldly go where no man has gone before");
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/1qafsj83e)
+
+The compiler gives us the following error:
+
+```shell
+<source>: In function 'Task coro_func()':
+<source>:62:18: error: no member named 'await_ready' in 'std::string' {aka 'std::__cxx11::basic_string<char>'}
+   62 |     std::cout << co_await std::string{};
+      |                  ^~~~~~~~
+```
+
+Going back to the C++ reference, we see that when the coroutine calls `co_await`, the compiler will generate code to call a function in the promise object called `await_transform`, which has a parameter of the same type as the data the coroutine is waiting for. 
 
 
