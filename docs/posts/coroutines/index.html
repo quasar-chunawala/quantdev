@@ -228,6 +228,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#the-coroutine-handle" id="toc-the-coroutine-handle" class="nav-link" data-scroll-target="#the-coroutine-handle">The coroutine handle</a></li>
   </ul></li>
   <li><a href="#a-waiting-coroutine" id="toc-a-waiting-coroutine" class="nav-link" data-scroll-target="#a-waiting-coroutine">A waiting coroutine</a></li>
+  <li><a href="#what-is-an-awaitable" id="toc-what-is-an-awaitable" class="nav-link" data-scroll-target="#what-is-an-awaitable">What is an awaitable?</a></li>
   </ul>
 </nav>
     </div>
@@ -684,10 +685,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb20-2"><a href="#cb20-2"></a>    <span class="co">/* ... */</span></span>
 <span id="cb20-3"><a href="#cb20-3"></a>    <span class="dt">void</span> resume<span class="op">()</span> <span class="at">const</span><span class="op">;</span></span>
 <span id="cb20-4"><a href="#cb20-4"></a>    <span class="dt">void</span> destroy<span class="op">()</span> <span class="at">const</span><span class="op">;</span></span>
-<span id="cb20-5"><a href="#cb20-5"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb20-5"><a href="#cb20-5"></a>    <span class="dt">promise_type</span><span class="op">&amp;</span> promise<span class="op">()</span> <span class="at">const</span><span class="op">;</span></span>
+<span id="cb20-6"><a href="#cb20-6"></a>    <span class="at">static</span> coroutine_handle from_promise<span class="op">(</span><span class="dt">promise_type</span><span class="op">&amp;);</span></span>
+<span id="cb20-7"><a href="#cb20-7"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>What <code>resume()</code> does is simply, it resumes the suspended coroutine. It continues execution.</p>
 <p>If we think of this coroutine frame or object living somewhere on the heap, where all of the state of execution is stored, one way to destroy this state is to let the coroutine run to completion. But, far more commonly, we would like to manage the lifetime externally and we can then just call the <code>destroy()</code> function which will then get rid of the coroutine state.</p>
 <p>Note that, the <code>coroutine_handle</code> is not a smart pointer type. So, you have to call the <code>destroy()</code> explicitly.</p>
+<p>There’s two more functions <code>.promise()</code> and <code>.from_promise()</code>. These are used to convert from a coroutine to a promise object and vice versa.</p>
 <p>We add the following functionality to our return type to manage the coroutine handle:</p>
 <div class="sourceCode" id="cb21"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb21-1"><a href="#cb21-1"></a><span class="kw">struct</span> Task<span class="op">{</span></span>
 <span id="cb21-2"><a href="#cb21-2"></a>    <span class="kw">struct</span> <span class="dt">promise_type</span><span class="op">{</span></span>
@@ -908,6 +912,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb27-69"><a href="#cb27-69"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
 <span id="cb27-70"><a href="#cb27-70"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p><a href="https://compiler-explorer.com/z/1qafsj83e">Compiler Explorer</a></p>
+<p>The compiler gives us the following error:</p>
+<div class="sourceCode" id="cb28"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb28-1"><a href="#cb28-1"></a>&lt;source&gt;: In function 'Task coro_func()':</span>
+<span id="cb28-2"><a href="#cb28-2"></a>&lt;source&gt;:62:18: error: no member named 'await_ready' in 'std::string' {aka 'std::__cxx11::basic_string&lt;char&gt;'}</span>
+<span id="cb28-3"><a href="#cb28-3"></a>   62 |     std::cout &lt;&lt; co_await std::string{};</span>
+<span id="cb28-4"><a href="#cb28-4"></a>      |                  ^~~~~~~~</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Let’s explore more about what this error message means.</p>
+</section>
+<section id="what-is-an-awaitable" class="level2">
+<h2 class="anchored" data-anchor-id="what-is-an-awaitable">What is an awaitable?</h2>
+<p>An <em>awaitable</em> is any object, I can call <code>co_await</code> on. You can think of <code>co_await</code> like an operator, and its argument as an <em>awaitable</em>. The way to think about the operator <code>co_await</code> is that these are opportunities for suspension. These are the points where the coroutine can be paused, and the control-flow can be handed back to the caller. The awaitable controls what happens at these points. Similar to, how the <code>promise_type</code> provides hooks to control what happens at startup or when you return from the coroutine, the awaitable provides these hooks for what happens when we go into suspension. They may decide not to suspend at all, and let the execution just continue. Not every <code>co_await</code> call necessary suspends. It’s totally upto the coroutine-writer. Let’s try to implement such an awaitable.</p>
 
 
 </section>

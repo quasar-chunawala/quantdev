@@ -534,6 +534,8 @@ struct coroutine_handle<promise_type>{
     /* ... */
     void resume() const;
     void destroy() const;
+    promise_type& promise() const;
+    static coroutine_handle from_promise(promise_type&);
 }
 ```
 
@@ -541,7 +543,9 @@ What `resume()` does is simply, it resumes the suspended coroutine. It continues
 
 If we think of this coroutine frame or object living somewhere on the heap, where all of the state of execution is stored, one way to destroy this state is to let the coroutine run to completion. But, far more commonly, we would like to manage the lifetime externally and we can then just call the `destroy()` function which will then get rid of the coroutine state.
 
-Note that, the `coroutine_handle` is not a smart pointer type. So, you have to call the `destroy()` explicitly.
+Note that, the `coroutine_handle` is not a smart pointer type. So, you have to call the `destroy()` explicitly. 
+
+There's two more functions `.promise()` and `.from_promise()`. These are used to convert from a coroutine to a promise object and vice versa.
 
 We add the following functionality to our return type to manage the coroutine handle:
 
@@ -802,6 +806,11 @@ The compiler gives us the following error:
       |                  ^~~~~~~~
 ```
 
-Going back to the C++ reference, we see that when the coroutine calls `co_await`, the compiler will generate code to call a function in the promise object called `await_transform`, which has a parameter of the same type as the data the coroutine is waiting for. 
+Let's explore more about what this error message means.
+
+## What is an awaitable?
+
+An *awaitable* is any object, I can call `co_await` on. You can think of `co_await` like an operator, and its argument as an *awaitable*. The way to think about the operator `co_await` is that these are opportunities for suspension. These are the points where the coroutine can be paused, and the control-flow can be handed back to the caller. The awaitable controls what happens at these points. Similar to, how the `promise_type` provides hooks to control what happens at startup or when you return from the coroutine, the awaitable provides these hooks for what happens when we go into suspension. They may decide not to suspend at all, and let the execution just continue. Not every `co_await` call necessary suspends. It's totally upto the coroutine-writer. Let's try to implement such an awaitable.
+
 
 
