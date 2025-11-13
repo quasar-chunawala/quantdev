@@ -479,8 +479,210 @@ The do-nothing coroutine was great to get a gut intuitive feel for the basic mec
 
 In this second example, we implement a coroutine that produces a message. It will be the hello world of coroutines. The coroutine will say hello and the caller function will print the message received from the coroutine.
 
-To implement this functionality, we need to establish a communication channel from the coroutine to the caller. This channel is the mechanism that allows the coroutine to pass values to the caller and receive information from it. This channel is established through the coroutine's `promise_type` and `coroutine_handle`.
+To implement this functionality, we need to establish a communication channel from the coroutine to the caller. This channel is the mechanism that allows the coroutine to pass values to the caller and receive information from it. This channel is established through the coroutine's `promise_type` and the *coroutine handle*.
 
-### Coroutine Handle
+The *coroutine handle* is a type that gives access to the coroutine frame(the coroutine's internal state) and allows the caller to resume or destroy the coroutine. The handle is what the caller can use to resume the coroutine after it has been suspended (for example after `co_await` or `co_yield`). The handle can also be used to check whether the coroutine is done or to clean up its resources.
 
-The *coroutine handle* is a type that gives access to the coroutine frame(the coroutine's internal state) and allows the caller to resume or destroy the coroutine. The handle is what the caller can use to resume the coroutine after it has been suspended (for example after `co_await` or `co_yield`). The handle 
+The following code is the new version of both the caller function and the coroutine:
+
+```cpp
+Task coro_func(){
+    co_yield "Hello world from the coroutine";
+    co_return;
+}
+
+int main(){
+    auto task = coro_func();
+    std::print("task.get() = {}", task.get());
+    return 0;
+}
+```
+
+The coroutine *yields* and sends some data to the caller. The caller reads that data and prints it. When the compiler reads the `co_ yield` expression, it will generate a call to the `yield_value` function defined in the `promise_type`. Thus, we add the following code to the `promise_type` :
+
+```cpp
+struct Task{
+    struct promise_type{
+        std::string output_data;
+
+        /* ... */
+        std::suspend_always yield_value(std::string msg) noexcept{
+            output_data = std::move(msg);
+        }
+    };
+
+    explicit Task(promise_type&){
+        std::println("Task(promise_type&)");
+    }
+
+    ~Task() noexcept{
+        std::println("~Task()");
+    }
+};
+```
+
+The function gets a `std::string` object and moves it to the `output_data` member variable of the promise type. But, this just keeps the data inside the `promise_type`. We still need a mechanism to get that data out of the coroutine.
+
+### The coroutine handle
+
+Once we require a communication channel to and from a coroutine, we need a way to refer to a suspended or executing coroutine. The mechanism to refer to the coroutine object is through a pointer or handle called a **coroutine handle**. The C++ library header file `<coroutine>` defines a type `std::coroutine_handle` to work with coroutine handles. 
+
+Two functions are of interest to us in the `std::coroutine_handle` interface : `resume()` and `destroy()`. 
+
+```cpp
+struct coroutine_handle<promise_type>{
+    /* ... */
+    void resume() const;
+    void destroy() const;
+}
+```
+
+What `resume()` does is simply, it resumes the suspended coroutine. It continues execution. 
+
+If we think of this coroutine frame or object living somewhere on the heap, where all of the state of execution is stored, one way to destroy this state is to let the coroutine run to completion. But, far more commonly, we would like to manage the lifetime externally and we can then just call the `destroy()` function which will then get rid of the coroutine state.
+
+Note that, the `coroutine_handle` is not a smart pointer type. So, you have to call the `destroy()` explicitly.
+
+We add the following functionality to our return type to manage the coroutine handle:
+
+```cpp
+struct Task{
+    struct promise_type{
+        std::string output_data;
+
+        /* ... */
+        std::suspend_always yield_value(std::string msg) noexcept{
+            output_data = std::move(msg);
+        }
+    };
+
+    // Coroutine handle member-variable
+    std::coroutine_handle<promise_type> handle{};
+
+    // ReturnType(promise_type&) ctor initializes 
+    // the coroutine handle member variable
+    explicit Task(promise_type& promise)
+    : handle { std::coroutine_handle<promise_type>::from_promise(promise) }
+    {
+        std::println("Task(promise_type&)");
+    }
+
+    // Destructor
+    ~Task() noexcept{
+        std::println("~Task()");
+        if(handle)
+            handle.destroy();
+    }
+};
+```
+The preceding code declares a coroutine handle of type `std::coroutine_handle<promise_type>` and creates the handle in the return type constructor. The handle is destroyed in the return type destructor. 
+
+Now, back to our yielding coroutine. The only missing bit is a `get()` function for the caller to be able to extract the resultant string out of the promise.
+
+```cpp
+std::string get(){
+    if(!handle.done()){
+        handle.resume();
+    }
+    return std::move(handle.promise().output_data);
+}
+```
+
+The `get()` function resumes the coroutine if it has not terminated and return the result stored in the `output_data` member variable of the promise. The full source code listing is shown below:
+
+```cpp
+#include <coroutine>
+#include <print>
+#include <iostream>
+#include <string>
+
+using namespace std::string_literals;
+
+struct Task{
+    struct promise_type{
+        std::string output_data{};
+
+        Task get_return_object(){
+            std::println("get_return_object()");
+            return Task{ *this };
+        }
+
+        void return_void() noexcept {
+            std::println("return_void()");
+        }
+
+        void unhandled_exception() noexcept {
+            std::println("unhandled_exception()");
+        }
+
+        std::suspend_always initial_suspend() noexcept{
+            std::println("initial_suspend()");
+            return {};
+        }
+
+        std::suspend_always final_suspend() noexcept{
+            std::println("final_suspend()");
+            return {};
+        }
+
+        std::suspend_always yield_value(std::string msg) noexcept{
+            std::println("yield_value(std::string)");
+            output_data = std::move(msg);
+            return {};
+        }
+    };
+
+    // Coroutine handle member-variable
+    std::coroutine_handle<promise_type> handle{};
+
+    // ReturnType(promise_type&) ctor initializes 
+    // the coroutine handle member variable
+    explicit Task(promise_type& promise)
+    : handle { std::coroutine_handle<promise_type>::from_promise(promise) }
+    {
+        std::println("Task(promise_type&)");
+    }
+
+    ~Task() noexcept{
+        std::println("~Task()");
+        if(handle)
+            handle.destroy();
+    }
+
+    std::string get(){
+        std::println("get()");
+        if(!handle.done())
+            handle.resume();
+
+        return std::move(handle.promise().output_data);
+    }
+};
+
+Task coro_func(){
+    co_yield "Hello world from the coroutine";
+    co_return;
+}
+
+int main(){
+    auto task = coro_func();
+    std::cout << task.get() << std::endl;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/EjdWEnb5a)
+
+Output:
+
+```shell
+get_return_object()
+Task(promise_type&)
+initial_suspend()
+get()
+yield_value(std::string)
+Hello world from the coroutine
+~Task()
+```
+
+The output shows what is happening during the coroutine execution. The `Task` object is created after a call to `get_return_object`. The coroutine is initially suspended. The caller wants to get the message from the coroutine so `get()` is called, which resumes the coroutine. When the compiler sees `co_yield` statement in the coroutine, it generates an implicit called to `yield_value(std::string)`. `yield_value` is called and the message is copied to the resultant member variable `output_data` in the promise. Finally, the message is printed by the caller function, and the coroutine returns. 
+
+
+

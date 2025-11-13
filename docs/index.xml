@@ -1674,10 +1674,855 @@ font-style: inherit;">}</span></span></code></pre></div>
 <h2 class="anchored" data-anchor-id="a-yielding-coroutine">A yielding coroutine</h2>
 <p>The do-nothing coroutine was great to get a gut intuitive feel for the basic mechanics of writing low-level coroutines in C++. Let’s implement another coroutine that can send data back to the caller.</p>
 <p>In this second example, we implement a coroutine that produces a message. It will be the hello world of coroutines. The coroutine will say hello and the caller function will print the message received from the coroutine.</p>
-<p>To implement this functionality, we need to establish a communication channel from the coroutine to the caller. This channel is the mechanism that allows the coroutine to pass values to the caller and receive information from it. This channel is established through the coroutine’s <code>promise_type</code> and <code>coroutine_handle</code>.</p>
-<section id="coroutine-handle" class="level3">
-<h3 class="anchored" data-anchor-id="coroutine-handle">Coroutine Handle</h3>
-<p>The <em>coroutine handle</em> is a type that gives access to the coroutine frame(the coroutine’s internal state) and allows the caller to resume or destroy the coroutine. The handle is what the caller can use to resume the coroutine after it has been suspended (for example after <code>co_await</code> or <code>co_yield</code>). The handle</p>
+<p>To implement this functionality, we need to establish a communication channel from the coroutine to the caller. This channel is the mechanism that allows the coroutine to pass values to the caller and receive information from it. This channel is established through the coroutine’s <code>promise_type</code> and the <em>coroutine handle</em>.</p>
+<p>The <em>coroutine handle</em> is a type that gives access to the coroutine frame(the coroutine’s internal state) and allows the caller to resume or destroy the coroutine. The handle is what the caller can use to resume the coroutine after it has been suspended (for example after <code>co_await</code> or <code>co_yield</code>). The handle can also be used to check whether the coroutine is done or to clean up its resources.</p>
+<p>The following code is the new version of both the caller function and the coroutine:</p>
+<div class="sourceCode" id="cb18" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb18-1">Task coro_func<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb18-2">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">co_yield</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Hello world from the coroutine"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb18-3">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">co_return</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb18-4"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb18-5"></span>
+<span id="cb18-6"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb18-7">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> task <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> coro_func<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="cb18-8">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>print<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"task.get() = </span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{}</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>get<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">());</span></span>
+<span id="cb18-9">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb18-10"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>The coroutine <em>yields</em> and sends some data to the caller. The caller reads that data and prints it. When the compiler reads the <code>co_ yield</code> expression, it will generate a call to the <code>yield_value</code> function defined in the <code>promise_type</code>. Thus, we add the following code to the <code>promise_type</code> :</p>
+<div class="sourceCode" id="cb19" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb19-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> Task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb19-2">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb19-3">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>output_data<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb19-4"></span>
+<span id="cb19-5">        <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/* ... */</span></span>
+<span id="cb19-6">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>suspend_always<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>yield_value<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>msg<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb19-7">            output_data <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>move<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>msg<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb19-8">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb19-9">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb19-10"></span>
+<span id="cb19-11">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">explicit</span> Task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;){</span></span>
+<span id="cb19-12">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Task(promise_type&amp;)"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb19-13">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb19-14"></span>
+<span id="cb19-15">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">~</span>Task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb19-16">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"~Task()"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb19-17">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb19-18"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p>The function gets a <code>std::string</code> object and moves it to the <code>output_data</code> member variable of the promise type. But, this just keeps the data inside the <code>promise_type</code>. We still need a mechanism to get that data out of the coroutine.</p>
+<section id="the-coroutine-handle" class="level3">
+<h3 class="anchored" data-anchor-id="the-coroutine-handle">The coroutine handle</h3>
+<p>Once we require a communication channel to and from a coroutine, we need a way to refer to a suspended or executing coroutine. The mechanism to refer to the coroutine object is through a pointer or handle called a <strong>coroutine handle</strong>. The C++ library header file <code>&lt;coroutine&gt;</code> defines a type <code>std::coroutine_handle</code> to work with coroutine handles.</p>
+<p>Two functions are of interest to us in the <code>std::coroutine_handle</code> interface : <code>resume()</code> and <code>destroy()</code>.</p>
+<div class="sourceCode" id="cb20" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb20-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> coroutine_handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;{</span></span>
+<span id="cb20-2">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/* ... */</span></span>
+<span id="cb20-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> resume<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb20-4">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> destroy<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb20-5"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>What <code>resume()</code> does is simply, it resumes the suspended coroutine. It continues execution.</p>
+<p>If we think of this coroutine frame or object living somewhere on the heap, where all of the state of execution is stored, one way to destroy this state is to let the coroutine run to completion. But, far more commonly, we would like to manage the lifetime externally and we can then just call the <code>destroy()</code> function which will then get rid of the coroutine state.</p>
+<p>Note that, the <code>coroutine_handle</code> is not a smart pointer type. So, you have to call the <code>destroy()</code> explicitly.</p>
+<p>We add the following functionality to our return type to manage the coroutine handle:</p>
+<div class="sourceCode" id="cb21" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb21-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> Task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb21-2">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb21-3">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>output_data<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb21-4"></span>
+<span id="cb21-5">        <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/* ... */</span></span>
+<span id="cb21-6">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>suspend_always<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>yield_value<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>msg<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb21-7">            output_data <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>move<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>msg<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb21-8">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb21-9">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb21-10"></span>
+<span id="cb21-11">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Coroutine handle member-variable</span></span>
+<span id="cb21-12">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>coroutine_handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb21-13"></span>
+<span id="cb21-14">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// ReturnType(promise_type&amp;) ctor initializes </span></span>
+<span id="cb21-15">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// the coroutine handle member variable</span></span>
+<span id="cb21-16">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">explicit</span> Task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span> promise<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb21-17">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span> handle <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>coroutine_handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;::</span>from_promise<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>promise<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb21-18">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb21-19">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Task(promise_type&amp;)"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb21-20">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb21-21"></span>
+<span id="cb21-22">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Destructor</span></span>
+<span id="cb21-23">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">~</span>Task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb21-24">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"~Task()"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb21-25">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">if</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb21-26">            handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>destroy<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="cb21-27">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb21-28"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p>The preceding code declares a coroutine handle of type <code>std::coroutine_handle&lt;promise_type&gt;</code> and creates the handle in the return type constructor. The handle is destroyed in the return type destructor.</p>
+<p>Now, back to our yielding coroutine. The only missing bit is a <code>get()</code> function for the caller to be able to extract the resultant string out of the promise.</p>
+<div class="sourceCode" id="cb22" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb22-1"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>get<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb22-2">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">if</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(!</span>handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>done<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()){</span></span>
+<span id="cb22-3">        handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>resume<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="cb22-4">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb22-5">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>move<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>promise<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">().</span>output_data<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb22-6"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>The <code>get()</code> function resumes the coroutine if it has not terminated and return the result stored in the <code>output_data</code> member variable of the promise. The full source code listing is shown below:</p>
+<div class="sourceCode" id="cb23" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb23-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;coroutine&gt;</span></span>
+<span id="cb23-2"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;print&gt;</span></span>
+<span id="cb23-3"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;iostream&gt;</span></span>
+<span id="cb23-4"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;string&gt;</span></span>
+<span id="cb23-5"></span>
+<span id="cb23-6"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">namespace</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string_literals<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb23-7"></span>
+<span id="cb23-8"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> Task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb23-9">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb23-10">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>output_data<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb23-11"></span>
+<span id="cb23-12">        Task get_return_object<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb23-13">            <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"get_return_object()"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-14">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> Task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">this</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb23-15">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-16"></span>
+<span id="cb23-17">        <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> return_void<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb23-18">            <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"return_void()"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-19">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-20"></span>
+<span id="cb23-21">        <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> unhandled_exception<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb23-22">            <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"unhandled_exception()"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-23">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-24"></span>
+<span id="cb23-25">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>suspend_always<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>initial_suspend<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb23-26">            <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"initial_suspend()"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-27">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb23-28">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-29"></span>
+<span id="cb23-30">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>suspend_always<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>final_suspend<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb23-31">            <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"final_suspend()"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-32">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb23-33">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-34"></span>
+<span id="cb23-35">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>suspend_always<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>yield_value<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>msg<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb23-36">            <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"yield_value(std::string)"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-37">            output_data <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>move<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>msg<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-38">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb23-39">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-40">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb23-41"></span>
+<span id="cb23-42">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Coroutine handle member-variable</span></span>
+<span id="cb23-43">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>coroutine_handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb23-44"></span>
+<span id="cb23-45">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// ReturnType(promise_type&amp;) ctor initializes </span></span>
+<span id="cb23-46">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// the coroutine handle member variable</span></span>
+<span id="cb23-47">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">explicit</span> Task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span> promise<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb23-48">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span> handle <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>coroutine_handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">promise_type</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;::</span>from_promise<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>promise<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-49">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb23-50">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Task(promise_type&amp;)"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-51">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-52"></span>
+<span id="cb23-53">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">~</span>Task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb23-54">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"~Task()"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-55">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">if</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb23-56">            handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>destroy<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="cb23-57">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-58"></span>
+<span id="cb23-59">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>get<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb23-60">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"get()"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-61">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">if</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(!</span>handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>done<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">())</span></span>
+<span id="cb23-62">            handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>resume<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="cb23-63"></span>
+<span id="cb23-64">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>move<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>handle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>promise<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">().</span>output_data<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-65">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-66"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb23-67"></span>
+<span id="cb23-68">Task coro_func<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb23-69">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">co_yield</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Hello world from the coroutine"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb23-70">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">co_return</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb23-71"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-72"></span>
+<span id="cb23-73"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb23-74">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> task <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> coro_func<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="cb23-75">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> task<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>get<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>endl<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb23-76"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/EjdWEnb5a">Compiler Explorer</a></p>
+<p>Output:</p>
+<div class="sourceCode" id="cb24" style="background: #f1f3f5;"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb24-1">get_return_object()</span>
+<span id="cb24-2">Task(promise_type&amp;)</span>
+<span id="cb24-3">initial_suspend()</span>
+<span id="cb24-4">get()</span>
+<span id="cb24-5">yield_value(std::string)</span>
+<span id="cb24-6">Hello world from the coroutine</span>
+<span id="cb24-7">~Task()</span></code></pre></div>
+<p>The output shows what is happening during the coroutine execution. The <code>Task</code> object is created after a call to <code>get_return_object</code>. The coroutine is initially suspended. The caller wants to get the message from the coroutine so <code>get()</code> is called, which resumes the coroutine. When the compiler sees <code>co_yield</code> statement in the coroutine, it generates an implicit called to <code>yield_value(std::string)</code>. <code>yield_value</code> is called and the message is copied to the resultant member variable <code>output_data</code> in the promise. Finally, the message is printed by the caller function, and the coroutine returns.</p>
 
 
 </section>
