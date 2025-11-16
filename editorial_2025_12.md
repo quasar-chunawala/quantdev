@@ -750,3 +750,9 @@ int main(){
     return 0;
 }
 ```
+
+## Conclusion
+
+We have implemented a few simple coroutines to explain the basic mechanics of low-level C++ coroutines. We learned how to implement generators. I think coroutines are important because they allow better resource utilization, reduce waiting time, and improve the scalability of applications.
+
+int* a = static_cast<int*>(malloc(2097000));     // 8 MB

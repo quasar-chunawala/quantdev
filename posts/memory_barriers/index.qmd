@@ -1,0 +1,392 @@
+---
+title: "Memory Barriers"
+author: "Quasar"
+date: "2025-03-08"
+jupyter: quantdev-venv
+categories: [Concurrency]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# C++ Atomics
+
+## Introduction to Atomic Operations
+
+Atomic operations are indivisible. An atomic operation is any operation that is **guaranteed to execute as a single transaction**. At a low-level, atomic operations are special hardware instructions.
+
+```{python}
+%load_ext itikz
+```
+
+Consider a shared variable `counter` initialized to `0`. The assembly instructions for incrementing this counter show that it requires multiple CPU instructions: load the value from memory into a register, add 1 to the register, and store the result back to memory. This multi-step process creates opportunities for race conditions in multi-threaded code.
+
+Using atomic types and operations solves this problem by using special CPU instructions like `lock add` that guarantee the entire operation completes as a single, indivisible unit.
+
+```cpp
+// Incrementing a counter        
+int counter {0};
+
+int main(){
+    counter++;
+    return 0;
+}
+```
+
+## Generated Assembly - Non-Atomic
+
+```asm
+counter:
+        .zero   4
+main:
+        push    rbp
+        mov     rbp, rsp
+        mov     eax, DWORD PTR counter[rip]
+        add     eax, 1
+        mov     DWORD PTR counter[rip], eax
+        mov     eax, 0
+        pop     rbp
+        ret
+```
+
+## Atomic Increment
+
+Using atomic types and operations:
+
+```cpp
+#include <atomic>
+std::atomic<int> counter {0};
+
+int main(){
+    counter++;
+    return 0;
+}
+```
+
+**Generated Assembly:**
+
+```asm
+lock add DWORD PTR counter[rip], 1
+```
+
+Atomic operations allow threads to read, modify and write indivisibly and can also be used as synchronization primitives. Atomic operations must be provided by the CPU (as in the `lock add` instruction).
+
+## Operations on `std::atomic<T>`
+
+**Explicit reads and writes:**
+
+```cpp
+std::atomic<T> x;
+T y = x.load();     // Same as T y = x;
+x.store(y);         // Same as x = y;
+```
+
+**Atomic exchange:**
+
+```cpp
+T z = x.exchange(y);    // Atomically: z = x; x = y;
+```
+
+`exchange` is an atomic swap - a read-modify-write done atomically. It reads the old value, replaces it with the new value and guarantees that nobody can get in there in between.
+
+## Compare-and-Swap (CAS)
+
+**Compare-and-swap (conditional exchange):**
+
+```cpp
+bool success = x.compare_exchange_strong(y,z);  // T& y
+// var.compare_exchange_strong(expected,desired);
+// If x == y, x = z and return true
+// Otherwise, set y = x and return false
+```
+
+## Why is CAS So Special?
+
+Compare-and-swap (CAS) is used in most lock-free algorithms. Consider this example of atomic increment with CAS. Pretty much every lock-free algorithm is centered around a loop like this. We want to increment `x`. First, we read the atomic value and store it in a local `x0`. We hope nobody got to `x` before us, that `x` hasn't changed. If that's `true`, we change it atomically to the desired value (which could be an increment, decrement, multiplication by 2, etc.). If nobody else changed `x`, we did our increment atomically. CAS returns `true` and the loop ends.
+
+If somebody did change `x`, CAS fails and returns `false`. The changed value of `x` is updated in `x0`, so we don't have to read again. We continue to the next iteration and keep trying, until our compare-and-swap beats everyone else's and gets that increment in.
+
+```cpp
+std::atomic<int> x{0};
+int x0 = x.load();     // [1] 
+while(!x.compare_exchange_swap(x0, x0 + 1)){}  // [2]
+```
+
+## Additional Atomic Operations
+
+**For integer T:**
+
+```cpp
+std::atomic<int> x;
+x.fetch_add(y);     // Same as x += y;
+```
+
+`fetch_add()` doesn't just add atomically. It increments atomically, but also returns the old value (the fetch part). So it returns the old value and adds the increment, all atomically.
+
+Also available: `fetch_sub`, `fetch_and()`, `fetch_or()` and `fetch_xor()`.
+
+**Note:** If you have multiple atomic operations, their composition is not atomic.
+
+## Do Atomic Operations Wait on Each Other?
+
+Atomic operations are lock-free, maybe even wait-free. It doesn't mean they don't wait on each other. Atomic operations do wait for cache-line access. 
+
+:::{.text-center}
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows.meta --implicit-standalone
+
+
+\tikzset{every picture/.style={line width=0.75pt}} %set default line width to 0.75pt        
+
+\begin{tikzpicture}[x=0.75pt,y=0.75pt,yscale=-1,xscale=1]
+%uncomment if require: \path (0,249); %set diagram left start at 0, and has height of 249
+
+%Rounded Rect [id:dp7226624209327404] 
+\draw  [fill={rgb, 255:red, 181; green, 212; blue, 244 }  ,fill opacity=1 ] (115,43.47) .. controls (115,33.82) and (122.82,26) .. (132.47,26) -- (505.03,26) .. controls (514.68,26) and (522.5,33.82) .. (522.5,43.47) -- (522.5,95.88) .. controls (522.5,105.52) and (514.68,113.34) .. (505.03,113.34) -- (132.47,113.34) .. controls (122.82,113.34) and (115,105.52) .. (115,95.88) -- cycle ;
+%Rounded Rect [id:dp404929071772297] 
+\draw  [fill={rgb, 255:red, 181; green, 212; blue, 244 }  ,fill opacity=1 ] (113,158.47) .. controls (113,148.82) and (120.82,141) .. (130.47,141) -- (503.03,141) .. controls (512.68,141) and (520.5,148.82) .. (520.5,158.47) -- (520.5,210.88) .. controls (520.5,220.52) and (512.68,228.34) .. (503.03,228.34) -- (130.47,228.34) .. controls (120.82,228.34) and (113,220.52) .. (113,210.88) -- cycle ;
+%Rounded Rect [id:dp8165659276958122] 
+\draw  [fill={rgb, 255:red, 251; green, 247; blue, 204 }  ,fill opacity=1 ] (151,62) .. controls (151,57.58) and (154.58,54) .. (159,54) -- (300.5,54) .. controls (304.92,54) and (308.5,57.58) .. (308.5,62) -- (308.5,86) .. controls (308.5,90.42) and (304.92,94) .. (300.5,94) -- (159,94) .. controls (154.58,94) and (151,90.42) .. (151,86) -- cycle ;
+%Rounded Rect [id:dp5545605907049965] 
+\draw  [fill={rgb, 255:red, 251; green, 247; blue, 204 }  ,fill opacity=1 ] (325,61) .. controls (325,56.58) and (328.58,53) .. (333,53) -- (474.5,53) .. controls (478.92,53) and (482.5,56.58) .. (482.5,61) -- (482.5,85) .. controls (482.5,89.42) and (478.92,93) .. (474.5,93) -- (333,93) .. controls (328.58,93) and (325,89.42) .. (325,85) -- cycle ;
+%Rounded Rect [id:dp9918614693760329] 
+\draw  [fill={rgb, 255:red, 251; green, 247; blue, 204 }  ,fill opacity=1 ] (144,176) .. controls (144,171.58) and (147.58,168) .. (152,168) -- (293.5,168) .. controls (297.92,168) and (301.5,171.58) .. (301.5,176) -- (301.5,200) .. controls (301.5,204.42) and (297.92,208) .. (293.5,208) -- (152,208) .. controls (147.58,208) and (144,204.42) .. (144,200) -- cycle ;
+%Rounded Rect [id:dp9032232500910276] 
+\draw  [fill={rgb, 255:red, 251; green, 247; blue, 204 }  ,fill opacity=1 ] (332,176) .. controls (332,171.58) and (335.58,168) .. (340,168) -- (481.5,168) .. controls (485.92,168) and (489.5,171.58) .. (489.5,176) -- (489.5,200) .. controls (489.5,204.42) and (485.92,208) .. (481.5,208) -- (340,208) .. controls (335.58,208) and (332,204.42) .. (332,200) -- cycle ;
+
+% Text Node
+\draw (263,31) node [anchor=north west][inner sep=0.75pt]   [align=left] {\texttt{std::atomic<int> x;}};
+% Text Node
+\draw (257,146) node [anchor=north west][inner sep=0.75pt]   [align=left] {\texttt{std::atomic<int> x[2];}};
+% Text Node
+\draw (231.33,63.33) node   [align=left] {\begin{minipage}[lt]{47.15pt}\setlength\topsep{0pt}
+Thread-1
+\end{minipage}};
+% Text Node
+\draw (410,64) node   [align=left] {\begin{minipage}[lt]{47.15pt}\setlength\topsep{0pt}
+Thread-2
+\end{minipage}};
+% Text Node
+\draw (221.33,180) node   [align=left] {\begin{minipage}[lt]{47.15pt}\setlength\topsep{0pt}
+Thread-1
+\end{minipage}};
+% Text Node
+\draw (414,180) node   [align=left] {\begin{minipage}[lt]{47.15pt}\setlength\topsep{0pt}
+Thread-2
+\end{minipage}};
+% Text Node
+\draw (231.71,82) node   [align=left] {\begin{minipage}[lt]{27.6pt}\setlength\topsep{0pt}
+++x;
+\end{minipage}};
+% Text Node
+\draw (410.38,80.67) node   [align=left] {\begin{minipage}[lt]{27.6pt}\setlength\topsep{0pt}
+++x;
+\end{minipage}};
+% Text Node
+\draw (228.08,198) node   [align=left] {\begin{minipage}[lt]{44.43pt}\setlength\topsep{0pt}
+++x[0];
+\end{minipage}};
+% Text Node
+\draw (419.58,196.67) node   [align=left] {\begin{minipage}[lt]{43.75pt}\setlength\topsep{0pt}
+++x[1];
+\end{minipage}};
+% Text Node
+\draw (214.67,13.33) node   [align=left] {\begin{minipage}[lt]{205.81pt}\setlength\topsep{0pt}
+Accessing shared variable
+\end{minipage}};
+% Text Node
+\draw (212.67,127.33) node   [align=left] {\begin{minipage}[lt]{205.81pt}\setlength\topsep{0pt}
+Accessing Non-shared variable
+\end{minipage}};
+
+
+\end{tikzpicture}
+
+```
+
+Fig. Functions - control flow
+:::
+
+2. **Accessing non-shared variables:**
+   - Thread-1: `++x[0];`
+   - Thread-2: `++x[1];`
+
+*Credit: C++ atomics, from basic to advanced. What do they really do? by Fedor Pikus, CppCon 2017*
+
+## Benchmark Results
+
+```
+Benchmark                                        Time         CPU
+------------------------------------------------------------------------
+BM_SharedAtomicIncrement/1/real_time         0.558 ms    0.015 ms
+BM_SharedAtomicIncrement/2/real_time          2.56 ms    0.044 ms
+BM_SharedAtomicIncrement/4/real_time          5.40 ms    0.096 ms
+BM_SharedAtomicIncrement/8/real_time          10.6 ms    0.218 ms
+BM_SharedAtomicIncrement/16/real_time         22.9 ms    0.401 ms
+BM_SharedAtomicIncrement/32/real_time         48.4 ms     1.14 ms
+BM_SeparateAtomicIncrement/1/real_time       0.556 ms    0.016 ms
+BM_SeparateAtomicIncrement/2/real_time        2.74 ms    0.033 ms
+BM_SeparateAtomicIncrement/4/real_time        5.74 ms    0.081 ms
+BM_SeparateAtomicIncrement/8/real_time        11.2 ms    0.244 ms
+BM_SeparateAtomicIncrement/16/real_time       23.9 ms    0.403 ms
+BM_SeparateAtomicIncrement/32/real_time       26.6 ms     1.23 ms
+```
+
+## Cache Line Contention
+
+Can we conclude that atomic operations don't wait on each other? Not necessarily! What's actually happening is that the two atomic operations are in the same cache-line. On x86, the whole cache line trickles up and down from main memory to the on-board CPU cache and back. Even if you want one variable from the cache line, the entire 64-byte chunk will go up and down. If two different CPUs want two different variables within the same cache-line, they need to wait, as if it was the same variable. You don't get lower granularity than 64-bytes on x86.
+
+*Credit: C++ atomics, from basic to advanced by Fedor Pikus*
+
+## False Sharing Test Results
+
+```
+Benchmark                            Time         CPU
+------------------------------------------------------------------------
+BM_Shared/1/real_time            0.561 ms    0.015 ms
+BM_Shared/2/real_time             3.25 ms    0.054 ms
+BM_Shared/4/real_time             6.07 ms    0.061 ms
+BM_Shared/8/real_time             10.6 ms    0.240 ms
+BM_Shared/16/real_time            22.9 ms    0.384 ms
+BM_Shared/32/real_time            51.4 ms    0.944 ms
+BM_Shared/64/real_time             103 ms     2.67 ms
+BM_FalseShared/1/real_time       0.578 ms    0.016 ms
+BM_FalseShared/2/real_time        2.98 ms    0.037 ms
+BM_FalseShared/4/real_time        6.18 ms    0.065 ms
+BM_FalseShared/8/real_time        10.6 ms    0.234 ms
+BM_FalseShared/16/real_time       13.5 ms    0.386 ms
+BM_FalseShared/32/real_time       26.7 ms     1.21 ms
+BM_FalseShared/64/real_time       37.0 ms     2.36 ms
+```
+
+## Non-Shared Results - Perfect Scaling
+
+```
+BM_NonShared/1/real_time         0.576 ms    0.015 ms
+BM_NonShared/2/real_time         0.591 ms    0.028 ms
+BM_NonShared/4/real_time         0.632 ms    0.051 ms
+BM_NonShared/8/real_time         0.598 ms    0.102 ms
+BM_NonShared/16/real_time         1.05 ms    0.225 ms
+BM_NonShared/32/real_time         1.81 ms    0.701 ms
+BM_NonShared/64/real_time         3.21 ms     1.28 ms
+```
+
+**Key Finding:** When variables are on different cache lines (NonShared), performance scales near-perfectly with thread count!
+
+## Atomic Operations Summary
+
+Atomic operations have to wait for cache line access. This is the **price of data sharing** without race conditions. Modifying different locations on the same cache line still incurs a run-time penalty, a phenomenon known as false sharing. To avoid false sharing, we should align per-thread data to separate cache lines. Atomic operations do wait on each other, particularly write operations. However, read-only operations can scale near-perfectly when properly designed.
+
+## Strong vs Weak Compare-and-Swap
+
+```cpp
+// Strong CAS
+x.compare_exchange_strong(old_x, new_x);
+/* 
+if (x == old_x)
+{
+    x = new_x;
+    return true;
+}else{
+    old_x = x;
+    return false;
+}
+*/
+```
+
+`x.compare_exchange_weak(old_x, new_x)` is essentially the same thing, but can **spuriously fail** and return `false`, even if `x == old_x`.
+
+# Memory Barriers
+
+## Memory Barriers - Introduction
+
+Memory barriers go hand-in-hand with C++ atomics. Memory barriers control how changes to memory made by one CPU core become visible to other CPU cores. Without memory barriers, there is no guarantee of visibility whatsoever. Imagine you have two CPUs, both modifying a variable `x` in their on-chip caches. The main memory doesn't have to change at all! There is no guarantee that anybody can see anything.
+
+For example, CPU-1 cache might have `x = 42`, CPU-2 cache might have `x = 17`, while Main Memory still shows `x = 0` (stale/unchanged). The problem is that each CPU sees its own value. Memory is unchanged, and there is no coherence between the cores.
+
+## Memory Barriers in C++
+
+C++ memory barriers are modifiers on atomic operations.
+
+**Example:**
+
+```cpp
+std::atomic<int> x;
+x.store(1, std::memory_order_release);
+```
+
+This implies that we have put a release memory barrier on that store.
+
+## No Barriers - `std::memory_order_relaxed`
+
+No memory barrier means that we can reorder reads and writes any way we want. We have an atomic `x` variable and `a`, `b` and `c` are non-atomic variables. In the program order, we write to `a`, then `b`, then `c`, then `x`. However, the observed order could be anything. For example, one possible reordering might be: `c = 3`, `x.store(4)`, `a = 1`, `b = 2`.
+
+The key point is that non-atomic variables (a, b, c) can be reordered freely. The atomic variable (x) with `memory_order_relaxed` also provides no ordering guarantees. The CPU and compiler can execute instructions in any order they choose.
+
+```cpp
+x.fetch_add(1, std::memory_order_relaxed);
+```
+
+## Acquire Barrier
+
+An acquire barrier is a half-barrier that acts as a one-way gate. Nothing that was after the `load` can move in front of it, but anything that was before can move after. Acquire barrier guarantees that all memory operations scheduled after the barrier in the program order become visible after the barrier. This applies to **all operations** - not just all reads or all writes, but both reads and writes. Furthermore, this applies to **all operations**, not just operations on the atomic variable, but literally all memory operations. Reads and writes cannot be reordered from after to before the barrier.
+
+Consider the program order: `a=1` → `b=2` → `x.load() [ACQUIRE BARRIER]` → `c=3` → `d=4` → `e=5`. A possible observed order with reordering might be: `a=1` → `x.load() [ACQUIRE BARRIER]` → `b=2` → `e=5` → `c=3` → `d=4`. Operations before the barrier can reorder and move after the barrier, but operations after the barrier cannot move before it, though they can reorder among themselves.
+
+## Release Barrier
+
+A release barrier is the reverse of an acquire barrier. Nothing that was before the barrier can move after, but anything that is after can move in front of the `store`.
+
+Consider the program order: `a=1` → `b=2` → `c=3` → `x.store() [RELEASE BARRIER]` → `d=4` → `e=5`. A possible observed order with reordering might be: `b=2` → `a=1` → `e=5` → `c=3` → `x.store() [RELEASE BARRIER]` → `d=4`. Operations before the barrier cannot move after it, but they can reorder among themselves. Operations after the barrier can reorder and move before the barrier.
+
+## Acquire-Release Protocol
+
+Acquire and release barriers are often used together. Thread t1 writes atomic variable `x` with a `release` barrier. Thread t2 reads atomic variable `x` with an `acquire` barrier. On the acquire side, all memory reads done after the `acquire` barrier in t2 in program order have to be done after the barrier in actual execution order. On the release side, all memory writes done before the `release` barrier in t1 in program order have to be done before the barrier in actual execution order.
+
+The result is that all memory writes that happen in t1 before the barrier become visible in thread t2 after the barrier. Thread 1 prepares data (does some writes) then **releases** (publishes) it by updating atomic variable `x`. Thread 2 **acquires** atomic variable `x` and the data is guaranteed to be visible. It's important to note that it has to be the same atomic variable `x` for this synchronization to work.
+
+## Acquire-Release Example
+
+**Thread 1:**
+
+```cpp
+a = 1;
+b = 2;
+c = 3;
+// --- RELEASE BARRIER ---
+x.store(1, memory_order_release);  // Publishes data
+d = 4;
+e = 5;
+```
+
+**Thread 2:**
+
+```cpp
+f = 6;
+g = 7;
+val = x.load(memory_order_acquire);  // Acquires data
+// --- ACQUIRE BARRIER ---
+read a;  // Guaranteed to see a = 1
+read b;  // Guaranteed to see b = 2
+read c;  // Guaranteed to see c = 3
+```
+
+**Guarantee:** All writes before release in T1 are visible after acquire in T2. Must be the same atomic variable `x`.
+
+## References {.appendix}
+
+- **Compiler Explorer examples:**
+  - Thread-safe queue: [https://compiler-explorer.com/z/Gz1vMGcno](https://compiler-explorer.com/z/Gz1vMGcno)
+  - Cache line experiment: [https://compiler-explorer.com/z/YxWdYeGca](https://compiler-explorer.com/z/YxWdYeGca)
+
+- **Recommended talks:**
+  - "C++ atomics, from basic to advanced" by Fedor Pikus (CppCon 2017)
+  - Lock-free programming talks at CppCon
+
+- **Books:**
+  - "C++ Concurrency in Action" by Anthony Williams
+  - "The Art of Multiprocessor Programming" by Herlihy and Shavit
+
+
