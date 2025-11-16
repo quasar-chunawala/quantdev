@@ -106,6 +106,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 <script async="" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9993009899870547" crossorigin="anonymous"></script>
 
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
 
 <link rel="stylesheet" href="../../styles.css">
 </head>
@@ -218,9 +220,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#compare-and-swap-cas" id="toc-compare-and-swap-cas" class="nav-link" data-scroll-target="#compare-and-swap-cas">Compare-and-Swap (CAS)</a></li>
   <li><a href="#why-is-cas-so-special" id="toc-why-is-cas-so-special" class="nav-link" data-scroll-target="#why-is-cas-so-special">Why is CAS So Special?</a></li>
   <li><a href="#additional-atomic-operations" id="toc-additional-atomic-operations" class="nav-link" data-scroll-target="#additional-atomic-operations">Additional Atomic Operations</a></li>
-  <li><a href="#do-atomic-operations-wait-on-each-other" id="toc-do-atomic-operations-wait-on-each-other" class="nav-link" data-scroll-target="#do-atomic-operations-wait-on-each-other">Do Atomic Operations Wait on Each Other?</a></li>
-  <li><a href="#benchmark-results" id="toc-benchmark-results" class="nav-link" data-scroll-target="#benchmark-results">Benchmark Results</a></li>
-  <li><a href="#cache-line-contention" id="toc-cache-line-contention" class="nav-link" data-scroll-target="#cache-line-contention">Cache Line Contention</a></li>
+  <li><a href="#do-atomic-operations-wait-on-each-other" id="toc-do-atomic-operations-wait-on-each-other" class="nav-link" data-scroll-target="#do-atomic-operations-wait-on-each-other">Do Atomic Operations Wait on Each Other?</a>
+  <ul class="collapse">
+  <li><a href="#whats-really-going-on" id="toc-whats-really-going-on" class="nav-link" data-scroll-target="#whats-really-going-on">What’s really going on?</a></li>
+  </ul></li>
   <li><a href="#false-sharing-test-results" id="toc-false-sharing-test-results" class="nav-link" data-scroll-target="#false-sharing-test-results">False Sharing Test Results</a></li>
   <li><a href="#non-shared-results---perfect-scaling" id="toc-non-shared-results---perfect-scaling" class="nav-link" data-scroll-target="#non-shared-results---perfect-scaling">Non-Shared Results - Perfect Scaling</a></li>
   <li><a href="#atomic-operations-summary" id="toc-atomic-operations-summary" class="nav-link" data-scroll-target="#atomic-operations-summary">Atomic Operations Summary</a></li>
@@ -409,17 +412,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <p>Fig. Functions - control flow</p>
 </div>
-<ol start="2" type="1">
-<li><strong>Accessing non-shared variables:</strong>
-<ul>
-<li>Thread-1: <code>++x[0];</code></li>
-<li>Thread-2: <code>++x[1];</code></li>
-</ul></li>
-</ol>
-<p><em>Credit: C++ atomics, from basic to advanced. What do they really do? by Fedor Pikus, CppCon 2017</em></p>
-</section>
-<section id="benchmark-results" class="level2">
-<h2 class="anchored" data-anchor-id="benchmark-results">Benchmark Results</h2>
+<p>Let’s compare atomic increment of an atomic variable versus increment two atomic variables that are different. That is, the worker thread <span class="math inline">\(t0\)</span> works on an atomic variable <code>x[0]</code> and the worker thread <span class="math inline">\(t1\)</span> works on the atomic variable <code>x[1]</code>. That way, they don’t have to wait on each other. Let’s run a benchmark for different number of threads. Let’s run the benchmark for different number of threads. It’s basically the same thing - we see no difference between the two. Can we conclude that atomic operations don’t wait on each other from this?</p>
+<div class="text-center">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="memory_barriers_01.png" class="img-fluid figure-img"></p>
+<figcaption class="figure-caption">Two threads incrementing a shared variable atomically vs two threads work on different atomic variables</figcaption>
+</figure>
+</div>
+</div>
 <pre><code>Benchmark                                        Time         CPU
 ------------------------------------------------------------------------
 BM_SharedAtomicIncrement/1/real_time         0.558 ms    0.015 ms
@@ -434,11 +435,12 @@ BM_SeparateAtomicIncrement/4/real_time        5.74 ms    0.081 ms
 BM_SeparateAtomicIncrement/8/real_time        11.2 ms    0.244 ms
 BM_SeparateAtomicIncrement/16/real_time       23.9 ms    0.403 ms
 BM_SeparateAtomicIncrement/32/real_time       26.6 ms     1.23 ms</code></pre>
+<section id="whats-really-going-on" class="level3">
+<h3 class="anchored" data-anchor-id="whats-really-going-on">What’s really going on?</h3>
+<p>Can we conclude that atomic operations don’t wait on each other? Not necessarily!</p>
+<p>It is highly likely, that data elements in relatively close memory locations are accessed over a short period of time. This is typical, for example, when traversing an array, or performing matrix multiplication. To optimize performance, a chunk of data called the cache line trickles up and down through the cache from the main memory to the CPU and back, instead of just the request data-item. On x86, the cache line size is <span class="math inline">\(64\)</span>-bytes.</p>
+<p>What’s actually happening is that the two atomic operations are in the same cache-line. On x86, the whole cache line trickles up and down from main memory to the on-board CPU cache and back. Even if you want one variable from the cache line, the entire 64-byte chunk will go up and down. If two different CPUs want two different variables within the same cache-line, they need to wait, as if it was the same variable. You don’t get lower granularity than 64-bytes on x86.</p>
 </section>
-<section id="cache-line-contention" class="level2">
-<h2 class="anchored" data-anchor-id="cache-line-contention">Cache Line Contention</h2>
-<p>Can we conclude that atomic operations don’t wait on each other? Not necessarily! What’s actually happening is that the two atomic operations are in the same cache-line. On x86, the whole cache line trickles up and down from main memory to the on-board CPU cache and back. Even if you want one variable from the cache line, the entire 64-byte chunk will go up and down. If two different CPUs want two different variables within the same cache-line, they need to wait, as if it was the same variable. You don’t get lower granularity than 64-bytes on x86.</p>
-<p><em>Credit: C++ atomics, from basic to advanced by Fedor Pikus</em></p>
 </section>
 <section id="false-sharing-test-results" class="level2">
 <h2 class="anchored" data-anchor-id="false-sharing-test-results">False Sharing Test Results</h2>

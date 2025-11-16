@@ -209,13 +209,11 @@ Accessing Non-shared variable
 Fig. Functions - control flow
 :::
 
-2. **Accessing non-shared variables:**
-   - Thread-1: `++x[0];`
-   - Thread-2: `++x[1];`
+Let's compare atomic increment of an atomic variable versus increment two atomic variables that are different. That is, the worker thread $t0$ works on an atomic variable `x[0]` and the worker thread $t1$ works on the atomic variable `x[1]`. That way, they don't have to wait on each other. Let's run a benchmark for different number of threads. Let's run the benchmark for different number of threads. It's basically the same thing - we see no difference between the two. Can we conclude that atomic operations don't wait on each other from this?
 
-*Credit: C++ atomics, from basic to advanced. What do they really do? by Fedor Pikus, CppCon 2017*
-
-## Benchmark Results
+::: {.text-center}
+![Two threads incrementing a shared variable atomically vs two threads work on different atomic variables](memory_barriers_01.png)
+:::
 
 ```
 Benchmark                                        Time         CPU
@@ -234,11 +232,15 @@ BM_SeparateAtomicIncrement/16/real_time       23.9 ms    0.403 ms
 BM_SeparateAtomicIncrement/32/real_time       26.6 ms     1.23 ms
 ```
 
-## Cache Line Contention
+### What's really going on?
 
-Can we conclude that atomic operations don't wait on each other? Not necessarily! What's actually happening is that the two atomic operations are in the same cache-line. On x86, the whole cache line trickles up and down from main memory to the on-board CPU cache and back. Even if you want one variable from the cache line, the entire 64-byte chunk will go up and down. If two different CPUs want two different variables within the same cache-line, they need to wait, as if it was the same variable. You don't get lower granularity than 64-bytes on x86.
+Can we conclude that atomic operations don't wait on each other? Not necessarily! 
 
-*Credit: C++ atomics, from basic to advanced by Fedor Pikus*
+It is highly likely, that data elements in relatively close memory locations are accessed over a short period of time. This is typical, for example, when traversing an array, or performing matrix multiplication. To optimize performance, a chunk of data called the cache line trickles up and down through the cache from the main memory to the CPU and back, instead of just the request data-item. On x86, the cache line size is $64$-bytes. 
+
+What's actually happening is that the two atomic operations are in the same cache-line. On x86, the whole cache line trickles up and down from main memory to the on-board CPU cache and back. Even if you want one variable from the cache line, the entire 64-byte chunk will go up and down. If two different CPUs want two different variables within the same cache-line, they need to wait, as if it was the same variable. You don't get lower granularity than 64-bytes on x86.
+
+
 
 ## False Sharing Test Results
 
