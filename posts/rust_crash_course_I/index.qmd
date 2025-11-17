@@ -1,0 +1,98 @@
+---
+title: "A crash course in Rust - I"
+author: "Quasar"
+date: "2025-11-17"
+jupyter: quantdev-venv
+categories: [Rust]      
+image: "Rust-4.png"
+toc: true
+toc-depth: 3
+---
+
+# A crash course in Rust - I
+## Introduction
+
+I have been working through the excellent [Learn Rust With Entirely Too Many Linked Lists](https://rust-unofficial.github.io/too-many-lists/) and I summarize my learnings about Rust language features and code snippets I tried here.
+
+## Designing a basic linked list
+
+A linked list is a data-structure consisting of a collection of nodes which together form a sequence. In its most basic form, each node contains data and a reference (pointer or link) to the next node in the sequence. Consider defining a `List` as follows:
+
+```rust
+pub enum List{
+    Empty,
+    Element(i32, List),
+}
+
+pub fn main(){}
+```
+
+Let's go ahead and compile that. 
+
+```shell
+[quantdev@quasar-arch ownership]$ rustc first.rs -o first.out
+error[E0072]: recursive type `List` has infinite size
+ --> first.rs:1:1
+  |
+1 | pub enum List{
+  | ^^^^^^^^^^^^^
+2 |     Empty,
+3 |     Element(i32, List),
+  |                  ---- recursive without indirection
+  |
+help: insert some indirection (e.g., a `Box`, `Rc`, or `&`) to break the cycle                ---- recursive without indirection
+```
+
+If we actually checkout the error message, we can see that `rustc` is actually telling us exactly how to solve this problem. 
+
+```shell
+help: insert some indirection (e.g., a `Box`, `Rc`, or `&`) to break the cycle                ---- recursive without indirection
+```
+
+Alright, `Box`. What's that? Let's google `rust box`. [\texttt{std::boxed::Box<T,A>}](https://doc.rust-lang.org/std/boxed/struct.Box.html) module documentation states that `Box<T>` casually referred to as a 'box', provides the simplest form of heap allocation in Rust. Boxes provide ownership for this allocation, and drop their contents when they go out of scope.
+
+### Examples
+
+Move a value from a stack to the heap by creating a `Box`:
+
+```rust
+let val: u8 = 5;
+let boxed:Box<u8> = Box::new(val);
+```
+
+Moving a value from a `Box` back to the stack by dereferencing it:
+
+```rust
+let boxed: Box<u8> = Box::new(5);
+let val: u8 = *boxed;
+```
+
+Creating a recursive data-structure
+
+```rust
+#[derive(Debug)]
+pub enum List{
+    Empty,
+    Element(i32, Box<List>),
+}
+
+pub fn main(){
+    let list : List = List::Element(1, Box::new(List::Element(2, Box::new(List::Empty))));
+    println!("{list:?}");
+}
+```
+
+If I compile and run this code, it gives me:
+
+```shell
+[quantdev@quasar-arch ownership]$ rustc first.rs -o first.out
+[quantdev@quasar-arch ownership]$ ./first.out
+Element(1, Element(2, Empty))
+```
+Recursive data-structures must be boxed, because if the definition of `List` looked like this:
+
+```shell
+Element(T, List)
+```
+
+it wouldn't work. 
