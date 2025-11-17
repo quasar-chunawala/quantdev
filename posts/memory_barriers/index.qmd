@@ -137,7 +137,6 @@ Atomic operations are lock-free, maybe even wait-free. It doesn't mean they don'
 # | code-summary: "Show the code"
 %%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows.meta --implicit-standalone
 
-
 \tikzset{every picture/.style={line width=0.75pt}} %set default line width to 0.75pt        
 
 \begin{tikzpicture}[x=0.75pt,y=0.75pt,yscale=-1.5,xscale=1.5,font=\Large]
@@ -161,45 +160,25 @@ Atomic operations are lock-free, maybe even wait-free. It doesn't mean they don'
 % Text Node
 \draw (257,146) node [anchor=north west][inner sep=0.75pt]   [align=left] {\texttt{std::atomic<int> x[2];}};
 % Text Node
-\draw (231.33,63.33) node   [align=left] {\begin{minipage}[lt]{47.15pt}\setlength\topsep{0pt}
-Thread-1
-\end{minipage}};
+\draw (231.33,63.33) node {Thread-1};
 % Text Node
-\draw (410,64) node   [align=left] {\begin{minipage}[lt]{47.15pt}\setlength\topsep{0pt}
-Thread-2
-\end{minipage}};
+\draw (410,64) node {Thread-2};
 % Text Node
-\draw (221.33,180) node   [align=left] {\begin{minipage}[lt]{47.15pt}\setlength\topsep{0pt}
-Thread-1
-\end{minipage}};
+\draw (221.33,180) node {Thread-1};
 % Text Node
-\draw (414,180) node   [align=left] {\begin{minipage}[lt]{47.15pt}\setlength\topsep{0pt}
-Thread-2
-\end{minipage}};
+\draw (414,180) node {Thread-2};
 % Text Node
-\draw (231.71,82) node   [align=left] {\begin{minipage}[lt]{27.6pt}\setlength\topsep{0pt}
-++x;
-\end{minipage}};
+\draw (231.71,82) node {++x;};
 % Text Node
-\draw (410.38,80.67) node   [align=left] {\begin{minipage}[lt]{27.6pt}\setlength\topsep{0pt}
-++x;
-\end{minipage}};
+\draw (410.38,80.67) node {++x;};
 % Text Node
-\draw (228.08,198) node   [align=left] {\begin{minipage}[lt]{44.43pt}\setlength\topsep{0pt}
-++x[0];
-\end{minipage}};
+\draw (228.08,198) node {++x[0];};
 % Text Node
-\draw (419.58,196.67) node   [align=left] {\begin{minipage}[lt]{43.75pt}\setlength\topsep{0pt}
-++x[1];
-\end{minipage}};
+\draw (419.58,196.67) node {++x[1];};
 % Text Node
-\draw (214.67,13.33) node   [align=left] {\begin{minipage}[lt]{205.81pt}\setlength\topsep{0pt}
-Accessing shared variable
-\end{minipage}};
+\draw (214.67,13.33) node {Accessing shared variable};
 % Text Node
-\draw (212.67,127.33) node   [align=left] {\begin{minipage}[lt]{205.81pt}\setlength\topsep{0pt}
-Accessing Non-shared variable
-\end{minipage}};
+\draw (212.67,127.33) node {Accessing Non-shared variable};
 
 
 \end{tikzpicture}
@@ -378,7 +357,9 @@ x[0],x[1],...
 ```
 :::
 
-## False Sharing Test Results
+Atomic operations do wait on each other! In particular, write-operations do. Read operations scale near-perfectly.
+
+If I put the variables on separate cache-lines, then there is no problem and the CPUs don't have to wait on anything. We can prove it with a benchmark.
 
 ```
 Benchmark                            Time         CPU
@@ -397,11 +378,6 @@ BM_FalseShared/8/real_time        10.6 ms    0.234 ms
 BM_FalseShared/16/real_time       13.5 ms    0.386 ms
 BM_FalseShared/32/real_time       26.7 ms     1.21 ms
 BM_FalseShared/64/real_time       37.0 ms     2.36 ms
-```
-
-## Non-Shared Results - Perfect Scaling
-
-```
 BM_NonShared/1/real_time         0.576 ms    0.015 ms
 BM_NonShared/2/real_time         0.591 ms    0.028 ms
 BM_NonShared/4/real_time         0.632 ms    0.051 ms
@@ -411,13 +387,11 @@ BM_NonShared/32/real_time         1.81 ms    0.701 ms
 BM_NonShared/64/real_time         3.21 ms     1.28 ms
 ```
 
-**Key Finding:** When variables are on different cache lines (NonShared), performance scales near-perfectly with thread count!
-
-## Atomic Operations Summary
-
 Atomic operations have to wait for cache line access. This is the **price of data sharing** without race conditions. Modifying different locations on the same cache line still incurs a run-time penalty, a phenomenon known as false sharing. To avoid false sharing, we should align per-thread data to separate cache lines. Atomic operations do wait on each other, particularly write operations. However, read-only operations can scale near-perfectly when properly designed.
 
 ## Strong vs Weak Compare-and-Swap
+
+C++ provides two versions of CAS - weak and strong. 
 
 ```cpp
 // Strong CAS
@@ -440,7 +414,7 @@ if (x == old_x)
 
 ## Memory Barriers - Introduction
 
-Memory barriers go hand-in-hand with C++ atomics. Memory barriers control how changes to memory made by one CPU core become visible to other CPU cores. Without memory barriers, there is no guarantee of visibility whatsoever. Imagine you have two CPUs, both modifying a variable `x` in their on-chip caches. The main memory doesn't have to change at all! There is no guarantee that anybody can see anything.
+It's good to understand about atomic variables, but its not enough by a mile. Memory barriers go hand-in-hand with C++ atomics. Memory barriers control how changes to memory made by one CPU core become visible to other CPU cores. Without memory barriers, there is no guarantee of visibility whatsoever. Imagine you have two CPUs, both modifying a variable `x` in their on-chip caches. The main memory doesn't have to change at all! There is no guarantee that anybody can see anything.
 
 For example, CPU-1 cache might have `x = 42`, CPU-2 cache might have `x = 17`, while Main Memory still shows `x = 0` (stale/unchanged). The problem is that each CPU sees its own value. Memory is unchanged, and there is no coherence between the cores.
 
@@ -459,13 +433,11 @@ This implies that we have put a release memory barrier on that store.
 
 ## No Barriers - `std::memory_order_relaxed`
 
-No memory barrier means that we can reorder reads and writes any way we want. We have an atomic `x` variable and `a`, `b` and `c` are non-atomic variables. In the program order, we write to `a`, then `b`, then `c`, then `x`. However, the observed order could be anything. For example, one possible reordering might be: `c = 3`, `x.store(4)`, `a = 1`, `b = 2`.
+No memory barrier means that we can reorder reads and writes any way we want. We have an atomic `x` variable and `a`, `b` and `c` are non-atomic variables. No memory order means I can reorder reads and writes anywhere I want.
 
-The key point is that non-atomic variables (a, b, c) can be reordered freely. The atomic variable (x) with `memory_order_relaxed` also provides no ordering guarantees. The CPU and compiler can execute instructions in any order they choose.
-
-```cpp
-x.fetch_add(1, std::memory_order_relaxed);
-```
+::: {.text-center}
+![Reads and writes can be reordered arbitrarily. No guarantees.](memory_order_relaxed.jpg)
+:::
 
 ## Acquire Barrier
 
