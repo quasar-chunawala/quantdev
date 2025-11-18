@@ -1,5 +1,5 @@
 ---
-title: "Exploring futures and promises"
+title: "Creating a tiny C++ Task Library"
 author: "Quasar"
 date: "2025-11-17"
 categories: [C++]      
@@ -135,7 +135,47 @@ int main(){
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/EqYY6MxaT)
 
-## Chaining asynchronous futures
+## Creating a tiny C++ task library
 
+Promises and futures can be chained together to perform multiple asynchronous operations sequentially. We can have elaborate data-processing pipelines where one future's result becoimes the input for the next operation's promise. This allows for composing complex asynchronous workflows where the output of one task feeds into the next.
 
+Also, we can allow branching in the pipeline and keep some tasks switched off until needed. This can be done using futures with deferred execution. 
 
+Generally speaking tasks make up a DAG(Directed acyclic graph). Thus, a task library must consist of two parts : an API to specify the task DAG and a scheduler that actually executes the DAG.
+
+Let's try to create the following task graph:
+
+```{mermaid}
+graph LR
+  Task-1[Task-1] --> Task-2[Task-2]
+  Task-2 --> Task-3[Task-3]
+  Task-2 --> Task-4[Task-4]
+  Task-3 --> Aggregate[Aggregate results]
+  Task-4 --> Aggregate
+```
+
+We start by defining a template class called `Task` that accepts a callable as a template argument, defining the function to execute. This class will also allow us to create tasks that share a future with dependent ones. 
+
+```cpp
+#include <vector>
+
+#define sync_cout std::osyncstream(std::cout)
+
+template<typename Func>
+class Task{
+    public:
+    Task(int id, Func& func)
+    : m_id{ id }
+    , m_func{ func }
+    , m_precedes{}
+    , m_succeeds{}
+    {}
+
+    
+    private:
+    size_t m_id;
+    Func m_func;
+    std::vector<Task> m_precedes;
+    std::vector<Task> m_succeeds;
+};
+```
