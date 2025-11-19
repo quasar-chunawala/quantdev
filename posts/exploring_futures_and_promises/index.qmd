@@ -135,6 +135,12 @@ int main(){
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/EqYY6MxaT)
 
+## Shared Futures
+
+As we saw earlier, `std::future` is only moveable, thus only one future object can refer to a particular asynchronous result. On the other hand, `std::shared_future` is copyable, so several shared future objects can refer to the same shared state. 
+
+There, `std::shared_future` allows thread-safe access from different threads to the same shared state. Shared futures can be useful for sharing the result of a computationally intensive task among multiple consumers or interested parties, reducing computation. Also, they can be used to notify events or as a synchronization mechanism where multiple threads must wait for the completion of a single task. The interface of `std::shared_object` is the same as the one for `std::future`. A `shared_future` object is created using the `.share()` function on the future. 
+
 ## Creating a tiny C++ task library
 
 Promises and futures can be chained together to perform multiple asynchronous operations sequentially. We can have elaborate data-processing pipelines where one future's result becoimes the input for the next operation's promise. This allows for composing complex asynchronous workflows where the output of one task feeds into the next.
@@ -159,44 +165,42 @@ We start by defining a template class called `Task` that accepts a callable as a
 ```cpp
 #include <vector>
 #include <cstdint>
+#include <print>
 
 #define sync_cout std::osyncstream(std::cout)
 
+class GraphWalker;
+
 template<typename Func>
 class Task{
+
     public:
     Task(int id, Func& func)
     : m_id{ id }
     , m_func{ func }
-    , m_dependencies{}
     {
         sync_cout << "\n"
                   << "Task " << id << " constructed ";
     }
 
-    void precedes(std::vector<Task> tasks)
-    {
-        for(auto& t : tasks)
-            t.m_dependencies.push_back(m_id);
-    }
+    Task(const Task& other)
+    : m_id{ other.m_id }
+    , m_func{ other.m_func }
+    {}
 
-    void succeeds(std::vector<Task> tasks)
-    {
-        m_dependencies = std::transform(tasks.begin(), tasks.end(),[](Task task){
-            return task.m_id;
-        });
+    uint64_t get_id(){
+        return m_id;
     }
 
     private:
     u64_t m_id;
     Func m_func;
     std::promise<void> m_promise;
-    std::shared_future<void> m_future;
-    std::vector<u64_t> m_precedes;
-    std::vector<u64_t> m_succeeds;
+
 };
 
-class TaskFlow{
-
+struct Node{
+    Task task;
+    std::vector<Node*> child_nodes;
 };
 ```
