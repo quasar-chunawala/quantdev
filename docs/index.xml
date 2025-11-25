@@ -1401,6 +1401,270 @@ font-style: inherit;">;</span></span>
 <p><img src="https://latex.codecogs.com/png.latex?%0Ad_%7B%5Cpm%7D%20=%20%5Cfrac%7B%5Clog(S_t/K)%20+%20(r%20%5Cpm%20%5Csigma%5E2/2)(T-t)%7D%7B%5Csigma%20%5Csqrt%7BT-t%7D%7D%0A"></p>
 <p>Conversely, if we have the option price <img src="https://latex.codecogs.com/png.latex?C_%7BBS%7D">, we can backout the implied volatility <img src="https://latex.codecogs.com/png.latex?%5Csigma">, by solving for the root of the above equation.</p>
 <p>Thus, we can define</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0Af(%5Csigma)%20=%20S_t%20%5CPhi(d_%7B+%7D)%20-%20K%20e%5E%7B-r(T-t)%7D%5CPhi(d_%7B-%7D)%20-%20C_%7BBS%7D%0A"></p>
+<p>and find the root of <img src="https://latex.codecogs.com/png.latex?f">. Assume that the root lies in the interval <img src="https://latex.codecogs.com/png.latex?%5B0,1%5D">.</p>
+<div class="cell" data-execution_count="12">
+<div class="sourceCode cell-code" id="cb18" style="background: #f1f3f5;"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb18-1"><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">import</span> math</span>
+<span id="cb18-2"><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">from</span> typing <span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">import</span> Callable</span>
+<span id="cb18-3"></span>
+<span id="cb18-4"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">def</span> d_plus(S, K, T, r, sigma):</span>
+<span id="cb18-5">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> (log(S <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span> K) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> (r <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> sigma<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">**</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> T)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span>(sigma <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> sqrt(T))</span>
+<span id="cb18-6"></span>
+<span id="cb18-7"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">def</span> d_minus(S, K, T, r, sigma):</span>
+<span id="cb18-8">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> (log(S <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span> K) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> (r <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> sigma<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">**</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> T)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span>(sigma <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> sqrt(T))</span>
+<span id="cb18-9"></span>
+<span id="cb18-10"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"># An approximation to the cumulative distribution # function for the standard normal distribution</span></span>
+<span id="cb18-11"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"># Note: This is a recursive function</span></span>
+<span id="cb18-12"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">def</span> norm_cdf(x : <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">float</span>):</span>
+<span id="cb18-13">    k <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span>(<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.0</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.2316419</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>x)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb18-14">    k_sum <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> k<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>(<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.319381530</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> k<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>(<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.356563782</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> k<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>(<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.781477937</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> k<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>(<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.821255978</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.330274429</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>k))))<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb18-15"></span>
+<span id="cb18-16">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">if</span> x <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;=</span> <span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.0</span>:</span>
+<span id="cb18-17">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.0</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span>(<span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">pow</span>(<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.14159</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.5</span>)))<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>exp(<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.5</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>x) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> k_sum)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb18-18">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">else</span>:</span>
+<span id="cb18-19">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.0</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> norm_cdf(<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>x)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb18-20">  </span>
+<span id="cb18-21"></span>
+<span id="cb18-22"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">def</span> call_option_price(</span>
+<span id="cb18-23">    S : <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">float</span>, K : <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">float</span>, df: <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">float</span>, T: <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">float</span>, sigma: <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">float</span></span>
+<span id="cb18-24">):</span>
+<span id="cb18-25">    d_1 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> d_plus(S, K, T, r, sigma)</span>
+<span id="cb18-26">    d_2 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> d_minus(S, K, T, r, sigma)</span>
+<span id="cb18-27">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> S <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> norm_cdf(d_1) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> K <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> exp(<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>r <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> T) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> norm_cdf(d_2)</span>
+<span id="cb18-28"></span>
+<span id="cb18-29"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">def</span> bisection(</span>
+<span id="cb18-30">    y_target: <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">float</span>,</span>
+<span id="cb18-31">    a: <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">float</span>,</span>
+<span id="cb18-32">    b: <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">float</span>,</span>
+<span id="cb18-33">    epsilon: <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">float</span>,</span>
+<span id="cb18-34">    f : <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">callable</span></span>
+<span id="cb18-35">):</span>
+<span id="cb18-36">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">while</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">True</span>:</span>
+<span id="cb18-37">        m <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.5</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> (a <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> b)</span>
+<span id="cb18-38">        y <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> f(x)</span></code></pre></div>
+</div>
 
 
 </section>

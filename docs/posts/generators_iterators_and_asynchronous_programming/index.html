@@ -506,6 +506,50 @@ d_{\pm} = \frac{\log(S_t/K) + (r \pm \sigma^2/2)(T-t)}{\sigma \sqrt{T-t}}
 \]</span></p>
 <p>Conversely, if we have the option price <span class="math inline">\(C_{BS}\)</span>, we can backout the implied volatility <span class="math inline">\(\sigma\)</span>, by solving for the root of the above equation.</p>
 <p>Thus, we can define</p>
+<p><span class="math display">\[
+f(\sigma) = S_t \Phi(d_{+}) - K e^{-r(T-t)}\Phi(d_{-}) - C_{BS}
+\]</span></p>
+<p>and find the root of <span class="math inline">\(f\)</span>. Assume that the root lies in the interval <span class="math inline">\([0,1]\)</span>.</p>
+<div class="cell" data-execution_count="12">
+<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1"></a><span class="im">import</span> math</span>
+<span id="cb18-2"><a href="#cb18-2"></a><span class="im">from</span> typing <span class="im">import</span> Callable</span>
+<span id="cb18-3"><a href="#cb18-3"></a></span>
+<span id="cb18-4"><a href="#cb18-4"></a><span class="kw">def</span> d_plus(S, K, T, r, sigma):</span>
+<span id="cb18-5"><a href="#cb18-5"></a>    <span class="cf">return</span> (log(S <span class="op">/</span> K) <span class="op">+</span> (r <span class="op">+</span> sigma<span class="op">**</span><span class="dv">2</span><span class="op">/</span><span class="dv">2</span>) <span class="op">*</span> T)<span class="op">/</span>(sigma <span class="op">*</span> sqrt(T))</span>
+<span id="cb18-6"><a href="#cb18-6"></a></span>
+<span id="cb18-7"><a href="#cb18-7"></a><span class="kw">def</span> d_minus(S, K, T, r, sigma):</span>
+<span id="cb18-8"><a href="#cb18-8"></a>    <span class="cf">return</span> (log(S <span class="op">/</span> K) <span class="op">+</span> (r <span class="op">-</span> sigma<span class="op">**</span><span class="dv">2</span><span class="op">/</span><span class="dv">2</span>) <span class="op">*</span> T)<span class="op">/</span>(sigma <span class="op">*</span> sqrt(T))</span>
+<span id="cb18-9"><a href="#cb18-9"></a></span>
+<span id="cb18-10"><a href="#cb18-10"></a><span class="co"># An approximation to the cumulative distribution # function for the standard normal distribution</span></span>
+<span id="cb18-11"><a href="#cb18-11"></a><span class="co"># Note: This is a recursive function</span></span>
+<span id="cb18-12"><a href="#cb18-12"></a><span class="kw">def</span> norm_cdf(x : <span class="bu">float</span>):</span>
+<span id="cb18-13"><a href="#cb18-13"></a>    k <span class="op">=</span> <span class="fl">1.0</span><span class="op">/</span>(<span class="fl">1.0</span> <span class="op">+</span> <span class="fl">0.2316419</span><span class="op">*</span>x)<span class="op">;</span></span>
+<span id="cb18-14"><a href="#cb18-14"></a>    k_sum <span class="op">=</span> k<span class="op">*</span>(<span class="fl">0.319381530</span> <span class="op">+</span> k<span class="op">*</span>(<span class="op">-</span><span class="fl">0.356563782</span> <span class="op">+</span> k<span class="op">*</span>(<span class="fl">1.781477937</span> <span class="op">+</span> k<span class="op">*</span>(<span class="op">-</span><span class="fl">1.821255978</span> <span class="op">+</span> <span class="fl">1.330274429</span><span class="op">*</span>k))))<span class="op">;</span></span>
+<span id="cb18-15"><a href="#cb18-15"></a></span>
+<span id="cb18-16"><a href="#cb18-16"></a>    <span class="cf">if</span> x <span class="op">&gt;=</span> <span class="fl">0.0</span>:</span>
+<span id="cb18-17"><a href="#cb18-17"></a>        <span class="cf">return</span> (<span class="fl">1.0</span> <span class="op">-</span> (<span class="fl">1.0</span><span class="op">/</span>(<span class="bu">pow</span>(<span class="dv">2</span><span class="op">*</span><span class="fl">3.14159</span>,<span class="fl">0.5</span>)))<span class="op">*</span>exp(<span class="op">-</span><span class="fl">0.5</span><span class="op">*</span>x<span class="op">*</span>x) <span class="op">*</span> k_sum)<span class="op">;</span></span>
+<span id="cb18-18"><a href="#cb18-18"></a>    <span class="cf">else</span>:</span>
+<span id="cb18-19"><a href="#cb18-19"></a>        <span class="cf">return</span> <span class="fl">1.0</span> <span class="op">-</span> norm_cdf(<span class="op">-</span>x)<span class="op">;</span></span>
+<span id="cb18-20"><a href="#cb18-20"></a>  </span>
+<span id="cb18-21"><a href="#cb18-21"></a></span>
+<span id="cb18-22"><a href="#cb18-22"></a><span class="kw">def</span> call_option_price(</span>
+<span id="cb18-23"><a href="#cb18-23"></a>    S : <span class="bu">float</span>, K : <span class="bu">float</span>, df: <span class="bu">float</span>, T: <span class="bu">float</span>, sigma: <span class="bu">float</span></span>
+<span id="cb18-24"><a href="#cb18-24"></a>):</span>
+<span id="cb18-25"><a href="#cb18-25"></a>    d_1 <span class="op">=</span> d_plus(S, K, T, r, sigma)</span>
+<span id="cb18-26"><a href="#cb18-26"></a>    d_2 <span class="op">=</span> d_minus(S, K, T, r, sigma)</span>
+<span id="cb18-27"><a href="#cb18-27"></a>    <span class="cf">return</span> S <span class="op">*</span> norm_cdf(d_1) <span class="op">-</span> K <span class="op">*</span> exp(<span class="op">-</span>r <span class="op">*</span> T) <span class="op">*</span> norm_cdf(d_2)</span>
+<span id="cb18-28"><a href="#cb18-28"></a></span>
+<span id="cb18-29"><a href="#cb18-29"></a><span class="kw">def</span> bisection(</span>
+<span id="cb18-30"><a href="#cb18-30"></a>    y_target: <span class="bu">float</span>,</span>
+<span id="cb18-31"><a href="#cb18-31"></a>    a: <span class="bu">float</span>,</span>
+<span id="cb18-32"><a href="#cb18-32"></a>    b: <span class="bu">float</span>,</span>
+<span id="cb18-33"><a href="#cb18-33"></a>    epsilon: <span class="bu">float</span>,</span>
+<span id="cb18-34"><a href="#cb18-34"></a>    f : <span class="bu">callable</span></span>
+<span id="cb18-35"><a href="#cb18-35"></a>):</span>
+<span id="cb18-36"><a href="#cb18-36"></a>    <span class="cf">while</span> <span class="va">True</span>:</span>
+<span id="cb18-37"><a href="#cb18-37"></a>        m <span class="op">=</span> <span class="fl">0.5</span> <span class="op">*</span> (a <span class="op">+</span> b)</span>
+<span id="cb18-38"><a href="#cb18-38"></a>        y <span class="op">=</span> f(x)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
 
 
 </section>
