@@ -205,12 +205,12 @@ We iteratively perform steps (1) and (2) until the absolute or relative error is
     \fill (4.5,0) circle (1.5pt) node[below] {$b$};
     
     % Root indicator
-    \draw[thick, red] (0.5,-0.3) -- (2.5,-0.3);
-    \node[red] at (1.5,-0.6) {Root in $[a, m]$};
+    \draw[thick, red] (2.5,-0.3) -- (4.5,-0.3);
+    \node[red] at (3.5,-0.6) {Root in $[m, b]$};
     
     % Title
-    \node[align=center] at (2.5,3) {\textbf{Scenario 1:} $f(m)$ and $f(b)$ have same sign};
-    \node[align=center] at (2.5,2.5) {New interval: $[a, m]$};
+    \node[align=center] at (2.5,3) {\textbf{Scenario 1:} $f(a)$ and $f(m)$ have same sign};
+    \node[align=center] at (2.5,2.5) {New interval: $[m, b]$};
 \end{tikzpicture}
 
 ```
@@ -244,7 +244,7 @@ We iteratively perform steps (1) and (2) until the absolute or relative error is
     \fill[red] (0.5,{0.3*(0.5-3.5)*(0.5-3.5) - 1.2}) circle (2pt) 
         node[above left] {$f(a) > 0$};
     \fill[red] (2.5,{0.3*(2.5-3.5)*(2.5-3.5) - 1.2}) circle (2pt) 
-        node[above right] {$f(m) > 0$};
+        node[above right] {$f(m) < 0$};
     \fill[red] (4.5,{0.3*(4.5-3.5)*(4.5-3.5) - 1.2}) circle (2pt) 
         node[below right] {$f(b) < 0$};
     
@@ -254,12 +254,13 @@ We iteratively perform steps (1) and (2) until the absolute or relative error is
     \fill (4.5,0) circle (1.5pt) node[below] {$b$};
     
     % Root indicator
-    \draw[thick, red] (2.5,-0.3) -- (4.5,-0.3);
-    \node[red] at (3.5,-0.6) {Root in $[m, b]$};
+    \draw[thick, red] (0.5,-0.3) -- (2.5,-0.3);
+    \node[red] at (1.5,-0.6) {Root in $[a, m]$};
+
     
     % Title
-    \node[align=center] at (2.5,3) {\textbf{Scenario 2:} $f(a)$ and $f(m)$ have same sign};
-    \node[align=center] at (2.5,2.5) {New interval: $[m, b]$};
+    \node[align=center] at (2.5,3) {\textbf{Scenario 2:} $f(m)$ and $f(b)$ have same sign};
+    \node[align=center] at (2.5,2.5) {New interval: $[a, m]$};
 \end{tikzpicture}
 ```
 :::
@@ -295,39 +296,85 @@ import math
 from typing import Callable
 
 def d_plus(S, K, T, r, sigma):
-    return (log(S / K) + (r + sigma**2/2) * T)/(sigma * sqrt(T))
+    """d+ term of the Black formula"""
+    return (math.log(S / K) + (r + sigma**2/2) * T)/(sigma * math.sqrt(T))
 
 def d_minus(S, K, T, r, sigma):
-    return (log(S / K) + (r - sigma**2/2) * T)/(sigma * sqrt(T))
+    """d- term of the Black formula"""
+    return (math.log(S / K) + (r - sigma**2/2) * T)/(sigma * math.sqrt(T))
 
-# An approximation to the cumulative distribution # function for the standard normal distribution
-# Note: This is a recursive function
 def norm_cdf(x : float):
+    """An approximation to standard normal CDF."""
     k = 1.0/(1.0 + 0.2316419*x);
     k_sum = k*(0.319381530 + k*(-0.356563782 + k*(1.781477937 + k*(-1.821255978 + 1.330274429*k))));
 
     if x >= 0.0:
-        return (1.0 - (1.0/(pow(2*3.14159,0.5)))*exp(-0.5*x*x) * k_sum);
+        return (1.0 - (1.0/(pow(2*3.14159,0.5)))*math.exp(-0.5*x*x) * k_sum);
     else:
         return 1.0 - norm_cdf(-x);
   
 
 def call_option_price(
-    S : float, K : float, df: float, T: float, sigma: float
+    S : float, K : float, r: float, T: float, sigma: float
 ):
+    """The price of European vanilla call option."""
     d_1 = d_plus(S, K, T, r, sigma)
     d_2 = d_minus(S, K, T, r, sigma)
-    return S * norm_cdf(d_1) - K * exp(-r * T) * norm_cdf(d_2)
+    return S * norm_cdf(d_1) - K * math.exp(-r * T) * norm_cdf(d_2)
 
-def bisection(
-    y_target: float,
+class BisectionSolver:
+    """A solver that iteratively halves the search interval"""
+    def __init__(self, y_target: float,
     a: float,
     b: float,
     epsilon: float,
-    f : callable
-):
-    while True:
-        m = 0.5 * (a + b)
-        y = f(x)
+    g : callable):
+    
+        self.y_target = y_target
+        self.a = a
+        self.b = b
+        self.epsilon = epsilon
+        self.g = g
+        self.m = 0.5 * (self.a + self.b)
+        self.y = g(self.m)
+        self.i = 1
 
+    def __iter__(self):
+        """Return the iterator object (self)"""
+        return self
+    
+    def __next__(self):
+        """Advance one step to generate the next iterate"""
+        if abs(self.y - self.y_target) < self.epsilon:
+            raise StopIteration
+    
+        if self.y - self.y_target < 0:
+            self.a = self.m
+
+        if self.y - self.y_target > 0:
+            self.b = self.m
+
+        m = self.m
+        i = self.i
+        self.i += 1
+        self.m = 0.5 * (self.a + self.b)
+        self.y = self.g(self.m)
+        return (i,m)
+
+if __name__ == "__main__":
+    S=100
+    K=100
+    r=0.05
+    T=1.0
+    market_quote = 10.450577973198428
+
+    def g(sigma: float):
+        return call_option_price(S, K, r, T, sigma)
+
+    solver = BisectionSolver(market_quote, 0.0, 1.0, 0.5e-5, g)
+    
+    for iter in solver:
+        i, root = iter
+        print(f"Iteration# : {i}, root estimate : {root}")
 ```
+
