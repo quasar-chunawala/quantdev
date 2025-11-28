@@ -10,11 +10,11 @@
 <atom:link href="http://quantdev.blog/index.xml" rel="self" type="application/rss+xml"/>
 <description></description>
 <generator>quarto-1.3.450</generator>
-<lastBuildDate>Thu, 27 Nov 2025 00:00:00 GMT</lastBuildDate>
+<lastBuildDate>Fri, 28 Nov 2025 00:00:00 GMT</lastBuildDate>
 <item>
-  <title>Python memory management</title>
+  <title>Pymalloc - Down the rabbit hole</title>
   <dc:creator>Quasar </dc:creator>
-  <link>http://quantdev.blog/posts/python_memory_management/index.html</link>
+  <link>http://quantdev.blog/posts/pymalloc_deep_dive/index.html</link>
   <description><![CDATA[ 
 
 
@@ -305,7 +305,7 @@ font-style: inherit;">};</span></span></code></pre></div>
 </section>
 <section id="pools" class="level3">
 <h3 class="anchored" data-anchor-id="pools">Pools</h3>
-<p>Pools are <img src="https://latex.codecogs.com/png.latex?4">KB subdivisions (or <img src="https://latex.codecogs.com/png.latex?16"> Kb on large systems) of arenas. Each pool manages blocks of single size class and can be in three states:</p>
+<p>Pools are <img src="https://latex.codecogs.com/png.latex?4">KB subdivisions (or <img src="https://latex.codecogs.com/png.latex?16"> Kb on large systems) of arenas. Normally, the size of the pool is equal to the size of a memory page. Limiting pool to the fixed size of blocks helps with fragmentation. Each pool manages blocks of single size class and can be in three states:</p>
 <ul>
 <li>Used : Partially allocated blocks.</li>
 <li>Full : All blocks allocated.</li>
@@ -363,7 +363,7 @@ background-color: null;
 font-style: inherit;"> </span>POOL_BITS<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">)</span></span></code></pre></div>
-<p>Each <code>arena_object</code> node contains a pointer (<code>freepools</code>) to the linked list of pools.</p>
+<p>Each pool has a special header structure:</p>
 <div class="sourceCode" id="cb6" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">/* Pool for small blocks. */</span></span>
@@ -410,7 +410,7 @@ font-style: inherit;">*</span>nextpool<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span>       <span class="co" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">/* see "Pool table" for meaning  */</span></span>
+font-style: inherit;">/* next pool of this size class  */</span></span>
 <span id="cb6-10"></span>
 <span id="cb6-11">    <span class="kw" style="color: #003B4F;
 background-color: null;
@@ -420,7 +420,7 @@ font-style: inherit;">*</span>prevpool<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span>       <span class="co" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">/* "                             */</span></span>
+font-style: inherit;">/* previous pool of this size class                             */</span></span>
 <span id="cb6-12"></span>
 <span id="cb6-13">    <span class="ex" style="color: null;
 background-color: null;
@@ -457,6 +457,10 @@ font-style: inherit;">/* largest valid nextoffset      */</span></span>
 <span id="cb6-21"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span></code></pre></div>
+<p>Pools of the same sized blocks are linked together using doubly linked list (the <code>nextpool</code> and <code>prevpool</code> fields). The <code>szidx</code> field keeps the size class index, whereas <code>ref.count</code> keeps the number of used blocks. The <code>arenaindex</code> stores the number of an arena in which this pool was created.</p>
+<p>In order to efficient manage pools, a pool table called <code>usedpools</code> is maintained. A pool table is an array of pointers. It is segmented by the size class index <code>i</code>. For an index <code>i</code>, <code>usedpools[i]</code> points to the head of linked list of all partial used pools of the same size class <code>i</code>. Each node of this linked list is of type <code>pool_header</code>.</p>
+<p>If a full pool has a block freed, then the pool is put back in the used state. The newly freed pool is added to the front of the approapriate <code>usedpools[]</code> list, so the next allocation for its size class will use the freed block.</p>
+<p>On transition to empty, a pool is unlinked from its <code>usedpools[]</code> list and added to the front of the arena’s singly linked <code>freepools</code> list.</p>
 </section>
 <section id="blocks" class="level3">
 <h3 class="anchored" data-anchor-id="blocks">Blocks</h3>
@@ -498,6 +502,76 @@ font-style: inherit;">};</span></span></code></pre></div>
 </tbody>
 </table>
 <p>On a 64-bit system, since an arena is <img src="https://latex.codecogs.com/png.latex?1"> MB, there will always be <img src="https://latex.codecogs.com/png.latex?64"> pools each of size <img src="https://latex.codecogs.com/png.latex?16">KB.</p>
+<p>Within a pool, blocks of fixed size can be allocated and freed. Available blocks within a pool are listed in the singly linked list <code>freeblock</code>. Whenever a block is freed, its inserted at the front of the <code>freeblock</code> list. When a pool is initialized, only the first two blocks are linked within the <code>freeblock</code> list.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<div>
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryBorderColor': '#333333', 'background': '#ffffff', 'mainBkg': '#ffffff', 'clusterBkg': '#ffffff', 'clusterBorder': '#333333', 'tertiaryBkgColor': '#ffffff', 'tertiaryBorderColor': '#333333'}}}%%
+graph LR
+    subgraph usable_arenas ["usable_arenas: Doubly-Linked Arena List"]
+        A1["arena_object #1&lt;br/&gt;nfreepools: 3&lt;br/&gt;address: 0x1000"]
+        A2["arena_object #2&lt;br/&gt;nfreepools: 5&lt;br/&gt;address: 0x2000"]
+        A3["arena_object #3&lt;br/&gt;nfreepools: 1&lt;br/&gt;address: 0x3000"]
+        
+        A1 --&gt;|nextarena| A2
+        A2 --&gt;|prevarena| A1
+        A2 --&gt;|nextarena| A3
+        A3 --&gt;|prevarena| A2
+    end
+    
+    subgraph freepools_A1 ["freepools: Singly-Linked Pool List"]
+        P1["pool_header&lt;br/&gt;szidx: 5 (40B)&lt;br/&gt;count: 2&lt;br/&gt;state: Used"]
+        P2["pool_header&lt;br/&gt;szidx: 10 (80B)&lt;br/&gt;count: 0&lt;br/&gt;state: Empty"]
+        P3["pool_header&lt;br/&gt;szidx: 3 (24B)&lt;br/&gt;count: 5&lt;br/&gt;state: Used"]
+        
+        P1 --&gt;|nextpool| P2
+        P2 --&gt;|nextpool| P3
+        P3 --&gt;|nextpool| None1["NULL"]
+    end
+    
+    subgraph freeblock_P1 ["freeblock: Singly-Linked Block List"]
+        B1["Block&lt;br/&gt;addr: 0x1200&lt;br/&gt;size: 40B&lt;br/&gt;FREE"]
+        B2["Block&lt;br/&gt;addr: 0x1228&lt;br/&gt;size: 40B&lt;br/&gt;FREE"]
+        B3["Block&lt;br/&gt;addr: 0x1250&lt;br/&gt;size: 40B&lt;br/&gt;ALLOCATED"]
+        B4["Block&lt;br/&gt;addr: 0x1278&lt;br/&gt;size: 40B&lt;br/&gt;FREE"]
+        
+        B1 --&gt;|next| B2
+        B2 --&gt;|next| B3
+        B3 -.-&gt;|skip| B4
+        B4 --&gt;|next| None2["NULL"]
+    end
+    
+    A1 --&gt;|freepools| P1
+    P1 --&gt;|freeblock| B1
+    
+    style A1 fill:#64B5F6,stroke:#1976D2,stroke-width:2px,color:#000
+    style A2 fill:#64B5F6,stroke:#1976D2,stroke-width:2px,color:#000
+    style A3 fill:#64B5F6,stroke:#1976D2,stroke-width:2px,color:#000
+    
+    style P1 fill:#81C784,stroke:#2E7D32,stroke-width:2px,color:#000
+    style P2 fill:#81C784,stroke:#2E7D32,stroke-width:2px,color:#000
+    style P3 fill:#81C784,stroke:#2E7D32,stroke-width:2px,color:#000
+    
+    style B1 fill:#FFB74D,stroke:#F57C00,stroke-width:2px,color:#000
+    style B2 fill:#FFB74D,stroke:#F57C00,stroke-width:2px,color:#000
+    style B3 fill:#EF9A9A,stroke:#C62828,stroke-width:2px,color:#000
+    style B4 fill:#FFB74D,stroke:#F57C00,stroke-width:2px,color:#000
+    
+    style None1 fill:#EEEEEE,stroke:#666,stroke-width:1px,color:#000
+    style None2 fill:#EEEEEE,stroke:#666,stroke-width:1px,color:#000
+    
+    style usable_arenas fill:#ffffff,stroke:#1976D2,stroke-width:2px,color:#000
+    style freepools_A1 fill:#ffffff,stroke:#2E7D32,stroke-width:2px,color:#000
+    style freeblock_P1 fill:#ffffff,stroke:#F57C00,stroke-width:2px,color:#000
+</pre>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section id="block-allocation-api" class="level3">
+<h3 class="anchored" data-anchor-id="block-allocation-api">Block allocation API</h3>
 </section>
 </section>
 </section>
@@ -616,7 +690,6 @@ font-style: inherit;"># returns True</span></span></code></pre></div>
 <p>Lists are stored as fixed length array of pointers. So, we just point to objects. By design, we overallocate for list growth by append.</p>
 <ul>
 <li>The capacity growth pattern is roughly <img src="https://latex.codecogs.com/png.latex?4,8,16,25,35,46,%5Cldots"></li>
-<li></li>
 </ul>
 <p>If we put something at the end of the list, these operations are cheap. But, if we put something in the middle or the beginning, we’ll have to copy/shift the elements in memory to perform this operation.</p>
 <p>On my 64-bit machine, with Python 3.13.7, the list allocation size is:</p>
@@ -704,9 +777,9 @@ List len = 17, size = 248 bytes</code></pre>
 
  ]]></description>
   <category>Python</category>
-  <guid>http://quantdev.blog/posts/python_memory_management/index.html</guid>
-  <pubDate>Thu, 27 Nov 2025 00:00:00 GMT</pubDate>
-  <media:content url="http://quantdev.blog/posts/python_memory_management/python.jpg" medium="image" type="image/jpeg"/>
+  <guid>http://quantdev.blog/posts/pymalloc_deep_dive/index.html</guid>
+  <pubDate>Fri, 28 Nov 2025 00:00:00 GMT</pubDate>
+  <media:content url="http://quantdev.blog/posts/pymalloc_deep_dive/python.jpg" medium="image" type="image/jpeg"/>
 </item>
 <item>
   <title>Generators, iterators and asynchronous programming</title>

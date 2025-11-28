@@ -1,7 +1,7 @@
 ---
-title: "Python memory management"
+title: "Pymalloc - Down the rabbit hole"
 author: "Quasar"
-date: "2025-11-27"
+date: "2025-11-28"
 categories: [Python]      
 image: "python.jpg"
 jupyter: quantdev-venv
@@ -157,7 +157,7 @@ When an arena's `nfreepools` reaches zero (all pools allocated), it's removed fr
 
 ### Pools
 
-Pools are $4$KB subdivisions (or $16$ Kb on large systems) of arenas. Each pool manages blocks of single size class and can be in three states:
+Pools are $4$KB subdivisions (or $16$ Kb on large systems) of arenas. Normally, the size of the pool is equal to the size of a memory page. Limiting pool to the fixed size of blocks helps with fragmentation. Each pool manages blocks of single size class and can be in three states:
 
 - Used : Partially allocated blocks.
 - Full : All blocks allocated.
@@ -176,7 +176,7 @@ Pools are $4$KB subdivisions (or $16$ Kb on large systems) of arenas. Each pool 
 #define POOL_SIZE               (1 << POOL_BITS)
 ```
 
-Each `arena_object` node contains a pointer (`freepools`) to the linked list of pools. 
+Each pool has a special header structure:
 
 ```cpp
 /* Pool for small blocks. */
@@ -187,9 +187,9 @@ struct pool_header {
 
     pymem_block *freeblock;             /* pool's free list head         */
 
-    struct pool_header *nextpool;       /* see "Pool table" for meaning  */
+    struct pool_header *nextpool;       /* next pool of this size class  */
 
-    struct pool_header *prevpool;       /* "                             */
+    struct pool_header *prevpool;       /* previous pool of this size class                             */
 
     uint arenaindex;                    /* index into arenas of base adr */
 
@@ -201,6 +201,14 @@ struct pool_header {
 
 };
 ```
+
+Pools of the same sized blocks are linked together using doubly linked list (the `nextpool` and `prevpool` fields). The `szidx` field keeps the size class index, whereas `ref.count` keeps the number of used blocks. The `arenaindex` stores the number of an arena in which this pool was created.
+
+In order to efficient manage pools, a pool table called `usedpools` is maintained. A pool table is an array of pointers. It is segmented by the size class index `i`. For an index `i`, `usedpools[i]` points to the head of linked list of all partial used pools of the same size class `i`. Each node of this linked list is of type `pool_header`. 
+
+If a full pool has a block freed, then the pool is put back in the used state. The newly freed pool is added to the front of the approapriate `usedpools[]` list, so the next allocation for its size class will use the freed block. 
+
+On transition to empty, a pool is unlinked from its `usedpools[]` list and added to the front of the arena's singly linked `freepools` list.
 
 ### Blocks
 
@@ -215,6 +223,71 @@ Blocks are the actual allocated units, with sizes ranging from $8$ to $512$ byte
 |505-512| 512 | 63 |
 
 On a 64-bit system, since an arena is $1$ MB, there will always be $64$ pools each of size $16$KB. 
+
+Within a pool, blocks of fixed size can be allocated and freed. Available blocks within a pool are listed in the singly linked list `freeblock`. Whenever a block is freed, its inserted at the front of the `freeblock` list. When a pool is initialized, only the first two blocks are linked within the `freeblock` list.
+```{mermaid}
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryBorderColor': '#333333', 'background': '#ffffff', 'mainBkg': '#ffffff', 'clusterBkg': '#ffffff', 'clusterBorder': '#333333', 'tertiaryBkgColor': '#ffffff', 'tertiaryBorderColor': '#333333'}}}%%
+graph LR
+    subgraph usable_arenas ["usable_arenas: Doubly-Linked Arena List"]
+        A1["arena_object #1<br/>nfreepools: 3<br/>address: 0x1000"]
+        A2["arena_object #2<br/>nfreepools: 5<br/>address: 0x2000"]
+        A3["arena_object #3<br/>nfreepools: 1<br/>address: 0x3000"]
+        
+        A1 -->|nextarena| A2
+        A2 -->|prevarena| A1
+        A2 -->|nextarena| A3
+        A3 -->|prevarena| A2
+    end
+    
+    subgraph freepools_A1 ["freepools: Singly-Linked Pool List"]
+        P1["pool_header<br/>szidx: 5 (40B)<br/>count: 2<br/>state: Used"]
+        P2["pool_header<br/>szidx: 10 (80B)<br/>count: 0<br/>state: Empty"]
+        P3["pool_header<br/>szidx: 3 (24B)<br/>count: 5<br/>state: Used"]
+        
+        P1 -->|nextpool| P2
+        P2 -->|nextpool| P3
+        P3 -->|nextpool| None1["NULL"]
+    end
+    
+    subgraph freeblock_P1 ["freeblock: Singly-Linked Block List"]
+        B1["Block<br/>addr: 0x1200<br/>size: 40B<br/>FREE"]
+        B2["Block<br/>addr: 0x1228<br/>size: 40B<br/>FREE"]
+        B3["Block<br/>addr: 0x1250<br/>size: 40B<br/>ALLOCATED"]
+        B4["Block<br/>addr: 0x1278<br/>size: 40B<br/>FREE"]
+        
+        B1 -->|next| B2
+        B2 -->|next| B3
+        B3 -.->|skip| B4
+        B4 -->|next| None2["NULL"]
+    end
+    
+    A1 -->|freepools| P1
+    P1 -->|freeblock| B1
+    
+    style A1 fill:#64B5F6,stroke:#1976D2,stroke-width:2px,color:#000
+    style A2 fill:#64B5F6,stroke:#1976D2,stroke-width:2px,color:#000
+    style A3 fill:#64B5F6,stroke:#1976D2,stroke-width:2px,color:#000
+    
+    style P1 fill:#81C784,stroke:#2E7D32,stroke-width:2px,color:#000
+    style P2 fill:#81C784,stroke:#2E7D32,stroke-width:2px,color:#000
+    style P3 fill:#81C784,stroke:#2E7D32,stroke-width:2px,color:#000
+    
+    style B1 fill:#FFB74D,stroke:#F57C00,stroke-width:2px,color:#000
+    style B2 fill:#FFB74D,stroke:#F57C00,stroke-width:2px,color:#000
+    style B3 fill:#EF9A9A,stroke:#C62828,stroke-width:2px,color:#000
+    style B4 fill:#FFB74D,stroke:#F57C00,stroke-width:2px,color:#000
+    
+    style None1 fill:#EEEEEE,stroke:#666,stroke-width:1px,color:#000
+    style None2 fill:#EEEEEE,stroke:#666,stroke-width:1px,color:#000
+    
+    style usable_arenas fill:#ffffff,stroke:#1976D2,stroke-width:2px,color:#000
+    style freepools_A1 fill:#ffffff,stroke:#2E7D32,stroke-width:2px,color:#000
+    style freeblock_P1 fill:#ffffff,stroke:#F57C00,stroke-width:2px,color:#000
+```
+
+### Block allocation API
+
+ 
 
 # CPython interning
 
@@ -257,7 +330,7 @@ A good strategy will plan for growth and shrinkage. It will slightly overallocat
 Lists are stored as fixed length array of pointers. So, we just point to objects. By design, we overallocate for list growth by append.
 
 - The capacity growth pattern is roughly $4,8,16,25,35,46,\ldots$
-- 
+
 
 If we put something at the end of the list, these operations are cheap. But, if we put something in the middle or the beginning, we'll have to copy/shift the elements in memory to perform this operation. 
 
