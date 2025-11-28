@@ -11,7 +11,7 @@ toc-depth: 3
 
 # Introduction 
 
-CPython is one of the many implementations of the Python runtime written in human-readable Python and C code. There are other implementations such as PyPy, Jython. In this blog post, I summarize how object memory is alllocated and freed and how CPython manages memory leaks.
+CPython is one of the many implementations of the Python runtime written in C code. There are other implementations such as PyPy, Jython. In this blog post, I summarize how object memory is alllocated and freed and how CPython manages memory leaks.
 
 Python is a dynamically-typed language. The size of variables can't be calculated at compile-time. Most of Python's core types are dynamically sized. The `list` type can be of any size, a `dict` can have any number of keys, and even `int` is dynamic. The user never has to specify the size of these types. Names in Python can be reused for values of different types.
 
@@ -93,15 +93,128 @@ The requested memory is always matched to a block size. Blocks of the same size 
 
 Arenas are allocated from the system heap using `mmap` when available otherwise `malloc`. CPython arenas are $256$-KB on 32-bit systems and $1$ MB on 64-bit systems. Each arena contains multiple pools. 
 
-| Field | Type | Purpose |
+```cpp
+#ifdef USE_LARGE_ARENAS
+#define ARENA_BITS              20                    /* 1 MiB */
+#else
+#define ARENA_BITS              18                    /* 256 KiB */
+#endif
+#define ARENA_SIZE              (1 << ARENA_BITS)
+#define ARENA_SIZE_MASK         (ARENA_SIZE - 1)
+```
+
+Arenas are scattered in the main memory. Each arena is a contiguous chunk of memory. CPython maintains a doubly linked list `usable_arenas` that tracks all the arena objects, that have atleast one pool available for allocation. The `usable_arenas` list is maintained in ascending order of each arena's `nfreepools` (number of free pools). This sorting ensures that allocations preferentially use arenas with fewest free pools.
+
+Our main book-keeping data structure of interest is the `arena_object`. The `usable_arenas` doubly linked list strings together `arena_object` nodes . These contain meta-information of each arena  with `prevarena` and `nextarena` pointers. Each of these nodes have a `address` field which is a pointer to the actual contiguous block of memory ($256$KB / $1$MB) returned by `malloc`.
+
+```cpp
+/* Record keeping for arenas. */
+struct arena_object {
+    /* The address of the arena, as returned by malloc.  Note that 0
+     * will never be returned by a successful malloc, and is used
+     * here to mark an arena_object that doesn't correspond to an
+     * allocated arena.
+     */
+    uintptr_t address;
+
+    /* Pool-aligned pointer to the next pool to be carved off. */
+    pymem_block* pool_address;
+
+    /* The number of available pools in the arena:  free pools + never-
+     * allocated pools.
+     */
+    uint nfreepools;
+
+    /* The total number of pools in the arena, whether or not available. */
+    uint ntotalpools;
+
+    /* Singly-linked list of available pools. */
+    struct pool_header* freepools;
+    /* Whenever this arena_object is not associated with an allocated
+     * arena, the nextarena member is used to link all unassociated
+     * arena_objects in the singly-linked `unused_arena_objects` list.
+     * The prevarena member is unused in this case.
+     *
+     * When this arena_object is associated with an allocated arena
+     * with at least one available pool, both members are used in the
+     * doubly-linked `usable_arenas` list, which is maintained in
+     * increasing order of `nfreepools` values.
+
+     *
+     * Else this arena_object is associated with an allocated arena
+     * all of whose pools are in use.  `nextarena` and `prevarena`
+     * are both meaningless in this case.
+     */
+
+    struct arena_object* nextarena;
+    struct arena_object* prevarena;
+};
+```
+
+Each `arena_object` node also contains a  field `freepools` of the type `pool_header*` which points to the head of a linked list which tracks available pools in the arena.
+
+When an arena's `nfreepools` reaches zero (all pools allocated), it's removed from `usable_arenas` linked list. Conversely, when a pool becomes empty and is added to an arena's freepools, the arena may be added back to `usable_arenas` if it was previously full. 
+
+### Pools
+
+Pools are $4$KB subdivisions (or $16$ Kb on large systems) of arenas. Each pool manages blocks of single size class and can be in three states:
+
+- Used : Partially allocated blocks.
+- Full : All blocks allocated.
+- Empty : All blocks available. 
+
+```cpp
+/*
+ * Size of the pools used for small blocks.  Must be a power of 2.
+ */
+
+#ifdef USE_LARGE_POOLS
+#define POOL_BITS               14                  /* 16 KiB */
+#else
+#define POOL_BITS               12                  /* 4 KiB */
+#endif
+#define POOL_SIZE               (1 << POOL_BITS)
+```
+
+Each `arena_object` node contains a pointer (`freepools`) to the linked list of pools. 
+
+```cpp
+/* Pool for small blocks. */
+struct pool_header {
+
+    union { pymem_block *_padding;
+            uint count; } ref;          /* number of allocated blocks    */
+
+    pymem_block *freeblock;             /* pool's free list head         */
+
+    struct pool_header *nextpool;       /* see "Pool table" for meaning  */
+
+    struct pool_header *prevpool;       /* "                             */
+
+    uint arenaindex;                    /* index into arenas of base adr */
+
+    uint szidx;                         /* block size class index        */
+
+    uint nextoffset;                    /* bytes to virgin block         */
+
+    uint maxnextoffset;                 /* largest valid nextoffset      */
+
+};
+```
+
+### Blocks
+
+Blocks are the actual allocated units, with sizes ranging from $8$ to $512$ bytes in $8$-byte increments. 
+
+| Request in bytes | Size of the allocated block | Size class index |
 |----------|----------|----------|
-| `address`  | `uintptr_t`   | Memory address of the arena   |
-| `pool_address` | `block *`   | Pointer to the next pool to be carved off the allocation |
-| `nfreepools` | `uint` | The number of available pools in the arena (free pools plus never allocated pools) |
-| `ntotalpools` | `uint` | The total number of pools in the arena, whether or not available |
-| `freepools` | `pool_header*` | Singly linked list of available pools |
-| `nextarena` | `arena_object*` | Next arena |
-| `prevarena` | `arena_object*` | Previous arena |
+| 1-8  | 8   | 0   |
+| 9-16 | 16 | 1 |
+| 17-24| 24 | 2 |
+| ... | ... | ... |
+|505-512| 512 | 63 |
+
+On a 64-bit system, since an arena is $1$ MB, there will always be $64$ pools each of size $16$KB. 
 
 # CPython interning
 
