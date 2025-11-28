@@ -1,0 +1,119 @@
+---
+title: "Python memory management"
+author: "Quasar"
+date: "2025-11-27"
+categories: [Python]      
+image: "python.jpg"
+jupyter: quantdev-venv
+toc: true
+toc-depth: 3
+---
+
+# Introduction 
+
+CPython is one of the many implementations of the Python runtime written in human-readable Python and C code. There are other implementations such as PyPy, Jython. In this blog post, I summarize how object memory is alllocated and freed and how CPython manages memory leaks.
+
+Python is a dynamically-typed language. The size of variables can't be calculated at compile-time. Most of Python's core types are dynamically sized. The `list` type can be of any size, a `dict` can have any number of keys, and even `int` is dynamic. The user never has to specify the size of these types. Names in Python can be reused for values of different types.
+
+```{python}
+a_value = 1
+a_value = "Now, I'm a string"
+a_value = ["Now", "I", "am", "a", "list"]
+```
+
+To overcome these constraints, CPython relies heavily on dynamic memory allocation, but adds safety rails to automate the freeing of memory using the garbage collection and reference counting algorithms.
+
+Instead of the Python developer having to allocate memory, Python object memory is allocated automatically by a single, unified API. This design requires that the entire CPython standard library and core modules(written in C) use this API.
+
+# Allocation Domains
+
+- The raw domain is used for allocation from the system heap and large, or non-object related memory.
+
+- The object domain is used for the allocation of all Python object related memory.
+
+- The PyMem domain is the same as `PYMEM_DOMAIN_OBJ`. this exists for legacy purposes.
+
+Each domain implements the same interface of frunctions:
+
+- `_Alloc(size_t size)` allocates memory of `size` bytes and returns a pointer.
+
+- `_Calloc(size_t nelem, size_t el_size)` allocates `nelem` elements each of size `el_size` and returns a pointer.
+
+- `_Realloc(void* ptr, size_t new_size)` reallocates memory of size `new_size`.
+
+- `_Free(void* ptr)` frees memory at `ptr` back to the heap.
+
+The `PyMemAllocatorDomain` enumeration represents the three domains in CPython as `PYMEM_DOMAIN_RAW`, `PYMEM_DOMAIN_OBJ` and `PYMEM_DOMAIN_MEM`.
+
+
+# CPython interning
+
+The general rule is that objects are allocated on assignment. Variables just point to objects. There is an exception to this general rule. This is python runtime implementation specific. Often commonly used objects are preallocated and are shared instead of costly new allocations. This is mainly done for performance optimization. 
+
+```{python}
+x = 255
+y = 255
+print(x is y, x == y)
+x = 1024
+y = 1024
+print(x is y, x == y)
+```
+
+`int`s in the range $[-5,257)$, empty tuples and all empty or single length strings are preallocated. 
+
+## `string` interning explained
+
+String interning is a method of storing only one copy of each distinct string value, which must be immutable. In Python3, we have a function `sys.intern()` and if we use this function, we can enter a string in the table of interned strings. We get a reference to the interned string. 
+
+So, we can gain a little extra performance on dictionary lookup (key comparisons after hashing can be done by a pointer compare instead of a string compare). 
+
+Names used in programs are automatically interned. Dictionaries used to hold module, class or instance attributes have interned keys. 
+
+```{python}
+from sys import intern
+a, b = "strin", "string"
+print(f"{a + 'g' is b}")    # Returns false
+intern(a + 'g') is intern(b) # returns True
+```
+
+# Mutable containers memory allocationn strategy
+
+There are different mutable containers in Python - `list`s, `set`s and `dict`s. Behind the scenes, there is a strategy for allocating these containers. 
+
+A good strategy will plan for growth and shrinkage. It will slightly overallocate memory needed by the container, to leave room for growth. Each time we append to a `list`, we won't have to reallocate the memory. We also have to remember that sometimes we have to shrink the memory for a mutable container. This can help reduce the number of expensive function calls for instance to `realloc` or `memcpy`.
+
+# List allocation strategy
+
+Lists are stored as fixed length array of pointers. So, we just point to objects. By design, we overallocate for list growth by append.
+
+- The capacity growth pattern is roughly $4,8,16,25,35,46,\ldots$
+- 
+
+If we put something at the end of the list, these operations are cheap. But, if we put something in the middle or the beginning, we'll have to copy/shift the elements in memory to perform this operation. 
+
+On my 64-bit machine, with Python 3.13.7, the list allocation size is:
+
+- 64 bits : `56 + 8 * length`
+
+```{python}
+import sys
+l = []
+for i in range(17):
+    l.append(i+1)
+    print(f"List len = {len(l)}, size = {sys.getsizeof(l)} bytes")
+```
+
+There is a fixed overhead of $56$ bytes (the object header, type pointer, reference count ) etc.
+
+For each size tier, the calculation is approximately:
+
+- 88 bytes = 56 + 32(4 slots)
+- 120 bytes = 56 + 64(8 slots)
+- 184 bytes = 56 + 128(16 slots)
+- 248 bytes =56 + 192(24 slots)
+
+We shrink when the list size goes below $1/2$ of the allocated storage. This is why appending to Python lists is $O(1)$ amortized time - most appends just fill unused capacity, and only occasional appends trigger a reallocation. 
+
+# Overallocation of dictionaries and sets
+
+These are represented as fixed-length hash tables. The overallocation 
