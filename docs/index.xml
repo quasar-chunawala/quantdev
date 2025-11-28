@@ -90,48 +90,110 @@ font-style: inherit;">"list"</span>]</span></code></pre></div>
 <li>Just like seats of the same size are put into rows, blocks of the same size are put into pools.</li>
 </ul>
 <p>A central register keeps a record of where blocks are and the number of blocks available in a pool, just as the stadium allocates seating. When a row in the stadium is full, the next row is used. When a pool of blocks is full, the next pool is used. Pools are groups into arenas, just like the stadium groups the rows into sections.</p>
+<div class="cell" data-execution_count="2">
+<div class="sourceCode cell-code" id="cb2" style="background: #f1f3f5;"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb2-1"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">%</span>load_ext itikz</span></code></pre></div>
+</div>
 <p>There are several advantages to this strategy:</p>
 <ul>
 <li>The algorithm is more performant for CPython’s main use case: small, short-lived objects.</li>
 <li>The algorithm uses the GIL instead of system thread-lock detection.</li>
 <li>The algorithm uses memory mapping <code>mmap()</code> syscall instead of heap allocations.</li>
 </ul>
+<p>The requested memory is always matched to a block size. Blocks of the same size are all put into the same <strong>pool</strong> of memory. Pools are grouped into arenas.</p>
 <section id="blocks-pools-and-arenas" class="level2">
 <h2 class="anchored" data-anchor-id="blocks-pools-and-arenas">Blocks, Pools and Arenas</h2>
+<p><code>pymalloc</code> allocates large memory regions called arenas from the system, then divides them into pools.</p>
+<section id="arenas" class="level3">
+<h3 class="anchored" data-anchor-id="arenas">Arenas</h3>
+<p>Arenas are allocated from the system heap using <code>mmap</code> when available otherwise <code>malloc</code>. CPython arenas are <img src="https://latex.codecogs.com/png.latex?256">-KB on 32-bit systems and <img src="https://latex.codecogs.com/png.latex?1"> MB on 64-bit systems. Each arena contains multiple pools.</p>
+<table class="table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Field</th>
+<th>Type</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>address</code></td>
+<td><code>uintptr_t</code></td>
+<td>Memory address of the arena</td>
+</tr>
+<tr class="even">
+<td><code>pool_address</code></td>
+<td><code>block *</code></td>
+<td>Pointer to the next pool to be carved off the allocation</td>
+</tr>
+<tr class="odd">
+<td><code>nfreepools</code></td>
+<td><code>uint</code></td>
+<td>The number of available pools in the arena (free pools plus never allocated pools)</td>
+</tr>
+<tr class="even">
+<td><code>ntotalpools</code></td>
+<td><code>uint</code></td>
+<td>The total number of pools in the arena, whether or not available</td>
+</tr>
+<tr class="odd">
+<td><code>freepools</code></td>
+<td><code>pool_header*</code></td>
+<td>Singly linked list of available pools</td>
+</tr>
+<tr class="even">
+<td><code>nextarena</code></td>
+<td><code>arena_object*</code></td>
+<td>Next arena</td>
+</tr>
+<tr class="odd">
+<td><code>prevarena</code></td>
+<td><code>arena_object*</code></td>
+<td>Previous arena</td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 </section>
 <section id="cpython-interning" class="level1">
 <h1>CPython interning</h1>
 <p>The general rule is that objects are allocated on assignment. Variables just point to objects. There is an exception to this general rule. This is python runtime implementation specific. Often commonly used objects are preallocated and are shared instead of costly new allocations. This is mainly done for performance optimization.</p>
-<div class="cell" data-execution_count="2">
-<div class="sourceCode cell-code" id="cb2" style="background: #f1f3f5;"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb2-1">x <span class="op" style="color: #5E5E5E;
+<div class="cell" data-execution_count="3">
+<div class="sourceCode cell-code" id="cb3" style="background: #f1f3f5;"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb3-1">x <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">255</span></span>
-<span id="cb2-2">y <span class="op" style="color: #5E5E5E;
+<span id="cb3-2">y <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">255</span></span>
-<span id="cb2-3"><span class="bu" style="color: null;
+<span id="cb3-3"><span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">print</span>(x <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">is</span> y, x <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">==</span> y)</span>
-<span id="cb2-4">x <span class="op" style="color: #5E5E5E;
+<span id="cb3-4">x <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">1024</span></span>
-<span id="cb2-5">y <span class="op" style="color: #5E5E5E;
+<span id="cb3-5">y <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">1024</span></span>
-<span id="cb2-6"><span class="bu" style="color: null;
+<span id="cb3-6"><span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">print</span>(x <span class="kw" style="color: #003B4F;
 background-color: null;
@@ -149,22 +211,22 @@ False True</code></pre>
 <p>String interning is a method of storing only one copy of each distinct string value, which must be immutable. In Python3, we have a function <code>sys.intern()</code> and if we use this function, we can enter a string in the table of interned strings. We get a reference to the interned string.</p>
 <p>So, we can gain a little extra performance on dictionary lookup (key comparisons after hashing can be done by a pointer compare instead of a string compare).</p>
 <p>Names used in programs are automatically interned. Dictionaries used to hold module, class or instance attributes have interned keys.</p>
-<div class="cell" data-execution_count="3">
-<div class="sourceCode cell-code" id="cb4" style="background: #f1f3f5;"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb4-1"><span class="im" style="color: #00769E;
+<div class="cell" data-execution_count="4">
+<div class="sourceCode cell-code" id="cb5" style="background: #f1f3f5;"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb5-1"><span class="im" style="color: #00769E;
 background-color: null;
 font-style: inherit;">from</span> sys <span class="im" style="color: #00769E;
 background-color: null;
 font-style: inherit;">import</span> <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">intern</span></span>
-<span id="cb4-2">a, b <span class="op" style="color: #5E5E5E;
+<span id="cb5-2">a, b <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">=</span> <span class="st" style="color: #20794D;
 background-color: null;
 font-style: inherit;">"strin"</span>, <span class="st" style="color: #20794D;
 background-color: null;
 font-style: inherit;">"string"</span></span>
-<span id="cb4-3"><span class="bu" style="color: null;
+<span id="cb5-3"><span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">print</span>(<span class="ss" style="color: #20794D;
 background-color: null;
@@ -183,7 +245,7 @@ background-color: null;
 font-style: inherit;">"</span>)    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;"># Returns false</span></span>
-<span id="cb4-4"><span class="bu" style="color: null;
+<span id="cb5-4"><span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">intern</span>(a <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -199,7 +261,7 @@ font-style: inherit;"># returns True</span></span></code></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>False</code></pre>
 </div>
-<div class="cell-output cell-output-display" data-execution_count="3">
+<div class="cell-output cell-output-display" data-execution_count="4">
 <pre><code>True</code></pre>
 </div>
 </div>
@@ -222,14 +284,14 @@ font-style: inherit;"># returns True</span></span></code></pre></div>
 <ul>
 <li>64 bits : <code>56 + 8 * length</code></li>
 </ul>
-<div class="cell" data-execution_count="4">
-<div class="sourceCode cell-code" id="cb7" style="background: #f1f3f5;"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb7-1"><span class="im" style="color: #00769E;
+<div class="cell" data-execution_count="5">
+<div class="sourceCode cell-code" id="cb8" style="background: #f1f3f5;"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb8-1"><span class="im" style="color: #00769E;
 background-color: null;
 font-style: inherit;">import</span> sys</span>
-<span id="cb7-2">l <span class="op" style="color: #5E5E5E;
+<span id="cb8-2">l <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">=</span> []</span>
-<span id="cb7-3"><span class="cf" style="color: #003B4F;
+<span id="cb8-3"><span class="cf" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">for</span> i <span class="kw" style="color: #003B4F;
 background-color: null;
@@ -238,12 +300,12 @@ background-color: null;
 font-style: inherit;">range</span>(<span class="dv" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">17</span>):</span>
-<span id="cb7-4">    l.append(i<span class="op" style="color: #5E5E5E;
+<span id="cb8-4">    l.append(i<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">+</span><span class="dv" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">1</span>)</span>
-<span id="cb7-5">    <span class="bu" style="color: null;
+<span id="cb8-5">    <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">print</span>(<span class="ss" style="color: #20794D;
 background-color: null;

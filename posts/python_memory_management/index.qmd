@@ -70,7 +70,12 @@ The Python memory allocation algorithm has similar characteristics:
 - Just like the seats can be premium, regular, or economy, memory blocks are all of range of fixed sizes. You can't bring your desk chair!
 - Just like seats of the same size are put into rows, blocks of the same size are put into pools.
 
-A central register keeps a record of where blocks are and the number of blocks available in a pool, just as the stadium allocates seating. When a row in the stadium is full, the next row is used. When a pool of blocks is full, the next pool is used. Pools are groups into arenas, just like the stadium groups the rows into sections. 
+A central register keeps a record of where blocks are and the number of blocks available in a pool, just as the stadium allocates seating. When a row in the stadium is full, the next row is used. When a pool of blocks is full, the next pool is used. Pools are groups into arenas, just like the stadium groups the rows into sections.
+
+
+```{python}
+%load_ext itikz
+```
 
 There are several advantages to this strategy:
 
@@ -78,9 +83,25 @@ There are several advantages to this strategy:
 - The algorithm uses the GIL instead of system thread-lock detection.
 - The algorithm uses memory mapping `mmap()` syscall instead of heap allocations. 
 
+The requested memory is always matched to a block size. Blocks of the same size are all put into the same **pool** of memory. Pools are grouped into arenas.
+
 ## Blocks, Pools and Arenas
 
+`pymalloc` allocates large memory regions called arenas from the system, then divides them into pools. 
 
+### Arenas
+
+Arenas are allocated from the system heap using `mmap` when available otherwise `malloc`. CPython arenas are $256$-KB on 32-bit systems and $1$ MB on 64-bit systems. Each arena contains multiple pools. 
+
+| Field | Type | Purpose |
+|----------|----------|----------|
+| `address`  | `uintptr_t`   | Memory address of the arena   |
+| `pool_address` | `block *`   | Pointer to the next pool to be carved off the allocation |
+| `nfreepools` | `uint` | The number of available pools in the arena (free pools plus never allocated pools) |
+| `ntotalpools` | `uint` | The total number of pools in the arena, whether or not available |
+| `freepools` | `pool_header*` | Singly linked list of available pools |
+| `nextarena` | `arena_object*` | Next arena |
+| `prevarena` | `arena_object*` | Previous arena |
 
 # CPython interning
 

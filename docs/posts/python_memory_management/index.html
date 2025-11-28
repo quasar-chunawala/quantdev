@@ -215,7 +215,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#allocation-domains" id="toc-allocation-domains" class="nav-link" data-scroll-target="#allocation-domains">Allocation Domains</a></li>
   <li><a href="#the-cpython-memory-allocator" id="toc-the-cpython-memory-allocator" class="nav-link" data-scroll-target="#the-cpython-memory-allocator">The CPython memory allocator</a>
   <ul class="collapse">
-  <li><a href="#blocks-pools-and-arenas" id="toc-blocks-pools-and-arenas" class="nav-link" data-scroll-target="#blocks-pools-and-arenas">Blocks, Pools and Arenas</a></li>
+  <li><a href="#blocks-pools-and-arenas" id="toc-blocks-pools-and-arenas" class="nav-link" data-scroll-target="#blocks-pools-and-arenas">Blocks, Pools and Arenas</a>
+  <ul class="collapse">
+  <li><a href="#arenas" id="toc-arenas" class="nav-link" data-scroll-target="#arenas">Arenas</a></li>
+  </ul></li>
   </ul></li>
   <li><a href="#cpython-interning" id="toc-cpython-interning" class="nav-link" data-scroll-target="#cpython-interning">CPython interning</a>
   <ul class="collapse">
@@ -283,26 +286,86 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li>Just like seats of the same size are put into rows, blocks of the same size are put into pools.</li>
 </ul>
 <p>A central register keeps a record of where blocks are and the number of blocks available in a pool, just as the stadium allocates seating. When a row in the stadium is full, the next row is used. When a pool of blocks is full, the next pool is used. Pools are groups into arenas, just like the stadium groups the rows into sections.</p>
+<div class="cell" data-execution_count="2">
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1"></a><span class="op">%</span>load_ext itikz</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
 <p>There are several advantages to this strategy:</p>
 <ul>
 <li>The algorithm is more performant for CPython’s main use case: small, short-lived objects.</li>
 <li>The algorithm uses the GIL instead of system thread-lock detection.</li>
 <li>The algorithm uses memory mapping <code>mmap()</code> syscall instead of heap allocations.</li>
 </ul>
+<p>The requested memory is always matched to a block size. Blocks of the same size are all put into the same <strong>pool</strong> of memory. Pools are grouped into arenas.</p>
 <section id="blocks-pools-and-arenas" class="level2">
 <h2 class="anchored" data-anchor-id="blocks-pools-and-arenas">Blocks, Pools and Arenas</h2>
+<p><code>pymalloc</code> allocates large memory regions called arenas from the system, then divides them into pools.</p>
+<section id="arenas" class="level3">
+<h3 class="anchored" data-anchor-id="arenas">Arenas</h3>
+<p>Arenas are allocated from the system heap using <code>mmap</code> when available otherwise <code>malloc</code>. CPython arenas are <span class="math inline">\(256\)</span>-KB on 32-bit systems and <span class="math inline">\(1\)</span> MB on 64-bit systems. Each arena contains multiple pools.</p>
+<table class="table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Field</th>
+<th>Type</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>address</code></td>
+<td><code>uintptr_t</code></td>
+<td>Memory address of the arena</td>
+</tr>
+<tr class="even">
+<td><code>pool_address</code></td>
+<td><code>block *</code></td>
+<td>Pointer to the next pool to be carved off the allocation</td>
+</tr>
+<tr class="odd">
+<td><code>nfreepools</code></td>
+<td><code>uint</code></td>
+<td>The number of available pools in the arena (free pools plus never allocated pools)</td>
+</tr>
+<tr class="even">
+<td><code>ntotalpools</code></td>
+<td><code>uint</code></td>
+<td>The total number of pools in the arena, whether or not available</td>
+</tr>
+<tr class="odd">
+<td><code>freepools</code></td>
+<td><code>pool_header*</code></td>
+<td>Singly linked list of available pools</td>
+</tr>
+<tr class="even">
+<td><code>nextarena</code></td>
+<td><code>arena_object*</code></td>
+<td>Next arena</td>
+</tr>
+<tr class="odd">
+<td><code>prevarena</code></td>
+<td><code>arena_object*</code></td>
+<td>Previous arena</td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 </section>
 <section id="cpython-interning" class="level1">
 <h1>CPython interning</h1>
 <p>The general rule is that objects are allocated on assignment. Variables just point to objects. There is an exception to this general rule. This is python runtime implementation specific. Often commonly used objects are preallocated and are shared instead of costly new allocations. This is mainly done for performance optimization.</p>
-<div class="cell" data-execution_count="2">
-<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1"></a>x <span class="op">=</span> <span class="dv">255</span></span>
-<span id="cb2-2"><a href="#cb2-2"></a>y <span class="op">=</span> <span class="dv">255</span></span>
-<span id="cb2-3"><a href="#cb2-3"></a><span class="bu">print</span>(x <span class="kw">is</span> y, x <span class="op">==</span> y)</span>
-<span id="cb2-4"><a href="#cb2-4"></a>x <span class="op">=</span> <span class="dv">1024</span></span>
-<span id="cb2-5"><a href="#cb2-5"></a>y <span class="op">=</span> <span class="dv">1024</span></span>
-<span id="cb2-6"><a href="#cb2-6"></a><span class="bu">print</span>(x <span class="kw">is</span> y, x <span class="op">==</span> y)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell" data-execution_count="3">
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1"></a>x <span class="op">=</span> <span class="dv">255</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a>y <span class="op">=</span> <span class="dv">255</span></span>
+<span id="cb3-3"><a href="#cb3-3"></a><span class="bu">print</span>(x <span class="kw">is</span> y, x <span class="op">==</span> y)</span>
+<span id="cb3-4"><a href="#cb3-4"></a>x <span class="op">=</span> <span class="dv">1024</span></span>
+<span id="cb3-5"><a href="#cb3-5"></a>y <span class="op">=</span> <span class="dv">1024</span></span>
+<span id="cb3-6"><a href="#cb3-6"></a><span class="bu">print</span>(x <span class="kw">is</span> y, x <span class="op">==</span> y)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>True True
 False True</code></pre>
@@ -314,15 +377,15 @@ False True</code></pre>
 <p>String interning is a method of storing only one copy of each distinct string value, which must be immutable. In Python3, we have a function <code>sys.intern()</code> and if we use this function, we can enter a string in the table of interned strings. We get a reference to the interned string.</p>
 <p>So, we can gain a little extra performance on dictionary lookup (key comparisons after hashing can be done by a pointer compare instead of a string compare).</p>
 <p>Names used in programs are automatically interned. Dictionaries used to hold module, class or instance attributes have interned keys.</p>
-<div class="cell" data-execution_count="3">
-<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1"></a><span class="im">from</span> sys <span class="im">import</span> <span class="bu">intern</span></span>
-<span id="cb4-2"><a href="#cb4-2"></a>a, b <span class="op">=</span> <span class="st">"strin"</span>, <span class="st">"string"</span></span>
-<span id="cb4-3"><a href="#cb4-3"></a><span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span>a <span class="op">+</span> <span class="st">'g'</span> <span class="kw">is</span> b<span class="sc">}</span><span class="ss">"</span>)    <span class="co"># Returns false</span></span>
-<span id="cb4-4"><a href="#cb4-4"></a><span class="bu">intern</span>(a <span class="op">+</span> <span class="st">'g'</span>) <span class="kw">is</span> <span class="bu">intern</span>(b) <span class="co"># returns True</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell" data-execution_count="4">
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1"></a><span class="im">from</span> sys <span class="im">import</span> <span class="bu">intern</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a>a, b <span class="op">=</span> <span class="st">"strin"</span>, <span class="st">"string"</span></span>
+<span id="cb5-3"><a href="#cb5-3"></a><span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span>a <span class="op">+</span> <span class="st">'g'</span> <span class="kw">is</span> b<span class="sc">}</span><span class="ss">"</span>)    <span class="co"># Returns false</span></span>
+<span id="cb5-4"><a href="#cb5-4"></a><span class="bu">intern</span>(a <span class="op">+</span> <span class="st">'g'</span>) <span class="kw">is</span> <span class="bu">intern</span>(b) <span class="co"># returns True</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>False</code></pre>
 </div>
-<div class="cell-output cell-output-display" data-execution_count="3">
+<div class="cell-output cell-output-display" data-execution_count="4">
 <pre><code>True</code></pre>
 </div>
 </div>
@@ -345,12 +408,12 @@ False True</code></pre>
 <ul>
 <li>64 bits : <code>56 + 8 * length</code></li>
 </ul>
-<div class="cell" data-execution_count="4">
-<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1"></a><span class="im">import</span> sys</span>
-<span id="cb7-2"><a href="#cb7-2"></a>l <span class="op">=</span> []</span>
-<span id="cb7-3"><a href="#cb7-3"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">17</span>):</span>
-<span id="cb7-4"><a href="#cb7-4"></a>    l.append(i<span class="op">+</span><span class="dv">1</span>)</span>
-<span id="cb7-5"><a href="#cb7-5"></a>    <span class="bu">print</span>(<span class="ss">f"List len = </span><span class="sc">{</span><span class="bu">len</span>(l)<span class="sc">}</span><span class="ss">, size = </span><span class="sc">{</span>sys<span class="sc">.</span>getsizeof(l)<span class="sc">}</span><span class="ss"> bytes"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell" data-execution_count="5">
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1"></a><span class="im">import</span> sys</span>
+<span id="cb8-2"><a href="#cb8-2"></a>l <span class="op">=</span> []</span>
+<span id="cb8-3"><a href="#cb8-3"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">17</span>):</span>
+<span id="cb8-4"><a href="#cb8-4"></a>    l.append(i<span class="op">+</span><span class="dv">1</span>)</span>
+<span id="cb8-5"><a href="#cb8-5"></a>    <span class="bu">print</span>(<span class="ss">f"List len = </span><span class="sc">{</span><span class="bu">len</span>(l)<span class="sc">}</span><span class="ss">, size = </span><span class="sc">{</span>sys<span class="sc">.</span>getsizeof(l)<span class="sc">}</span><span class="ss"> bytes"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>List len = 1, size = 88 bytes
 List len = 2, size = 88 bytes
