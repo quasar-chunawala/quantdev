@@ -225,64 +225,98 @@ Blocks are the actual allocated units, with sizes ranging from $8$ to $512$ byte
 On a 64-bit system, since an arena is $1$ MB, there will always be $64$ pools each of size $16$KB. 
 
 Within a pool, blocks of fixed size can be allocated and freed. Available blocks within a pool are listed in the singly linked list `freeblock`. Whenever a block is freed, its inserted at the front of the `freeblock` list. When a pool is initialized, only the first two blocks are linked within the `freeblock` list.
-```{mermaid}
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryBorderColor': '#333333', 'background': '#ffffff', 'mainBkg': '#ffffff', 'clusterBkg': '#ffffff', 'clusterBorder': '#333333', 'tertiaryBkgColor': '#ffffff', 'tertiaryBorderColor': '#333333'}}}%%
-graph LR
-    subgraph usable_arenas ["usable_arenas: Doubly-Linked Arena List"]
-        A1["arena_object #1<br/>nfreepools: 3<br/>address: 0x1000"]
-        A2["arena_object #2<br/>nfreepools: 5<br/>address: 0x2000"]
-        A3["arena_object #3<br/>nfreepools: 1<br/>address: 0x3000"]
-        
-        A1 -->|nextarena| A2
-        A2 -->|prevarena| A1
-        A2 -->|nextarena| A3
-        A3 -->|prevarena| A2
-    end
-    
-    subgraph freepools_A1 ["freepools: Singly-Linked Pool List"]
-        P1["pool_header<br/>szidx: 5 (40B)<br/>count: 2<br/>state: Used"]
-        P2["pool_header<br/>szidx: 10 (80B)<br/>count: 0<br/>state: Empty"]
-        P3["pool_header<br/>szidx: 3 (24B)<br/>count: 5<br/>state: Used"]
-        
-        P1 -->|nextpool| P2
-        P2 -->|nextpool| P3
-        P3 -->|nextpool| None1["NULL"]
-    end
-    
-    subgraph freeblock_P1 ["freeblock: Singly-Linked Block List"]
-        B1["Block<br/>addr: 0x1200<br/>size: 40B<br/>FREE"]
-        B2["Block<br/>addr: 0x1228<br/>size: 40B<br/>FREE"]
-        B3["Block<br/>addr: 0x1250<br/>size: 40B<br/>ALLOCATED"]
-        B4["Block<br/>addr: 0x1278<br/>size: 40B<br/>FREE"]
-        
-        B1 -->|next| B2
-        B2 -->|next| B3
-        B3 -.->|skip| B4
-        B4 -->|next| None2["NULL"]
-    end
-    
-    A1 -->|freepools| P1
-    P1 -->|freeblock| B1
-    
-    style A1 fill:#64B5F6,stroke:#1976D2,stroke-width:2px,color:#000
-    style A2 fill:#64B5F6,stroke:#1976D2,stroke-width:2px,color:#000
-    style A3 fill:#64B5F6,stroke:#1976D2,stroke-width:2px,color:#000
-    
-    style P1 fill:#81C784,stroke:#2E7D32,stroke-width:2px,color:#000
-    style P2 fill:#81C784,stroke:#2E7D32,stroke-width:2px,color:#000
-    style P3 fill:#81C784,stroke:#2E7D32,stroke-width:2px,color:#000
-    
-    style B1 fill:#FFB74D,stroke:#F57C00,stroke-width:2px,color:#000
-    style B2 fill:#FFB74D,stroke:#F57C00,stroke-width:2px,color:#000
-    style B3 fill:#EF9A9A,stroke:#C62828,stroke-width:2px,color:#000
-    style B4 fill:#FFB74D,stroke:#F57C00,stroke-width:2px,color:#000
-    
-    style None1 fill:#EEEEEE,stroke:#666,stroke-width:1px,color:#000
-    style None2 fill:#EEEEEE,stroke:#666,stroke-width:1px,color:#000
-    
-    style usable_arenas fill:#ffffff,stroke:#1976D2,stroke-width:2px,color:#000
-    style freepools_A1 fill:#ffffff,stroke:#2E7D32,stroke-width:2px,color:#000
-    style freeblock_P1 fill:#ffffff,stroke:#F57C00,stroke-width:2px,color:#000
+
+```{dot}
+#| fig-margin: 0px
+#| fig-width: 10
+#| fig-height: 6
+digraph usable_arenas_with_usedpools {  
+    rankdir=LR;  
+    node [shape=record, style=filled, fillcolor=lightgray];  
+    edge [color=black];  
+      
+    // Head pointer  
+    head [label="_obmalloc_mgmt\n| usable_arenas", shape=plaintext, fillcolor=white];  
+      
+    // Arena objects with address fields  
+    arena1 [label="<f0> arena_object | <f1> address: 0x7f8b1... | <f2> nfreepools: 1 | <f3> freepools | {nextarena | prevarena}", fillcolor=gray];  
+    arena2 [label="<f0> arena_object | <f1> address: 0x7f8c2... | <f2> nfreepools: 3 | <f3> freepools | {nextarena | prevarena}", fillcolor=gray];  
+    arena3 [label="<f0> arena_object | <f1> address: 0x7f8d3... | <f2> nfreepools: 5 | <f3> freepools | {nextarena | prevarena}", fillcolor=gray];  
+      
+    // usedpools array (size classes)  
+    usedpools [label="<h0> usedpools[0] | <h1> usedpools[2] | <h2> usedpools[4] | ... | <hn> usedpools[2n]", shape=record, fillcolor=darkgray];  
+      
+    // Size class labels  
+    size_labels [label="size: 8B | size: 16B | size: 24B | ... | size: 512B", shape=plaintext, fillcolor=white];  
+      
+    // Pool containers within arenas  
+    pool_container1 [label="<p0> Pool 0 | <p1> Pool 1 | <p2> Pool 2 | ... | <p63> Pool 63", shape=record, fillcolor=dimgray];  
+    pool_container2 [label="<p0> Pool 0 | <p1> Pool 1 | <p2> Pool 2 | ... | <p63> Pool 63", shape=record, fillcolor=dimgray];  
+    pool_container3 [label="<p0> Pool 0 | <p1> Pool 1 | <p2> Pool 2 | ... | <p63> Pool 63", shape=record, fillcolor=dimgray];  
+      
+    // Individual pools  
+    pool_used1 [label="pool_header | szidx: 1 | {nextpool | prevpool}", shape=box, fillcolor=gray];  
+    pool_used2 [label="pool_header | szidx: 2 | {nextpool | prevpool}", shape=box, fillcolor=gray];  
+    pool_free1 [label="pool_header | empty", shape=box, fillcolor=dimgray];  
+    pool_free2 [label="pool_header | empty", shape=box, fillcolor=dimgray];  
+    pool_free3 [label="pool_header | empty", shape=box, fillcolor=dimgray];  
+      
+    // Block details  
+    blocks_used1 [label="block[0] | block[1] | freeblock | ...", shape=record, fillcolor=black, fontcolor=white];  
+    blocks_used2 [label="block[0] | block[1] | freeblock | ...", shape=record, fillcolor=black, fontcolor=white];  
+      
+    // NULL terminators  
+    null1 [label="NULL", shape=plaintext, fillcolor=white];  
+    null2 [label="NULL", shape=plaintext, fillcolor=white];  
+    null3 [label="NULL", shape=plaintext, fillcolor=white];  
+      
+    // Doubly-linked list connections (usable_arenas)  
+    head -> arena1:f0 [label="points to"];  
+    arena1 -> arena2:f0 [label="nextarena"];  
+    arena2 -> arena3:f0 [label="nextarena"];  
+    arena3 -> null1 [label="nextarena"];  
+      
+    arena2 -> arena1 [label="prevarena", dir=back];  
+    arena3 -> arena2 [label="prevarena", dir=back];  
+    null2 -> arena1 [label="prevarena", dir=back];  
+      
+    // Arena to pool container relationships  
+    arena1 -> pool_container1 [label="contains", style=dashed];  
+    arena2 -> pool_container2 [label="contains", style=dashed];  
+    arena3 -> pool_container3 [label="contains", style=dashed];  
+      
+    // Singly-linked freepools within each arena  
+    arena1:f3 -> pool_free1 [label="freepools"];  
+    pool_free1 -> null3 [label="nextpool"];  
+      
+    arena2:f3 -> pool_free2 [label="freepools"];  
+    pool_free2 -> null3 [label="nextpool"];  
+      
+    arena3:f3 -> pool_free3 [label="freepools"];  
+    pool_free3 -> null3 [label="nextpool"];  
+      
+    // usedpools doubly-linked circular lists  
+    usedpools:h0 -> pool_used1 [label="size class 8B"];  
+    usedpools:h1 -> pool_used2 [label="size class 16B"];  
+      
+    // Circular doubly-linked within each size class  
+    pool_used1 -> pool_used1 [label="nextpool/prevpool", style=dotted];  
+    pool_used2 -> pool_used2 [label="nextpool/prevpool", style=dotted];  
+      
+    // Pool to block relationships  
+    pool_used1 -> blocks_used1 [label="manages", style=dashed];  
+    pool_used2 -> blocks_used2 [label="manages", style=dashed];  
+      
+    // Size class labels alignment  
+    size_labels -> usedpools [style=invis];  
+      
+    // Annotations  
+    note1 [label="Arena: 256KB/1MB\nPool: 4KB/16KB\nBlock: 8-512 bytes", shape=note, fillcolor=white];  
+    note1 -> pool_container1 [style=dotted];  
+      
+    note2 [label="usedpools: doubly-linked\ncircular lists by size class", shape=note, fillcolor=white];  
+    note2 -> usedpools [style=dotted];  
+}
 ```
 
 ### Block allocation API
