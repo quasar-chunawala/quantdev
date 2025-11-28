@@ -67,6 +67,38 @@ font-style: inherit;">"list"</span>]</span></code></pre></div>
 <li><p><code>_Free(void* ptr)</code> frees memory at <code>ptr</code> back to the heap.</p></li>
 </ul>
 <p>The <code>PyMemAllocatorDomain</code> enumeration represents the three domains in CPython as <code>PYMEM_DOMAIN_RAW</code>, <code>PYMEM_DOMAIN_OBJ</code> and <code>PYMEM_DOMAIN_MEM</code>.</p>
+<p>CPython uses <img src="https://latex.codecogs.com/png.latex?2"> memory allocators:</p>
+<ul>
+<li><code>malloc</code> is the operating system allocator for the raw memory domain.</li>
+<li><code>pymalloc</code> is the CPython allocator the PyMem and object domains.</li>
+</ul>
+</section>
+<section id="the-cpython-memory-allocator" class="level1">
+<h1>The CPython memory allocator</h1>
+<p>The CPython memory alloctor sit on top of the OS memory allocator and has an algorithm for allocation.</p>
+<ul>
+<li><p>Most of the memory allocation requests are small and of a fixed size, because <code>PyObject</code> is <img src="https://latex.codecogs.com/png.latex?16"> bytes, <code>PyASCIIObject</code> is <img src="https://latex.codecogs.com/png.latex?42"> bytes, <code>PyCompactUnicodeObject</code> is <img src="https://latex.codecogs.com/png.latex?72"> bytes.</p></li>
+<li><p>The <code>pymalloc</code> allocator allocates memory blocks only upto <img src="https://latex.codecogs.com/png.latex?256"> KB. Anything larger is sent to the OS allocator.</p></li>
+<li><p><code>pymalloc</code> uses the GIL instead of the system thread-safety check.</p></li>
+</ul>
+<p>To help clarify this situation, you can imagine a sports stadium, home of CPython FC, as an analogy. To help manage crowds, CPython FC has implemented a system breaking the stadium up into sections A to E, each with seating in rows <img src="https://latex.codecogs.com/png.latex?1"> to <img src="https://latex.codecogs.com/png.latex?40">.</p>
+<p>At the front of the stadium, rows <img src="https://latex.codecogs.com/png.latex?1"> to <img src="https://latex.codecogs.com/png.latex?10"> are the roomier premium seats, with <img src="https://latex.codecogs.com/png.latex?80"> seats in each row. At the back rows <img src="https://latex.codecogs.com/png.latex?31"> to <img src="https://latex.codecogs.com/png.latex?40"> are the conomy seats with <img src="https://latex.codecogs.com/png.latex?150"> seats per row.</p>
+<p>The Python memory allocation algorithm has similar characteristics:</p>
+<ul>
+<li>Just like the stadium as seats, the <code>pymalloc</code> algorithm has memory blocks.</li>
+<li>Just like the seats can be premium, regular, or economy, memory blocks are all of range of fixed sizes. You can’t bring your desk chair!</li>
+<li>Just like seats of the same size are put into rows, blocks of the same size are put into pools.</li>
+</ul>
+<p>A central register keeps a record of where blocks are and the number of blocks available in a pool, just as the stadium allocates seating. When a row in the stadium is full, the next row is used. When a pool of blocks is full, the next pool is used. Pools are groups into arenas, just like the stadium groups the rows into sections.</p>
+<p>There are several advantages to this strategy:</p>
+<ul>
+<li>The algorithm is more performant for CPython’s main use case: small, short-lived objects.</li>
+<li>The algorithm uses the GIL instead of system thread-lock detection.</li>
+<li>The algorithm uses memory mapping <code>mmap()</code> syscall instead of heap allocations.</li>
+</ul>
+<section id="blocks-pools-and-arenas" class="level2">
+<h2 class="anchored" data-anchor-id="blocks-pools-and-arenas">Blocks, Pools and Arenas</h2>
+</section>
 </section>
 <section id="cpython-interning" class="level1">
 <h1>CPython interning</h1>
@@ -264,7 +296,7 @@ List len = 17, size = 248 bytes</code></pre>
 </section>
 <section id="overallocation-of-dictionaries-and-sets" class="level1">
 <h1>Overallocation of dictionaries and sets</h1>
-<p>These are represented as fixed-length hash tables. The overallocation</p>
+<p>These are represented as fixed-length hash tables. We overallocate when we reach <img src="https://latex.codecogs.com/png.latex?2/3">rd of the capacity of a dictionary of set. For small dictionaries or sets, we quadruple the capacity else we double the capacity.</p>
 
 
 </section>

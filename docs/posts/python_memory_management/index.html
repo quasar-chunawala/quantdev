@@ -213,6 +213,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul>
   <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
   <li><a href="#allocation-domains" id="toc-allocation-domains" class="nav-link" data-scroll-target="#allocation-domains">Allocation Domains</a></li>
+  <li><a href="#the-cpython-memory-allocator" id="toc-the-cpython-memory-allocator" class="nav-link" data-scroll-target="#the-cpython-memory-allocator">The CPython memory allocator</a>
+  <ul class="collapse">
+  <li><a href="#blocks-pools-and-arenas" id="toc-blocks-pools-and-arenas" class="nav-link" data-scroll-target="#blocks-pools-and-arenas">Blocks, Pools and Arenas</a></li>
+  </ul></li>
   <li><a href="#cpython-interning" id="toc-cpython-interning" class="nav-link" data-scroll-target="#cpython-interning">CPython interning</a>
   <ul class="collapse">
   <li><a href="#string-interning-explained" id="toc-string-interning-explained" class="nav-link" data-scroll-target="#string-interning-explained"><code>string</code> interning explained</a></li>
@@ -256,6 +260,38 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><p><code>_Free(void* ptr)</code> frees memory at <code>ptr</code> back to the heap.</p></li>
 </ul>
 <p>The <code>PyMemAllocatorDomain</code> enumeration represents the three domains in CPython as <code>PYMEM_DOMAIN_RAW</code>, <code>PYMEM_DOMAIN_OBJ</code> and <code>PYMEM_DOMAIN_MEM</code>.</p>
+<p>CPython uses <span class="math inline">\(2\)</span> memory allocators:</p>
+<ul>
+<li><code>malloc</code> is the operating system allocator for the raw memory domain.</li>
+<li><code>pymalloc</code> is the CPython allocator the PyMem and object domains.</li>
+</ul>
+</section>
+<section id="the-cpython-memory-allocator" class="level1">
+<h1>The CPython memory allocator</h1>
+<p>The CPython memory alloctor sit on top of the OS memory allocator and has an algorithm for allocation.</p>
+<ul>
+<li><p>Most of the memory allocation requests are small and of a fixed size, because <code>PyObject</code> is <span class="math inline">\(16\)</span> bytes, <code>PyASCIIObject</code> is <span class="math inline">\(42\)</span> bytes, <code>PyCompactUnicodeObject</code> is <span class="math inline">\(72\)</span> bytes.</p></li>
+<li><p>The <code>pymalloc</code> allocator allocates memory blocks only upto <span class="math inline">\(256\)</span> KB. Anything larger is sent to the OS allocator.</p></li>
+<li><p><code>pymalloc</code> uses the GIL instead of the system thread-safety check.</p></li>
+</ul>
+<p>To help clarify this situation, you can imagine a sports stadium, home of CPython FC, as an analogy. To help manage crowds, CPython FC has implemented a system breaking the stadium up into sections A to E, each with seating in rows <span class="math inline">\(1\)</span> to <span class="math inline">\(40\)</span>.</p>
+<p>At the front of the stadium, rows <span class="math inline">\(1\)</span> to <span class="math inline">\(10\)</span> are the roomier premium seats, with <span class="math inline">\(80\)</span> seats in each row. At the back rows <span class="math inline">\(31\)</span> to <span class="math inline">\(40\)</span> are the conomy seats with <span class="math inline">\(150\)</span> seats per row.</p>
+<p>The Python memory allocation algorithm has similar characteristics:</p>
+<ul>
+<li>Just like the stadium as seats, the <code>pymalloc</code> algorithm has memory blocks.</li>
+<li>Just like the seats can be premium, regular, or economy, memory blocks are all of range of fixed sizes. You can’t bring your desk chair!</li>
+<li>Just like seats of the same size are put into rows, blocks of the same size are put into pools.</li>
+</ul>
+<p>A central register keeps a record of where blocks are and the number of blocks available in a pool, just as the stadium allocates seating. When a row in the stadium is full, the next row is used. When a pool of blocks is full, the next pool is used. Pools are groups into arenas, just like the stadium groups the rows into sections.</p>
+<p>There are several advantages to this strategy:</p>
+<ul>
+<li>The algorithm is more performant for CPython’s main use case: small, short-lived objects.</li>
+<li>The algorithm uses the GIL instead of system thread-lock detection.</li>
+<li>The algorithm uses memory mapping <code>mmap()</code> syscall instead of heap allocations.</li>
+</ul>
+<section id="blocks-pools-and-arenas" class="level2">
+<h2 class="anchored" data-anchor-id="blocks-pools-and-arenas">Blocks, Pools and Arenas</h2>
+</section>
 </section>
 <section id="cpython-interning" class="level1">
 <h1>CPython interning</h1>
@@ -347,7 +383,7 @@ List len = 17, size = 248 bytes</code></pre>
 </section>
 <section id="overallocation-of-dictionaries-and-sets" class="level1">
 <h1>Overallocation of dictionaries and sets</h1>
-<p>These are represented as fixed-length hash tables. The overallocation</p>
+<p>These are represented as fixed-length hash tables. We overallocate when we reach <span class="math inline">\(2/3\)</span>rd of the capacity of a dictionary of set. For small dictionaries or sets, we quadruple the capacity else we double the capacity.</p>
 
 
 </section>
