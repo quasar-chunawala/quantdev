@@ -1,7 +1,7 @@
 ---
-title: "Pymalloc - Down the rabbit hole"
+title: "Pymalloc - Down the rabit hole"
 author: "Quasar"
-date: "2025-11-28"
+date: "2025-11-27"
 categories: [Python]      
 image: "python.jpg"
 jupyter: quantdev-venv
@@ -9,9 +9,26 @@ toc: true
 toc-depth: 3
 ---
 
+# Prerequisites
+
+Download the CPython source and build it in the debug mode to step into the interpreter's internals. 
+
+```shell
+git clone https://github.com/python/cpython.git
+cd cpython
+
+# Configure with debug options
+./configure --with-pydebug
+
+# Build (feel free to adjust -j)
+make -j8
+```
+
+This will produce a local python binary. 
+
 # Introduction 
 
-CPython is one of the many implementations of the Python runtime written in C code. There are other implementations such as PyPy, Jython. In this blog post, I summarize how object memory is alllocated and freed and how CPython manages memory leaks.
+CPython is one of the many implementations of the Python runtime written in C code. There are other implementations such as PyPy, Jython. PyPy is a python compiler written in Python. PyPy's logo is an Ouroboros to represent the self-hosting nature of the compiler. In this blog post, I summarize how object memory is alllocated and freed and how CPython manages memory leaks.
 
 Python is a dynamically-typed language. The size of variables can't be calculated at compile-time. Most of Python's core types are dynamically sized. The `list` type can be of any size, a `dict` can have any number of keys, and even `int` is dynamic. The user never has to specify the size of these types. Names in Python can be reused for values of different types.
 
@@ -151,6 +168,8 @@ struct arena_object {
 };
 ```
 
+`pool_address` serves as the arena's **high water mark** pointer that tracks where to carve off the next pool. It's initialized when an arena is created and advances as pools are allocated.
+
 Each `arena_object` node also contains a  field `freepools` of the type `pool_header*` which points to the head of a linked list which tracks available pools in the arena.
 
 When an arena's `nfreepools` reaches zero (all pools allocated), it's removed from `usable_arenas` linked list. Conversely, when a pool becomes empty and is added to an arena's freepools, the arena may be added back to `usable_arenas` if it was previously full. 
@@ -204,7 +223,7 @@ struct pool_header {
 
 Pools of the same sized blocks are linked together using doubly linked list (the `nextpool` and `prevpool` fields). The `szidx` field keeps the size class index, whereas `ref.count` keeps the number of used blocks. The `arenaindex` stores the number of an arena in which this pool was created.
 
-In order to efficient manage pools, a pool table called `usedpools` is maintained. A pool table is an array of pointers. It is segmented by the size class index `i`. For an index `i`, `usedpools[i]` points to the head of linked list of all partial used pools of the same size class `i`. Each node of this linked list is of type `pool_header`. 
+In order to efficient manage pools, a pool table called `usedpools` is maintained. A pool table is an array of pointers. It is segmented by the size class index `i`. For an index `i`, `usedpools[i+1]` points to the head of linked list of all partial used pools of the same size class `i`. Each node of this linked list is of type `pool_header`. 
 
 If a full pool has a block freed, then the pool is put back in the used state. The newly freed pool is added to the front of the approapriate `usedpools[]` list, so the next allocation for its size class will use the freed block. 
 
@@ -226,43 +245,10 @@ On a 64-bit system, since an arena is $1$ MB, there will always be $64$ pools ea
 
 Within a pool, blocks of fixed size can be allocated and freed. Available blocks within a pool are listed in the singly linked list `freeblock`. Whenever a block is freed, its inserted at the front of the `freeblock` list. When a pool is initialized, only the first two blocks are linked within the `freeblock` list.
 
-```{dot}
-#| fig-margin: 0px
-digraph usable_arenas_simple {  
-    rankdir=LR;  
-    node [shape=record, style=filled, fillcolor=lightgray, fontname="Courier New"];  
-    edge [color=black, fontname="Courier New"];  
-      
-    // Head pointer from management structure  
-    head [label="_obmalloc_mgmt\n| usable_arenas", shape=plaintext, fillcolor=white, fontname="Courier New"];  
-      
-    // Arena objects in doubly-linked list  
-    arena1 [label="<f0> arena_object\l| <f1> uintptr_t address\l| <f2> uint nfreepools\l| <f3> poolp freepools\l| {struct arena_object* nextarena\l| struct arena_object* prevarena}", fillcolor=gray, fontname="Courier New"];  
-    arena2 [label="<f0> arena_object\l| <f1> uintptr_t address\l| <f2> uint nfreepools\l| <f3> poolp freepools\l| {struct arena_object* nextarena\l| struct arena_object* prevarena}", fillcolor=gray, fontname="Courier New"];  
-    arena3 [label="<f0> arena_object\l| <f1> uintptr_t address\l| <f2> uint nfreepools\l| <f3> poolp freepools\l| {struct arena_object* nextarena\l| struct arena_object* prevarena}", fillcolor=gray, fontname="Courier New"];  
-      
-    // NULL terminators  
-    null_head [label="NULL", shape=plaintext, fillcolor=white, fontname="Courier New"];  
-    null_tail [label="NULL", shape=plaintext, fillcolor=white, fontname="Courier New"];  
-      
-    // Doubly-linked list connections  
-    head -> arena1:f0 [label="points to", fontname="Courier New"];  
-    arena1 -> arena2:f0 [label="nextarena", fontname="Courier New"];  
-    arena2 -> arena3:f0 [label="nextarena", fontname="Courier New"];  
-    arena3 -> null_tail [label="nextarena", fontname="Courier New"];  
-      
-    arena2 -> arena1 [label="prevarena", dir=back, fontname="Courier New"];  
-    arena3 -> arena2 [label="prevarena", dir=back, fontname="Courier New"];  
-    null_head -> arena1 [label="prevarena", dir=back, fontname="Courier New"];  
-      
-    // Annotation  
-    note [label="List sorted by nfreepools (ascending)", shape=note, fillcolor=white, fontname="Courier New"];  
-    note -> arena1 [style=dotted];  
-}
-```
-
 ### Block allocation API
 
+ When a block of memory is requested by a memory domain that uses `pymalloc`, the API function `pymalloc_alloc()` is invoked. This function is a good place to insert a break-point and step through the code to test your knowledge of blocks, pools and arenas.
+ 
  
 
 # CPython interning

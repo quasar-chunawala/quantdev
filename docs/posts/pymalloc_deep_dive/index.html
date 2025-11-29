@@ -7,9 +7,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Quasar">
-<meta name="dcterms.date" content="2025-11-28">
+<meta name="dcterms.date" content="2025-11-27">
 
-<title>quantdev.blog - Pymalloc - Down the rabbit hole</title>
+<title>quantdev.blog - Pymalloc - Down the rabit hole</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -175,7 +175,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <header id="title-block-header" class="quarto-title-block default page-columns page-full">
   <div class="quarto-title-banner page-columns page-full">
     <div class="quarto-title column-body">
-      <h1 class="title">Pymalloc - Down the rabbit hole</h1>
+      <h1 class="title">Pymalloc - Down the rabit hole</h1>
                                 <div class="quarto-categories">
                 <div class="quarto-category">Python</div>
               </div>
@@ -195,7 +195,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <div>
       <div class="quarto-title-meta-heading">Published</div>
       <div class="quarto-title-meta-contents">
-        <p class="date">November 28, 2025</p>
+        <p class="date">November 27, 2025</p>
       </div>
     </div>
     
@@ -211,7 +211,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
+  <li><a href="#prerequisites" id="toc-prerequisites" class="nav-link active" data-scroll-target="#prerequisites">Prerequisites</a></li>
+  <li><a href="#introduction" id="toc-introduction" class="nav-link" data-scroll-target="#introduction">Introduction</a></li>
   <li><a href="#allocation-domains" id="toc-allocation-domains" class="nav-link" data-scroll-target="#allocation-domains">Allocation Domains</a></li>
   <li><a href="#the-cpython-memory-allocator" id="toc-the-cpython-memory-allocator" class="nav-link" data-scroll-target="#the-cpython-memory-allocator">The CPython memory allocator</a>
   <ul class="collapse">
@@ -239,14 +240,27 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 
+<section id="prerequisites" class="level1">
+<h1>Prerequisites</h1>
+<p>Download the CPython source and build it in the debug mode to step into the interpreter’s internals.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb1-1"><a href="#cb1-1"></a>git clone https://github.com/python/cpython.git</span>
+<span id="cb1-2"><a href="#cb1-2"></a>cd cpython</span>
+<span id="cb1-3"><a href="#cb1-3"></a></span>
+<span id="cb1-4"><a href="#cb1-4"></a># Configure with debug options</span>
+<span id="cb1-5"><a href="#cb1-5"></a>./configure --with-pydebug</span>
+<span id="cb1-6"><a href="#cb1-6"></a></span>
+<span id="cb1-7"><a href="#cb1-7"></a># Build (feel free to adjust -j)</span>
+<span id="cb1-8"><a href="#cb1-8"></a>make -j8</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This will produce a local python binary.</p>
+</section>
 <section id="introduction" class="level1">
 <h1>Introduction</h1>
-<p>CPython is one of the many implementations of the Python runtime written in C code. There are other implementations such as PyPy, Jython. In this blog post, I summarize how object memory is alllocated and freed and how CPython manages memory leaks.</p>
+<p>CPython is one of the many implementations of the Python runtime written in C code. There are other implementations such as PyPy, Jython. PyPy is a python compiler written in Python. PyPy’s logo is an Ouroboros to represent the self-hosting nature of the compiler. In this blog post, I summarize how object memory is alllocated and freed and how CPython manages memory leaks.</p>
 <p>Python is a dynamically-typed language. The size of variables can’t be calculated at compile-time. Most of Python’s core types are dynamically sized. The <code>list</code> type can be of any size, a <code>dict</code> can have any number of keys, and even <code>int</code> is dynamic. The user never has to specify the size of these types. Names in Python can be reused for values of different types.</p>
 <div class="cell" data-execution_count="1">
-<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1"></a>a_value <span class="op">=</span> <span class="dv">1</span></span>
-<span id="cb1-2"><a href="#cb1-2"></a>a_value <span class="op">=</span> <span class="st">"Now, I'm a string"</span></span>
-<span id="cb1-3"><a href="#cb1-3"></a>a_value <span class="op">=</span> [<span class="st">"Now"</span>, <span class="st">"I"</span>, <span class="st">"am"</span>, <span class="st">"a"</span>, <span class="st">"list"</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1"></a>a_value <span class="op">=</span> <span class="dv">1</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a>a_value <span class="op">=</span> <span class="st">"Now, I'm a string"</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a>a_value <span class="op">=</span> [<span class="st">"Now"</span>, <span class="st">"I"</span>, <span class="st">"am"</span>, <span class="st">"a"</span>, <span class="st">"list"</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>To overcome these constraints, CPython relies heavily on dynamic memory allocation, but adds safety rails to automate the freeing of memory using the garbage collection and reference counting algorithms.</p>
 <p>Instead of the Python developer having to allocate memory, Python object memory is allocated automatically by a single, unified API. This design requires that the entire CPython standard library and core modules(written in C) use this API.</p>
@@ -290,7 +304,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </ul>
 <p>A central register keeps a record of where blocks are and the number of blocks available in a pool, just as the stadium allocates seating. When a row in the stadium is full, the next row is used. When a pool of blocks is full, the next pool is used. Pools are groups into arenas, just like the stadium groups the rows into sections.</p>
 <div class="cell" data-execution_count="2">
-<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1"></a><span class="op">%</span>load_ext itikz</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1"></a><span class="op">%</span>load_ext itikz</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>There are several advantages to this strategy:</p>
 <ul>
@@ -305,56 +319,57 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="arenas" class="level3">
 <h3 class="anchored" data-anchor-id="arenas">Arenas</h3>
 <p>Arenas are allocated from the system heap using <code>mmap</code> when available otherwise <code>malloc</code>. CPython arenas are <span class="math inline">\(256\)</span>-KB on 32-bit systems and <span class="math inline">\(1\)</span> MB on 64-bit systems. Each arena contains multiple pools.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="pp">#ifdef USE_LARGE_ARENAS</span></span>
-<span id="cb3-2"><a href="#cb3-2"></a><span class="pp">#define ARENA_BITS              </span><span class="dv">20</span><span class="pp">                    </span><span class="co">/* 1 MiB */</span></span>
-<span id="cb3-3"><a href="#cb3-3"></a><span class="pp">#else</span></span>
-<span id="cb3-4"><a href="#cb3-4"></a><span class="pp">#define ARENA_BITS              </span><span class="dv">18</span><span class="pp">                    </span><span class="co">/* 256 KiB */</span></span>
-<span id="cb3-5"><a href="#cb3-5"></a><span class="pp">#endif</span></span>
-<span id="cb3-6"><a href="#cb3-6"></a><span class="pp">#define ARENA_SIZE              </span><span class="op">(</span><span class="dv">1</span><span class="pp"> </span><span class="op">&lt;&lt;</span><span class="pp"> </span>ARENA_BITS<span class="op">)</span></span>
-<span id="cb3-7"><a href="#cb3-7"></a><span class="pp">#define ARENA_SIZE_MASK         </span><span class="op">(</span>ARENA_SIZE<span class="pp"> </span><span class="op">-</span><span class="pp"> </span><span class="dv">1</span><span class="op">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="pp">#ifdef USE_LARGE_ARENAS</span></span>
+<span id="cb4-2"><a href="#cb4-2"></a><span class="pp">#define ARENA_BITS              </span><span class="dv">20</span><span class="pp">                    </span><span class="co">/* 1 MiB */</span></span>
+<span id="cb4-3"><a href="#cb4-3"></a><span class="pp">#else</span></span>
+<span id="cb4-4"><a href="#cb4-4"></a><span class="pp">#define ARENA_BITS              </span><span class="dv">18</span><span class="pp">                    </span><span class="co">/* 256 KiB */</span></span>
+<span id="cb4-5"><a href="#cb4-5"></a><span class="pp">#endif</span></span>
+<span id="cb4-6"><a href="#cb4-6"></a><span class="pp">#define ARENA_SIZE              </span><span class="op">(</span><span class="dv">1</span><span class="pp"> </span><span class="op">&lt;&lt;</span><span class="pp"> </span>ARENA_BITS<span class="op">)</span></span>
+<span id="cb4-7"><a href="#cb4-7"></a><span class="pp">#define ARENA_SIZE_MASK         </span><span class="op">(</span>ARENA_SIZE<span class="pp"> </span><span class="op">-</span><span class="pp"> </span><span class="dv">1</span><span class="op">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Arenas are scattered in the main memory. Each arena is a contiguous chunk of memory. CPython maintains a doubly linked list <code>usable_arenas</code> that tracks all the arena objects, that have atleast one pool available for allocation. The <code>usable_arenas</code> list is maintained in ascending order of each arena’s <code>nfreepools</code> (number of free pools). This sorting ensures that allocations preferentially use arenas with fewest free pools.</p>
 <p>Our main book-keeping data structure of interest is the <code>arena_object</code>. The <code>usable_arenas</code> doubly linked list strings together <code>arena_object</code> nodes . These contain meta-information of each arena with <code>prevarena</code> and <code>nextarena</code> pointers. Each of these nodes have a <code>address</code> field which is a pointer to the actual contiguous block of memory (<span class="math inline">\(256\)</span>KB / <span class="math inline">\(1\)</span>MB) returned by <code>malloc</code>.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="co">/* Record keeping for arenas. */</span></span>
-<span id="cb4-2"><a href="#cb4-2"></a><span class="kw">struct</span> arena_object <span class="op">{</span></span>
-<span id="cb4-3"><a href="#cb4-3"></a>    <span class="co">/* The address of the arena, as returned by malloc.  Note that 0</span></span>
-<span id="cb4-4"><a href="#cb4-4"></a><span class="co">     * will never be returned by a successful malloc, and is used</span></span>
-<span id="cb4-5"><a href="#cb4-5"></a><span class="co">     * here to mark an arena_object that doesn't correspond to an</span></span>
-<span id="cb4-6"><a href="#cb4-6"></a><span class="co">     * allocated arena.</span></span>
-<span id="cb4-7"><a href="#cb4-7"></a><span class="co">     */</span></span>
-<span id="cb4-8"><a href="#cb4-8"></a>    <span class="dt">uintptr_t</span> address<span class="op">;</span></span>
-<span id="cb4-9"><a href="#cb4-9"></a></span>
-<span id="cb4-10"><a href="#cb4-10"></a>    <span class="co">/* Pool-aligned pointer to the next pool to be carved off. */</span></span>
-<span id="cb4-11"><a href="#cb4-11"></a>    pymem_block<span class="op">*</span> pool_address<span class="op">;</span></span>
-<span id="cb4-12"><a href="#cb4-12"></a></span>
-<span id="cb4-13"><a href="#cb4-13"></a>    <span class="co">/* The number of available pools in the arena:  free pools + never-</span></span>
-<span id="cb4-14"><a href="#cb4-14"></a><span class="co">     * allocated pools.</span></span>
-<span id="cb4-15"><a href="#cb4-15"></a><span class="co">     */</span></span>
-<span id="cb4-16"><a href="#cb4-16"></a>    <span class="ex">uint</span> nfreepools<span class="op">;</span></span>
-<span id="cb4-17"><a href="#cb4-17"></a></span>
-<span id="cb4-18"><a href="#cb4-18"></a>    <span class="co">/* The total number of pools in the arena, whether or not available. */</span></span>
-<span id="cb4-19"><a href="#cb4-19"></a>    <span class="ex">uint</span> ntotalpools<span class="op">;</span></span>
-<span id="cb4-20"><a href="#cb4-20"></a></span>
-<span id="cb4-21"><a href="#cb4-21"></a>    <span class="co">/* Singly-linked list of available pools. */</span></span>
-<span id="cb4-22"><a href="#cb4-22"></a>    <span class="kw">struct</span> pool_header<span class="op">*</span> freepools<span class="op">;</span></span>
-<span id="cb4-23"><a href="#cb4-23"></a>    <span class="co">/* Whenever this arena_object is not associated with an allocated</span></span>
-<span id="cb4-24"><a href="#cb4-24"></a><span class="co">     * arena, the nextarena member is used to link all unassociated</span></span>
-<span id="cb4-25"><a href="#cb4-25"></a><span class="co">     * arena_objects in the singly-linked `unused_arena_objects` list.</span></span>
-<span id="cb4-26"><a href="#cb4-26"></a><span class="co">     * The prevarena member is unused in this case.</span></span>
-<span id="cb4-27"><a href="#cb4-27"></a><span class="co">     *</span></span>
-<span id="cb4-28"><a href="#cb4-28"></a><span class="co">     * When this arena_object is associated with an allocated arena</span></span>
-<span id="cb4-29"><a href="#cb4-29"></a><span class="co">     * with at least one available pool, both members are used in the</span></span>
-<span id="cb4-30"><a href="#cb4-30"></a><span class="co">     * doubly-linked `usable_arenas` list, which is maintained in</span></span>
-<span id="cb4-31"><a href="#cb4-31"></a><span class="co">     * increasing order of `nfreepools` values.</span></span>
-<span id="cb4-32"><a href="#cb4-32"></a></span>
-<span id="cb4-33"><a href="#cb4-33"></a><span class="co">     *</span></span>
-<span id="cb4-34"><a href="#cb4-34"></a><span class="co">     * Else this arena_object is associated with an allocated arena</span></span>
-<span id="cb4-35"><a href="#cb4-35"></a><span class="co">     * all of whose pools are in use.  `nextarena` and `prevarena`</span></span>
-<span id="cb4-36"><a href="#cb4-36"></a><span class="co">     * are both meaningless in this case.</span></span>
-<span id="cb4-37"><a href="#cb4-37"></a><span class="co">     */</span></span>
-<span id="cb4-38"><a href="#cb4-38"></a></span>
-<span id="cb4-39"><a href="#cb4-39"></a>    <span class="kw">struct</span> arena_object<span class="op">*</span> nextarena<span class="op">;</span></span>
-<span id="cb4-40"><a href="#cb4-40"></a>    <span class="kw">struct</span> arena_object<span class="op">*</span> prevarena<span class="op">;</span></span>
-<span id="cb4-41"><a href="#cb4-41"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="co">/* Record keeping for arenas. */</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a><span class="kw">struct</span> arena_object <span class="op">{</span></span>
+<span id="cb5-3"><a href="#cb5-3"></a>    <span class="co">/* The address of the arena, as returned by malloc.  Note that 0</span></span>
+<span id="cb5-4"><a href="#cb5-4"></a><span class="co">     * will never be returned by a successful malloc, and is used</span></span>
+<span id="cb5-5"><a href="#cb5-5"></a><span class="co">     * here to mark an arena_object that doesn't correspond to an</span></span>
+<span id="cb5-6"><a href="#cb5-6"></a><span class="co">     * allocated arena.</span></span>
+<span id="cb5-7"><a href="#cb5-7"></a><span class="co">     */</span></span>
+<span id="cb5-8"><a href="#cb5-8"></a>    <span class="dt">uintptr_t</span> address<span class="op">;</span></span>
+<span id="cb5-9"><a href="#cb5-9"></a></span>
+<span id="cb5-10"><a href="#cb5-10"></a>    <span class="co">/* Pool-aligned pointer to the next pool to be carved off. */</span></span>
+<span id="cb5-11"><a href="#cb5-11"></a>    pymem_block<span class="op">*</span> pool_address<span class="op">;</span></span>
+<span id="cb5-12"><a href="#cb5-12"></a></span>
+<span id="cb5-13"><a href="#cb5-13"></a>    <span class="co">/* The number of available pools in the arena:  free pools + never-</span></span>
+<span id="cb5-14"><a href="#cb5-14"></a><span class="co">     * allocated pools.</span></span>
+<span id="cb5-15"><a href="#cb5-15"></a><span class="co">     */</span></span>
+<span id="cb5-16"><a href="#cb5-16"></a>    <span class="ex">uint</span> nfreepools<span class="op">;</span></span>
+<span id="cb5-17"><a href="#cb5-17"></a></span>
+<span id="cb5-18"><a href="#cb5-18"></a>    <span class="co">/* The total number of pools in the arena, whether or not available. */</span></span>
+<span id="cb5-19"><a href="#cb5-19"></a>    <span class="ex">uint</span> ntotalpools<span class="op">;</span></span>
+<span id="cb5-20"><a href="#cb5-20"></a></span>
+<span id="cb5-21"><a href="#cb5-21"></a>    <span class="co">/* Singly-linked list of available pools. */</span></span>
+<span id="cb5-22"><a href="#cb5-22"></a>    <span class="kw">struct</span> pool_header<span class="op">*</span> freepools<span class="op">;</span></span>
+<span id="cb5-23"><a href="#cb5-23"></a>    <span class="co">/* Whenever this arena_object is not associated with an allocated</span></span>
+<span id="cb5-24"><a href="#cb5-24"></a><span class="co">     * arena, the nextarena member is used to link all unassociated</span></span>
+<span id="cb5-25"><a href="#cb5-25"></a><span class="co">     * arena_objects in the singly-linked `unused_arena_objects` list.</span></span>
+<span id="cb5-26"><a href="#cb5-26"></a><span class="co">     * The prevarena member is unused in this case.</span></span>
+<span id="cb5-27"><a href="#cb5-27"></a><span class="co">     *</span></span>
+<span id="cb5-28"><a href="#cb5-28"></a><span class="co">     * When this arena_object is associated with an allocated arena</span></span>
+<span id="cb5-29"><a href="#cb5-29"></a><span class="co">     * with at least one available pool, both members are used in the</span></span>
+<span id="cb5-30"><a href="#cb5-30"></a><span class="co">     * doubly-linked `usable_arenas` list, which is maintained in</span></span>
+<span id="cb5-31"><a href="#cb5-31"></a><span class="co">     * increasing order of `nfreepools` values.</span></span>
+<span id="cb5-32"><a href="#cb5-32"></a></span>
+<span id="cb5-33"><a href="#cb5-33"></a><span class="co">     *</span></span>
+<span id="cb5-34"><a href="#cb5-34"></a><span class="co">     * Else this arena_object is associated with an allocated arena</span></span>
+<span id="cb5-35"><a href="#cb5-35"></a><span class="co">     * all of whose pools are in use.  `nextarena` and `prevarena`</span></span>
+<span id="cb5-36"><a href="#cb5-36"></a><span class="co">     * are both meaningless in this case.</span></span>
+<span id="cb5-37"><a href="#cb5-37"></a><span class="co">     */</span></span>
+<span id="cb5-38"><a href="#cb5-38"></a></span>
+<span id="cb5-39"><a href="#cb5-39"></a>    <span class="kw">struct</span> arena_object<span class="op">*</span> nextarena<span class="op">;</span></span>
+<span id="cb5-40"><a href="#cb5-40"></a>    <span class="kw">struct</span> arena_object<span class="op">*</span> prevarena<span class="op">;</span></span>
+<span id="cb5-41"><a href="#cb5-41"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><code>pool_address</code> serves as the arena’s <strong>high water mark</strong> pointer that tracks where to carve off the next pool. It’s initialized when an arena is created and advances as pools are allocated.</p>
 <p>Each <code>arena_object</code> node also contains a field <code>freepools</code> of the type <code>pool_header*</code> which points to the head of a linked list which tracks available pools in the arena.</p>
 <p>When an arena’s <code>nfreepools</code> reaches zero (all pools allocated), it’s removed from <code>usable_arenas</code> linked list. Conversely, when a pool becomes empty and is added to an arena’s freepools, the arena may be added back to <code>usable_arenas</code> if it was previously full.</p>
 </section>
@@ -366,40 +381,40 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li>Full : All blocks allocated.</li>
 <li>Empty : All blocks available.</li>
 </ul>
-<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="co">/*</span></span>
-<span id="cb5-2"><a href="#cb5-2"></a><span class="co"> * Size of the pools used for small blocks.  Must be a power of 2.</span></span>
-<span id="cb5-3"><a href="#cb5-3"></a><span class="co"> */</span></span>
-<span id="cb5-4"><a href="#cb5-4"></a></span>
-<span id="cb5-5"><a href="#cb5-5"></a><span class="pp">#ifdef USE_LARGE_POOLS</span></span>
-<span id="cb5-6"><a href="#cb5-6"></a><span class="pp">#define POOL_BITS               </span><span class="dv">14</span><span class="pp">                  </span><span class="co">/* 16 KiB */</span></span>
-<span id="cb5-7"><a href="#cb5-7"></a><span class="pp">#else</span></span>
-<span id="cb5-8"><a href="#cb5-8"></a><span class="pp">#define POOL_BITS               </span><span class="dv">12</span><span class="pp">                  </span><span class="co">/* 4 KiB */</span></span>
-<span id="cb5-9"><a href="#cb5-9"></a><span class="pp">#endif</span></span>
-<span id="cb5-10"><a href="#cb5-10"></a><span class="pp">#define POOL_SIZE               </span><span class="op">(</span><span class="dv">1</span><span class="pp"> </span><span class="op">&lt;&lt;</span><span class="pp"> </span>POOL_BITS<span class="op">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="co">/*</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a><span class="co"> * Size of the pools used for small blocks.  Must be a power of 2.</span></span>
+<span id="cb6-3"><a href="#cb6-3"></a><span class="co"> */</span></span>
+<span id="cb6-4"><a href="#cb6-4"></a></span>
+<span id="cb6-5"><a href="#cb6-5"></a><span class="pp">#ifdef USE_LARGE_POOLS</span></span>
+<span id="cb6-6"><a href="#cb6-6"></a><span class="pp">#define POOL_BITS               </span><span class="dv">14</span><span class="pp">                  </span><span class="co">/* 16 KiB */</span></span>
+<span id="cb6-7"><a href="#cb6-7"></a><span class="pp">#else</span></span>
+<span id="cb6-8"><a href="#cb6-8"></a><span class="pp">#define POOL_BITS               </span><span class="dv">12</span><span class="pp">                  </span><span class="co">/* 4 KiB */</span></span>
+<span id="cb6-9"><a href="#cb6-9"></a><span class="pp">#endif</span></span>
+<span id="cb6-10"><a href="#cb6-10"></a><span class="pp">#define POOL_SIZE               </span><span class="op">(</span><span class="dv">1</span><span class="pp"> </span><span class="op">&lt;&lt;</span><span class="pp"> </span>POOL_BITS<span class="op">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Each pool has a special header structure:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="co">/* Pool for small blocks. */</span></span>
-<span id="cb6-2"><a href="#cb6-2"></a><span class="kw">struct</span> pool_header <span class="op">{</span></span>
-<span id="cb6-3"><a href="#cb6-3"></a></span>
-<span id="cb6-4"><a href="#cb6-4"></a>    <span class="kw">union</span> <span class="op">{</span> pymem_block <span class="op">*</span>_padding<span class="op">;</span></span>
-<span id="cb6-5"><a href="#cb6-5"></a>            <span class="ex">uint</span> count<span class="op">;</span> <span class="op">}</span> ref<span class="op">;</span>          <span class="co">/* number of allocated blocks    */</span></span>
-<span id="cb6-6"><a href="#cb6-6"></a></span>
-<span id="cb6-7"><a href="#cb6-7"></a>    pymem_block <span class="op">*</span>freeblock<span class="op">;</span>             <span class="co">/* pool's free list head         */</span></span>
-<span id="cb6-8"><a href="#cb6-8"></a></span>
-<span id="cb6-9"><a href="#cb6-9"></a>    <span class="kw">struct</span> pool_header <span class="op">*</span>nextpool<span class="op">;</span>       <span class="co">/* next pool of this size class  */</span></span>
-<span id="cb6-10"><a href="#cb6-10"></a></span>
-<span id="cb6-11"><a href="#cb6-11"></a>    <span class="kw">struct</span> pool_header <span class="op">*</span>prevpool<span class="op">;</span>       <span class="co">/* previous pool of this size class                             */</span></span>
-<span id="cb6-12"><a href="#cb6-12"></a></span>
-<span id="cb6-13"><a href="#cb6-13"></a>    <span class="ex">uint</span> arenaindex<span class="op">;</span>                    <span class="co">/* index into arenas of base adr */</span></span>
-<span id="cb6-14"><a href="#cb6-14"></a></span>
-<span id="cb6-15"><a href="#cb6-15"></a>    <span class="ex">uint</span> szidx<span class="op">;</span>                         <span class="co">/* block size class index        */</span></span>
-<span id="cb6-16"><a href="#cb6-16"></a></span>
-<span id="cb6-17"><a href="#cb6-17"></a>    <span class="ex">uint</span> nextoffset<span class="op">;</span>                    <span class="co">/* bytes to virgin block         */</span></span>
-<span id="cb6-18"><a href="#cb6-18"></a></span>
-<span id="cb6-19"><a href="#cb6-19"></a>    <span class="ex">uint</span> maxnextoffset<span class="op">;</span>                 <span class="co">/* largest valid nextoffset      */</span></span>
-<span id="cb6-20"><a href="#cb6-20"></a></span>
-<span id="cb6-21"><a href="#cb6-21"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="co">/* Pool for small blocks. */</span></span>
+<span id="cb7-2"><a href="#cb7-2"></a><span class="kw">struct</span> pool_header <span class="op">{</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a></span>
+<span id="cb7-4"><a href="#cb7-4"></a>    <span class="kw">union</span> <span class="op">{</span> pymem_block <span class="op">*</span>_padding<span class="op">;</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a>            <span class="ex">uint</span> count<span class="op">;</span> <span class="op">}</span> ref<span class="op">;</span>          <span class="co">/* number of allocated blocks    */</span></span>
+<span id="cb7-6"><a href="#cb7-6"></a></span>
+<span id="cb7-7"><a href="#cb7-7"></a>    pymem_block <span class="op">*</span>freeblock<span class="op">;</span>             <span class="co">/* pool's free list head         */</span></span>
+<span id="cb7-8"><a href="#cb7-8"></a></span>
+<span id="cb7-9"><a href="#cb7-9"></a>    <span class="kw">struct</span> pool_header <span class="op">*</span>nextpool<span class="op">;</span>       <span class="co">/* next pool of this size class  */</span></span>
+<span id="cb7-10"><a href="#cb7-10"></a></span>
+<span id="cb7-11"><a href="#cb7-11"></a>    <span class="kw">struct</span> pool_header <span class="op">*</span>prevpool<span class="op">;</span>       <span class="co">/* previous pool of this size class                             */</span></span>
+<span id="cb7-12"><a href="#cb7-12"></a></span>
+<span id="cb7-13"><a href="#cb7-13"></a>    <span class="ex">uint</span> arenaindex<span class="op">;</span>                    <span class="co">/* index into arenas of base adr */</span></span>
+<span id="cb7-14"><a href="#cb7-14"></a></span>
+<span id="cb7-15"><a href="#cb7-15"></a>    <span class="ex">uint</span> szidx<span class="op">;</span>                         <span class="co">/* block size class index        */</span></span>
+<span id="cb7-16"><a href="#cb7-16"></a></span>
+<span id="cb7-17"><a href="#cb7-17"></a>    <span class="ex">uint</span> nextoffset<span class="op">;</span>                    <span class="co">/* bytes to virgin block         */</span></span>
+<span id="cb7-18"><a href="#cb7-18"></a></span>
+<span id="cb7-19"><a href="#cb7-19"></a>    <span class="ex">uint</span> maxnextoffset<span class="op">;</span>                 <span class="co">/* largest valid nextoffset      */</span></span>
+<span id="cb7-20"><a href="#cb7-20"></a></span>
+<span id="cb7-21"><a href="#cb7-21"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Pools of the same sized blocks are linked together using doubly linked list (the <code>nextpool</code> and <code>prevpool</code> fields). The <code>szidx</code> field keeps the size class index, whereas <code>ref.count</code> keeps the number of used blocks. The <code>arenaindex</code> stores the number of an arena in which this pool was created.</p>
-<p>In order to efficient manage pools, a pool table called <code>usedpools</code> is maintained. A pool table is an array of pointers. It is segmented by the size class index <code>i</code>. For an index <code>i</code>, <code>usedpools[i]</code> points to the head of linked list of all partial used pools of the same size class <code>i</code>. Each node of this linked list is of type <code>pool_header</code>.</p>
+<p>In order to efficient manage pools, a pool table called <code>usedpools</code> is maintained. A pool table is an array of pointers. It is segmented by the size class index <code>i</code>. For an index <code>i</code>, <code>usedpools[i+1]</code> points to the head of linked list of all partial used pools of the same size class <code>i</code>. Each node of this linked list is of type <code>pool_header</code>.</p>
 <p>If a full pool has a block freed, then the pool is put back in the used state. The newly freed pool is added to the front of the approapriate <code>usedpools[]</code> list, so the next allocation for its size class will use the freed block.</p>
 <p>On transition to empty, a pool is unlinked from its <code>usedpools[]</code> list and added to the front of the arena’s singly linked <code>freepools</code> list.</p>
 </section>
@@ -444,84 +459,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </table>
 <p>On a 64-bit system, since an arena is <span class="math inline">\(1\)</span> MB, there will always be <span class="math inline">\(64\)</span> pools each of size <span class="math inline">\(16\)</span>KB.</p>
 <p>Within a pool, blocks of fixed size can be allocated and freed. Available blocks within a pool are listed in the singly linked list <code>freeblock</code>. Whenever a block is freed, its inserted at the front of the <code>freeblock</code> list. When a pool is initialized, only the first two blocks are linked within the <code>freeblock</code> list.</p>
-<div class="cell">
-<div class="cell-output-display">
-<div>
-<div>
-<svg width="672" height="480" viewbox="0.00 0.00 2443.55 208.30" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" style="; max-width: none; max-height: none">
-<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 204.3)">
-<title>
-usable_arenas_simple
-</title>
-<polygon fill="white" stroke="transparent" points="-4,4 -4,-204.3 2439.55,-204.3 2439.55,4 -4,4"></polygon> <!-- head --> <g id="node1" class="node">
-<title>
-head
-</title>
-<polygon fill="white" stroke="transparent" points="234.45,-200.1 92.4,-200.1 92.4,-158.9 234.45,-158.9 234.45,-200.1"></polygon> <text text-anchor="middle" x="163.43" y="-183.7" font-family="Courier New" font-size="14.00">_obmalloc_mgmt</text> <text text-anchor="middle" x="163.43" y="-166.9" font-family="Courier New" font-size="14.00">| usable_arenas</text> </g> <!-- arena1 --> <g id="node2" class="node">
-<title>
-arena1
-</title>
-<polygon fill="gray" stroke="black" points="438.46,-60.5 438.46,-184.5 974.54,-184.5 974.54,-60.5 438.46,-60.5"></polygon> <text text-anchor="start" x="446.46" y="-167.9" font-family="Courier New" font-size="14.00">arena_object</text> <polyline fill="none" stroke="black" points="438.46,-159.7 974.54,-159.7 "></polyline> <text text-anchor="start" x="446.46" y="-143.1" font-family="Courier New" font-size="14.00">uintptr_t address</text> <polyline fill="none" stroke="black" points="438.46,-134.9 974.54,-134.9 "></polyline> <text text-anchor="start" x="446.46" y="-118.3" font-family="Courier New" font-size="14.00">uint nfreepools</text> <polyline fill="none" stroke="black" points="438.46,-110.1 974.54,-110.1 "></polyline> <text text-anchor="start" x="446.46" y="-93.5" font-family="Courier New" font-size="14.00">poolp freepools</text> <polyline fill="none" stroke="black" points="438.46,-85.3 974.54,-85.3 "></polyline> <text text-anchor="start" x="446.46" y="-68.7" font-family="Courier New" font-size="14.00">struct arena_object* nextarena</text> <polyline fill="none" stroke="black" points="706.5,-60.5 706.5,-85.3 "></polyline> <text text-anchor="middle" x="840.52" y="-68.7" font-family="Courier New" font-size="14.00">struct arena_object* prevarena</text> </g> <!-- head&#45;&gt;arena1 --> <g id="edge1" class="edge">
-<title>
-head-&gt;arena1:f0
-</title>
-<path fill="none" stroke="black" d="M234.53,-176.72C287.19,-174.86 361.42,-172.72 428.24,-172.52"></path> <polygon fill="black" stroke="black" points="428.47,-176.02 438.46,-172.5 428.46,-169.02 428.47,-176.02"></polygon> <text text-anchor="middle" x="382.66" y="-177.7" font-family="Courier New" font-size="14.00">points to</text> </g> <!-- arena2 --> <g id="node3" class="node">
-<title>
-arena2
-</title>
-<polygon fill="gray" stroke="black" points="1086.16,-30.5 1086.16,-154.5 1622.24,-154.5 1622.24,-30.5 1086.16,-30.5"></polygon> <text text-anchor="start" x="1094.16" y="-137.9" font-family="Courier New" font-size="14.00">arena_object</text> <polyline fill="none" stroke="black" points="1086.16,-129.7 1622.24,-129.7 "></polyline> <text text-anchor="start" x="1094.16" y="-113.1" font-family="Courier New" font-size="14.00">uintptr_t address</text> <polyline fill="none" stroke="black" points="1086.16,-104.9 1622.24,-104.9 "></polyline> <text text-anchor="start" x="1094.16" y="-88.3" font-family="Courier New" font-size="14.00">uint nfreepools</text> <polyline fill="none" stroke="black" points="1086.16,-80.1 1622.24,-80.1 "></polyline> <text text-anchor="start" x="1094.16" y="-63.5" font-family="Courier New" font-size="14.00">poolp freepools</text> <polyline fill="none" stroke="black" points="1086.16,-55.3 1622.24,-55.3 "></polyline> <text text-anchor="start" x="1094.16" y="-38.7" font-family="Courier New" font-size="14.00">struct arena_object* nextarena</text> <polyline fill="none" stroke="black" points="1354.2,-30.5 1354.2,-55.3 "></polyline> <text text-anchor="middle" x="1488.22" y="-38.7" font-family="Courier New" font-size="14.00">struct arena_object* prevarena</text> </g> <!-- arena1&#45;&gt;arena2 --> <g id="edge2" class="edge">
-<title>
-arena1-&gt;arena2:f0
-</title>
-<path fill="none" stroke="black" d="M974.79,-140.15C1008.67,-141.45 1043.01,-142.32 1075.97,-142.48"></path> <polygon fill="black" stroke="black" points="1076.15,-145.98 1086.16,-142.5 1076.17,-138.98 1076.15,-145.98"></polygon> <text text-anchor="middle" x="1030.35" y="-145.7" font-family="Courier New" font-size="14.00">nextarena</text> </g> <!-- arena2&#45;&gt;arena1 --> <g id="edge5" class="edge">
-<title>
-arena2-&gt;arena1
-</title>
-<path fill="none" stroke="black" d="M1075.74,-105.39C1042.26,-106.95 1008.12,-108.53 974.79,-110.08"></path> <polygon fill="black" stroke="black" points="1076.28,-108.87 1086.11,-104.91 1075.96,-101.88 1076.28,-108.87"></polygon> <text text-anchor="middle" x="1030.35" y="-111.7" font-family="Courier New" font-size="14.00">prevarena</text> </g> <!-- arena3 --> <g id="node4" class="node">
-<title>
-arena3
-</title>
-<polygon fill="gray" stroke="black" points="1733.85,-0.5 1733.85,-124.5 2269.93,-124.5 2269.93,-0.5 1733.85,-0.5"></polygon> <text text-anchor="start" x="1741.85" y="-107.9" font-family="Courier New" font-size="14.00">arena_object</text> <polyline fill="none" stroke="black" points="1733.85,-99.7 2269.93,-99.7 "></polyline> <text text-anchor="start" x="1741.85" y="-83.1" font-family="Courier New" font-size="14.00">uintptr_t address</text> <polyline fill="none" stroke="black" points="1733.85,-74.9 2269.93,-74.9 "></polyline> <text text-anchor="start" x="1741.85" y="-58.3" font-family="Courier New" font-size="14.00">uint nfreepools</text> <polyline fill="none" stroke="black" points="1733.85,-50.1 2269.93,-50.1 "></polyline> <text text-anchor="start" x="1741.85" y="-33.5" font-family="Courier New" font-size="14.00">poolp freepools</text> <polyline fill="none" stroke="black" points="1733.85,-25.3 2269.93,-25.3 "></polyline> <text text-anchor="start" x="1741.85" y="-8.7" font-family="Courier New" font-size="14.00">struct arena_object* nextarena</text> <polyline fill="none" stroke="black" points="2001.89,-0.5 2001.89,-25.3 "></polyline> <text text-anchor="middle" x="2135.91" y="-8.7" font-family="Courier New" font-size="14.00">struct arena_object* prevarena</text> </g> <!-- arena2&#45;&gt;arena3 --> <g id="edge3" class="edge">
-<title>
-arena2-&gt;arena3:f0
-</title>
-<path fill="none" stroke="black" d="M1622.48,-110.15C1656.36,-111.45 1690.7,-112.32 1723.67,-112.48"></path> <polygon fill="black" stroke="black" points="1723.84,-115.98 1733.85,-112.5 1723.86,-108.98 1723.84,-115.98"></polygon> <text text-anchor="middle" x="1678.05" y="-115.7" font-family="Courier New" font-size="14.00">nextarena</text> </g> <!-- arena3&#45;&gt;arena2 --> <g id="edge6" class="edge">
-<title>
-arena3-&gt;arena2
-</title>
-<path fill="none" stroke="black" d="M1723.44,-75.39C1689.96,-76.95 1655.82,-78.53 1622.49,-80.08"></path> <polygon fill="black" stroke="black" points="1723.98,-78.87 1733.8,-74.91 1723.65,-71.88 1723.98,-78.87"></polygon> <text text-anchor="middle" x="1678.05" y="-82.7" font-family="Courier New" font-size="14.00">prevarena</text> </g> <!-- null_tail --> <g id="node6" class="node">
-<title>
-null_tail
-</title>
-<polygon fill="white" stroke="transparent" points="2435.55,-80.5 2381.55,-80.5 2381.55,-44.5 2435.55,-44.5 2435.55,-80.5"></polygon> <text text-anchor="middle" x="2408.55" y="-58.3" font-family="Courier New" font-size="14.00">NULL</text> </g> <!-- arena3&#45;&gt;null_tail --> <g id="edge4" class="edge">
-<title>
-arena3-&gt;null_tail
-</title>
-<path fill="none" stroke="black" d="M2269.98,-62.5C2309.73,-62.5 2345.75,-62.5 2370.95,-62.5"></path> <polygon fill="black" stroke="black" points="2371.07,-66 2381.07,-62.5 2371.07,-59 2371.07,-66"></polygon> <text text-anchor="middle" x="2325.74" y="-66.7" font-family="Courier New" font-size="14.00">nextarena</text> </g> <!-- null_head --> <g id="node5" class="node">
-<title>
-null_head
-</title>
-<polygon fill="white" stroke="transparent" points="190.43,-140.5 136.43,-140.5 136.43,-104.5 190.43,-104.5 190.43,-140.5"></polygon> <text text-anchor="middle" x="163.43" y="-118.3" font-family="Courier New" font-size="14.00">NULL</text> </g> <!-- null_head&#45;&gt;arena1 --> <g id="edge7" class="edge">
-<title>
-null_head-&gt;arena1
-</title>
-<path fill="none" stroke="black" d="M200.76,-122.5C250.62,-122.5 344.75,-122.5 438.34,-122.5"></path> <polygon fill="black" stroke="black" points="200.52,-119 190.52,-122.5 200.52,-126 200.52,-119"></polygon> <text text-anchor="middle" x="382.66" y="-126.7" font-family="Courier New" font-size="14.00">prevarena</text> </g> <!-- note --> <g id="node7" class="node">
-<title>
-note
-</title>
-<polygon fill="white" stroke="black" points="320.78,-86.5 0.07,-86.5 0.07,-50.5 326.78,-50.5 326.78,-80.5 320.78,-86.5"></polygon> <polyline fill="none" stroke="black" points="320.78,-86.5 320.78,-80.5 "></polyline> <polyline fill="none" stroke="black" points="326.78,-80.5 320.78,-80.5 "></polyline> <text text-anchor="middle" x="163.43" y="-64.3" font-family="Courier New" font-size="14.00">List sorted by nfreepools (ascending)</text> </g> <!-- note&#45;&gt;arena1 --> <g id="edge8" class="edge">
-<title>
-note-&gt;arena1
-</title>
-<path fill="none" stroke="black" stroke-dasharray="1,5" d="M327.13,-84.74C359.14,-87.93 393.56,-91.37 428.12,-94.82"></path> <polygon fill="black" stroke="black" points="428.07,-98.33 438.36,-95.84 428.76,-91.36 428.07,-98.33"></polygon> </g> </g>
-</svg>
-</div>
-</div>
-</div>
-</div>
 </section>
 <section id="block-allocation-api" class="level3">
 <h3 class="anchored" data-anchor-id="block-allocation-api">Block allocation API</h3>
+<p>When a block of memory is requested by a memory domain that uses <code>pymalloc</code>, the API function <code>pymalloc_alloc()</code> is invoked. This function is a good place to insert a break-point and step through the code to test your knowledge of blocks, pools and arenas.</p>
 </section>
 </section>
 </section>
@@ -529,12 +470,12 @@ note-&gt;arena1
 <h1>CPython interning</h1>
 <p>The general rule is that objects are allocated on assignment. Variables just point to objects. There is an exception to this general rule. This is python runtime implementation specific. Often commonly used objects are preallocated and are shared instead of costly new allocations. This is mainly done for performance optimization.</p>
 <div class="cell" data-execution_count="3">
-<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1"></a>x <span class="op">=</span> <span class="dv">255</span></span>
-<span id="cb7-2"><a href="#cb7-2"></a>y <span class="op">=</span> <span class="dv">255</span></span>
-<span id="cb7-3"><a href="#cb7-3"></a><span class="bu">print</span>(x <span class="kw">is</span> y, x <span class="op">==</span> y)</span>
-<span id="cb7-4"><a href="#cb7-4"></a>x <span class="op">=</span> <span class="dv">1024</span></span>
-<span id="cb7-5"><a href="#cb7-5"></a>y <span class="op">=</span> <span class="dv">1024</span></span>
-<span id="cb7-6"><a href="#cb7-6"></a><span class="bu">print</span>(x <span class="kw">is</span> y, x <span class="op">==</span> y)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1"></a>x <span class="op">=</span> <span class="dv">255</span></span>
+<span id="cb8-2"><a href="#cb8-2"></a>y <span class="op">=</span> <span class="dv">255</span></span>
+<span id="cb8-3"><a href="#cb8-3"></a><span class="bu">print</span>(x <span class="kw">is</span> y, x <span class="op">==</span> y)</span>
+<span id="cb8-4"><a href="#cb8-4"></a>x <span class="op">=</span> <span class="dv">1024</span></span>
+<span id="cb8-5"><a href="#cb8-5"></a>y <span class="op">=</span> <span class="dv">1024</span></span>
+<span id="cb8-6"><a href="#cb8-6"></a><span class="bu">print</span>(x <span class="kw">is</span> y, x <span class="op">==</span> y)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>True True
 False True</code></pre>
@@ -547,10 +488,10 @@ False True</code></pre>
 <p>So, we can gain a little extra performance on dictionary lookup (key comparisons after hashing can be done by a pointer compare instead of a string compare).</p>
 <p>Names used in programs are automatically interned. Dictionaries used to hold module, class or instance attributes have interned keys.</p>
 <div class="cell" data-execution_count="4">
-<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1"></a><span class="im">from</span> sys <span class="im">import</span> <span class="bu">intern</span></span>
-<span id="cb9-2"><a href="#cb9-2"></a>a, b <span class="op">=</span> <span class="st">"strin"</span>, <span class="st">"string"</span></span>
-<span id="cb9-3"><a href="#cb9-3"></a><span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span>a <span class="op">+</span> <span class="st">'g'</span> <span class="kw">is</span> b<span class="sc">}</span><span class="ss">"</span>)    <span class="co"># Returns false</span></span>
-<span id="cb9-4"><a href="#cb9-4"></a><span class="bu">intern</span>(a <span class="op">+</span> <span class="st">'g'</span>) <span class="kw">is</span> <span class="bu">intern</span>(b) <span class="co"># returns True</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1"></a><span class="im">from</span> sys <span class="im">import</span> <span class="bu">intern</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a>a, b <span class="op">=</span> <span class="st">"strin"</span>, <span class="st">"string"</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a><span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span>a <span class="op">+</span> <span class="st">'g'</span> <span class="kw">is</span> b<span class="sc">}</span><span class="ss">"</span>)    <span class="co"># Returns false</span></span>
+<span id="cb10-4"><a href="#cb10-4"></a><span class="bu">intern</span>(a <span class="op">+</span> <span class="st">'g'</span>) <span class="kw">is</span> <span class="bu">intern</span>(b) <span class="co"># returns True</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>False</code></pre>
 </div>
@@ -577,11 +518,11 @@ False True</code></pre>
 <li>64 bits : <code>56 + 8 * length</code></li>
 </ul>
 <div class="cell" data-execution_count="5">
-<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1"></a><span class="im">import</span> sys</span>
-<span id="cb12-2"><a href="#cb12-2"></a>l <span class="op">=</span> []</span>
-<span id="cb12-3"><a href="#cb12-3"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">17</span>):</span>
-<span id="cb12-4"><a href="#cb12-4"></a>    l.append(i<span class="op">+</span><span class="dv">1</span>)</span>
-<span id="cb12-5"><a href="#cb12-5"></a>    <span class="bu">print</span>(<span class="ss">f"List len = </span><span class="sc">{</span><span class="bu">len</span>(l)<span class="sc">}</span><span class="ss">, size = </span><span class="sc">{</span>sys<span class="sc">.</span>getsizeof(l)<span class="sc">}</span><span class="ss"> bytes"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1"></a><span class="im">import</span> sys</span>
+<span id="cb13-2"><a href="#cb13-2"></a>l <span class="op">=</span> []</span>
+<span id="cb13-3"><a href="#cb13-3"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">17</span>):</span>
+<span id="cb13-4"><a href="#cb13-4"></a>    l.append(i<span class="op">+</span><span class="dv">1</span>)</span>
+<span id="cb13-5"><a href="#cb13-5"></a>    <span class="bu">print</span>(<span class="ss">f"List len = </span><span class="sc">{</span><span class="bu">len</span>(l)<span class="sc">}</span><span class="ss">, size = </span><span class="sc">{</span>sys<span class="sc">.</span>getsizeof(l)<span class="sc">}</span><span class="ss"> bytes"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>List len = 1, size = 88 bytes
 List len = 2, size = 88 bytes

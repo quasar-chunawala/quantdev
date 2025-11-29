@@ -1,16 +1,236 @@
 ---
-title: "Python lists, dicts, tuples"
+title: "Python3 cheatsheet"
 author: "Quasar"
-date: "2025-03-05"
+date: "2025-11-29"
 categories: [Python]      
 image: "python.jpg"
+jupyter: quantdev-venv
 toc: true
 toc-depth: 3
 ---
 
-## `dict` in Python
+# Data Model
 
-Python `dict`s are a collection of key-value pairs implemented as hash tables. `dict`s can be updated in place and dictionaries can grow and shrink as needed.
+Objects are Python's abstraction for data. All data in a Python program is reresented by objects or relations between objects. Even code is represented by objects.
+
+## Object values and Types
+
+Every object has an identity, type and value. An object's *identity* never changes once it has been created; you may think of it as the object's address in memory. The `is` operator compares the identity of two objects, the `id()` function returns an integer representing its identity.
+
+For CPython, `id(x)` is the memory address where `x` is stored.
+
+An object's type determines the operations that the object supports (e.g. does it have a length?) and also defines the possible value for the objects of that type. The `type()` function returns an object's type (which is an object itself). 
+
+```{python}
+x = 42
+print(f"x = {x}")
+print(f"type(x) = {type(x)}")
+print(f"type(type(x)) = {type(type(x))}")
+```
+
+The value of some objects can change. Objects whose value can change are said to be *mutable*; objects whose value is unchangeable once they are created are called *immutable*. (The value of an immutable container object that contains a reference to mutable object can change when the latter's value is changed; however the container is still considered immutable, because the collection of objects it contains cannot be changed. So, immutability is not strictly the same thing as having an immuteable value, it is more subtle.) An object's mutability is determined by its type; for instance, numbers, strings, and tuples are immutable, while dictionaries and lists are considered mutable.
+
+Immutable types are always compared by identity. Mutable types are always compared by value. 
+
+Objects are never explicitly destroyed; however when they become unreachable they may be garbage collected. CPython currently uses a reference counting scheme with delayed detection of cyclically linked garbage, which collects most objects as soon as they become unreachable, but is not guaranteed to collect garbage containing circular references. 
+
+Note that, debug or tracing facilities may keep objects alive that would be normally collectable. `try...except` may keep objects alive. 
+
+Some objects contain references to external resources such as open files and windows. It is understood that these resources are freed when the object is garbage collected, but since GC is not guaranteed to happen, such objects also provide an explicit way to release the external resource, usually some kind of `close()` method. The `try...finally` and `with` statement provide convenient ways to do this.
+
+Some objects contain references to other objects; these are called containers. Examples of containers are tuples, lists and dictionaries. When we talk about the value of the container, we imply the value of the contained objects.
+
+For immutable types, operations that compute new values may actually return a reference to any existing object with the same type and value, while for mutable objects this is not allowed. For example, after `a = 1; b = 1`, `a` and `b` may or may not refer to the same object with the value one, depending on the implementation. This is because int is an immutable type, so the reference to 1 can be reused. 
+
+## Built-in Types in Python
+
+There is a core set of built-in types natively supported by Python runtime. The standard library defines additional types. 
+
+### `None`
+
+This type has a single value. There is a single object with this value. It is used to signify the absence of a value in many situations. Its truth value is `False`.
+
+### `NotImplemented`
+
+This type has a single value. Again, there is a single object with this value. 
+
+### Ellipsis
+
+This type also has a single value and there is single object with this value. The object is accessed through the literal `...`. Its truth value is `True`.
+
+### Numbers
+
+Python numbers are of course strongly related to mathematical numbers, but subject to the limitations of numerical representation in computers. 
+
+Numeric objects are immutable; once created their value never changes. Hence, they can be used as keys in a dictionary.
+
+#### Integers (`int`)
+
+These represent numbers in an unlimited range, subject to available virtual memory only. For the purpose of shift and mask operations, a binary representation is assumed, and negative numbers are represented in a variant of $2$'s complement, which gives the illusion of an infinite string of sign bits extending to the left.
+
+Integer-to-string conversion is limited to $4,300$ digits by default. This limitation aims to prevent DoS attacks that exploit the quadratic complexity of integer to string conversions.
+
+#### Booleans (`bool`)
+
+These represent the truth values `False` and `True`. The two objects representing the values `False` and `True` are the only Boolean objects. 
+
+#### Real numbers (`float`)
+
+These represent IEEE-754 double-precision 64-bit floating point numbers. 
+
+```{python}
+import sys
+sys.float_info
+```
+
+```{python}
+print(f"float_info.max = {sys.float_info.max}, float_info.min = {sys.float_info.min}")
+```
+
+Note that `float` represents infinity as `inf`, which is considered larger than any numerical value.
+
+```{python}
+print(float('inf') > sys.float_info.max)
+```
+
+#### Complex numbers (`complex`)
+
+These represent com plex numbers as a pair of double-precision floating-point numbers. The real and imaginary parts of a complex number `z` can be retrieved through the read-only attributes `z.real` and `z.imag`. 
+
+### Sequences
+
+These represent finite ordered sets indexed by non-negative numbers. The built-in function `len()` returns the number of items of a sequence. When the length of a sequence is $n$, the index set contains the numbers $0,1,\ldots,n-1$. Item $i$ of a sequence $a$ is selected by $a[i]$. Some sequences including built-in sequences interpret negative subscripts by adding the sequence length. For example, `a[-2]` means `a[n-2]`, the second to last item of a sequence `a` of length `n`.
+
+Sequences also support slicing. `a[i:j:k]` selects all items with index `x` where `x = i + nk`, $0 \leq x < j$, $n \geq 0$.
+
+#### Immutable sequences
+
+An object of an immutable sequence type cannot change once it is created. (If an object contains references to other objects, these other objects may be mutable and may be changed; however the collection of objects directly referenced by an immutable object cannot change.)
+
+##### Strings
+
+A string is a sequence of values that represent unicode code points. Python doesn't have a `char` type. 
+
+##### Tuples
+
+The items of a `tuple` are arbitrary python objects. Tuple of two or more items are formed by comma separated list of expression. An empty tuple can be formed by a empty pair of parentheses.
+
+```{python}
+import sys
+
+def empty_tuple_example():
+    t = ()
+    print(f"Empty tuple size = {sys.getsizeof(t)}")
+    
+empty_tuple_example()
+```
+
+##### Bytes
+
+A bytes object is an immutable array. The items are $8$-bit bytes, represented in the range $0 \leq x < 256$. Bytes literals like `b'abc'` and the `bytes()` constructor can be used to create bytes objects.
+
+#### Mutable sequences
+
+Mutable sequences can be changed after they are created. The subscript and slicing notations can be used as a target of assignment and `del` (delete) statements.
+
+There are currently two intrinsic mutable sequence types:
+
+- Lists : The items of a list are arbitrary Python objects. Lists are formed by a comma separated list of expressions inside square brackets. 
+- Byte Arrays : A `bytearray` object is mutable array. It is created by the built-in `bytearray()` constructor. Aside from being mutable, byte arrays provide the same interface and functionality as immutable `bytes` objects.
+
+Since `list`s and `bytearray`s are mutable, they are unhashable.
+
+### Set types
+
+These represent unorderd, finite sets of unique elements. As such they cannot be indexed by a subscript. However, they can be iterated over, and the built-in function `len()` returns the number of items in a set. Common uses of sets are fast membership testing, removing duplicates from a sequence, computing mathematicl operations such as intersection, union, difference and symmetric difference. 
+
+Note that, if two numbers compare equal (e.g. `1` and `1.0`) only one of them can be contained in a set.
+
+There are currently two intrinsic set types:
+
+#### Sets
+
+They represent a mutable set. They are created by the `set()` constructor and can be modified by methods such as `add`.
+
+#### Frozen Sets
+
+These represent an immutable set. They are created by the built-in `frozenset()` constructor. As a `frozenset` is immutable and hashable, it can be used again as an element of another set, or as a dictionary key.
+
+### Mappings
+
+These represent finite sets of objects indexed by arbitrary index sets. The subscript notation `a[k]` selects the item indexed by `k` from the mapping `a`.
+
+There is currently a single intrinsic mapping type: `dict`. 
+
+#### Dictionaries
+
+They represent key-value pairs $\texttt{key}\mapsto \texttt{value}$ or a set of mappings. `key` can be any immutable type. Thus, numeric types (`int`, `bool`, `float`, `complex`), immutable sequence types (`str`, `tuple`, `bytes`) immutable set type (`frozenset`) can be used as dictionary keys. The only things not acceptable as keys are values  containing lists or dictionaries or other mutable types that are compared by value rather than object identity.  The reason for this is that an efficient implementation of dictionaries requires a key's hash vaue to remain constant. Numeric types used for keys obey normal rules for numeric comparision: if two numbers compare equal (e.g. `1` and `1.0`) then they can be used interchangeably.
+
+Dictionaries preserve insertion order, meaning that keys will be produced in the same order they were added sequentially over the ddictionary. Replacing an existing key does not change the order. Removing a key and re-inserting it will add to the end instead of keeping its old place. 
+
+Dictionaries are mutable; they can be created by the `{}` noteation. 
+
+### Callable types
+
+These are the types to which the function call operation can be applied. 
+
+#### User-defined functions
+
+A user-defined function object is created by a function definition. 
+
+#### Instance methods
+
+An instance method object combines a class, a class instance and any callable object(normally a user-defined function). 
+
+#### Generator functions
+
+A function or method which uses the `yield` statement is called a *generator* function. Such a function, when called always returns an *iterator* object, which can then be used to execute the body of the function: calling the iterator's `iterator.__next__()` method will cause the function to execute until it provides a value using the `yield` statement. When the function executes the `return` statement or falls off the end, a `StopIteration` exception is raise and the iterator will have reached the end of the set of values to be returned.
+
+#### Coroutine functions
+
+A function or method which is defined using `async_def` is called a *coroutine function*. A coroutine is any function that can be paused in the middle. Such a function, when called, returns a **coroutine** object. It may contain `await` expressions, as well as `async_with` and `async_for` statements. 
+
+#### Asynchronous generator functions
+
+A function or method which is defined using the `async_def` and which uses the `yield` statement is called a *asynchronous generator function.* Such a function, when called, returns an **asynchronous iterator** object which can be used in an `async_for` statement to execute the body of the function. 
+
+Calling the asynchronous iterator's `aiterator.__anext__()` method will return an awaitable which when awaited will execute until it provides a value using the `yield` expression. When the function executes an empty `return` statement or falls off the end, a `StopAsyncIteration` exception is raised and the asynchronous iterator will have reached the end of the values to be yielded. 
+
+#### Built-in functions
+
+A built-in function object is a wrapper around a C function. Examples of built-in unctions are `len()`, `zip()` etc. 
+
+#### Built-in methods
+
+This is really a different disguise of a built-in function, this time containing an object passed to the C function as an implicit extra argument. An example of a built-in method is `.append()` on a list object. 
+
+#### Classes
+
+Classes are callable. These object normally act as factories for new instances of themselves, but variations are possible for class types that override `__new__()`. 
+
+### Modules
+
+Modules are a basic organizational unit of Python code and are created by the `import system` as invoked by the `import` statement or by calling functions such as `importlib.import`.
+
+# The `import` system
+
+The most basic organization unit of code in Python is a module. Python code in one module gains access to the code in another module by the process of importing it. The `import` statement is the most common way of invoking the import machinery, but it is not the only way. Functions such as `importlib.import_module()` and the built-in `__import__()` can also be used to invoke from the import machinery. 
+
+The `import` statement combines two separate operations: it searches for the named module, then it binds the results of that search to a name in the local scope. The search operation of the `import` statement is defined as a call to the `__import__()` function, with appropriate arguments. The return value of `__import__()` is used to perform the name binding operation of the `import` statement. 
+
+When a module is first imported, Python searches for the module and if found, it creates a module object, initializing it. If the named module cannot be found, a `ModuleNotFoundError` is raised. Python employs various strategies to search for the module when the `import` machinery is invoked. 
+
+## Packages
+
+To help organize modules and provide a naming hierarchy, Python has a concept of packages. You can think of packages as the directories on a file sytem and modules as files within directories, but don't take this analogy too literally, since packages and modules need not originate from the file system. For the purposes of this blog note, we'll use this convenient analogy of directories and files. Like file system directories, packages are organized hierarchically, and packages may themselves contain subpackages as well as regular modules.
+
+Its important to keep in mind that all packages are modules, but not all modules are packages. Or put another way, packages are just a special kind of module. Specifically, any module that contains a `__path__` attribute is considered a package. 
+
+All modules have a name. Subpackage names are separated from their parent package name by a dot, akin to Python's standard attribute access syntax.
+
+### Regular packages
+
+Python defines two types of packages : regular packages and namespace packages. Regular packages are traditional packages as they existed in Python 3.2 and earlier. A regular package is typically implemented as a directory containing an `__init__.py` file. When a regular package is imported, this `__init__.py` is executed and the objects it defines are bound to the names in the package's namespace. 
 
 ## Flattening a `dict` of `dict`s
 
