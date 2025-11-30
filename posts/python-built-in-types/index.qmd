@@ -212,6 +212,56 @@ Classes are callable. These object normally act as factories for new instances o
 
 The most basic organization unit of code in Python is a module. Python code in one module gains access to the code in another module by the process of importing it. 
 
+## Special method names
+
+A class can implement certain operations that are invoked by special syntax (such as arithmetic operations, subscripting or slicing). This is Python's approach to operator overloading : allowing classes to define their own behavior w.r.t language operators. For example, if a class defines a method `__getitem__(self, pos)` and `x` is an instance of the class, `x[i]` is roughly equivalent to `x.__getitem__(pos)`. 
+
+Setting a special method to `None` means that the operation is not available.
+
+### Basic customization
+
+#### `__new__(cls,...)`
+
+This method is called to create a new instance of the class `cls`. `__new__()` is mainly intended to allow subclasses of immutable types(like `int`, `str`, `tuple`) to customize instance creation. If `__new__()` does not return an instance of `cls`, then the new instance's `__init__()` method won't be invoked.
+
+#### `__init__(self,...)`
+
+This method is called after the instance has been created by `__new__()`, but before it is returned to the caller. The arguments of `__init__()` are those passed to the class constructor and are typically used to initialize member-data of the class.
+
+If a base class has an `__init__()` method, the derived class's `__init__()` method must explicitly call it to ensure proper initialization of the base class member data using `super().__init__([args...])`.
+
+#### `object.__del__(self)`
+
+This method is called when the instance is about to be destroyed. This is also the so called finalizer or destructor. If a base class has a `__del__()` method, the derived class' `__del__()` method, if any, must explicitly call the base class' `__del__()`.
+
+:::{.callout-note}
+`del x` doesn't directly call `x.__del__()` - the former decrements the reference count for `x` by one, and the latter is only called when `x`'s reference count reaches zero.
+:::
+
+#### `object.__repr__(self)`
+
+This method is called by the `repr()` built-in function to compute the official string representation of the object. 
+
+#### `object.__str__(self)`
+
+This method is called by the `str(object)`, the default `__format__()` implementation and the built-in function `print()`
+
+#### `object.__lt__(self, other)` and friends
+
+These are the so-called rich-comparison methods. The correspondence between operator symbols and method names is as follows: `x<y` calls `x.__lt__(y)`, `x<=y` calls `x.__le__(y)`, `x==y` calls `x.__eq__(y)`, `x!=y` calls `x.__ne__(y)`, `x>y` calls `x.__gt__(y)`, and `x>=y` calls `x.__ge__(y)`.
+
+#### `object.__hash__(self)->int`
+
+The `__hash__()` method should return an integer. Objects that compare equal in value, must have the same hash value.
+
+User-defined classes have `__eq__()` and `__hash__()` methods by default (inherited from the `object` class); with them, all objects compare unequal (except themselves) and `x.__hash__()` returns an appropriate value such that `x == y` implies both that `x is y` and `hash(x) == hash(y)`.
+
+## Special attributes
+
+### `object.__dict__`
+
+A dictionary 
+
 # Modules and Packages
 
 ## The `import` statement
@@ -296,9 +346,30 @@ For example, if we do `import numpy as np` then any symbol such as `sum()` will 
 
 Module contents can be imported from within a function definition. In that case, the `import` does not occur until the function is executed. 
 
+### Executing a module as a script
+
+Any .py file that contains a module is also a python script and you can execute using `python <my_module>.py`. 
+
+We can distinguish between when the file is loaded as a module and when it is run as a standalone script. When a .py file is imported as a module, Python sets the special *dunder* variable `__name__` to the name of the module. However, if the file is run as a standalone script, `__name__` is set to the string `__main__`. 
+
+Modules are often designed with the capability to run as a standalone script for the purposes of testing the functionaility that is contained within the module. This is called *unit testing*. 
+
+```{python}
+from typing import List
+
+def sum_arr(arr: List[float]) -> float:
+    result = sum(x for x in arr)
+    return result
+    
+if __name__ == "__main__":
+    assert sum_arr([1,2,3,4,5]) == 15
+```
+
 ## Namespaces
 
-A python namespace is a mapping from names to objects. It works like a dictionary where the keys are object names and values are the objects themselves. Namespaces let you use the same name in different contexts without collisions. 
+A python namespace is a mapping from names to objects. A namespace is like a container that holds the currently defined symbolic names and the objects each name references. You can think of a namespace as a dictionary, in which the keys are the object names and the values are the objects themselves. Each key-value pair maps a name to its corresponding object. 
+
+Namespaces let you use the same name in different contexts without collisions. It’s like giving everything its own little room in a well-organized house.  
 
 ### `dir()` function
 
@@ -325,7 +396,7 @@ The **built-in** namespace contains the names of all Python's built-in objects. 
 
 You can list the objects in the built-in namespace with the `dir()` function using `__builtins__` as an argument:
 
-```{python}
+```
 dir(__builtins__)
 ```
 
@@ -335,7 +406,31 @@ Things like built-in exceptions, built-in functions, built-in data types live in
 
 The global namespace contains names defined at the module level. Python creates a main global namespace when the main program's body starts. This namespace remains in existence until the interpreter terminates.
 
-Each module has its own global namespace. The interpreter creates a global namespace for any module your program loads with the `import` statement. 
+Additionally, each module has its own global namespace. The interpreter creates a global namespace for any module your program loads with the `import` statement. 
+
+### The local namespace
+
+The python interpreter creates a new and dedicated namespace whenever you call a function. The namespace is local to the function and exists only until the function returns:
+
+```shell
+>>> def double_number(number: int) -> int:
+...     result = 2 * number
+...     print(dir())
+...     return result
+... 
+>>> double_number(4)
+['number', 'result']
+8
+>>> result
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+    result
+NameError: name 'result' is not defined
+```
+
+### The enclosing namespace
+
+You can also define one function inside the other. In this case, you'd have what's known as an inner function. 
 
 ## Packages
 
@@ -344,6 +439,56 @@ To help organize modules and provide a naming hierarchy, Python has a concept of
 Its important to keep in mind that all packages are modules, but not all modules are packages. Or put another way, packages are just a special kind of module. Specifically, any module that contains a `__path__` attribute is considered a package. 
 
 All modules have a name. Subpackage names are separated from their parent package name by a dot, akin to Python's standard attribute access syntax.
+
+`import pkg` only places the name `pkg` in the caller's symbol table and doesn't import any modules. 
+
+### Package initialization
+
+If a file named `__init__.py` is present in the package directory, it is invoked when the package or a module in the package is imported. `__init__.py` can be used to effect automatic importing of modules from a package. 
+
+Earlier, we saw that the `import pkg` statement only places the name `pkg` in the caller's symbol table and doesn't import any modules. But, if `__init__.py` in the `pkg` directory contains the following:
+
+```
+# __init__.py
+print(f"Invoking __init__.py for {__name__}")
+import pkg.mod1, pkg.mod2
+```
+
+Then when you execute `import pkg`, modules `mod1` and `mod2` are automatically imported.
+
+### Importing * from a package
+
+When `import *` is used for a module, all objects form the module are imported into the local symbol table, except those whose names begin with an underscore. 
+
+The analogous statement for a package is:
+
+```python
+from <package_name> import *
+```
+
+What does that do? Not much! Python follows the following convention. If the `__init__.py` file in the package directory contains a list name `__all__`, it taken to be a list of modules that should be imported when the statement `from <package_name> import *` is encountered.
+
+### Subpackages
+
+Packages can contain nested packages to arbitrary depth. Consider
+
+```
+/pkg
+    __init__.py
+    /sub_pkg_1
+        __init__.py
+        mod_in_sub_pkg_1.py
+    /sub_pkg_2
+        __init__.py
+        mod_in_sub_pkg_2.py
+```
+
+We can use both absolute imports and relative imports. 
+
+- Absolute imports use the fully qualified name.
+- `..` evaluates to the parent package
+- `...<some_sub_pkg>` evaluates to some sub-package of the parent package.
+
 
 ### Regular packages
 
@@ -402,6 +547,98 @@ print("Z", end="")
 ```
 
 For more such puzzles, visit [getcracked.io](https://getcracked.io).
+
+# `typing` module
+
+Python's `typing` module provides tools for adding type hints to your code. Type hints make your programs more readable, safer to refactor and helps static type checkers like `mypy` to catch errors before runtime.
+
+```{python}
+from typing import TypedDict
+
+class Person(TypedDict):
+    name: str
+    age: int
+
+def print_people(people: list[Person]) -> None:
+    for person in people:
+        print(f"{person['name']} is {person['age']} years old")
+        
+print_people(
+    [{"name": "Johannes Bernoulli", "age": 50},
+     {"name": "Carl Friedrich Gauss", "age":60}]
+)
+```
+
+## Features
+- Supports type hinting for variables, functions and classes
+- Allows for custom type creation using `TypeVar` and `NewType`
+- Supports defining reusable type aliases for better code readability
+- Enables complex type definitions
+- Supports defining structural subtyping interfaces with protocols
+
+## Frequently used classes and functions
+
+| Object | Type | Description |
+|---|---|---|
+| [`typing.NamedTuple`](https://typing.python.org/en/latest/spec/namedtuples.html) | class | Creates tuple-like classes with named fields |
+| `typing.TypeDict` | class | Creates dictionary-like classes with fixed set of keys |
+| `typing.List` | class | Represents a list |
+| `typing.Callable` | class | Represents a callable with a specified signature |
+| `typing.Any` | Represents a type that can be of any value |
+| `typing.TypeVar()` | Function | Creates a generic type variable |
+| `typing.NewType()` | Function | Creates a distinct type based on an existing one |
+| `typing.Protocol` | Defines a structural subtyping interface that classes can implement |
+
+## Examples
+
+Define a class using `NamedTuple` and a function that takes it as an argument. 
+
+```{python}
+from typing import NamedTuple
+import datetime as dt
+
+class Employee(NamedTuple):
+    employee_id : int
+    name: str
+    date_of_joining : dt.date
+    
+def greet_employee(employee: Employee) -> str:
+    return f"Hi {employee.name}, employee_id : {employee.employee_id}, welcome to the firm!"
+    
+greet_employee(Employee(1, "Alice", dt.date(2025,1,1)))
+```
+
+We can define a type alias to simplify complex type annotations:
+
+```{python}
+import datetime as dt
+from typing import Dict, Union
+UserData = Dict[str, Union[str,int]]
+
+def format_user(user: UserData) -> str:
+   return f"{user["name"]} has last login date {user["last_login"]}"
+   
+format_user({"name": "John Carmack", "last_login": dt.date(2025,6,30)}) 
+```
+
+Create a protocol and implement it in a class:
+
+```{python}
+from typing import Protocol
+
+class Greeter(Protocol):
+    def greet(self) -> str:
+        ...
+        
+class FriendlyGreeter:
+    def greet(self)-> str:
+        return "Hello, friend!"
+        
+def welcome(greeter: Greeter) -> None:
+    print(greeter.greet())
+    
+welcome(FriendlyGreeter())
+```
 
 
 ## Flattening a `dict` of `dict`s
