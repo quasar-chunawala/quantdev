@@ -210,15 +210,132 @@ Classes are callable. These object normally act as factories for new instances o
 
 ### Modules
 
-Modules are a basic organizational unit of Python code and are created by the `import system` as invoked by the `import` statement or by calling functions such as `importlib.import`.
+The most basic organization unit of code in Python is a module. Python code in one module gains access to the code in another module by the process of importing it. 
 
-# The `import` system
+# Modules and Packages
 
-The most basic organization unit of code in Python is a module. Python code in one module gains access to the code in another module by the process of importing it. The `import` statement is the most common way of invoking the import machinery, but it is not the only way. Functions such as `importlib.import_module()` and the built-in `__import__()` can also be used to invoke from the import machinery. 
+## The `import` statement
 
-The `import` statement combines two separate operations: it searches for the named module, then it binds the results of that search to a name in the local scope. The search operation of the `import` statement is defined as a call to the `__import__()` function, with appropriate arguments. The return value of `__import__()` is used to perform the name binding operation of the `import` statement. 
+### `import <module_name>`
+
+When Python executes the statement
+
+```python
+import foo
+```
+
+it searches for `foo.py` in a list of directories:
+
+- Module Cache `sys.modules`
+- Current directory
+- List of directories contained in the `PYTHONPATH` environment variable.
+
+Note that `import <module_name>` does not make the module contents directly accessible to the caller. A module creates a separate namespace. 
+
+The statement `import <module_name>` only places the `<module_name>` in the caller's symbol table. The objects that are defined in the module remain in the module's *private symnol table*.
+
+From the caller, objects in the module are only accessible when prefixed with the `<module_name>` using the dot notation.
 
 When a module is first imported, Python searches for the module and if found, it creates a module object, initializing it. If the named module cannot be found, a `ModuleNotFoundError` is raised. Python employs various strategies to search for the module when the `import` machinery is invoked. 
+
+### `from <package_name> import <module_name>`
+
+An alternate form of the `import` statement allows individual objects from the module to be imported directly into the caller's symbol table:
+
+```python
+from <package_name> import <module_name>
+```
+
+```python
+# mod.py
+s = "Impossible is the word in the dictionary of fools."
+
+def foo(arg):
+    print(f"arg = {arg}")
+
+class Foo:
+    def __init__(self):
+        pass
+        
+# main.py
+from mod import s, foo
+print(f"s : {s}")   
+# s : "Impossible is the word in the dictionary of fools."
+
+print(f"{foo('qux')}")
+# arg = qux
+
+from mod import Foo
+x = Foo()
+x
+# <mod.Foo object at 0x02E3AD50>
+```
+
+Because this form of `import` places the object names directly into the caller's symbol table, any objects that already exist with the same name will be overwritten.
+
+```python
+# mod.py
+a = [100, 200, 300]
+
+# main.py
+a = ['foo','bar','baz']
+from mod import a
+print(f"a = {a}")
+# a = [100, 200, 300]
+```
+
+### `import <module_name> as <alt_name>`
+
+You can also import an entire module uner an alternate name:
+
+```python
+import <module_name> as <alt_name>
+```
+
+For example, if we do `import numpy as np` then any symbol such as `sum()` will be added to the caller's symbol table as `np.sum()`. 
+
+Module contents can be imported from within a function definition. In that case, the `import` does not occur until the function is executed. 
+
+## Namespaces
+
+A python namespace is a mapping from names to objects. It works like a dictionary where the keys are object names and values are the objects themselves. Namespaces let you use the same name in different contexts without collisions. 
+
+### `dir()` function
+
+The built-in function `dir()` returns a list of defined names in a namespace. 
+
+```{python}
+dir()
+```
+
+There are $4$ different types of namespaces:
+
+- Built-in
+- Global
+- Local
+- Enclosing or non-local
+
+These namespaces have differing lifetimes. As Python executes a program, it creates namespaces as necessary and removes them when it no longer needs them. Typically, many namespaces will exist at any given time.
+
+The global, local and enclosing namespaces are implemented as dictionaries. In contrast, the built-in namespace isn't a dictionary, but a module called `builtins`.
+
+### `builtin` namespace
+
+The **built-in** namespace contains the names of all Python's built-in objects. This namespace is available when the python interpreter is running. So, you can access the names in this namespace at any time in your code without explicitly importing them.
+
+You can list the objects in the built-in namespace with the `dir()` function using `__builtins__` as an argument:
+
+```{python}
+dir(__builtins__)
+```
+
+Things like built-in exceptions, built-in functions, built-in data types live in this namespace. 
+
+### The Global namespace
+
+The global namespace contains names defined at the module level. Python creates a main global namespace when the main program's body starts. This namespace remains in existence until the interpreter terminates.
+
+Each module has its own global namespace. The interpreter creates a global namespace for any module your program loads with the `import` statement. 
 
 ## Packages
 
@@ -231,6 +348,61 @@ All modules have a name. Subpackage names are separated from their parent packag
 ### Regular packages
 
 Python defines two types of packages : regular packages and namespace packages. Regular packages are traditional packages as they existed in Python 3.2 and earlier. A regular package is typically implemented as a directory containing an `__init__.py` file. When a regular package is imported, this `__init__.py` is executed and the objects it defines are bound to the names in the package's namespace. 
+
+Consider the following file-system layout that defines a top level `parent` package with three `subpackages`:
+
+```shell
+parent/
+    __init__.py
+    one/
+        __init__.py
+    two/
+        __init__.py
+    three/
+        __init__.py
+```
+
+Importing `parent.one` will implicitly execute `parent/__init__.py` and `/parent/one/__init__.py`. Subsequent imports of `parent.two` and `parent.three` will execute `parent/two/__init__.py` and `parent/three/__init__.py` respectively.
+
+### Namespace packages
+
+A namespace package is a composite of various portions where each portion contributes a subpackage to the parent package. Portions may reside in different locations of the file system.
+
+## Searching 
+
+To begin searching, Python needs the fully qualified name of the module (or package, but for the purposes of this blog note, the difference is immaterial) being imported. 
+
+The fully qualified name will be used in various phases of the import search, and it may be dotted path to the submodule e.g. `foo.bar.baz`. In this case, Python first tries to import `foo`, then `foo.bar` and then finally `foo.bar.baz`. If any of the intermediate imports fail, a `ModuleNotFoundError` is raised.
+
+### The module cache 
+
+The first place checked during import search is `sys.modules`. This mapping serves as a cache of all modules that have been previously imported, including the intermediate paths. So, if `foo.bar.baz` was previously imported, `sys.modules` will contain entries for `foo`, `foo.bar` and `foo.bar.baz`. Each key will have as its value the corresponding module object. 
+
+If module A imports module B, and module B then tries to import module A, Python won't re-import A. Since A's name is aleady present in `sys.modules` (even though module object is not fully loaded yet), the import system simply returns the existing (but partially initialized) module instead of loading it again.
+
+### Challenge puzzle 1
+
+What is printed when you run `python main.py`? Note that the comment delineate separate files. 
+
+```python
+# alpha.py
+print("alpha", end="")
+import beta
+print("X", end="")
+
+# beta.py
+print("beta", end="")
+import alpha
+print("Y",end="")
+
+# main.py
+print("main", end="")
+import alpha
+print("Z", end="")
+```
+
+For more such puzzles, visit [getcracked.io](https://getcracked.io).
+
 
 ## Flattening a `dict` of `dict`s
 
