@@ -237,6 +237,8 @@ Setting a special method to `None` means that the operation is not available.
 
 This method is called to create a new instance of the class `cls`. `__new__()` is mainly intended to allow subclasses of immutable types(like `int`, `str`, `tuple`) to customize instance creation. If `__new__()` does not return an instance of `cls`, then the new instance's `__init__()` method won't be invoked.
 
+If `__new__(cls,...)` is invoked during object construction and it returns an instance of `cls`, then the new instance's `.__init__()` method will be invoked like `__init__(self,...)` where `self` is the new instance and the remaining arguments are the same as were passed to the object constructor.
+
 #### `__init__(self,...)`
 
 This method is called after the instance has been created by `__new__()`, but before it is returned to the caller. The arguments of `__init__()` are those passed to the class constructor and are typically used to initialize member-data of the class.
@@ -1051,6 +1053,133 @@ In Python, the syntax for variable annotations allows you to declare the expecte
 
 For more such puzzles, visit [getcracked.io](https://getcracked.io)
 
+# Control flow statements
+
+Python supports `if`, `for` and `while` statements.
+
+In a `for` or `while` loop, the `break` statement may be paired with an `else` clause. If the loop finishes without executing the `break`, the `else` clause executes.
+
+In either kind of loop, the `else` clause is not executed if the loop was terminated by a `break`. Other wiways of ending the loop early, such as `return` or raised exception will also skip the execution of the `else` clause.
+
+One way to think of the `else` clause is to imagine it paired with the `if` inside the loop.
+
+The `else` clause has more in common with the `else` clause of a `try` statement than it does with that of `if` statements: a `try` statements `else` clause runs when no exception occurs and loop's `else` clasue runs when no `break` occurs.
+
+## `match` statements
+
+A `match` statement takes an expression and compares its value to successive patterns given as one or more case blocks. This is similar to pattern matching in languages like Rust or Haskell. Only the first pattern that matches gets executed and it can also extract components(sequence elements or object attributes) from value into variables.
+
+```{python}
+class Point:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        
+    def where_is(point):
+        match point:
+            case Point(x=0, y=0):
+                print("Origin")
+            case Point(x=0, y=y):
+                print(f"Y={y}")
+            case Point(x=x, y=0):
+                print(f"X={x}")
+            case Point(x=x, y=y):
+                print(f"X={x}, Y={y}")
+            case _:
+                raise ValueError("Not a point!")
+```
+
+There are several other key features of the assignment statement:
+
+- Like unpacking assignments, tuple and list patterns have exactly the same meaning and actually match arbitrary sequences. 
+- Sequence pattens support extended unpacking: `[x,y, *rest]` and `(x,y,*rest)` work similar to unpacking assignments. The name after `*` may also be `_`, so `(x,y, *_)` matches a sequence of atleast two items without binding the remaining items.
+
+### Examples 
+
+#### Reverse a list
+
+```{python}
+from typing import List, TypeVar
+
+T = TypeVar('T')
+
+def reverse(lst: List[T]) -> List[T]: 
+    match lst:
+        case []: return lst
+        case [x]: return [x]
+        case [head, *tail]: return reverse(tail) + [head] 
+        
+print(reverse([1,2,3,4,5]))
+```
+
+#### Find out whether a list is a palindrome
+
+```{python}
+from typing import List, TypeVar
+
+T = TypeVar('T')
+
+def is_palindrome(lst: List[T]) -> bool:
+    match lst:
+        case []: return True
+        case [x]: return True
+        case [head, *tail]: 
+            if head == tail[-1]:
+                return is_palindrome(tail[:-1])
+            else:
+                return False
+
+print(is_palindrome([1,2,2,1]))
+print(is_palindrome([1,2,3]))
+print(is_palindrome([1,2,3,2,1]))
+print(is_palindrome([1,1]))
+print(is_palindrome([1]))
+```
+
+#### Flatten a nested list structure
+
+```python
+# Transform a list, possibly holding lists as elements into a flat 
+# list replacing each list with its elements (recursively)
+# >>> flatten([a, [b, [c, d], e]]]
+# [a, b, c, d, e]
+```
+
+```{python}
+# Traverse the list sequentially. We keep advancing the pointer to the
+# current element. We always have a dichotomy. 
+# Either (1) the element is scalar-value (2) the element itself is a 
+# list. If the element is a scalar-value, then append it to the result.
+# If the element itself is a nested list, flatten(element) will  
+# yield a 1-dimensional flat list. 
+
+from typing import TypeVar, List, Any
+
+T = TypeVar('T')
+
+def flatten(lst: List[Any], result=List[T]):
+    # print(f"Input lst = {lst}")
+    if type(lst) is list:
+        if len(lst) == 0:
+            return result
+        
+        head = lst[0]
+        tail = lst[1:]
+        
+        flatten(head, result)   # recursive call to flatten the head,
+                                # the 1D-output of this flattening will be
+                                # stored in `result`
+                                
+        flatten(tail, result)   # call flatten on the tail of the list
+        return result
+    else:
+        result.append(lst)
+        
+    # print(f"result = {result}")
+        
+print(flatten([1, [2, [3, 4], 5], 6, [[[7]]]], []))
+```
+
 # Functions in Python
 
 The `def` keyword introduces a function definition. It must be followed by the function name and parenthesized list of parameters. The statements that form the body of the function start at the next line and must be indented. 
@@ -1133,21 +1262,207 @@ Functions can also be called using keyword arguments of the form `kwarg=value`. 
 
 When a final parameter of the form `**kwargs` is present, it receives a dictionary containing all keyword arguments except for those corresponding to a formal parameter. `*args` receives a tuple of all the positional arguments beyond the formal parameter list. 
 
+`**kwargs` must be the final parameter in the parameter list.
+
 ## Special parameters
 
-By default, arguments may be passed to Python
+By default, arguments may be passed to Python either by position or explicitly by keyword. For readability and performance, it makes sense to restrict the way arguments can be passed so that a developer need only look at the function definition
+
+# Exception handling
+
+## The `try` statement
+
+The `try` statement specifies exception handlers and cleanup code for a group of statements. 
+
+The `except` clause specifies one or more exception handlers. When no exception occurs in the `try` clause, no execution handler is executed. When an excveption occurs in the `try` suit, a search for an exception handler is started. The search inspects the `except` clauses in turn until one is found that matches the exception. An exception-less `except` clause, if present, must be the last. 
+
+For an `except` clause with an expression, the expression must evaluate to an exception type or a tuple of exception types. 
+
+If no `except` clause matches the exception, the search for an exception handler continues in the surrounding code and on the call-stack.
+
+If the evaluation of an expression in the header of an except clause raises an exception, the original search for a handler is canceled and asearch starts for the new exception. 
+
+## `except*` clause
+
+The `except*` clause specifies one or more handlers for groups of exeptions. A `try` statement can have either `except` or `except*` clauses, but not both. The exception type for matching is mandatory in the case of `except*`, so `except*:` is a syntax error. 
+
+When an exception group is raised in the try block, each `except*` clause splits it into subgroups of matching and non-matching exceptions. If the matching subgroup is not empty, it becomes the handled exception and assigned to the target of `except*` clause. Then, the body of the `except*` clause executes. If the non-matching subgroup is non-empty, it is processed by the next `except*` in the same manner. This continues untill all exceptions in the group have been matched.
+
+After all `except*` clauses execute, the group of unhandled exceptions is merged with any exceptions that were raised or re-raised with `except*` clauses. This merged exception group propogates on.
+
+## `else` clause
+
+The optional `else` clause is executed if the control flow leaves the `try` suite, no exception was raised, no `return`, `continue` or `break` statement was executed. 
+
+## `finally` clause
+
+If `finally` is present, it specifies a cleanup handler. It is always executed even when an exception is thrown. 
 
 # OOPS 
+
+OOPs is a programming paradigm that provides a means of structuring programs so that properties and behaviors are bundled into individual objects. There are $4$ tenets of OOPs.
+
+- Encapsulation. Bundling data(attributes) and behaviors(methods) into a single unit. By defining methods to control access to attributes and its modificcation, encapsurlation helps maintain data integrity and promotes modular, secular code.
+- Inheritance. A child class inherits data-members and behaviors from the parent class promoting code reuse.
+- Abstraction. Hiding low-level implementation details. Only expose the essentials to the outside world.
+- Polymorphism. It allows you to treat objects of different types as instances of the base type.
+
+## Classes vs instances
+
+A class allows us to create a user-defined data type. Classes are like the blue-print for an object. An object is an instance of a class. All objects of a class have the same blueprint.
+
+When you call a class constructor, first `.__new__()` method is called to create a new instance of the class. This returns an empty object. Then, another special method, `.__init__()` is called that takes the result object and initializes it using constructor-args.
+
+###  Subclassing immutable built-in types
+
+Let's explore another use-case of `.__new__()` method that consists of subclassing an immutable built-in type. As an example, say you need to write a `Vector` class as a subclass of Python's `tuple` type. While this class doesn't have any additional attributes, it provides methods to perform component-wise vector addition, subtraction and scalar multiplication. 
+
+```shell
+>>> class Vector(tuple):
+...     def __init__(self, value):
+...         super().__init__(value)
+... 
+>>> Vector((1,2))
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+    Vector((1,2))
+    ~~~~~~^^^^^^^
+  File "<stdin>", line 3, in __init__
+    super().__init__(value)
+    ~~~~~~~~~~~~~~~~^^^^^^^
+TypeError: object.__init__() takes exactly one argument (the instance to initialize)
+>>> 
+```
+
+The problem is that `tuple.__init__(value)` calls `tuple.__new__(value)` and it doesn't take arguments the same way as `object.__new__()`. 
+
+To workaround this issue, we can initialize the object at creation time with `.__new__()` instead of overriding `.__init__()`. Here's how you can do this in practice:
+
+```{python}
+import math 
+
+class Vector(tuple):
+    def __new__(cls, value):
+        instance = super().__new__(cls, value)
+        return instance
+    
+    def __add__(self, other):
+        result = ()
+        for e1, e2 in zip(self, other):
+            elem = e1 + e2
+            result = result + (elem,)
+        return Vector(result)
+    
+    def __sub__(self, other):
+        result = ()
+        for e1, e2 in zip(self, other):
+            elem = e1 - e2
+            result = result + (elem,)
+        return Vector(result)
+    
+    def dot(self, other) -> float:
+        result = 0.0
+        for e1, e2 in zip(self, other):
+            result += e1 * e2
+            
+        return result
+    
+    def length(self):
+        return math.sqrt(sum(x**2 for x in self))
+
+v1 = Vector((1,2))        
+v2 = Vector((3,4))
+
+v3 = v1 + v2
+print(f"v1 + v2 = {v3}")
+
+v4 = v2 - v1
+print(f"v2 - v1 = {v4}")
+
+inner_product = v1.dot(v2)
+print(f"Inner product = {inner_product}")
+
+v1_norm = v1.length()
+v2_norm = v2.length()
+print(f"v1_norm = {v1_norm}")
+print(f"v2_norm = {v2_norm}")
+```
+
+In this example, `.__new__()` runs the steps that you learned in the previous section. First, the method creates a new instance of the current class, `cls` by calling `super().__new__()`. This time, the call rolls back to `tuple.__new__()` which creates a new instance and initializes it using `value` as an argument. Then, we customize the new instance by adding additional attributes that we'd like. Finally, a new instance gets returned. 
+
+:::{.callout-note}
+PEP-8 says:
+- Always use `self` for the first argument to instance methods.
+- Always use `cls` for the first argument to class methods
+:::
+
+### Writing a factory class
+
+Writing a factory class is often a requirement that can raise the need for a custom implementation of `.__new__()`. However, you should be careful, because in this case, Python skips the initialization step entirely. So, we have the responsibility of taking the newly created object into a valid state, before using it in our code.
+
+```{python}
+from random import choice
+
+class Pet:
+    def __new__(cls):
+        other = choice([Dog, Cat, Python])
+        instance = super().__new__(other)
+        print(f"I am a {type(instance).__name__}!")
+        return instance
+
+class Dog:
+    def communicate(self):
+        print("woof! woof!")
+        
+class Cat:
+    def communicate(self):
+        print("meow! meow!")
+        
+class Python:
+    def communicate(Self):
+        print("hiss! hiss!")       
+```
+
+In this example, `Pet` provides a `.__new__()` method that creates a new instance by randomly selecting a class from a list of existing classes.
+
+Also, remember `.__init__()` of `Pet` is never called. That's because `Pet.__new__()` always returns objects of a different class rather than of `Pet` itself.
+
+### Allowing only a single instance of your class
+
+Sometimes you need to implement a class that allows the creation of a single instance only. This type of class is commonly known as a singleton class. In this situation, the `__new__()` method comes in handy because it can help you restrict the number of instance that a given class can have. 
+
+:::{.callout-note}
+Most experienced Python developers would argue that you don't need to implement the singleton design pattern in Python unless you already have a working class and need to add the pattern's functionality on top of it.
+:::
+
+Here's an example of coding a `Singleton` class with a `.__new__()` method that allows the creation of only one instance at a time. To do this, `.__new__()` checks the existence of previous instanced cached on a class attribute. 
+
+```{python}
+class Singleton(object):
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+        
+first = Singleton()
+second = Singleton()
+first is second
+```
+
 ## `@classmethod` vs `@staticmethod` 
 ## Inheritance and composition, `super` keyword
 ## Providing multiple constructors in a Python class
 ## Operator and function overloading
 ## Python Decorators
 ## Python metclasses
+# `dataclass` module
 # Implementing map/dict 
 # Python closures
 # What are Mixin classes in Python?
 # Python bindings: Calling C or C++ with Python
+# `collections` module
 # `all` and `any` in Python
 
 Consider the following code snip
