@@ -7,9 +7,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Quasar">
-<meta name="dcterms.date" content="2025-06-08">
+<meta name="dcterms.date" content="2025-12-05">
 
-<title>quantdev.blog - A bounded SPSC lock-free queue implementation</title>
+<title>quantdev.blog - Lock-free SPSC Queue</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -21,40 +21,6 @@ ul.task-list li input[type="checkbox"] {
   width: 0.8em;
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
-}
-/* CSS for syntax highlighting */
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -106,8 +72,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 <script async="" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9993009899870547" crossorigin="anonymous"></script>
 
-  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
 
 <link rel="stylesheet" href="../../styles.css">
 </head>
@@ -175,7 +139,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <header id="title-block-header" class="quarto-title-block default page-columns page-full">
   <div class="quarto-title-banner page-columns page-full">
     <div class="quarto-title column-body">
-      <h1 class="title">A bounded SPSC lock-free queue implementation</h1>
+      <h1 class="title">Lock-free SPSC Queue</h1>
                                 <div class="quarto-categories">
                 <div class="quarto-category">C++</div>
               </div>
@@ -195,7 +159,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <div>
       <div class="quarto-title-meta-heading">Published</div>
       <div class="quarto-title-meta-contents">
-        <p class="date">June 8, 2025</p>
+        <p class="date">December 5, 2025</p>
       </div>
     </div>
     
@@ -213,12 +177,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul>
   <li><a href="#designing-the-spsc_queue-data-structure" id="toc-designing-the-spsc_queue-data-structure" class="nav-link active" data-scroll-target="#designing-the-spsc_queue-data-structure">Designing the <code>spsc_queue</code> data-structure</a>
   <ul class="collapse">
-  <li><a href="#read_index-and-write_index-indices" id="toc-read_index-and-write_index-indices" class="nav-link" data-scroll-target="#read_index-and-write_index-indices"><code>read_index</code> and <code>write_index</code> indices</a></li>
-  <li><a href="#why-implementing-growing-lock-free-queues-is-much-harder" id="toc-why-implementing-growing-lock-free-queues-is-much-harder" class="nav-link" data-scroll-target="#why-implementing-growing-lock-free-queues-is-much-harder">Why implementing growing lock-free queues is much harder?</a></li>
-  <li><a href="#cache-lines-and-cache-coherency." id="toc-cache-lines-and-cache-coherency." class="nav-link" data-scroll-target="#cache-lines-and-cache-coherency.">Cache lines and cache coherency.</a></li>
-  <li><a href="#false-sharing" id="toc-false-sharing" class="nav-link" data-scroll-target="#false-sharing">False Sharing</a></li>
-  <li><a href="#avoiding-false-sharing" id="toc-avoiding-false-sharing" class="nav-link" data-scroll-target="#avoiding-false-sharing">Avoiding false sharing</a></li>
-  <li><a href="#implementing-try_push-and-try_pop-methods" id="toc-implementing-try_push-and-try_pop-methods" class="nav-link" data-scroll-target="#implementing-try_push-and-try_pop-methods">Implementing <code>try_push</code> and <code>try_pop</code> methods</a></li>
+  <li><a href="#what-makes-an-operation-atomic" id="toc-what-makes-an-operation-atomic" class="nav-link" data-scroll-target="#what-makes-an-operation-atomic">What makes an operation atomic?</a></li>
+  <li><a href="#setup---how-the-queue-works" id="toc-setup---how-the-queue-works" class="nav-link" data-scroll-target="#setup---how-the-queue-works">Setup - How the queue works</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -231,141 +191,78 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 <section id="designing-the-spsc_queue-data-structure" class="level1">
 <h1>Designing the <code>spsc_queue</code> data-structure</h1>
-<p>There are several important performance considerations, when implementing an SPSC lock-free queue.</p>
-<section id="read_index-and-write_index-indices" class="level2">
-<h2 class="anchored" data-anchor-id="read_index-and-write_index-indices"><code>read_index</code> and <code>write_index</code> indices</h2>
-<p>A queue needs to keep track of the <code>read_index</code> (the head of the queue) and the <code>write_index</code> (the tail of the queue). These indices should be atomically incremented.</p>
-</section>
-<section id="why-implementing-growing-lock-free-queues-is-much-harder" class="level2">
-<h2 class="anchored" data-anchor-id="why-implementing-growing-lock-free-queues-is-much-harder">Why implementing growing lock-free queues is much harder?</h2>
-<p>Lock-free queues are generally bounded queues. Imagine a scenario where the underlying data-structure of a lock-free queue is <code>std::vector&lt;T&gt;</code> which can grow dynamically in size.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">class</span> spsc_queue<span class="op">{</span></span>
-<span id="cb1-2"><a href="#cb1-2"></a>    <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> <span class="va">m_buffer</span><span class="op">;</span></span>
-<span id="cb1-3"><a href="#cb1-3"></a>    <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">&gt;</span> <span class="va">m_write_index</span><span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
-<span id="cb1-4"><a href="#cb1-4"></a>    <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">&gt;</span> <span class="va">m_read_index</span><span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
-<span id="cb1-5"><a href="#cb1-5"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Now, a writer thread <code>W</code> that wants to write an element to the queue, performs <code>push_back()</code> on the vector. Assume that the vector’s <code>size() == capacity()</code>, so it is full. Internally the vector does the following steps:</p>
+<p>I would like to present my implementation for an SPSC lock-free queue in this blog-post.</p>
+<section id="what-makes-an-operation-atomic" class="level2">
+<h2 class="anchored" data-anchor-id="what-makes-an-operation-atomic">What makes an operation atomic?</h2>
+<p>When a programmer says that an operation is atomic, there are atleast two properties to which they might be referring:</p>
 <ul>
-<li><p>A new heap memory allocation is performed with a larger capacity equal to two times the original capacity.</p></li>
-<li><p>Move/copy construct elements of type <code>T</code> from the old memory block to the new memory block.</p></li>
-<li><p>Free the old memory block.</p></li>
+<li><em>Non-preemptible</em> - The operation can’t be pre-empted in the middle (e.g.&nbsp;by another thread).</li>
+<li><em>Synchronizable</em> - The results of the operation can be made visible to other threads of execution in a controllable fashion.</li>
 </ul>
-<p><code>m_buffer</code> is reassigned to the new memory block. Since there is more room for the new element, it Will be copied/moved to <code>m_buffer[write_index + 1]</code>.</p>
-<p>At this point a reader thread <code>R</code> wants to pop an element off the queue.</p>
-<p>The writer thread <code>W</code>, however, hasn’t synchronized with the reader thread <code>R</code>.</p>
-<p>So, the reader thread <code>R</code> accesses <code>m_buffer[read_index]</code>. However, in this thread <code>m_buffer</code> still refers to the old memory block. This is UB(undefined behavior).</p>
-<p>Consequently, lock-free queues are usually bounded. You can implement growing lock-free queues, it’s much harder and potentially has higher overhead compared to a fixed-capacity queue.</p>
 </section>
-<section id="cache-lines-and-cache-coherency." class="level2">
-<h2 class="anchored" data-anchor-id="cache-lines-and-cache-coherency.">Cache lines and cache coherency.</h2>
-<p>A cache-line is typically <span class="math inline">\(64\)</span>-bytes on most machines.</p>
-<p>If cache line X is in the cache of multiple cores, and one of these cores mutates its data, then the change must be reflected in all the cores owning X via a cache coherency mechanism</p>
-<p>For simplicity, suppose there are <span class="math inline">\(2\)</span> cores - A and B. Further assume, that core A reads and writes to a variable <code>a</code>, core B reads and writes to a variable <code>b</code>, and <code>a</code> and <code>b</code> are close to each other in main memory - they are on the same cache line.</p>
-<p>Core A first reads the value of <code>a</code> from main memory. It therefore loads the entire cache line and marks it as <strong>exclusive</strong> access as it is the only core operating on this cache line. Core B decides to read the value of <code>b</code>. Since, <code>a</code> and <code>b</code> are close and reside on the same cache line, Core B loads the same cache line and both cores tag their cache lines as <strong>shared</strong> access.</p>
-<p>Now, let’s suppose core A decides to change the value of <code>a</code>. The core A stores this change only in its store buffer and marks its cache line as <strong>modified</strong>. It also communicates this change to core B, and this core in turn will mark its cache as <strong>invalidated</strong>.</p>
-<p>That’s how different cores ensure their caches are coherent with each other.</p>
-<div class="quarto-figure quarto-figure-center">
-<figure class="figure">
-<p><img src="https://wiki.cdot.senecapolytechnic.ca/w/imgs/CPUCacheline.png" class="img-fluid figure-img"></p>
-<figcaption class="figure-caption">CPU Cache line</figcaption>
-</figure>
-</div>
-</section>
-<section id="false-sharing" class="level2">
-<h2 class="anchored" data-anchor-id="false-sharing">False Sharing</h2>
-<p>False-sharing occurs when threads on different processors modify different variables residing on the same cache-line.</p>
-<p>What happens now, when core B decides to re-read the value of <code>b</code>? Since, the cache line for core B is invalidated, it should now read the value of <code>b</code> from main memory again. This will force the core A to flush its store buffer, and then core B re-fetches the latest cache-line version from main memory. Both cores end up with the latest cache-line version in the <strong>shared</strong> state again.</p>
-<p>So, this imposes a cache miss to one core and an early buffer flush to another one, even though the two cores weren’t operating on the same memory location. This is called <strong>false-sharing</strong>.</p>
-<p>Keeping objects close in memory is often very desirable for performance reasons. False sharing is a potential risk for multithreaded applications that mutate data.</p>
-</section>
-<section id="avoiding-false-sharing" class="level2">
-<h2 class="anchored" data-anchor-id="avoiding-false-sharing">Avoiding false sharing</h2>
-<p>To avoid false-sharing, the <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0154r1.html"><code>std::hardware_destructive_interference_size</code></a> constant defined in the <code>thread</code> header, is used to determine the cache-line size and is to be used with <code>alignas()</code>.</p>
-<p>So, we define our <code>spspc_queue</code> class as follows:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">template</span><span class="op">&lt;</span>Queueable T<span class="op">,</span> <span class="bu">std::</span>size_t<span class="op"> </span>N<span class="op">&gt;</span></span>
-<span id="cb2-2"><a href="#cb2-2"></a>    <span class="kw">class</span> spsc_queue<span class="op">{</span></span>
-<span id="cb2-3"><a href="#cb2-3"></a>        <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb2-4"><a href="#cb2-4"></a>        <span class="kw">using</span> <span class="dt">size_type</span> <span class="op">=</span> <span class="bu">std::</span>size_t<span class="op">;</span></span>
-<span id="cb2-5"><a href="#cb2-5"></a>        <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
-<span id="cb2-6"><a href="#cb2-6"></a>        <span class="kw">using</span> reference <span class="op">=</span> T<span class="op">&amp;;</span></span>
-<span id="cb2-7"><a href="#cb2-7"></a></span>
-<span id="cb2-8"><a href="#cb2-8"></a>        <span class="at">static</span> <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span><span class="va">m_capacity</span> <span class="op">{</span><span class="dv">1</span> <span class="op">&lt;&lt;</span> N<span class="op">};</span></span>
-<span id="cb2-9"><a href="#cb2-9"></a>        T <span class="va">m_buffer</span><span class="op">[</span><span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb2-10"><a href="#cb2-10"></a>        <span class="kw">alignas</span><span class="op">(</span><span class="bu">std::</span>hardware_destructive_interference_size<span class="op">)</span> <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">&gt;</span> <span class="va">m_read_index</span><span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
-<span id="cb2-11"><a href="#cb2-11"></a>        <span class="kw">alignas</span><span class="op">(</span><span class="bu">std::</span>hardware_destructive_interference_size<span class="op">)</span> <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">&gt;</span> <span class="va">m_write_index</span><span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
-<span id="cb2-12"><a href="#cb2-12"></a>    <span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="implementing-try_push-and-try_pop-methods" class="level2">
-<h2 class="anchored" data-anchor-id="implementing-try_push-and-try_pop-methods">Implementing <code>try_push</code> and <code>try_pop</code> methods</h2>
-<div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb3-2"><a href="#cb3-2"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
-<span id="cb3-3"><a href="#cb3-3"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
-<span id="cb3-4"><a href="#cb3-4"></a><span class="pp">#include </span><span class="im">&lt;concepts&gt;</span></span>
-<span id="cb3-5"><a href="#cb3-5"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
-<span id="cb3-6"><a href="#cb3-6"></a><span class="pp">#include </span><span class="im">&lt;optional&gt;</span></span>
-<span id="cb3-7"><a href="#cb3-7"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb3-8"><a href="#cb3-8"></a><span class="pp">#include </span><span class="im">&lt;math.h&gt;</span></span>
-<span id="cb3-9"><a href="#cb3-9"></a></span>
-<span id="cb3-10"><a href="#cb3-10"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
-<span id="cb3-11"><a href="#cb3-11"></a>    </span>
-<span id="cb3-12"><a href="#cb3-12"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb3-13"><a href="#cb3-13"></a>    <span class="kw">concept</span> Queueable <span class="op">=</span> <span class="bu">std::</span>default_initializable<span class="op">&lt;</span>T<span class="op">&gt;</span> <span class="op">&amp;&amp;</span> <span class="bu">std::</span>move_constructible<span class="op">&lt;</span>T<span class="op">&gt;;</span></span>
-<span id="cb3-14"><a href="#cb3-14"></a></span>
-<span id="cb3-15"><a href="#cb3-15"></a>    <span class="co">/**</span></span>
-<span id="cb3-16"><a href="#cb3-16"></a><span class="co">     * </span><span class="an">@brief</span><span class="co"> The `spsc_queue` class provides a single-reader, single-writer</span></span>
-<span id="cb3-17"><a href="#cb3-17"></a><span class="co">     * fifo queue. </span></span>
-<span id="cb3-18"><a href="#cb3-18"></a><span class="co">     */</span></span>
-<span id="cb3-19"><a href="#cb3-19"></a>    <span class="kw">template</span><span class="op">&lt;</span>Queueable T<span class="op">,</span> <span class="bu">std::</span>size_t<span class="op"> </span>N<span class="op">&gt;</span></span>
-<span id="cb3-20"><a href="#cb3-20"></a>    <span class="kw">class</span> spsc_queue<span class="op">{</span></span>
-<span id="cb3-21"><a href="#cb3-21"></a>        <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb3-22"><a href="#cb3-22"></a>        <span class="kw">using</span> <span class="dt">size_type</span> <span class="op">=</span> <span class="bu">std::</span>size_t<span class="op">;</span></span>
-<span id="cb3-23"><a href="#cb3-23"></a>        <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
-<span id="cb3-24"><a href="#cb3-24"></a>        <span class="kw">using</span> reference <span class="op">=</span> T<span class="op">&amp;;</span></span>
-<span id="cb3-25"><a href="#cb3-25"></a></span>
-<span id="cb3-26"><a href="#cb3-26"></a>        <span class="at">static</span> <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span><span class="va">m_capacity</span> <span class="op">{(</span><span class="dv">1</span> <span class="op">&lt;&lt;</span> N<span class="op">)};</span></span>
-<span id="cb3-27"><a href="#cb3-27"></a>        T <span class="va">m_buffer</span><span class="op">[</span><span class="va">m_capacity</span><span class="op">];</span></span>
-<span id="cb3-28"><a href="#cb3-28"></a>        <span class="kw">alignas</span><span class="op">(</span><span class="bu">std::</span>hardware_destructive_interference_size<span class="op">)</span> <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">&gt;</span> <span class="va">m_read_index</span><span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
-<span id="cb3-29"><a href="#cb3-29"></a>        <span class="kw">alignas</span><span class="op">(</span><span class="bu">std::</span>hardware_destructive_interference_size<span class="op">)</span> <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">&gt;</span> <span class="va">m_write_index</span><span class="op">{</span> <span class="dv">0</span> <span class="op">};</span></span>
-<span id="cb3-30"><a href="#cb3-30"></a></span>
-<span id="cb3-31"><a href="#cb3-31"></a>        <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb3-32"><a href="#cb3-32"></a>        spsc_queue<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
-<span id="cb3-33"><a href="#cb3-33"></a>        spsc_queue<span class="op">(</span><span class="at">const</span> spsc_queue<span class="op">&amp;)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
-<span id="cb3-34"><a href="#cb3-34"></a>        spsc_queue<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> spsc_queue<span class="op">&amp;)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
-<span id="cb3-35"><a href="#cb3-35"></a>        spsc_queue<span class="op">(</span>spsc_queue<span class="op">&amp;&amp;)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
-<span id="cb3-36"><a href="#cb3-36"></a>        spsc_queue<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span>spsc_queue<span class="op">&amp;&amp;)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
-<span id="cb3-37"><a href="#cb3-37"></a></span>
-<span id="cb3-38"><a href="#cb3-38"></a>        <span class="co">/**</span></span>
-<span id="cb3-39"><a href="#cb3-39"></a><span class="co">         * </span><span class="an">@brief</span><span class="co"> pushes an element onto the ringbuffer.</span></span>
-<span id="cb3-40"><a href="#cb3-40"></a><span class="co">         * </span><span class="an">@param</span><span class="co"> </span><span class="cv">`element`</span><span class="co"> will be pushed to the queue unless the queue is not full</span></span>
-<span id="cb3-41"><a href="#cb3-41"></a><span class="co">         */</span></span>
-<span id="cb3-42"><a href="#cb3-42"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> U<span class="op">&gt;</span></span>
-<span id="cb3-43"><a href="#cb3-43"></a>        <span class="kw">requires</span> <span class="bu">std::</span>is_convertible_v<span class="op">&lt;</span>T<span class="op">,</span>U<span class="op">&gt;</span></span>
-<span id="cb3-44"><a href="#cb3-44"></a>        <span class="dt">bool</span> try_push<span class="op">(</span>U<span class="op">&amp;&amp;</span> element<span class="op">){</span></span>
-<span id="cb3-45"><a href="#cb3-45"></a>            <span class="at">const</span> <span class="bu">std::</span>size_t<span class="op"> </span>write_index <span class="op">=</span> <span class="va">m_write_index</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">);</span></span>
-<span id="cb3-46"><a href="#cb3-46"></a>            <span class="at">const</span> <span class="bu">std::</span>size_t<span class="op"> </span>next_write_index <span class="op">=</span> <span class="op">(</span>write_index <span class="op">+</span> <span class="dv">1</span><span class="op">)</span> <span class="op">&amp;</span> <span class="op">(</span><span class="va">m_capacity</span> <span class="op">-</span> <span class="dv">1</span><span class="op">);</span></span>
-<span id="cb3-47"><a href="#cb3-47"></a></span>
-<span id="cb3-48"><a href="#cb3-48"></a>            <span class="cf">if</span><span class="op">(</span>next_write_index <span class="op">!=</span> <span class="va">m_read_index</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
-<span id="cb3-49"><a href="#cb3-49"></a>            <span class="op">{</span></span>
-<span id="cb3-50"><a href="#cb3-50"></a>                <span class="va">m_buffer</span><span class="op">[</span>write_index<span class="op">]</span> <span class="op">=</span> <span class="bu">std::</span>forward<span class="op">&lt;</span>U<span class="op">&gt;(</span>element<span class="op">);</span></span>
-<span id="cb3-51"><a href="#cb3-51"></a>                <span class="va">m_write_index</span><span class="op">.</span>store<span class="op">(</span>next_write_index<span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb3-52"><a href="#cb3-52"></a>                <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
-<span id="cb3-53"><a href="#cb3-53"></a>            <span class="op">}</span>   </span>
-<span id="cb3-54"><a href="#cb3-54"></a>            <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
-<span id="cb3-55"><a href="#cb3-55"></a>        <span class="op">}</span></span>
-<span id="cb3-56"><a href="#cb3-56"></a>        </span>
-<span id="cb3-57"><a href="#cb3-57"></a>        <span class="bu">std::</span>optional<span class="op">&lt;</span>T<span class="op">&gt;</span> try_pop<span class="op">(){</span></span>
-<span id="cb3-58"><a href="#cb3-58"></a>            <span class="bu">std::</span>optional<span class="op">&lt;</span>T<span class="op">&gt;</span> result<span class="op">{</span><span class="bu">std::</span>nullopt<span class="op">};</span></span>
-<span id="cb3-59"><a href="#cb3-59"></a>            <span class="at">const</span> <span class="bu">std::</span>size_t<span class="op"> </span>read_index <span class="op">=</span> <span class="va">m_read_index</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">);</span></span>
-<span id="cb3-60"><a href="#cb3-60"></a></span>
-<span id="cb3-61"><a href="#cb3-61"></a>            <span class="cf">if</span><span class="op">(</span>read_index <span class="op">==</span> <span class="va">m_write_index</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
-<span id="cb3-62"><a href="#cb3-62"></a>                <span class="cf">return</span> result<span class="op">;</span></span>
-<span id="cb3-63"><a href="#cb3-63"></a></span>
-<span id="cb3-64"><a href="#cb3-64"></a>            result <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span><span class="va">m_buffer</span><span class="op">[</span>read_index<span class="op">]);</span></span>
-<span id="cb3-65"><a href="#cb3-65"></a>            <span class="va">m_read_index</span><span class="op">.</span>store<span class="op">((</span>read_index <span class="op">+</span> <span class="dv">1</span> <span class="op">)</span> <span class="op">&amp;</span> <span class="op">(</span><span class="va">m_capacity</span> <span class="op">-</span> <span class="dv">1</span><span class="op">),</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb3-66"><a href="#cb3-66"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
-<span id="cb3-67"><a href="#cb3-67"></a>        <span class="op">}</span></span>
-<span id="cb3-68"><a href="#cb3-68"></a>    <span class="op">};</span></span>
-<span id="cb3-69"><a href="#cb3-69"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="setup---how-the-queue-works" class="level2">
+<h2 class="anchored" data-anchor-id="setup---how-the-queue-works">Setup - How the queue works</h2>
+<ul>
+<li>Bounded size. The elements are stored in a fixed-length buffer.</li>
+<li>Single-producer, Single-consumer applications.</li>
+<li>Circular buffer. The <code>head</code> and <code>tail</code> cursors after reaching the maximum index of the buffer wrap around to the start of the buffer.</li>
+</ul>
+<p>The <code>spsc_queue</code> type contains a fixed-length array - a buffer to store the elements of the queue and it also contains two indices into the array:</p>
+<ul>
+<li><code>m_head</code> - The index of the <code>front</code> element, if any.</li>
+<li><code>m_tail</code> - The index where a new element would be inserted at the back of the queue.</li>
+</ul>
+<p>In an initially empty container, both the <code>m_head</code> and <code>m_tail</code> start at zero:</p>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│                   SPSC Ring Buffer (Empty)                  │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   Index:   0    1    2    3    4    5    6    7             │
+│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
+│  Buffer: │    │    │    │    │    │    │    │    │          │
+│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
+│            ▲                                                │
+│            │                                                │
+│        m_head = 0                                           │
+│        m_tail = 0                                           │
+│                                                             │
+│   Status: Empty (m_head == m_tail)                          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘</code></pre>
+<p>Then I have a <code>spsc_queue::push_back()</code> function that is used to append a new element to the queue. If the queue is not full, this operation should succeed, and it will go ahead and write a new element to the tail location and move the <code>m_tail</code> index forward.</p>
+<p>For example, if do <code>push_back(1)</code> the queue looks something like this.</p>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│                 SPSC Ring Buffer (1 element)                │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   Index:   0    1    2    3    4    5    6    7             │
+│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
+│  Buffer: │ 1  │    │    │    │    │    │    │    │          │
+│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
+│            ▲    ▲                                           │
+│            │    │                                           │
+│        m_head   m_tail = 1                                  │
+│         = 0                                                 │
+│                                                             │
+│   Status: 1 element (m_tail &gt; m_head)                       │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘</code></pre>
+<p>Here’s the queue with a few more elements added:</p>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│                 SPSC Ring Buffer (4 elements)               │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   Index:   0    1    2    3    4    5    6    7             │
+│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
+│  Buffer: │ 1  │ 2  │ 3  │ 5  │    │    │    │    │          │
+│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
+│            ▲                   ▲                            │
+│            │                   │                            │
+│        m_head = 0          m_tail = 4                       │
+│                                                             │
+│   Status: 4 elements (m_tail &gt; m_head)                      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘</code></pre>
 
 
 </section>
