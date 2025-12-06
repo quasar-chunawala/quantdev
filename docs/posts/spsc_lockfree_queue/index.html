@@ -229,6 +229,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="designing-the-spsc_queue-data-structure" class="level1">
 <h1>Designing the <code>spsc_queue</code> data-structure</h1>
 <p>I would like to present my implementation for an SPSC lock-free queue in this blog-post.</p>
+<div class="cell" data-execution_count="1">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1"></a><span class="op">%</span>load_ext itikz</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
 <section id="what-makes-an-operation-atomic" class="level2">
 <h2 class="anchored" data-anchor-id="what-makes-an-operation-atomic">What makes an operation atomic?</h2>
 <p>When a programmer says that an operation is atomic, there are atleast two properties to which they might be referring:</p>
@@ -250,112 +253,241 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><code>m_tail</code> - The index where a new element would be inserted at the back of the queue.</li>
 </ul>
 <p>In an initially empty container, both the <code>m_head</code> and <code>m_tail</code> start at zero:</p>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                   SPSC Ring Buffer (Empty)                  │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   Index:   0    1    2    3    4    5    6    7             │
-│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
-│  Buffer: │    │    │    │    │    │    │    │    │          │
-│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
-│            ▲                                                │
-│            │                                                │
-│        m_head = 0                                           │
-│        m_tail = 0                                           │
-│                                                             │
-│   Status: Empty (m_head == m_tail)                          │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘</code></pre>
+<div class="{text-center}">
+<div class="cell" data-execution_count="2">
+<details>
+<summary>Show the code</summary>
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb2-2"><a href="#cb2-2"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
+<span id="cb2-3"><a href="#cb2-3"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a>    <span class="op">%</span> Title</span>
+<span id="cb2-5"><a href="#cb2-5"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (Empty)}}<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6"></a>    </span>
+<span id="cb2-7"><a href="#cb2-7"></a>    <span class="op">%</span> Index labels</span>
+<span id="cb2-8"><a href="#cb2-8"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb2-10"><a href="#cb2-10"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
+<span id="cb2-11"><a href="#cb2-11"></a>    }</span>
+<span id="cb2-12"><a href="#cb2-12"></a>    </span>
+<span id="cb2-13"><a href="#cb2-13"></a>    <span class="op">%</span> Buffer cells</span>
+<span id="cb2-14"><a href="#cb2-14"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
+<span id="cb2-15"><a href="#cb2-15"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb2-16"><a href="#cb2-16"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb2-17"><a href="#cb2-17"></a>    }</span>
+<span id="cb2-18"><a href="#cb2-18"></a>    </span>
+<span id="cb2-19"><a href="#cb2-19"></a>    <span class="op">%</span> Pointers</span>
+<span id="cb2-20"><a href="#cb2-20"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb2-21"><a href="#cb2-21"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_head <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb2-22"><a href="#cb2-22"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.6</span>) {m\_tail <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb2-23"><a href="#cb2-23"></a>    </span>
+<span id="cb2-24"><a href="#cb2-24"></a>    <span class="op">%</span> Status</span>
+<span id="cb2-25"><a href="#cb2-25"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">4.2</span>) {Status: Empty (m\_head <span class="op">==</span> m\_tail)}<span class="op">;</span></span>
+<span id="cb2-26"><a href="#cb2-26"></a>\end{tikzpicture}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-display" data-execution_count="2">
+<p><img src="index_files/figure-html/cell-3-output-1.svg" class="img-fluid"></p>
+</div>
+</div>
+</div>
 <p>Then I have a <code>spsc_queue::push_back()</code> function that is used to append a new element to the queue. If the queue is not full, this operation should succeed, and it will go ahead and write a new element to the tail location and move the <code>m_tail</code> index forward.</p>
 <p>For example, if do <code>push_back(1)</code> the queue looks something like this.</p>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                 SPSC Ring Buffer (1 element)                │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   Index:   0    1    2    3    4    5    6    7             │
-│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
-│  Buffer: │ 1  │    │    │    │    │    │    │    │          │
-│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
-│            ▲    ▲                                           │
-│            │    │                                           │
-│        m_head   m_tail = 1                                  │
-│         = 0                                                 │
-│                                                             │
-│   Status: 1 element (m_tail &gt; m_head)                       │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘</code></pre>
+<div class="{text-center}">
+<div class="cell" data-execution_count="3">
+<details>
+<summary>Show the code</summary>
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb3-2"><a href="#cb3-2"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
+<span id="cb3-3"><a href="#cb3-3"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a>    <span class="op">%</span> Title</span>
+<span id="cb3-5"><a href="#cb3-5"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">1</span> element)}}<span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6"></a>    </span>
+<span id="cb3-7"><a href="#cb3-7"></a>    <span class="op">%</span> m_head pointer (above)</span>
+<span id="cb3-8"><a href="#cb3-8"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb3-9"><a href="#cb3-9"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
+<span id="cb3-10"><a href="#cb3-10"></a>    </span>
+<span id="cb3-11"><a href="#cb3-11"></a>    <span class="op">%</span> Index labels</span>
+<span id="cb3-12"><a href="#cb3-12"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
+<span id="cb3-13"><a href="#cb3-13"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb3-14"><a href="#cb3-14"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
+<span id="cb3-15"><a href="#cb3-15"></a>    }</span>
+<span id="cb3-16"><a href="#cb3-16"></a>    </span>
+<span id="cb3-17"><a href="#cb3-17"></a>    <span class="op">%</span> Buffer cells</span>
+<span id="cb3-18"><a href="#cb3-18"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
+<span id="cb3-19"><a href="#cb3-19"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb3-20"><a href="#cb3-20"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb3-21"><a href="#cb3-21"></a>    }</span>
+<span id="cb3-22"><a href="#cb3-22"></a>    <span class="op">%</span> Fill first cell</span>
+<span id="cb3-23"><a href="#cb3-23"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb3-24"><a href="#cb3-24"></a>    \node at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">1</span>}<span class="op">;</span></span>
+<span id="cb3-25"><a href="#cb3-25"></a>    </span>
+<span id="cb3-26"><a href="#cb3-26"></a>    <span class="op">%</span> m_tail pointer (below)</span>
+<span id="cb3-27"><a href="#cb3-27"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">1</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb3-28"><a href="#cb3-28"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">1</span>}<span class="op">;</span></span>
+<span id="cb3-29"><a href="#cb3-29"></a>    </span>
+<span id="cb3-30"><a href="#cb3-30"></a>    <span class="op">%</span> Status</span>
+<span id="cb3-31"><a href="#cb3-31"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.8</span>) {Status: <span class="dv">1</span> element (m\_tail <span class="op">&gt;</span> m\_head)}<span class="op">;</span></span>
+<span id="cb3-32"><a href="#cb3-32"></a>\end{tikzpicture}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-display" data-execution_count="3">
+<p><img src="index_files/figure-html/cell-4-output-1.svg" class="img-fluid"></p>
+</div>
+</div>
+</div>
 <p>Here’s the queue with a few more elements added:</p>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                 SPSC Ring Buffer (4 elements)               │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   Index:   0    1    2    3    4    5    6    7             │
-│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
-│  Buffer: │ 1  │ 2  │ 3  │ 5  │    │    │    │    │          │
-│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
-│            ▲                   ▲                            │
-│            │                   │                            │
-│        m_head = 0          m_tail = 4                       │
-│                                                             │
-│   Status: 4 elements (m_tail &gt; m_head)                      │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘</code></pre>
+<div class="{text-center}">
+<div class="cell" data-execution_count="4">
+<details>
+<summary>Show the code</summary>
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb4-2"><a href="#cb4-2"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
+<span id="cb4-3"><a href="#cb4-3"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4"></a>    <span class="op">%</span> Title</span>
+<span id="cb4-5"><a href="#cb4-5"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">4</span> elements)}}<span class="op">;</span></span>
+<span id="cb4-6"><a href="#cb4-6"></a>    </span>
+<span id="cb4-7"><a href="#cb4-7"></a>    <span class="op">%</span> m_head pointer (above)</span>
+<span id="cb4-8"><a href="#cb4-8"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb4-9"><a href="#cb4-9"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
+<span id="cb4-10"><a href="#cb4-10"></a>    </span>
+<span id="cb4-11"><a href="#cb4-11"></a>    <span class="op">%</span> Index labels</span>
+<span id="cb4-12"><a href="#cb4-12"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
+<span id="cb4-13"><a href="#cb4-13"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb4-14"><a href="#cb4-14"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
+<span id="cb4-15"><a href="#cb4-15"></a>    }</span>
+<span id="cb4-16"><a href="#cb4-16"></a>    </span>
+<span id="cb4-17"><a href="#cb4-17"></a>    <span class="op">%</span> Buffer cells</span>
+<span id="cb4-18"><a href="#cb4-18"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
+<span id="cb4-19"><a href="#cb4-19"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb4-20"><a href="#cb4-20"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-21"><a href="#cb4-21"></a>    }</span>
+<span id="cb4-22"><a href="#cb4-22"></a>    <span class="op">%</span> Fill cells <span class="dv">0</span><span class="op">-</span><span class="dv">3</span></span>
+<span id="cb4-23"><a href="#cb4-23"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-24"><a href="#cb4-24"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">0.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">1.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-25"><a href="#cb4-25"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">2.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-26"><a href="#cb4-26"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">2.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">3.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-27"><a href="#cb4-27"></a>    \node at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">1</span>}<span class="op">;</span></span>
+<span id="cb4-28"><a href="#cb4-28"></a>    \node at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">2</span>}<span class="op">;</span></span>
+<span id="cb4-29"><a href="#cb4-29"></a>    \node at (<span class="dv">2</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">3</span>}<span class="op">;</span></span>
+<span id="cb4-30"><a href="#cb4-30"></a>    \node at (<span class="dv">3</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">5</span>}<span class="op">;</span></span>
+<span id="cb4-31"><a href="#cb4-31"></a>    </span>
+<span id="cb4-32"><a href="#cb4-32"></a>    <span class="op">%</span> m_tail pointer (below)</span>
+<span id="cb4-33"><a href="#cb4-33"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-34"><a href="#cb4-34"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">4</span>}<span class="op">;</span></span>
+<span id="cb4-35"><a href="#cb4-35"></a>    </span>
+<span id="cb4-36"><a href="#cb4-36"></a>    <span class="op">%</span> Status</span>
+<span id="cb4-37"><a href="#cb4-37"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.8</span>) {Status: <span class="dv">4</span> elements (m\_tail <span class="op">&gt;</span> m\_head)}<span class="op">;</span></span>
+<span id="cb4-38"><a href="#cb4-38"></a>\end{tikzpicture}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-display" data-execution_count="4">
+<p><img src="index_files/figure-html/cell-5-output-1.svg" class="img-fluid"></p>
+</div>
+</div>
+</div>
 <p>Once I have got some elements into the queue, I can go ahead and call the <code>pop()</code> function, which is going to try to read and remove the first element from the front of the queue.</p>
 <p>If the queue isn’t empty, it :</p>
 <ul>
 <li>Advances <code>m_head</code> thereby implicitly discard the element at the front of the queue</li>
 </ul>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                 SPSC Ring Buffer (3 elements)               │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   Index:   0    1    2    3    4    5    6    7             │
-│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
-│  Buffer: │    │ 2  │ 3  │ 5  │    │    │    │    │          │
-│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
-│                 ▲              ▲                            │
-│                 │              │                            │
-│            m_head = 1       m_tail = 4                      │
-│                                                             │
-│   Status: 3 elements (m_tail &gt; m_head)                      │
-│   Note: Index 0 is now "stale" (logically removed)          │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘</code></pre>
+<div class="{text-center}">
+<div class="cell" data-execution_count="5">
+<details>
+<summary>Show the code</summary>
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb5-2"><a href="#cb5-2"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
+<span id="cb5-3"><a href="#cb5-3"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
+<span id="cb5-4"><a href="#cb5-4"></a>    <span class="op">%</span> Title</span>
+<span id="cb5-5"><a href="#cb5-5"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">3</span> elements)}}<span class="op">;</span></span>
+<span id="cb5-6"><a href="#cb5-6"></a>    </span>
+<span id="cb5-7"><a href="#cb5-7"></a>    <span class="op">%</span> m_head pointer (above)</span>
+<span id="cb5-8"><a href="#cb5-8"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">1</span>}<span class="op">;</span></span>
+<span id="cb5-9"><a href="#cb5-9"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
+<span id="cb5-10"><a href="#cb5-10"></a>    </span>
+<span id="cb5-11"><a href="#cb5-11"></a>    <span class="op">%</span> Index labels</span>
+<span id="cb5-12"><a href="#cb5-12"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
+<span id="cb5-13"><a href="#cb5-13"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb5-14"><a href="#cb5-14"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
+<span id="cb5-15"><a href="#cb5-15"></a>    }</span>
+<span id="cb5-16"><a href="#cb5-16"></a>    </span>
+<span id="cb5-17"><a href="#cb5-17"></a>    <span class="op">%</span> Buffer cells</span>
+<span id="cb5-18"><a href="#cb5-18"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
+<span id="cb5-19"><a href="#cb5-19"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb5-20"><a href="#cb5-20"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb5-21"><a href="#cb5-21"></a>    }</span>
+<span id="cb5-22"><a href="#cb5-22"></a>    <span class="op">%</span> Fill cells <span class="dv">1</span><span class="op">-</span><span class="dv">3</span></span>
+<span id="cb5-23"><a href="#cb5-23"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">0.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">1.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb5-24"><a href="#cb5-24"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">2.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb5-25"><a href="#cb5-25"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">2.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">3.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb5-26"><a href="#cb5-26"></a>    \node at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">2</span>}<span class="op">;</span></span>
+<span id="cb5-27"><a href="#cb5-27"></a>    \node at (<span class="dv">2</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">3</span>}<span class="op">;</span></span>
+<span id="cb5-28"><a href="#cb5-28"></a>    \node at (<span class="dv">3</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">5</span>}<span class="op">;</span></span>
+<span id="cb5-29"><a href="#cb5-29"></a>    </span>
+<span id="cb5-30"><a href="#cb5-30"></a>    <span class="op">%</span> m_tail pointer (below)</span>
+<span id="cb5-31"><a href="#cb5-31"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb5-32"><a href="#cb5-32"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">4</span>}<span class="op">;</span></span>
+<span id="cb5-33"><a href="#cb5-33"></a>    </span>
+<span id="cb5-34"><a href="#cb5-34"></a>    <span class="op">%</span> Status</span>
+<span id="cb5-35"><a href="#cb5-35"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.8</span>) {Status: <span class="dv">3</span> elements (m\_tail <span class="op">&gt;</span> m\_head)}<span class="op">;</span></span>
+<span id="cb5-36"><a href="#cb5-36"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">4.2</span>) {Note: Index <span class="dv">0</span> <span class="kw">is</span> now <span class="st">"stale"</span> (logically removed)}<span class="op">;</span></span>
+<span id="cb5-37"><a href="#cb5-37"></a>\end{tikzpicture}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-display" data-execution_count="5">
+<p><img src="index_files/figure-html/cell-6-output-1.svg" class="img-fluid"></p>
+</div>
+</div>
+</div>
 <p>Most of the time, when we advance an index like this, it is a simple increment. But, as I stated earlier, the buffer slots are used in a a circular fashion. If that increment would place that <code>index</code> out of bounds, it wraps around to the zeroeth slot (that’s what makes it a ring) of the queue buffer.</p>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                 SPSC Ring Buffer (7 elements)               │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│            m_head = 1                                       │
-│                 │                                           │
-│                 ▼                                           │
-│   Index:   0    1    2    3    4    5    6    7             │
-│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
-│  Buffer: │    │ 2  │ 3  │ 5  │ 8  │ 13 │ 21 │ 34 │          │
-│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
-│            ▲                                                │
-│            │                                                │
-│       m_tail = 0                                            │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘</code></pre>
+<div class="{text-center}">
+<div class="cell" data-execution_count="6">
+<details>
+<summary>Show the code</summary>
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb6-2"><a href="#cb6-2"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
+<span id="cb6-3"><a href="#cb6-3"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
+<span id="cb6-4"><a href="#cb6-4"></a>    <span class="op">%</span> Title</span>
+<span id="cb6-5"><a href="#cb6-5"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">7</span> elements)}}<span class="op">;</span></span>
+<span id="cb6-6"><a href="#cb6-6"></a>    </span>
+<span id="cb6-7"><a href="#cb6-7"></a>    <span class="op">%</span> m_head pointer (above)</span>
+<span id="cb6-8"><a href="#cb6-8"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">1</span>}<span class="op">;</span></span>
+<span id="cb6-9"><a href="#cb6-9"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
+<span id="cb6-10"><a href="#cb6-10"></a>    </span>
+<span id="cb6-11"><a href="#cb6-11"></a>    <span class="op">%</span> Index labels</span>
+<span id="cb6-12"><a href="#cb6-12"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
+<span id="cb6-13"><a href="#cb6-13"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb6-14"><a href="#cb6-14"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
+<span id="cb6-15"><a href="#cb6-15"></a>    }</span>
+<span id="cb6-16"><a href="#cb6-16"></a>    </span>
+<span id="cb6-17"><a href="#cb6-17"></a>    <span class="op">%</span> Buffer cells</span>
+<span id="cb6-18"><a href="#cb6-18"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
+<span id="cb6-19"><a href="#cb6-19"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb6-20"><a href="#cb6-20"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-21"><a href="#cb6-21"></a>    }</span>
+<span id="cb6-22"><a href="#cb6-22"></a>    <span class="op">%</span> Fill cells <span class="dv">1</span><span class="op">-</span><span class="dv">7</span></span>
+<span id="cb6-23"><a href="#cb6-23"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">0.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">1.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-24"><a href="#cb6-24"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">2.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-25"><a href="#cb6-25"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">2.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">3.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-26"><a href="#cb6-26"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">3.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">4.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-27"><a href="#cb6-27"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">4.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">5.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-28"><a href="#cb6-28"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">5.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">6.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-29"><a href="#cb6-29"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">6.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">7.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-30"><a href="#cb6-30"></a>    \node at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">2</span>}<span class="op">;</span></span>
+<span id="cb6-31"><a href="#cb6-31"></a>    \node at (<span class="dv">2</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">3</span>}<span class="op">;</span></span>
+<span id="cb6-32"><a href="#cb6-32"></a>    \node at (<span class="dv">3</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">5</span>}<span class="op">;</span></span>
+<span id="cb6-33"><a href="#cb6-33"></a>    \node at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">8</span>}<span class="op">;</span></span>
+<span id="cb6-34"><a href="#cb6-34"></a>    \node at (<span class="dv">5</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">13</span>}<span class="op">;</span></span>
+<span id="cb6-35"><a href="#cb6-35"></a>    \node at (<span class="dv">6</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">21</span>}<span class="op">;</span></span>
+<span id="cb6-36"><a href="#cb6-36"></a>    \node at (<span class="dv">7</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">34</span>}<span class="op">;</span></span>
+<span id="cb6-37"><a href="#cb6-37"></a>    </span>
+<span id="cb6-38"><a href="#cb6-38"></a>    <span class="op">%</span> m_tail pointer (below)</span>
+<span id="cb6-39"><a href="#cb6-39"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-40"><a href="#cb6-40"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb6-41"><a href="#cb6-41"></a>\end{tikzpicture}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-display" data-execution_count="6">
+<p><img src="index_files/figure-html/cell-7-output-1.svg" class="img-fluid"></p>
+</div>
+</div>
+</div>
 <p>As we’ll see, it turns out that the indices <code>m_head</code> and <code>m_tail</code> will need to be <code>atomic</code> objects. We’ll understand why this is the case.</p>
 <p>The storage for a ring buffer consists of a fixed-capacity array of elements and the indices for <code>head</code> and <code>tail</code>. We shall write <code>spsc_queue</code> as a templated class having the capacity as a template parameter.</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="dt">size_t</span> capacity<span class="op">&gt;</span></span>
-<span id="cb6-2"><a href="#cb6-2"></a><span class="kw">class</span> spsc_queue<span class="op">{</span></span>
-<span id="cb6-3"><a href="#cb6-3"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb6-4"><a href="#cb6-4"></a>    <span class="co">// The capacity must be a power of two.</span></span>
-<span id="cb6-5"><a href="#cb6-5"></a>    <span class="kw">static_assert</span><span class="op">((</span>capacity <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">))</span> <span class="op">==</span> <span class="dv">0</span><span class="op">);</span>    </span>
-<span id="cb6-6"><a href="#cb6-6"></a>    T <span class="va">m_buffer</span><span class="op">[</span>capacity<span class="op">];</span></span>
-<span id="cb6-7"><a href="#cb6-7"></a>    <span class="dt">size_t</span> <span class="va">m_head</span><span class="op">;</span></span>
-<span id="cb6-8"><a href="#cb6-8"></a>    <span class="dt">size_t</span> <span class="va">m_tail</span><span class="op">;</span></span>
-<span id="cb6-9"><a href="#cb6-9"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb6-10"><a href="#cb6-10"></a>        <span class="co">/* ... */</span></span>
-<span id="cb6-11"><a href="#cb6-11"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>We would like to enforce the capacity to be a power of <span class="math inline">\(2\)</span> for efficiency reasons. Remember, that with this design, there’s always atleast one unused element in the array, because <code>m_head == m_tail + 1</code> is the queue full condition. So, the effective capacity equals <code>capacity - 1</code>.</p>
-</section>
-<section id="the-class-interface" class="level2">
-<h2 class="anchored" data-anchor-id="the-class-interface">The <code>class</code> interface</h2>
-<p>Here is the class interface:</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="dt">size_t</span> capacity<span class="op">&gt;</span></span>
 <span id="cb7-2"><a href="#cb7-2"></a><span class="kw">class</span> spsc_queue<span class="op">{</span></span>
 <span id="cb7-3"><a href="#cb7-3"></a>    <span class="kw">private</span><span class="op">:</span></span>
@@ -367,6 +499,22 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb7-9"><a href="#cb7-9"></a>    <span class="kw">public</span><span class="op">:</span></span>
 <span id="cb7-10"><a href="#cb7-10"></a>        <span class="co">/* ... */</span></span>
 <span id="cb7-11"><a href="#cb7-11"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>We would like to enforce the capacity to be a power of <span class="math inline">\(2\)</span> for efficiency reasons. Remember, that with this design, there’s always atleast one unused element in the array, because <code>m_head == m_tail + 1</code> is the queue full condition. So, the effective capacity equals <code>capacity - 1</code>.</p>
+</section>
+<section id="the-class-interface" class="level2">
+<h2 class="anchored" data-anchor-id="the-class-interface">The <code>class</code> interface</h2>
+<p>Here is the class interface:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="dt">size_t</span> capacity<span class="op">&gt;</span></span>
+<span id="cb8-2"><a href="#cb8-2"></a><span class="kw">class</span> spsc_queue<span class="op">{</span></span>
+<span id="cb8-3"><a href="#cb8-3"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb8-4"><a href="#cb8-4"></a>    <span class="co">// The capacity must be a power of two.</span></span>
+<span id="cb8-5"><a href="#cb8-5"></a>    <span class="kw">static_assert</span><span class="op">((</span>capacity <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">))</span> <span class="op">==</span> <span class="dv">0</span><span class="op">);</span>    </span>
+<span id="cb8-6"><a href="#cb8-6"></a>    T <span class="va">m_buffer</span><span class="op">[</span>capacity<span class="op">];</span></span>
+<span id="cb8-7"><a href="#cb8-7"></a>    <span class="dt">size_t</span> <span class="va">m_head</span><span class="op">;</span></span>
+<span id="cb8-8"><a href="#cb8-8"></a>    <span class="dt">size_t</span> <span class="va">m_tail</span><span class="op">;</span></span>
+<span id="cb8-9"><a href="#cb8-9"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb8-10"><a href="#cb8-10"></a>        <span class="co">/* ... */</span></span>
+<span id="cb8-11"><a href="#cb8-11"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>

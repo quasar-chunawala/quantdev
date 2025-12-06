@@ -12,6 +12,10 @@ toc-depth: 3
 
 I would like to present my implementation for an SPSC lock-free queue in this blog-post.
 
+```{python}
+%load_ext itikz
+```
+
 ## What makes an operation atomic?
 
 When a programmer says that an operation is atomic, there are atleast two properties to which they might be referring:
@@ -32,67 +36,128 @@ The `spsc_queue` type contains a fixed-length array - a buffer to store the elem
 
 In an initially empty container, both the `m_head` and `m_tail` start at zero:
 
+:::{text-center}
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows.meta --implicit-standalone
+\begin{tikzpicture}[font=\small\ttfamily]
+    \fill[white] (-2, 0.5) rectangle (8.5, -4.8);
+    % Title
+    \node[anchor=north] at (4, 0) {\textbf{SPSC Ring Buffer (Empty)}};
+    
+    % Index labels
+    \node[anchor=east] at (-0.2, -1.5) {Index:};
+    \foreach \i in {0,...,7} {
+        \node at (\i, -1.5) {\i};
+    }
+    
+    % Buffer cells
+    \node[anchor=east] at (-0.2, -2.5) {Buffer:};
+    \foreach \i in {0,...,7} {
+        \draw (\i-0.4, -2.2) rectangle (\i+0.4, -2.8);
+    }
+    
+    % Pointers
+    \draw[->, thick] (0, -3.2) -- (0, -2.8);
+    \node[anchor=north] at (0, -3.2) {m\_head = 0};
+    \node[anchor=north] at (0, -3.6) {m\_tail = 0};
+    
+    % Status
+    \node[anchor=north] at (4, -4.2) {Status: Empty (m\_head == m\_tail)};
+\end{tikzpicture}
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                   SPSC Ring Buffer (Empty)                  │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   Index:   0    1    2    3    4    5    6    7             │
-│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
-│  Buffer: │    │    │    │    │    │    │    │    │          │
-│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
-│            ▲                                                │
-│            │                                                │
-│        m_head = 0                                           │
-│        m_tail = 0                                           │
-│                                                             │
-│   Status: Empty (m_head == m_tail)                          │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+:::
 
 Then I have a `spsc_queue::push_back()` function that is used to append a new element to the queue. If the queue is not full, this operation should succeed, and it will go ahead and write a new element to the tail location and move the `m_tail` index forward. 
 
 For example, if do `push_back(1)` the queue looks something like this. 
 
+:::{text-center}
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows.meta --implicit-standalone
+\begin{tikzpicture}[font=\small\ttfamily]
+    \fill[white] (-2, 0.5) rectangle (8.5, -4.8);
+    % Title
+    \node[anchor=north] at (4, 0) {\textbf{SPSC Ring Buffer (1 element)}};
+    
+    % m_head pointer (above)
+    \node[anchor=south] at (0, -0.8) {m\_head = 0};
+    \draw[->, thick] (0, -1.0) -- (0, -1.4);
+    
+    % Index labels
+    \node[anchor=east] at (-0.2, -1.5) {Index:};
+    \foreach \i in {0,...,7} {
+        \node at (\i, -1.5) {\i};
+    }
+    
+    % Buffer cells
+    \node[anchor=east] at (-0.2, -2.5) {Buffer:};
+    \foreach \i in {0,...,7} {
+        \draw (\i-0.4, -2.2) rectangle (\i+0.4, -2.8);
+    }
+    % Fill first cell
+    \fill[lightgray!30] (-0.4, -2.2) rectangle (0.4, -2.8);
+    \node at (0, -2.5) {1};
+    
+    % m_tail pointer (below)
+    \draw[->, thick] (1, -3.2) -- (1, -2.8);
+    \node[anchor=north] at (1, -3.2) {m\_tail = 1};
+    
+    % Status
+    \node[anchor=north] at (4, -3.8) {Status: 1 element (m\_tail > m\_head)};
+\end{tikzpicture}
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                 SPSC Ring Buffer (1 element)                │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   Index:   0    1    2    3    4    5    6    7             │
-│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
-│  Buffer: │ 1  │    │    │    │    │    │    │    │          │
-│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
-│            ▲    ▲                                           │
-│            │    │                                           │
-│        m_head   m_tail = 1                                  │
-│         = 0                                                 │
-│                                                             │
-│   Status: 1 element (m_tail > m_head)                       │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+:::
 
 Here's the queue with a few more elements added:
 
+:::{text-center}
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows.meta --implicit-standalone
+\begin{tikzpicture}[font=\small\ttfamily]
+    \fill[white] (-2, 0.5) rectangle (8.5, -4.8);
+    % Title
+    \node[anchor=north] at (4, 0) {\textbf{SPSC Ring Buffer (4 elements)}};
+    
+    % m_head pointer (above)
+    \node[anchor=south] at (0, -0.8) {m\_head = 0};
+    \draw[->, thick] (0, -1.0) -- (0, -1.4);
+    
+    % Index labels
+    \node[anchor=east] at (-0.2, -1.5) {Index:};
+    \foreach \i in {0,...,7} {
+        \node at (\i, -1.5) {\i};
+    }
+    
+    % Buffer cells
+    \node[anchor=east] at (-0.2, -2.5) {Buffer:};
+    \foreach \i in {0,...,7} {
+        \draw (\i-0.4, -2.2) rectangle (\i+0.4, -2.8);
+    }
+    % Fill cells 0-3
+    \fill[lightgray!30] (-0.4, -2.2) rectangle (0.4, -2.8);
+    \fill[lightgray!30] (0.6, -2.2) rectangle (1.4, -2.8);
+    \fill[lightgray!30] (1.6, -2.2) rectangle (2.4, -2.8);
+    \fill[lightgray!30] (2.6, -2.2) rectangle (3.4, -2.8);
+    \node at (0, -2.5) {1};
+    \node at (1, -2.5) {2};
+    \node at (2, -2.5) {3};
+    \node at (3, -2.5) {5};
+    
+    % m_tail pointer (below)
+    \draw[->, thick] (4, -3.2) -- (4, -2.8);
+    \node[anchor=north] at (4, -3.2) {m\_tail = 4};
+    
+    % Status
+    \node[anchor=north] at (4, -3.8) {Status: 4 elements (m\_tail > m\_head)};
+\end{tikzpicture}
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                 SPSC Ring Buffer (4 elements)               │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   Index:   0    1    2    3    4    5    6    7             │
-│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
-│  Buffer: │ 1  │ 2  │ 3  │ 5  │    │    │    │    │          │
-│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
-│            ▲                   ▲                            │
-│            │                   │                            │
-│        m_head = 0          m_tail = 4                       │
-│                                                             │
-│   Status: 4 elements (m_tail > m_head)                      │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+:::
 
 Once I have got some elements into the queue, I can go ahead and call the `pop()` function, which is going to try to read and remove the first element from the front of the queue.
 
@@ -100,46 +165,99 @@ If the queue isn't empty, it :
 
 - Advances `m_head` thereby implicitly discard the element at the front of the queue
 
-
+:::{text-center}
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows.meta --implicit-standalone
+\begin{tikzpicture}[font=\small\ttfamily]
+    \fill[white] (-2, 0.5) rectangle (8.5, -4.8);
+    % Title
+    \node[anchor=north] at (4, 0) {\textbf{SPSC Ring Buffer (3 elements)}};
+    
+    % m_head pointer (above)
+    \node[anchor=south] at (1, -0.8) {m\_head = 1};
+    \draw[->, thick] (1, -1.0) -- (1, -1.4);
+    
+    % Index labels
+    \node[anchor=east] at (-0.2, -1.5) {Index:};
+    \foreach \i in {0,...,7} {
+        \node at (\i, -1.5) {\i};
+    }
+    
+    % Buffer cells
+    \node[anchor=east] at (-0.2, -2.5) {Buffer:};
+    \foreach \i in {0,...,7} {
+        \draw (\i-0.4, -2.2) rectangle (\i+0.4, -2.8);
+    }
+    % Fill cells 1-3
+    \fill[lightgray!30] (0.6, -2.2) rectangle (1.4, -2.8);
+    \fill[lightgray!30] (1.6, -2.2) rectangle (2.4, -2.8);
+    \fill[lightgray!30] (2.6, -2.2) rectangle (3.4, -2.8);
+    \node at (1, -2.5) {2};
+    \node at (2, -2.5) {3};
+    \node at (3, -2.5) {5};
+    
+    % m_tail pointer (below)
+    \draw[->, thick] (4, -3.2) -- (4, -2.8);
+    \node[anchor=north] at (4, -3.2) {m\_tail = 4};
+    
+    % Status
+    \node[anchor=north] at (4, -3.8) {Status: 3 elements (m\_tail > m\_head)};
+    \node[anchor=north] at (4, -4.2) {Note: Index 0 is now "stale" (logically removed)};
+\end{tikzpicture}
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                 SPSC Ring Buffer (3 elements)               │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   Index:   0    1    2    3    4    5    6    7             │
-│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
-│  Buffer: │    │ 2  │ 3  │ 5  │    │    │    │    │          │
-│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
-│                 ▲              ▲                            │
-│                 │              │                            │
-│            m_head = 1       m_tail = 4                      │
-│                                                             │
-│   Status: 3 elements (m_tail > m_head)                      │
-│   Note: Index 0 is now "stale" (logically removed)          │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+:::
 
 Most of the time, when we advance an index like this, it is a simple increment. But, as I stated earlier, the buffer slots are used in a a circular fashion. If that increment would place that `index` out of bounds, it wraps around to the zeroeth slot (that's what makes it a ring) of the queue buffer.
 
+:::{text-center}
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+%%itikz --temp-dir --tex-packages=tikz --tikz-libraries=arrows.meta --implicit-standalone
+\begin{tikzpicture}[font=\small\ttfamily]
+    \fill[white] (-2, 0.5) rectangle (8.5, -4.8);
+    % Title
+    \node[anchor=north] at (4, 0) {\textbf{SPSC Ring Buffer (7 elements)}};
+    
+    % m_head pointer (above)
+    \node[anchor=south] at (1, -0.8) {m\_head = 1};
+    \draw[->, thick] (1, -1.0) -- (1, -1.4);
+    
+    % Index labels
+    \node[anchor=east] at (-0.2, -1.5) {Index:};
+    \foreach \i in {0,...,7} {
+        \node at (\i, -1.5) {\i};
+    }
+    
+    % Buffer cells
+    \node[anchor=east] at (-0.2, -2.5) {Buffer:};
+    \foreach \i in {0,...,7} {
+        \draw (\i-0.4, -2.2) rectangle (\i+0.4, -2.8);
+    }
+    % Fill cells 1-7
+    \fill[lightgray!30] (0.6, -2.2) rectangle (1.4, -2.8);
+    \fill[lightgray!30] (1.6, -2.2) rectangle (2.4, -2.8);
+    \fill[lightgray!30] (2.6, -2.2) rectangle (3.4, -2.8);
+    \fill[lightgray!30] (3.6, -2.2) rectangle (4.4, -2.8);
+    \fill[lightgray!30] (4.6, -2.2) rectangle (5.4, -2.8);
+    \fill[lightgray!30] (5.6, -2.2) rectangle (6.4, -2.8);
+    \fill[lightgray!30] (6.6, -2.2) rectangle (7.4, -2.8);
+    \node at (1, -2.5) {2};
+    \node at (2, -2.5) {3};
+    \node at (3, -2.5) {5};
+    \node at (4, -2.5) {8};
+    \node at (5, -2.5) {13};
+    \node at (6, -2.5) {21};
+    \node at (7, -2.5) {34};
+    
+    % m_tail pointer (below)
+    \draw[->, thick] (0, -3.2) -- (0, -2.8);
+    \node[anchor=north] at (0, -3.2) {m\_tail = 0};
+\end{tikzpicture}
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                 SPSC Ring Buffer (7 elements)               │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│            m_head = 1                                       │
-│                 │                                           │
-│                 ▼                                           │
-│   Index:   0    1    2    3    4    5    6    7             │
-│          ┌────┬────┬────┬────┬────┬────┬────┬────┐          │
-│  Buffer: │    │ 2  │ 3  │ 5  │ 8  │ 13 │ 21 │ 34 │          │
-│          └────┴────┴────┴────┴────┴────┴────┴────┘          │
-│            ▲                                                │
-│            │                                                │
-│       m_tail = 0                                            │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+:::
 
 As we'll see, it turns out that the indices `m_head` and `m_tail` will need to be `atomic` objects. We'll understand why this is the case.
 
@@ -178,5 +296,3 @@ class spsc_queue{
         /* ... */
 };
 ```
-
-
