@@ -217,6 +217,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#setup---how-the-queue-works" id="toc-setup---how-the-queue-works" class="nav-link" data-scroll-target="#setup---how-the-queue-works">Setup - How the queue works</a></li>
   <li><a href="#the-class-interface" id="toc-the-class-interface" class="nav-link" data-scroll-target="#the-class-interface">The <code>class</code> interface</a></li>
   </ul></li>
+  <li><a href="#push_back-and-pop_front-take-1" id="toc-push_back-and-pop_front-take-1" class="nav-link" data-scroll-target="#push_back-and-pop_front-take-1"><code>push_back()</code> and <code>pop_front()</code> take 1</a>
+  <ul class="collapse">
+  <li><a href="#using-atomic-indices" id="toc-using-atomic-indices" class="nav-link" data-scroll-target="#using-atomic-indices">Using atomic indices</a>
+  <ul class="collapse">
+  <li><a href="#why-do-we-use-a-power-of-2-buffer-size" id="toc-why-do-we-use-a-power-of-2-buffer-size" class="nav-link" data-scroll-target="#why-do-we-use-a-power-of-2-buffer-size">Why do we use a power of <span class="math inline">\(2\)</span> buffer size?</a></li>
+  <li><a href="#buffer-access-synchronization" id="toc-buffer-access-synchronization" class="nav-link" data-scroll-target="#buffer-access-synchronization">Buffer access synchronization</a></li>
+  </ul></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -513,10 +521,148 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb8-7"><a href="#cb8-7"></a>    <span class="dt">size_t</span> <span class="va">m_head</span><span class="op">;</span></span>
 <span id="cb8-8"><a href="#cb8-8"></a>    <span class="dt">size_t</span> <span class="va">m_tail</span><span class="op">;</span></span>
 <span id="cb8-9"><a href="#cb8-9"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb8-10"><a href="#cb8-10"></a>        <span class="co">/* ... */</span></span>
-<span id="cb8-11"><a href="#cb8-11"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb8-10"><a href="#cb8-10"></a>        <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb8-11"><a href="#cb8-11"></a>        spsc_queue<span class="op">();</span></span>
+<span id="cb8-12"><a href="#cb8-12"></a>        <span class="dt">bool</span> is_empty<span class="op">()</span> <span class="at">const</span><span class="op">;</span></span>
+<span id="cb8-13"><a href="#cb8-13"></a>        <span class="dt">bool</span> is_full<span class="op">()</span> <span class="at">const</span><span class="op">;</span></span>
+<span id="cb8-14"><a href="#cb8-14"></a>        <span class="dt">bool</span> push_back<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> item<span class="op">);</span></span>
+<span id="cb8-15"><a href="#cb8-15"></a>        <span class="dt">bool</span> pop_front<span class="op">();</span></span>
+<span id="cb8-16"><a href="#cb8-16"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+</section>
+<section id="push_back-and-pop_front-take-1" class="level1">
+<h1><code>push_back()</code> and <code>pop_front()</code> take 1</h1>
+<p>Here’s a first attempt at implementing <code>pop()</code>:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1"></a><span class="dt">size_t</span> next<span class="op">(</span><span class="dt">size_t</span> idx<span class="op">)</span></span>
+<span id="cb9-2"><a href="#cb9-2"></a><span class="op">{</span></span>
+<span id="cb9-3"><a href="#cb9-3"></a>    <span class="cf">if</span><span class="op">(++</span>idx <span class="op">&gt;=</span> <span class="va">m_size</span><span class="op">)</span></span>
+<span id="cb9-4"><a href="#cb9-4"></a>        idx <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb9-5"><a href="#cb9-5"></a>    <span class="cf">return</span> idx<span class="op">;</span></span>
+<span id="cb9-6"><a href="#cb9-6"></a><span class="op">}</span></span>
+<span id="cb9-7"><a href="#cb9-7"></a></span>
+<span id="cb9-8"><a href="#cb9-8"></a><span class="dt">bool</span> pop_front<span class="op">()</span></span>
+<span id="cb9-9"><a href="#cb9-9"></a><span class="op">{</span></span>
+<span id="cb9-10"><a href="#cb9-10"></a>    <span class="dt">value_type</span> v<span class="op">;</span></span>
+<span id="cb9-11"><a href="#cb9-11"></a>    <span class="cf">if</span><span class="op">(!</span>is_empty<span class="op">()){</span></span>
+<span id="cb9-12"><a href="#cb9-12"></a>        v <span class="op">=</span> <span class="va">m_buffer</span><span class="op">[</span><span class="va">m_head</span><span class="op">];</span></span>
+<span id="cb9-13"><a href="#cb9-13"></a>        <span class="va">m_head</span> <span class="op">=</span> next<span class="op">(</span><span class="va">m_head</span><span class="op">);</span></span>
+<span id="cb9-14"><a href="#cb9-14"></a>        <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb9-15"><a href="#cb9-15"></a>    <span class="op">}</span></span>
+<span id="cb9-16"><a href="#cb9-16"></a>    <span class="cf">else</span><span class="op">{</span></span>
+<span id="cb9-17"><a href="#cb9-17"></a>        <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb9-18"><a href="#cb9-18"></a>    <span class="op">}</span></span>
+<span id="cb9-19"><a href="#cb9-19"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Unfortunately, this section of code for advancing <code>m_head</code> has a couple of problems. The increment of <code>m_head</code> could be pre-empted in the middle. And that’s a problem because the <code>push</code> thread also reads the <code>m_head</code> index in order to figure out, whether the queue is full.</p>
+<p>Note that, <code>push_back()</code> is always called by the producer thread while <code>pop_front()</code> is always called by the consumer thread.</p>
+<p>That’s why, the <code>spsc_queue</code>’s design depends on:</p>
+<ul>
+<li>Reading and writing the indices non-pre-emptively.</li>
+<li>Having only one producer thread and one consumer thread.</li>
+</ul>
+<p>if the consumer thread is pre-empted while writing <code>m_head</code>, the producer thread may read a half-written nonsense value.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1"></a><span class="dt">bool</span> push_back<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> v<span class="op">)</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a><span class="op">{</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a>    <span class="cf">if</span><span class="op">(!</span>is_full<span class="op">()){</span></span>
+<span id="cb10-4"><a href="#cb10-4"></a>        <span class="va">m_buffer</span><span class="op">[</span><span class="va">m_tail</span><span class="op">]</span> <span class="op">=</span> v<span class="op">;</span></span>
+<span id="cb10-5"><a href="#cb10-5"></a>        <span class="va">m_tail</span> <span class="op">=</span> next<span class="op">(</span><span class="va">m_tail</span><span class="op">);</span></span>
+<span id="cb10-6"><a href="#cb10-6"></a>        <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb10-7"><a href="#cb10-7"></a>    <span class="op">}</span></span>
+<span id="cb10-8"><a href="#cb10-8"></a>    <span class="cf">else</span><span class="op">{</span></span>
+<span id="cb10-9"><a href="#cb10-9"></a>        <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb10-10"><a href="#cb10-10"></a>    <span class="op">}</span></span>
+<span id="cb10-11"><a href="#cb10-11"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>If the producer thread is pre-empted while writing <code>m_tail</code>, the consumer thread may read a half-written nonsense value.</p>
+<section id="using-atomic-indices" class="level2">
+<h2 class="anchored" data-anchor-id="using-atomic-indices">Using atomic indices</h2>
+<p>This is my implementation for SPSC lock-free queue with atomic indices.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb11-2"><a href="#cb11-2"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb11-3"><a href="#cb11-3"></a></span>
+<span id="cb11-4"><a href="#cb11-4"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="dt">size_t</span> capacity<span class="op">&gt;</span></span>
+<span id="cb11-5"><a href="#cb11-5"></a><span class="kw">class</span> spsc_queue<span class="op">{</span></span>
+<span id="cb11-6"><a href="#cb11-6"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb11-7"><a href="#cb11-7"></a>    <span class="co">// The capacity must be a power of two.</span></span>
+<span id="cb11-8"><a href="#cb11-8"></a>    <span class="kw">static_assert</span><span class="op">((</span>capacity <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">))</span> <span class="op">==</span> <span class="dv">0</span><span class="op">);</span>    </span>
+<span id="cb11-9"><a href="#cb11-9"></a>    T <span class="va">m_buffer</span><span class="op">[</span>capacity<span class="op">];</span></span>
+<span id="cb11-10"><a href="#cb11-10"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="bu">std::</span>hardware_destructive_interference_size<span class="op">)</span> <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">&gt;</span> <span class="va">m_head</span><span class="op">;</span></span>
+<span id="cb11-11"><a href="#cb11-11"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="bu">std::</span>hardware_destructive_interference_size<span class="op">)</span> <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">&gt;</span> <span class="va">m_tail</span><span class="op">;</span></span>
+<span id="cb11-12"><a href="#cb11-12"></a></span>
+<span id="cb11-13"><a href="#cb11-13"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb11-14"><a href="#cb11-14"></a>        <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb11-15"><a href="#cb11-15"></a>        spsc_queue<span class="op">()</span></span>
+<span id="cb11-16"><a href="#cb11-16"></a>        <span class="op">:</span> <span class="va">m_buffer</span><span class="op">{}</span></span>
+<span id="cb11-17"><a href="#cb11-17"></a>        <span class="op">,</span> <span class="va">m_head</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
+<span id="cb11-18"><a href="#cb11-18"></a>        <span class="op">,</span> <span class="va">m_tail</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
+<span id="cb11-19"><a href="#cb11-19"></a>        <span class="op">{}</span></span>
+<span id="cb11-20"><a href="#cb11-20"></a></span>
+<span id="cb11-21"><a href="#cb11-21"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">bool</span> is_empty<span class="op">()</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb11-22"><a href="#cb11-22"></a>            <span class="cf">return</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">()</span></span>
+<span id="cb11-23"><a href="#cb11-23"></a>                <span class="op">==</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">();</span></span>
+<span id="cb11-24"><a href="#cb11-24"></a>        <span class="op">}</span></span>
+<span id="cb11-25"><a href="#cb11-25"></a></span>
+<span id="cb11-26"><a href="#cb11-26"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">bool</span> is_full<span class="op">()</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb11-27"><a href="#cb11-27"></a>            <span class="cf">return</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">()</span> <span class="op">+</span> <span class="dv">1</span> <span class="op">==</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">();</span></span>
+<span id="cb11-28"><a href="#cb11-28"></a>        <span class="op">}</span></span>
+<span id="cb11-29"><a href="#cb11-29"></a></span>
+<span id="cb11-30"><a href="#cb11-30"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">size_t</span> get_size<span class="op">(){</span></span>
+<span id="cb11-31"><a href="#cb11-31"></a>            <span class="cf">return</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">()</span> <span class="op">-</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">()</span> <span class="op">+</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb11-32"><a href="#cb11-32"></a>        <span class="op">}</span></span>
+<span id="cb11-33"><a href="#cb11-33"></a></span>
+<span id="cb11-34"><a href="#cb11-34"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">size_t</span> get_capacity<span class="op">(){</span></span>
+<span id="cb11-35"><a href="#cb11-35"></a>            <span class="cf">return</span> capacity <span class="op">-</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb11-36"><a href="#cb11-36"></a>        <span class="op">}</span></span>
+<span id="cb11-37"><a href="#cb11-37"></a></span>
+<span id="cb11-38"><a href="#cb11-38"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">size_t</span> next<span class="op">(</span><span class="dt">size_t</span> current_idx<span class="op">)</span></span>
+<span id="cb11-39"><a href="#cb11-39"></a>        <span class="op">{</span></span>
+<span id="cb11-40"><a href="#cb11-40"></a>            <span class="dt">size_t</span> next_idx <span class="op">=</span> current_idx <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-41"><a href="#cb11-41"></a>            <span class="cf">return</span> next_idx<span class="op">;</span></span>
+<span id="cb11-42"><a href="#cb11-42"></a>        <span class="op">}</span></span>
+<span id="cb11-43"><a href="#cb11-43"></a></span>
+<span id="cb11-44"><a href="#cb11-44"></a>        <span class="dt">bool</span> push_back<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> item<span class="op">){</span></span>
+<span id="cb11-45"><a href="#cb11-45"></a>            <span class="dt">size_t</span> tail <span class="op">=</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">);</span></span>
+<span id="cb11-46"><a href="#cb11-46"></a>            <span class="dt">size_t</span> next_write_index <span class="op">=</span> next<span class="op">(</span>tail<span class="op">);</span></span>
+<span id="cb11-47"><a href="#cb11-47"></a>            <span class="cf">if</span><span class="op">(</span>next_write_index <span class="op">==</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
+<span id="cb11-48"><a href="#cb11-48"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb11-49"><a href="#cb11-49"></a></span>
+<span id="cb11-50"><a href="#cb11-50"></a>            <span class="va">m_buffer</span><span class="op">[</span>tail<span class="op">]</span> <span class="op">=</span> item<span class="op">;</span></span>
+<span id="cb11-51"><a href="#cb11-51"></a>            <span class="va">m_tail</span><span class="op">.</span>store<span class="op">(</span>next_write_index<span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb11-52"><a href="#cb11-52"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb11-53"><a href="#cb11-53"></a>        <span class="op">}</span></span>
+<span id="cb11-54"><a href="#cb11-54"></a></span>
+<span id="cb11-55"><a href="#cb11-55"></a>        <span class="dt">bool</span> pop_front<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> v<span class="op">){</span></span>
+<span id="cb11-56"><a href="#cb11-56"></a>            <span class="dt">size_t</span> head <span class="op">=</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">);</span></span>
+<span id="cb11-57"><a href="#cb11-57"></a>            <span class="cf">if</span><span class="op">(</span>head <span class="op">==</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
+<span id="cb11-58"><a href="#cb11-58"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb11-59"><a href="#cb11-59"></a></span>
+<span id="cb11-60"><a href="#cb11-60"></a>            v <span class="op">=</span> <span class="va">m_buffer</span><span class="op">[</span>head<span class="op">];</span></span>
+<span id="cb11-61"><a href="#cb11-61"></a>            <span class="dt">size_t</span> next_read_index <span class="op">=</span> next<span class="op">(</span><span class="va">m_head</span><span class="op">);</span></span>
+<span id="cb11-62"><a href="#cb11-62"></a>            <span class="va">m_head</span><span class="op">.</span>store<span class="op">(</span>next_read_index<span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb11-63"><a href="#cb11-63"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb11-64"><a href="#cb11-64"></a>        <span class="op">}</span></span>
+<span id="cb11-65"><a href="#cb11-65"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="why-do-we-use-a-power-of-2-buffer-size" class="level3">
+<h3 class="anchored" data-anchor-id="why-do-we-use-a-power-of-2-buffer-size">Why do we use a power of <span class="math inline">\(2\)</span> buffer size?</h3>
+<p>For a buffer of fixed capacity <span class="math inline">\(N\)</span>, with current index <code>idx</code>, the index to the next element can be calculated as:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1"></a>next_idx <span class="op">=</span> <span class="op">(</span>curr_idx <span class="op">+</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> N</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This is because our queue is a ring buffer, so after the last slot, we will go back to the zeroeth one, then the first one and so on.</p>
+<p>We can use the above method to get the next index for any buffer size <span class="math inline">\(N\)</span>. Why do we then only use capacity that are powers of <span class="math inline">\(2\)</span>? The answer is easy: performance. The modulo (<code>%</code>) operator requires a division instruction, which is expensive. When the size <span class="math inline">\(N\)</span> is a power of <span class="math inline">\(2\)</span>, we can just do the following:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1"></a><span class="dt">size_t</span> next_index <span class="op">=</span> curr_index <span class="op">&amp;</span> <span class="op">(</span>N <span class="op">-</span> <span class="dv">1</span><span class="op">);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="buffer-access-synchronization" class="level3">
+<h3 class="anchored" data-anchor-id="buffer-access-synchronization">Buffer access synchronization</h3>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="diagram-20251206.png" class="img-fluid figure-img"></p>
+<figcaption class="figure-caption">Synchronization</figcaption>
+</figure>
+</div>
+<p>Here’s what the actual execution order looks like after we make the indices atomic.</p>
+<p>If we look at the push thread, the incremented value of the tail, <code>next_write_index</code> written to <code>m_tail</code> index is a release operation. Over on the pop thread, when we load the <code>m_tail</code> index (take a snapshot of it), this is an acquire operation. The combination of release and acquire on the same atomic variable implies that <code>m_tail</code> store in the push thread synchronizes with <code>m_tail</code> load on the pop thread.</p>
+<p>The instruction <code>m_buffer[tail] = item</code> cannot be moved to after the release barrier in actual CPU execution order. The instrusction <code>v=m_buffer[head]</code> cannot be moved to before the acquire barrier in actual CPU exection order. So, we have happens-before relationship between these two instructions.</p>
+<p>The release of <code>m_head</code> in the pop thread synchronizes with the acquire of <code>m_head</code> in the push thread.</p>
 
 
+</section>
 </section>
 </section>
 

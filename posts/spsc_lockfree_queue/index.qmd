@@ -293,6 +293,164 @@ class spsc_queue{
     size_t m_head;
     size_t m_tail;
     public:
-        /* ... */
+        using value_type = T;
+        spsc_queue();
+        bool is_empty() const;
+        bool is_full() const;
+        bool push_back(value_type& item);
+        bool pop_front();
 };
 ```
+
+# `push_back()` and `pop_front()` take 1
+
+Here's a first attempt at implementing `pop()`:
+
+```cpp
+size_t next(size_t idx)
+{
+    if(++idx >= m_size)
+        idx = 0;
+    return idx;
+}
+
+bool pop_front()
+{
+    value_type v;
+    if(!is_empty()){
+        v = m_buffer[m_head];
+        m_head = next(m_head);
+        return true;
+    }
+    else{
+        return false;
+    }
+}
+```
+
+Unfortunately, this section of code for advancing `m_head` has a couple of problems. The increment of `m_head` could be pre-empted in the middle. And that's a problem because the `push` thread also reads the `m_head` index in order to figure out, whether the queue is full. 
+
+Note that, `push_back()` is always called by the producer thread while `pop_front()` is always called by the consumer thread. 
+
+That's why, the `spsc_queue`'s design depends on:
+
+- Reading and writing the indices non-pre-emptively.
+- Having only one producer thread and one consumer thread.
+
+if the consumer thread is pre-empted while writing `m_head`, the producer thread may read a half-written nonsense value.
+
+```cpp
+bool push_back(value_type& v)
+{
+    if(!is_full()){
+        m_buffer[m_tail] = v;
+        m_tail = next(m_tail);
+        return true;
+    }
+    else{
+        return false;
+    }
+}
+```
+
+If the producer thread is pre-empted while writing `m_tail`, the consumer thread may read a half-written nonsense value.
+
+## Using atomic indices
+
+This is my implementation for SPSC lock-free queue with atomic indices. 
+
+```cpp
+#include <atomic>
+#include <thread>
+
+template<typename T, size_t capacity>
+class spsc_queue{
+    private:
+    // The capacity must be a power of two.
+    static_assert((capacity & (capacity - 1)) == 0);    
+    T m_buffer[capacity];
+    alignas(std::hardware_destructive_interference_size) std::atomic<size_t> m_head;
+    alignas(std::hardware_destructive_interference_size) std::atomic<size_t> m_tail;
+
+    public:
+        using value_type = T;
+        spsc_queue()
+        : m_buffer{}
+        , m_head{0}
+        , m_tail{0}
+        {}
+
+        [[nodiscard]] bool is_empty() const{
+            return m_head.load()
+                == m_tail.load();
+        }
+
+        [[nodiscard]] bool is_full() const{
+            return m_tail.load() + 1 == m_head.load();
+        }
+
+        [[nodiscard]] size_t get_size(){
+            return m_tail.load() - m_head.load() + 1;
+        }
+
+        [[nodiscard]] size_t get_capacity(){
+            return capacity - 1;
+        }
+
+        [[nodiscard]] size_t next(size_t current_idx)
+        {
+            size_t next_idx = current_idx & (capacity - 1);
+            return next_idx;
+        }
+
+        bool push_back(value_type& item){
+            size_t tail = m_tail.load(std::memory_order_relaxed);
+            size_t next_write_index = next(tail);
+            if(next_write_index == m_head.load(std::memory_order_acquire))
+                return false;
+
+            m_buffer[tail] = item;
+            m_tail.store(next_write_index, std::memory_order_release);
+            return true;
+        }
+
+        bool pop_front(value_type& v){
+            size_t head = m_head.load(std::memory_order_relaxed);
+            if(head == m_tail.load(std::memory_order_acquire))
+                return false;
+
+            v = m_buffer[head];
+            size_t next_read_index = next(m_head);
+            m_head.store(next_read_index, std::memory_order_release);
+            return true;
+        }
+};
+```
+
+### Why do we use a power of $2$ buffer size?
+
+For a buffer of fixed capacity $N$, with current index `idx`, the index to the next element can be calculated as:
+
+```cpp
+next_idx = (curr_idx + 1) % N
+```
+
+This is because our queue is a ring buffer, so after the last slot, we will go back to the zeroeth one, then the first one and so on. 
+
+We can use the above method to get the next index for any buffer size $N$. Why do we then only use capacity that are powers of $2$? The answer is easy: performance. The modulo (`%`) operator requires a division instruction, which is expensive. When the size $N$ is a power of $2$, we can just do the following:
+
+```cpp
+size_t next_index = curr_index & (N - 1);
+```
+
+### Buffer access synchronization
+
+![Synchronization](diagram-20251206.png){fig-align="center"}
+
+Here's what the actual execution order looks like after we make the indices atomic. 
+
+If we look at the push thread, the incremented value of the tail, `next_write_index` written to `m_tail` index is a release operation. Over on the pop thread, when we load the `m_tail` index (take a snapshot of it), this is an acquire operation. The combination of release and acquire on the same atomic variable implies that `m_tail` store in the push thread synchronizes with `m_tail` load on the pop thread. 
+
+The instruction `m_buffer[tail] = item` cannot be moved to after the release barrier in actual CPU execution order. The instrusction `v=m_buffer[head]` cannot be moved to before the acquire barrier in actual CPU exection order. So, we have happens-before relationship between these two instructions.
+
+The release of `m_head` in the pop thread synchronizes with the acquire of `m_head` in the push thread. 
