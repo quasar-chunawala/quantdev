@@ -303,6 +303,71 @@ int main()
 ```
 Run at [Compiler Explorer](https://godbolt.org/z/Ge9vob6hG)
 
+## The `final` specifier
+
+We can also designate a function as `final`. Any attempt to override a function that has been defined as `final` will be flagged as an error:
+
+```cpp
+struct A{ virtual void foo(){} };
+struct B : public A
+{ 
+	void foo() final {}  
+};
+struct C : B
+	// void foo() {} // error: B declared foo as final
+}
+```
+
+## `virtual` functions and default arguments
+
+Like any other function, a `virtual` function can have default arguments. If a call uses a default argument, the value that is used is the one defined by the static type through which the function is called. [Default arguments](https://en.cppreference.com/w/cpp/language/default_arguments.html "cpp/language/default arguments") for virtual functions are substituted at the compile time.
+
+That is, when a call is made through a reference or pointer-to-base, the default argument(s) will be those defined in the base class. The base-class arguments will be used even when the derived version of the function is run. 
+
+```cpp
+#include <iostream>
+
+class Base {
+public:
+    virtual void foo(int x = 10) {
+        std::cout << "Base::foo(" << x << ")\n";
+    }
+    
+    virtual void bar(int x = 20) {
+        std::cout << "Base::bar(" << x << ")\n";
+    }
+};
+
+class Derived : public Base {
+public:
+    void foo(int x = 30) override {
+        std::cout << "Derived::foo(" << x << ")\n";
+    }
+    
+    void bar(int x) override {
+        std::cout << "Derived::bar(" << x << ")\n";
+    }
+};
+
+int main() {
+    Derived d;
+    Base* b = &d;
+    
+    d.foo();        // Line 1
+    b->foo();       // Line 2
+    b->bar();       // Line 3
+    
+    return 0;
+}
+```
+
+Output:
+```shell
+Derived::foo(30)
+Derived::foo(10)
+Derived::bar(20)
+```
+
 # `virtual` destructors
 
 Consider the following code snippet, where we intend to use a class hierarchy polymorphically:
@@ -383,6 +448,69 @@ C()
 ~C()
 ~B()
 ~A()
+```
+
+## Calling virtual functions during construction and destruction
+
+When a virtual function is called directly or indirectly from a constructor or destructor (including during the construction or destruction of the class non-static data members e.g. in a member-initializer list), and the object to which the call applies is the object under construction or destruction, the function called is the final overrider in the constructor's or destructor's class and not the one overriding it in a more-derived class.
+
+```cpp
+#include <iostream>
+
+class Base {
+public:
+    Base() {
+        std::cout << "Base constructor\n";
+        me();  // Virtual call during construction
+    }
+    
+    virtual ~Base() {
+        std::cout << "Base destructor\n";
+        me();  // Virtual call during destruction
+    }
+    
+    virtual void me() {
+        std::cout << "  I am Base\n";
+    }
+};
+
+class Derived : public Base {
+public:
+    Derived() {
+        std::cout << "Derived constructor\n";
+        me();  // Virtual call during construction
+    }
+    
+    ~Derived() {
+        std::cout << "Derived destructor\n";
+        me();  // Virtual call during destruction
+    }
+    
+    void me() override {
+        std::cout << "  I am Derived\n";
+    }
+};
+
+int main() {
+    Derived d;
+    std::cout << "\nNormal call:\n";
+    d.me();
+}
+```
+
+Output:
+```shell
+Base constructor
+  I am Base
+Derived constructor
+  I am Derived
+
+Normal call:
+  I am Derived
+Derived destructor
+  I am Derived
+Base destructor
+  I am Base
 ```
 
 # `virtual` inheritance and the diamond problem
@@ -495,6 +623,34 @@ D()
 ~B()
 ~A()
 ```
+
+The constructor of the base (whether `virtual` or not) is called before its derived classes.  The constructor of every `virtual` base is therefore invoked (implicitly or explicitly) from the constructor for the complete object (the constructor for the most derived class). The most derived class must supply values for the virtual base object initialization.
+
+```cpp
+struct A {
+    int value;
+    A(int v) : value(v) { std::cout << "A(" << v << ")\n"; }
+};
+
+struct B : virtual public A {
+    B(int v) : A(v) { std::cout << "B(" << v << ")\n"; }
+};
+
+struct C : virtual public A {
+    C(int v) : A(v) { std::cout << "C(" << v << ")\n"; }
+};
+
+struct D : public B, public C {
+    // D() : B(10), C(20) { std::cout << "D()\n"; } // error
+    D() : A(42), B(10), C(20) { std::cout << "D()\n"; }
+};
+
+int main() {
+    D d;
+    std::cout << "d.value = " << d.value << "\n";
+}
+```
+
 
 # Class Hierarchy, Virtual Tables, Virtual Table Table
 
