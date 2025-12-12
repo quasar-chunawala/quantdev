@@ -1,0 +1,613 @@
+---
+title: "Objects, Pointers and References"
+author: "Quasar"
+date: "2025-12-25"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Objects, pointers and references
+
+An object is something that has a lifetime and occupies storage. Even a humble `int` is an object, but a function is not. 
+
+A *pointer* is a typed address. It associates a type with what is found at some memory location. 
+
+Pointers allow us to do arithmetic, but that's legitimately seen as a dangerous operation, as it can take us to arbitrary locations. Accessing the contents of arbitrary addresses is just asking for trouble. 
+
+C++ has special types for pointer manipulation:
+- `void*` means *address with no specific type* semantics. A `void*` is an address with no associated type. All pointers are implicitly convertible to `void*` ; an informal way to read this is *all pointers regardless of type are addresses*. The converse does not hold. For example, it's not true that all addresses are implicitly convertible to `int` pointers.
+- `char*` means pointer to a byte. Due to the C language roots of C++, a `char*` can alias any address in memory (the `char` type regardless of its name, which evocates character, really means `byte` in C and by extension in C++). There is an ongoing effort in C++ to to give `char` the meaning of character. 
+- `std::byte*` is the new *pointer to a byte*, atleast since C++17. The long term intent of `std::byte*` is to replace `char*` in those functions that do byte-per-byte manipulation or addressing, but since there's so much code that uses `char*` to that effect, this will take time. 
+
+## String literals
+
+A *string literal* is a character sequence enclosed within double quotes.
+
+```cpp
+"this is a string"
+```
+
+A string literal contains one more character than it appears to have; it is terminated by the `\0` null termination character (having integer value `0`). For example,
+
+```cpp
+sizeof("Bohr") == 5
+```
+
+The type of a string literal is *array of appropriate number of `const` characters*, so `"Bohr"` is of type `const char[5]`.
+
+In C and older C++ code, you could assign a string literal to a non-`const` `char*`. 
+
+Modifying string literals is undefined behavior. In practice, the implementation can for instance store the string literal in read-only memory, such as the `.rodata` segment on Linux.
+
+```cpp
+void f()
+{
+    //char* p = "Cauchy";       // error, since C++11
+    const char* s = "Cauchy";   // ok
+    //s[4] = 'e';               // error, assignment to const
+}
+```
+
+Having string literals as immutable is not only obvious but also allows implementations to do significant optimizations in the way string literals are stored and accessed.
+
+If we want a string that we are guaranteed to be able to modify, we must place the characters in a non-`const` array. 
+
+```cpp
+char p[] = "Schwarz";   // p is an array of 8 char
+p[0] = 's';             // ok
+```
+
+A string literal is statically allocated so it is safe to return one from a function. It is an *lvalue*.
+
+Whether two identical strings are allocated as one array, or as two is implementation defined. For example:
+
+```cpp
+const char* p = "Carl Friedrich Gauss";
+const char* q = "Carl Friedrich Gauss";
+if(p == q)
+    std::cout << "\n" << "one!";        // Implementation defined
+```
+
+Note that, `==` compares addresses (pointer values) when applied to pointers, and not the objects pointed to.
+
+## Challenge puzzle
+
+Observe the code snippet below. What is printed?
+```cpp
+#include <iostream>
+
+int main()
+{
+    // string literals
+    char s1[] = {'h','e','l','l','o', '\0'};
+    char s2[] = "hello";
+    const char* s3 = "world";
+
+    std::cout << "s1 = " << s1 << "\n";
+    std::cout << "s2 = " << s2 << "\n";
+    std::cout << "s3 = " << s3 << "\n";
+
+    const char* c[] = {
+        "C++", "is", "a", "general", "purpose", 
+        "programming", "language"
+    };
+
+    std::cout << "c + 0 : " << (c) << "\n";
+    std::cout << "c + 1 : " << (c + 1) << "\n";
+    std::cout << "c + 2 : " << (c + 2) << "\n";
+    std::cout << "c + 3 : " << (c + 3) << "\n";                           
+
+    std::cout << "c[0] : " << c[0] << "\n";
+    std::cout << "c[1] : " << c[1] << "\n";
+    std::cout << "c[2] : " << c[2] << "\n";
+    std::cout << "c[3] : " << *(c + 3) << "\n";
+
+    const char** cp[] = { c + 2, c + 3, c, c + 1 };
+    const char*** cpp = cp;
+    
+
+    std::cout << *cpp[1] << ' ';
+    std::cout << *(*(*(cpp + 2) + 2) + 3) << ' ';
+    std::cout << (*cpp)[-1] << ' ';
+    std::cout << *(cpp + 3)[-1] << std::endl;
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/vqbb6xYqx)
+
+## Challenge puzzle
+
+Which of the following can be used to print the address of a `char` variable?
+
+```cpp
+char ch = 'A';
+std::cout << ???;    // print address of ch
+```
+
+a) `&ch[0]`
+
+b) `(char*)&ch`
+
+c) `(void*)&ch`
+
+d) `&ch`
+
+`&ch` is of type `char*`. The `<<` operator for `std::cout` has an overload for `char*` that interprets it as a pointer to a null-terminated C-style string, so it attempts to print characters starting from the address of ch until it encounters a null terminator `(\0)`.
+
+A pointer has to be able address all memory space. On 64-bit architecture, `sizeof(T*)` is therefore, $8$ bytes = $64$ bits. 
+
+```cpp
+void f(int* pi)
+{
+    void* pv = pi;  // ok : implicit conversion of `int*` to `void*`
+    // *pv;         // error: can't dereference void*
+    ++pv;           // error: can't increment void*
+    
+    int* pi2 = static_cast<int*>(pv);   // explicit conversion back to `int*`
+    //double* pd1 = pv;                   // error
+    //double* pd2 = pi;                   // error
+    double* pd3 = static_cast<double*>(pv); // unsafe
+}
+```
+
+In general, it is not safe to use a pointer that has been converted to a type that differs from the type of the object pointed to. 
+
+The primary use for `void*` is for passing pointers to functions that are not allowed to make assumptions about the type of the object and for returning untyped objects from functions.
+
+## Pointer declarations
+
+Use the spiral rule, when reading pointer declarations. Start at the inner-most level and work your way outwards spiralling in a counter-clockwise direction.
+
+```cpp
+double (*ptr)[5];   // Pointer to array of 5 double(s)
+double* ptr[5];     // ptr is an array of pointers to double of size 5
+```
+
+## Dereferencing null pointers
+Trying to dereference a null pointer is an error. On most platforms, it generally causes a signal, usually SIGSEGV (see Signals).
+
+```cpp
+char *foo = NULL;
+c = *foo;    /* This causes a signal and terminates.  */
+```
+
+Likewise a pointer that has the wrong alignment for the target data type (on most types of computer), or points to a part of memory that has not been allocated in the process’s address space.
+
+## Pointer comparisons
+
+Two pointer values are equal if they point to the same memory address or they are both `nullptr`. Ordering comparisons such as `>` and `>=` operate on pointers by converting them to unsigned integers. 
+
+## Pointers into arrays
+
+In C++, pointers and arrays are closely related. The name of the array holds the starting address of the array can be used as a pointer to the initial element. 
+
+```cpp
+int v[] = {1,2,3,4};
+int* p1 = v;        // pointer to initial element
+int* p2 = &v[0];    // pointer to initial element
+int* p3 = v+4;      // pointer to one beyond the last element
+```
+
+Taking a pointer to the element one beyond the end of an array is guaranteed to work. This is important for many algorithms. However, since such a pointer does not in fact point to an element of the array, it should not be used for dereferencing, reading or writing values.
+
+The result of taking the address of the element before the initial element or beyond one-past-the-last element is undefined and should be avoided. 
+
+For example:
+
+```cpp
+// int* p4 = v - 1;    // before the beginning, undefined
+// int* p5 = v + 7;    // beyond the end, undefined
+```
+
+## Navigating arrays
+
+Efficient and elegant access to arrays and similar data-structures is the key to many algorithms. Access can be achieved either through pointer to an array plus an integer index or through a pointer to an element.
+
+```cpp
+void fi(char* v)
+{
+    for(int i{0}; v[i]!=0; ++i)
+    {
+        std::cout << v[i];
+    }
+} 
+
+void fp(char* v)
+{
+    for(char* p{v}; *p!=0; ++p)
+    {
+        std::cout << *p;
+    }
+}
+```
+
+Subscripting a built-in array is defined in terms of pointer operations `+` and `*`. For every built-in array `a` and integer `j` within the range of `a`, we have:
+
+```cpp
+a[j] == *(&a[0]+j) == *(a+j) == *(j + a) == j[a]
+```
+
+It usually surprises people to find that `a[j] == j[a]`. For example, `3["Texas"] == "Texas"[3] == 'a'`. Although such cleverness has no place in production code, from an interview perspective its good to know these low-level equivalences.
+
+The result of applying the arithmetic operators `+`, `-`, `++` or `--` to pointers depends on the type of the object pointed to. When an arithmetic operator is applied to a pointer `p` of type `T*`, `p` is assumed to point to an element of an array of objects of type `T`; `p+1` points to the next element of that array, `p-1` points to the previous element. This implies that the integer value of `p+1` will be `sizeof(T)` larger than the integer value of `p`. 
+
+```cpp
+#include <iostream>
+template <typename T>
+int byte_diff(T* p, T* q) {
+    return reinterpret_cast<char*>(q) - reinterpret_cast<char*>(p);
+}
+
+int main() {
+    int vi[10] = {};
+    short vs[10] = {};
+    std::cout << byte_diff(&vi[1], &vi[2]) << " bytes diff" << "\n";
+    std::cout << byte_diff(&vs[1], &vs[2]) << " bytes diff" << "\n";
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/rhqYbzr9f)
+
+Subtraction of pointers is defined only when both pointers point to elements of the same array. When subtracting a `p` pointer from another pointer `q`, `q-p` is the number of array elements in the sequence `[p:q)`. One can add an integer to a pointer or subtract an integer from a pointer, in both cases, the result is a pointer value. If that value does not point to an element of the same array as the original array or one beyond, the result of using that value is UB. 
+
+```cpp
+int v1[10];
+int v2[10];
+
+int i1 = &v1[5] - &v1[3];   // i1 = 2
+//int i2 = &v1[5] - &v2[3];   // UB
+
+int* p1 = v2 + 2;   // p1 = &v2[2]
+//int* p2 = v2 - 2;   // UB
+```
+
+ Complicated pointer arithmetic is usually unnecessary and best avoided. Addition of pointers makes no sense and is not allowed. 
+ 
+Arrays are not self-describing because the number of elements of an array is not guaranteed to be stored with the array. This implies that to traverse an array that does not contain a terminator, the way C-style strings do, we must somehow supply the elements. 
+## Precedence of operators
+
+The precedence of operators in C++ is:
+
+| Operators           | Description                      |
+| ------------------- | -------------------------------- |
+| `[]` `()` `.` `->`  | Postfix operators, left-to-right |
+| `x++` `x--`         | Postfix, left-to-right           |
+| `++x` `--x` `*` `&` | Prefix, right-to-left            |
+| `*` `/` `%`         | Multiplicative                   |
+| `+` `-`             | Additive                         |
+### Example 1
+
+```cpp
+int arr[] = {10, 20, 30};
+int *p = arr;
+int x = *p++;   // x = 10, p now points to arr[1]
+```
+
+Consider the expression `*ptr++` . Post-increment `++` has a higher precedence than the dereference operator `*`, so it's parsed as `*(ptr++)`.  `ptr++` returns the old value that `ptr` pointed to, but moves `ptr` forward at a future time.
+### Example 2
+
+```cpp
+int arr[] = {10, 20, 30};
+int *p = arr;
+int x = *++p;   // p moves to arr[1], then x = 20
+```
+
+Consider the expression `*++p`. Both the dereference operator `*` and pre-increment `++` are prefix operators and have the same precedence. Since, they have right-to-left associativity, we read them right-to-left. `*++p` is parsed as `*(++p)`.
+### Example 3
+
+```cpp
+int arr[] = {10, 20, 30};
+int *p = arr;
+++*p;          // arr[0] becomes 11, p unchanged
+```
+
+Consider the expression `++*p`. Using right-to-left associativity rule, we first dereference and then increment. 
+## Challenge puzzle
+
+```cpp
+int arr[5] = {10, 20, 30, 40, 50};
+int *p = arr + 2;
+int *q = arr + 4;
+
+// What are the values of:
+// a) p - q
+// b) q - p
+// c) *p++
+// d) *++p (after the previous operation)
+```
+
+[Compiler Explorer](https://compiler-explorer.com/z/cGvEnnEd3)
+`p - q`  evaluates to $-2$, `q - p`  evaluates to $2$. 
+
+## Challenge puzzle
+
+```cpp
+int x = 10;
+int *p = &x;
+int **pp = &p;
+
+// What happens with each line?
+**pp = 20;
+*pp = nullptr;
+// Can you still access x? What's its value?
+```
+
+[Compiler Explorer](https://compiler-explorer.com/z/7n8zbd9c9)
+After the line `*pp=20`,  the variable `x` has been assigned a new value `20`. `*p = nullptr`  will reset the value in pointer variable `p`  to a `nullptr`. We cannot access the contents of the variable `x` through the pointer variables `p` and `pp`.
+
+## Challenge Puzzle
+
+Observe the code snippet below. What is printed?
+
+```cpp
+// Headers
+int main()
+{ 
+    const char* str[] = { "AAAAA", "BBBBB", "CCCCC", "DDDDD" }; 
+    const char** sptr[] = { str + 3, str + 2, str + 1, str }; 
+    const char*** pp; 
+    pp = sptr; 
+    ++pp; 
+    std::cout << **++pp + 2; 
+}
+```
+Initially, `pp` is incremented to point to the address of `sptr[1]`. 
+
+In the order of precedence, from high to low, we have:
+
+1. `*` dereference and `++` pre-increment operator (Right-to-left)
+2. `+` - Addition binary operator (Left-to-right)
+
+So, `**++pp + 2` would be parsed as `*(*(+pp)) + 2`. Thus, `pp` is now incremented to point to the address of `str+1`. Then, it is dereferenced twice to yield the string literal `BBBBB` which is a `char*`. Finally, an offset of `2`, will print the text `BBB`.
+## Passing C-style arrays
+
+Arrays cannot be directly passed by value. Instead, an array is as a pointer to its first element. 
+
+```cpp
+double vec_norm(double* vec, std::size_t n)
+{
+    double sum_of_squares{0.0};  
+    for(int i{0}; i<n; ++i)
+    {
+        sum_of_squares += vec[i];
+    }
+    
+    return sqrt(sum_of_squares);
+}
+```
+
+Multi-dimensional arrays can be passed in a similar fashion.
+
+```cpp
+double frobenius_norm(double* mat, std::size_t num_rows, std::size_t num_cols)
+{
+    double sum_of_squares{0.0};  
+    for(int i{0}; i<m; ++i)
+    {
+        for(int j{0}; j<n; ++j)
+        {
+            sum_of_squares += mat[i][j];
+        }
+    }
+    
+    return sqrt(sum_of_squares);
+}
+```
+
+## References
+
+The C++ language supports two families of indirections: pointers and references. A reference can be seen as an alias for an existing entity. We deliberately did not use the word object, since one could refer to a function and we already know that a function is not an object. 
+
+Pointers are objects. As such they occupy storage. References, on the other hand, are not objects, they do not use any storage of their own. 
+
+The `sizeof` operator applied to a reference, will yield the size of whatever it refers to. In C++, a reference is always bound to an object and remains bound to that object until the end of the reference's lifetime. A pointer, on the other hand, can point to numerous distinct objects during its lifetime. 
+
+Another difference between pointers and references is that, contrary to the situation, there is no such thing as reference arithmetic. This makes references safer than pointers. 
+
+## Understanding the fundamental properties of objects
+
+We saw earlier that in C++, an object has a type and an address. It occupies a region of storage from the beginning of it's construction to the end of it's destruction. 
+
+### Object lifetime
+
+In C++, generally speaking, automatic objects are destructed at the end of their scope in a well-defined order. Static(global) objects are destructed on program termination in a somewhat well-defined order. Dynamically allocated objects are destroyed when your program says so.
+
+Let's examine some aspects of object lifetime with the following very simple program:
+
+```cpp
+#include <string>
+#include <print>
+#include <format>
+
+struct X{
+    std::string s;
+    X(std::string_view s) : s{ s }
+    {
+        std::print("X::X({})\n", s);
+    }
+
+    ~X(){
+        std::print("~X::X() for {}\n", s);
+    }
+};
+
+X glob{ "glob" };
+
+void g(){
+    X xg{ "g()" };
+}
+
+int main()
+{
+    X* p0 = new X{ "p0" };
+    [[maybe_unused]] X* p1 = new X{ "p1" }; // will leak
+    X xmain{ "main()" };
+    g();
+    delete p0;
+    // oops, forgot to delete p1
+    return 0;
+}
+```
+
+[Compiler Explorer](https://compiler-explorer.com/z/jEo3anfso)
+
+When executed, the program will print the following:
+
+```shell
+X::X(glob)
+X::X(p0)
+X::X(p1)
+X::X(main())
+X::X(g())
+~X::X() for g()
+~X::X() for p0
+~X::X() for main()
+~X::X() for glob
+```
+
+The fact that the number of constructors and destructors do not match is a sign that we did something wrong. More specifically, in this example, we manually created an object (pointed to by `p1`) with  the operator `new` but never manually destructed that object afterward. This is a *memory leak*.
+
+## Object size, alignment and padding
+
+Since each object occupies storage, the space associated with an object is an important(if low-level) property of C++ types. For example, look at the following code:
+
+```cpp
+class B;    // fporward declaraion: there will be a class B
+			// at some point in the future
+			
+void f(B*); // fine, we know what NB is, even if don't know the details yet,
+			// and all object addresses are of the same size
+
+class D : B{};  // oops! This is the definition of class D. To determine
+				// sizeof(D), we have to know how big sizeof(B) is and what
+				// a B object contains since a D is a B
+```
+
+In the above example, trying to define the `D` class would not compile. This is because in order to create a`D` object, the compiler needs to reserve enough space for a `D` object, but a `D` object is also a `B` object and as such we cannot kn ow the size of a `D` object without knowing the size of `B` object.
+
+The size of an object or equivalently of a type can be obtained through the `sizeof` operator. This operator yields a compile-time, non-zero unsigned integral value corresponding to the number of bytes required to store an object. 
+
+```cpp
+#include <print>
+
+int main(){
+    char c;
+    // a  char precisely occupies one byte of storage, per
+    // standard wording
+    static_assert(sizeof(c) == 1);
+
+    struct Tiny{};
+    // all C++ types occupy non-zero bytes of storage by 
+    // definition, even if they are empty like type Tiny
+    static_assert(sizeof(Tiny) == 1);
+}
+```
+
+In the preceding example, the `Tiny` class is empty because it has no data-member. A class could have member functions and still be empty. 
+
+A C++ object always occupies atleast one byte of storage, even in the case of empty classes such as `Tiny`. That's because if the object's size was zero, that object could be at the same memory location as its immediate neighbor, which would be somewhat hard to reason about.
+
+C++ differs from many other languages in that it does not standardize the size of all fundamental types. For example, `sizeof(int)` can yield different values depending on the compiler and the platform.  Still there are rules concerning the size of objects:
+
+- The size reported by operator `sizeof`  for objects of type `signed char`, `unsigned char` and `char` is $1$, and the same goes for `sizeof(std::byte)` as each of these types can be used to represent a single byte.
+- The standard specifies a minimum width for the fundamental types:
+	- Signed Integer Types : Signed integers are represented in two's complement form. The rules of binary arithmetic are the same for two's complement as the standard base-2 representation. Hence, the same binary adder hardware circuits can be used for signed integer addition.
+
+| Type          | Minimum width $N$ |
+| ------------- | ----------------- |
+| `signed char` | $1$ byte          |
+| `short`       | $2$ bytes         |
+| `int`         | $2$ bytes         |
+| `long`        | $4$ bytes         |
+| `long long`   | $8$ bytes         |
+
+- For each of the signed integer types, there exists the corresponding, but different, *standard unsigned integer* types. An unsigned integer type has the same width $N$ as the corresponding unsigned integer type. The range of representable values for an unsigned type is $0$ to $2^N - 1$.  Arithmetic for the unsigned type is performed modulo $2^N$. Unsigned arithmetic does not overflow. Each value $x$ of an unsigned integer type with $N$ has a unique representation $x = x_0 2^0 + x_1 2^1 + \ldots + x_{N-1}2^{N-1}$, where each coefficient $x_i$ is either $0$ or $1$: this is called the base-2 representation of  $x$. 
+- The size occupied by an object of any `struct` or `class` cannot be less than the sum of the size of its data-members.
+
+### Empty base class optimization (EBCO)
+
+Consider the following code snippet:
+
+```cpp
+class X{};
+class Y : X{   // private inheritance
+	char c;
+};
+
+int main()
+{
+    Y y;
+    static_assert(sizeof(Y) == 1);
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/desWebdYE)
+Since the base class is empty, and objects of the derived class `Y` occupy atleast one byte of storage, the base class can be flattened, when creating objects of the derived class `Y`. Note that, since the presence of `X` in `Y` is an implementation detail, not something that participates in the interface of `class Y`, I used private inheritance.
+
+## Alignment
+
+```cpp
+struct X{
+    char c;     // atleast 1 byte
+    short s;    // atleast 2 bytes
+    int i;      // atleast 2 bytes
+    long long ll;  // atleast 8 bytes
+};
+
+int main(){
+    static_assert(sizeof(X) >= 13);
+}
+```
+
+We know that `sizeof(X)` will be atleast $13$ bytes. In practice however, `sizeof(X)` is likely to be equal to $32$ bytes. This might seem surprising at first, but it's a logical consequence of something called **alignment**.
+
+The alignment of an object tells us where that object can be placed in memory. The `char` type has an alignment of $1$, and as such one can place a `char` object literally anywhere (as long as one can access that memory). `short` has an alignment of `2`. If a type has an alignment $n$, then objects of that type must be placed at an address that is a multiple of $n$. 
+
+The alignment has to be a strictly positive power of $2$.
+
+The C++ language offers two operators related to alignment:
+- The `alignof` operator, which yields the natural alignment of a type `T` or of an object of that type.
+- The `alignas` operator, which lets the programmers impose the alignment of an object. this is often useful, when playing tricks with memory(as we will), or when interfacing wit with exotic hardware. Of course, `alignas` can only reasonably increase the natural alignment of a type `T`, not reduce it.
+
+For some fundamental type `T`, we can expect the assertion `sizeof(T)` is equal to `alignof(T)` to hold, but that assertion does not generalize to composite types. For example, consider again the `struct X`:
+
+```cpp
+struct X{
+    char c;     // alignof(c) == 1
+    short s;    // alignof(s) == 2
+    int i;      // alignof(i) == 4 (most probable)
+    long long ll;  // alignof(ll) == 8 (most probable)
+};
+```
+
+Generally, speaking for a composite type, the alignment will correspond to the worst alignment of the data members. Here, worst means biggest. For `struct X`, the worst-aligned data member is type `long long`, and as such `X` objects will be aligned on $8$-byte boundaries, so it can be placed at an address $8$, $16$, $24$ and so forth. It is highly probable `sizeof(X) == 16` bytes. 
+
+```shell
+Offset  Content
+------  -------
+  0     | c  |  (char, 1 byte)
+        +----+
+  1     |pad |  (padding, 1 byte)
+        +----+
+  2     | s  |  (short, 2 bytes)
+  3     |    |
+        +----+
+  4     | i  |  (int, 4 bytes)
+  5     |    |
+  6     |    |
+  7     |    |
+        +----+
+  8     | ll |  (long long, 8 bytes)
+  9     |    |
+ 10     |    |
+ 11     |    |
+ 12     |    |
+ 13     |    |
+ 14     |    |
+ 15     |    |
+        +----+
+```
+
+Now, that we know about alignment, just changing the order of the elements in a `struct` can affect memory consumption. We should always code `struct`s in the order of largest to smallest data-members.

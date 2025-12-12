@@ -10,7 +10,2548 @@
 <atom:link href="http://quantdev.blog/index.xml" rel="self" type="application/rss+xml"/>
 <description></description>
 <generator>quarto-1.3.450</generator>
-<lastBuildDate>Fri, 05 Dec 2025 00:00:00 GMT</lastBuildDate>
+<lastBuildDate>Thu, 25 Dec 2025 00:00:00 GMT</lastBuildDate>
+<item>
+  <title>Objects, Pointers and References</title>
+  <dc:creator>Quasar </dc:creator>
+  <link>http://quantdev.blog/posts/objects-pointers-and-references/index.html</link>
+  <description><![CDATA[ 
+
+
+
+
+<section id="objects-pointers-and-references" class="level1">
+<h1>Objects, pointers and references</h1>
+<p>An object is something that has a lifetime and occupies storage. Even a humble <code>int</code> is an object, but a function is not.</p>
+<p>A <em>pointer</em> is a typed address. It associates a type with what is found at some memory location.</p>
+<p>Pointers allow us to do arithmetic, but that’s legitimately seen as a dangerous operation, as it can take us to arbitrary locations. Accessing the contents of arbitrary addresses is just asking for trouble.</p>
+<p>C++ has special types for pointer manipulation: - <code>void*</code> means <em>address with no specific type</em> semantics. A <code>void*</code> is an address with no associated type. All pointers are implicitly convertible to <code>void*</code> ; an informal way to read this is <em>all pointers regardless of type are addresses</em>. The converse does not hold. For example, it’s not true that all addresses are implicitly convertible to <code>int</code> pointers. - <code>char*</code> means pointer to a byte. Due to the C language roots of C++, a <code>char*</code> can alias any address in memory (the <code>char</code> type regardless of its name, which evocates character, really means <code>byte</code> in C and by extension in C++). There is an ongoing effort in C++ to to give <code>char</code> the meaning of character. - <code>std::byte*</code> is the new <em>pointer to a byte</em>, atleast since C++17. The long term intent of <code>std::byte*</code> is to replace <code>char*</code> in those functions that do byte-per-byte manipulation or addressing, but since there’s so much code that uses <code>char*</code> to that effect, this will take time.</p>
+<section id="string-literals" class="level2">
+<h2 class="anchored" data-anchor-id="string-literals">String literals</h2>
+<p>A <em>string literal</em> is a character sequence enclosed within double quotes.</p>
+<div class="sourceCode" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"this is a string"</span></span></code></pre></div>
+<p>A string literal contains one more character than it appears to have; it is terminated by the <code>\0</code> null termination character (having integer value <code>0</code>). For example,</p>
+<div class="sourceCode" id="cb2" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Bohr"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">==</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5</span></span></code></pre></div>
+<p>The type of a string literal is <em>array of appropriate number of <code>const</code> characters</em>, so <code>"Bohr"</code> is of type <code>const char[5]</code>.</p>
+<p>In C and older C++ code, you could assign a string literal to a non-<code>const</code> <code>char*</code>.</p>
+<p>Modifying string literals is undefined behavior. In practice, the implementation can for instance store the string literal in read-only memory, such as the&nbsp;<code>.rodata</code>&nbsp;segment on Linux.</p>
+<div class="sourceCode" id="cb3" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> f<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span></span>
+<span id="cb3-2"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb3-3">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//char* p = "Cauchy";       // error, since C++11</span></span>
+<span id="cb3-4">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> s <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Cauchy"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// ok</span></span>
+<span id="cb3-5">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//s[4] = 'e';               // error, assignment to const</span></span>
+<span id="cb3-6"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>Having string literals as immutable is not only obvious but also allows implementations to do significant optimizations in the way string literals are stored and accessed.</p>
+<p>If we want a string that we are guaranteed to be able to modify, we must place the characters in a non-<code>const</code> array.</p>
+<div class="sourceCode" id="cb4" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Schwarz"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// p is an array of 8 char</span></span>
+<span id="cb4-2">p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">'s'</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>             <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// ok</span></span></code></pre></div>
+<p>A string literal is statically allocated so it is safe to return one from a function. It is an <em>lvalue</em>.</p>
+<p>Whether two identical strings are allocated as one array, or as two is implementation defined. For example:</p>
+<div class="sourceCode" id="cb5" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> p <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Carl Friedrich Gauss"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-2"><span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> q <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Carl Friedrich Gauss"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-3"><span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">if</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>p <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">==</span> q<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb5-4">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"one!"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>        <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Implementation defined</span></span></code></pre></div>
+<p>Note that, <code>==</code> compares addresses (pointer values) when applied to pointers, and not the objects pointed to.</p>
+</section>
+<section id="challenge-puzzle" class="level2">
+<h2 class="anchored" data-anchor-id="challenge-puzzle">Challenge puzzle</h2>
+<p>Observe the code snippet below. What is printed?</p>
+<div class="sourceCode" id="cb6" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;iostream&gt;</span></span>
+<span id="cb6-2"></span>
+<span id="cb6-3"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span></span>
+<span id="cb6-4"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb6-5">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// string literals</span></span>
+<span id="cb6-6">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> s1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">'h'</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span><span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">'e'</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span><span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">'l'</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span><span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">'l'</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span><span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">'o'</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">'</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\0</span><span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">'</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb6-7">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> s2<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"hello"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-8">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> s3 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"world"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-9"></span>
+<span id="cb6-10">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"s1 = "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> s1 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-11">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"s2 = "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> s2 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-12">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"s3 = "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> s3 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-13"></span>
+<span id="cb6-14">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> c<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb6-15">        <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"C++"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"is"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"a"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"general"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"purpose"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> </span>
+<span id="cb6-16">        <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"programming"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"language"</span></span>
+<span id="cb6-17">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb6-18"></span>
+<span id="cb6-19">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"c + 0 : "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>c<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-20">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"c + 1 : "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>c <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-21">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"c + 2 : "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>c <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-22">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"c + 3 : "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>c <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>                           </span>
+<span id="cb6-23"></span>
+<span id="cb6-24">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"c[0] : "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> c<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-25">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"c[1] : "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> c<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-26">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"c[2] : "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> c<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-27">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"c[3] : "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*(</span>c <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-28"></span>
+<span id="cb6-29">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">**</span> cp<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> c <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> c <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> c<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> c <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb6-30">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">***</span> cpp <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> cp<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-31">    </span>
+<span id="cb6-32"></span>
+<span id="cb6-33">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>cpp<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">' '</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-34">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*(*(*(</span>cpp <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">' '</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-35">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(*</span>cpp<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)[-</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">' '</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-36">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*(</span>cpp <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)[-</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>endl<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-37">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-38"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/vqbb6xYqx">Compiler Explorer</a></p>
+</section>
+<section id="challenge-puzzle-1" class="level2">
+<h2 class="anchored" data-anchor-id="challenge-puzzle-1">Challenge puzzle</h2>
+<p>Which of the following can be used to print the address of a <code>char</code> variable?</p>
+<div class="sourceCode" id="cb7" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> ch <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="ch" style="color: #20794D;
+background-color: null;
+font-style: inherit;">'A'</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb7-2"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">???;</span>    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// print address of ch</span></span></code></pre></div>
+<ol type="a">
+<li><p><code>&amp;ch[0]</code></p></li>
+<li><p><code>(char*)&amp;ch</code></p></li>
+<li><p><code>(void*)&amp;ch</code></p></li>
+<li><p><code>&amp;ch</code></p></li>
+</ol>
+<p><code>&amp;ch</code> is of type <code>char*</code>. The <code>&lt;&lt;</code> operator for <code>std::cout</code> has an overload for <code>char*</code> that interprets it as a pointer to a null-terminated C-style string, so it attempts to print characters starting from the address of ch until it encounters a null terminator <code>(\0)</code>.</p>
+<p>A pointer has to be able address all memory space. On 64-bit architecture, <code>sizeof(T*)</code> is therefore, <img src="https://latex.codecogs.com/png.latex?8"> bytes = <img src="https://latex.codecogs.com/png.latex?64"> bits.</p>
+<div class="sourceCode" id="cb8" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> f<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> pi<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb8-2"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb8-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> pv <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> pi<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>  <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// ok : implicit conversion of `int*` to `void*`</span></span>
+<span id="cb8-4">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// *pv;         // error: can't dereference void*</span></span>
+<span id="cb8-5">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++</span>pv<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>           <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// error: can't increment void*</span></span>
+<span id="cb8-6">    </span>
+<span id="cb8-7">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> pi2 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">static_cast</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*&gt;(</span>pv<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// explicit conversion back to `int*`</span></span>
+<span id="cb8-8">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//double* pd1 = pv;                   // error</span></span>
+<span id="cb8-9">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//double* pd2 = pi;                   // error</span></span>
+<span id="cb8-10">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> pd3 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">static_cast</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*&gt;(</span>pv<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span> <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// unsafe</span></span>
+<span id="cb8-11"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>In general, it is not safe to use a pointer that has been converted to a type that differs from the type of the object pointed to.</p>
+<p>The primary use for <code>void*</code> is for passing pointers to functions that are not allowed to make assumptions about the type of the object and for returning untyped objects from functions.</p>
+</section>
+<section id="pointer-declarations" class="level2">
+<h2 class="anchored" data-anchor-id="pointer-declarations">Pointer declarations</h2>
+<p>Use the spiral rule, when reading pointer declarations. Start at the inner-most level and work your way outwards spiralling in a counter-clockwise direction.</p>
+<div class="sourceCode" id="cb9" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(*</span>ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Pointer to array of 5 double(s)</span></span>
+<span id="cb9-2"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span>     <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// ptr is an array of pointers to double of size 5</span></span></code></pre></div>
+</section>
+<section id="dereferencing-null-pointers" class="level2">
+<h2 class="anchored" data-anchor-id="dereferencing-null-pointers">Dereferencing null pointers</h2>
+<p>Trying to dereference a null pointer is an error. On most platforms, it generally causes a signal, usually SIGSEGV (see Signals).</p>
+<div class="sourceCode" id="cb10" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>foo <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> NULL<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb10-2">c <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>foo<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/* This causes a signal and terminates.  */</span></span></code></pre></div>
+<p>Likewise a pointer that has the wrong alignment for the target data type (on most types of computer), or points to a part of memory that has not been allocated in the process’s address space.</p>
+</section>
+<section id="pointer-comparisons" class="level2">
+<h2 class="anchored" data-anchor-id="pointer-comparisons">Pointer comparisons</h2>
+<p>Two pointer values are equal if they point to the same memory address or they are both <code>nullptr</code>. Ordering comparisons such as <code>&gt;</code> and <code>&gt;=</code> operate on pointers by converting them to unsigned integers.</p>
+</section>
+<section id="pointers-into-arrays" class="level2">
+<h2 class="anchored" data-anchor-id="pointers-into-arrays">Pointers into arrays</h2>
+<p>In C++, pointers and arrays are closely related. The name of the array holds the starting address of the array can be used as a pointer to the initial element.</p>
+<div class="sourceCode" id="cb11" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb11-2"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> p1 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>        <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// pointer to initial element</span></span>
+<span id="cb11-3"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> p2 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span>v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span>    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// pointer to initial element</span></span>
+<span id="cb11-4"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> p3 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>      <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// pointer to one beyond the last element</span></span></code></pre></div>
+<p>Taking a pointer to the element one beyond the end of an array is guaranteed to work. This is important for many algorithms. However, since such a pointer does not in fact point to an element of the array, it should not be used for dereferencing, reading or writing values.</p>
+<p>The result of taking the address of the element before the initial element or beyond one-past-the-last element is undefined and should be avoided.</p>
+<p>For example:</p>
+<div class="sourceCode" id="cb12" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// int* p4 = v - 1;    // before the beginning, undefined</span></span>
+<span id="cb12-2"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// int* p5 = v + 7;    // beyond the end, undefined</span></span></code></pre></div>
+</section>
+<section id="navigating-arrays" class="level2">
+<h2 class="anchored" data-anchor-id="navigating-arrays">Navigating arrays</h2>
+<p>Efficient and elegant access to arrays and similar data-structures is the key to many algorithms. Access can be achieved either through pointer to an array plus an integer index or through a pointer to an element.</p>
+<div class="sourceCode" id="cb13" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> fi<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb13-2"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb13-3">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">for</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span> v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]!=</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb13-4">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb13-5">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span></span>
+<span id="cb13-6">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb13-7"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span> </span>
+<span id="cb13-8"></span>
+<span id="cb13-9"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> fp<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb13-10"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb13-11">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">for</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span>v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!=</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++</span>p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb13-12">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb13-13">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb13-14">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb13-15"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>Subscripting a built-in array is defined in terms of pointer operations <code>+</code> and <code>*</code>. For every built-in array <code>a</code> and integer <code>j</code> within the range of <code>a</code>, we have:</p>
+<div class="sourceCode" id="cb14" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb14-1">a<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>j<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">==</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*(&amp;</span>a<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]+</span>j<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">==</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*(</span>a<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span>j<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">==</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*(</span>j <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> a<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">==</span> j<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>a<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span></span></code></pre></div>
+<p>It usually surprises people to find that <code>a[j] == j[a]</code>. For example, <code>3["Texas"] == "Texas"[3] == 'a'</code>. Although such cleverness has no place in production code, from an interview perspective its good to know these low-level equivalences.</p>
+<p>The result of applying the arithmetic operators <code>+</code>, <code>-</code>, <code>++</code> or <code>--</code> to pointers depends on the type of the object pointed to. When an arithmetic operator is applied to a pointer <code>p</code> of type <code>T*</code>, <code>p</code> is assumed to point to an element of an array of objects of type <code>T</code>; <code>p+1</code> points to the next element of that array, <code>p-1</code> points to the previous element. This implies that the integer value of <code>p+1</code> will be <code>sizeof(T)</code> larger than the integer value of <code>p</code>.</p>
+<div class="sourceCode" id="cb15" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb15-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;iostream&gt;</span></span>
+<span id="cb15-2"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb15-3"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> byte_diff<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> q<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb15-4">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">reinterpret_cast</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*&gt;(</span>q<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">reinterpret_cast</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*&gt;(</span>p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb15-5"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb15-6"></span>
+<span id="cb15-7"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb15-8">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> vi<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb15-9">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">short</span> vs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb15-10">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> byte_diff<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>vi<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">],</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span>vi<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">])</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">" bytes diff"</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb15-11">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> byte_diff<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>vs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">],</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span>vs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">])</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">" bytes diff"</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb15-12">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb15-13"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/rhqYbzr9f">Compiler Explorer</a></p>
+<p>Subtraction of pointers is defined only when both pointers point to elements of the same array. When subtracting a <code>p</code> pointer from another pointer <code>q</code>, <code>q-p</code> is the number of array elements in the sequence <code>[p:q)</code>. One can add an integer to a pointer or subtract an integer from a pointer, in both cases, the result is a pointer value. If that value does not point to an element of the same array as the original array or one beyond, the result of using that value is UB.</p>
+<div class="sourceCode" id="cb16" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb16-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span></span>
+<span id="cb16-2"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> v2<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span></span>
+<span id="cb16-3"></span>
+<span id="cb16-4"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> i1 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span>v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span>v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// i1 = 2</span></span>
+<span id="cb16-5"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//int i2 = &amp;v1[5] - &amp;v2[3];   // UB</span></span>
+<span id="cb16-6"></span>
+<span id="cb16-7"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> p1 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> v2 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// p1 = &amp;v2[2]</span></span>
+<span id="cb16-8"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//int* p2 = v2 - 2;   // UB</span></span></code></pre></div>
+<p>Complicated pointer arithmetic is usually unnecessary and best avoided. Addition of pointers makes no sense and is not allowed.</p>
+<p>Arrays are not self-describing because the number of elements of an array is not guaranteed to be stored with the array. This implies that to traverse an array that does not contain a terminator, the way C-style strings do, we must somehow supply the elements. ## Precedence of operators</p>
+<p>The precedence of operators in C++ is:</p>
+<table class="table">
+<thead>
+<tr class="header">
+<th>Operators</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>[]</code> <code>()</code> <code>.</code> <code>-&gt;</code></td>
+<td>Postfix operators, left-to-right</td>
+</tr>
+<tr class="even">
+<td><code>x++</code> <code>x--</code></td>
+<td>Postfix, left-to-right</td>
+</tr>
+<tr class="odd">
+<td><code>++x</code> <code>--x</code> <code>*</code> <code>&amp;</code></td>
+<td>Prefix, right-to-left</td>
+</tr>
+<tr class="even">
+<td><code>*</code> <code>/</code> <code>%</code></td>
+<td>Multiplicative</td>
+</tr>
+<tr class="odd">
+<td><code>+</code> <code>-</code></td>
+<td>Additive</td>
+</tr>
+</tbody>
+</table>
+<section id="example-1" class="level3">
+<h3 class="anchored" data-anchor-id="example-1">Example 1</h3>
+<div class="sourceCode" id="cb17" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb17-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> arr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">20</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb17-2"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>p <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> arr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb17-3"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> x <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++;</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// x = 10, p now points to arr[1]</span></span></code></pre></div>
+<p>Consider the expression <code>*ptr++</code> . Post-increment <code>++</code> has a higher precedence than the dereference operator <code>*</code>, so it’s parsed as <code>*(ptr++)</code>. <code>ptr++</code> returns the old value that <code>ptr</code> pointed to, but moves <code>ptr</code> forward at a future time. ### Example 2</p>
+<div class="sourceCode" id="cb18" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb18-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> arr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">20</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb18-2"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>p <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> arr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb18-3"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> x <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*++</span>p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// p moves to arr[1], then x = 20</span></span></code></pre></div>
+<p>Consider the expression <code>*++p</code>. Both the dereference operator <code>*</code> and pre-increment <code>++</code> are prefix operators and have the same precedence. Since, they have right-to-left associativity, we read them right-to-left. <code>*++p</code> is parsed as <code>*(++p)</code>. ### Example 3</p>
+<div class="sourceCode" id="cb19" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb19-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> arr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">20</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb19-2"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>p <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> arr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb19-3"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++*</span>p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>          <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// arr[0] becomes 11, p unchanged</span></span></code></pre></div>
+<p>Consider the expression <code>++*p</code>. Using right-to-left associativity rule, we first dereference and then increment. ## Challenge puzzle</p>
+<div class="sourceCode" id="cb20" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb20-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> arr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">20</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">40</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">50</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb20-2"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>p <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> arr <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb20-3"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>q <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> arr <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb20-4"></span>
+<span id="cb20-5"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// What are the values of:</span></span>
+<span id="cb20-6"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// a) p - q</span></span>
+<span id="cb20-7"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// b) q - p</span></span>
+<span id="cb20-8"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// c) *p++</span></span>
+<span id="cb20-9"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// d) *++p (after the previous operation)</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/cGvEnnEd3">Compiler Explorer</a> <code>p - q</code> evaluates to <img src="https://latex.codecogs.com/png.latex?-2">, <code>q - p</code> evaluates to <img src="https://latex.codecogs.com/png.latex?2">.</p>
+</section>
+</section>
+<section id="challenge-puzzle-2" class="level2">
+<h2 class="anchored" data-anchor-id="challenge-puzzle-2">Challenge puzzle</h2>
+<div class="sourceCode" id="cb21" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb21-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> x <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb21-2"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>p <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span>x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb21-3"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">**</span>pp <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span>p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb21-4"></span>
+<span id="cb21-5"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// What happens with each line?</span></span>
+<span id="cb21-6"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">**</span>pp <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">20</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb21-7"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>pp <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">nullptr</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb21-8"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Can you still access x? What's its value?</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/7n8zbd9c9">Compiler Explorer</a> After the line <code>*pp=20</code>, the variable <code>x</code> has been assigned a new value <code>20</code>. <code>*p = nullptr</code> will reset the value in pointer variable <code>p</code> to a <code>nullptr</code>. We cannot access the contents of the variable <code>x</code> through the pointer variables <code>p</code> and <code>pp</code>.</p>
+</section>
+<section id="challenge-puzzle-3" class="level2">
+<h2 class="anchored" data-anchor-id="challenge-puzzle-3">Challenge Puzzle</h2>
+<p>Observe the code snippet below. What is printed?</p>
+<div class="sourceCode" id="cb22" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb22-1"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Headers</span></span>
+<span id="cb22-2"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span></span>
+<span id="cb22-3"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> </span>
+<span id="cb22-4">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> str<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"AAAAA"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"BBBBB"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"CCCCC"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"DDDDD"</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span> </span>
+<span id="cb22-5">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">**</span> sptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> str <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> str <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> str <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> str <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span> </span>
+<span id="cb22-6">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">***</span> pp<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> </span>
+<span id="cb22-7">    pp <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> sptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> </span>
+<span id="cb22-8">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++</span>pp<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> </span>
+<span id="cb22-9">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">**++</span>pp <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> </span>
+<span id="cb22-10"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>Initially, <code>pp</code> is incremented to point to the address of <code>sptr[1]</code>.</p>
+<p>In the order of precedence, from high to low, we have:</p>
+<ol type="1">
+<li><code>*</code> dereference and <code>++</code> pre-increment operator (Right-to-left)</li>
+<li><code>+</code> - Addition binary operator (Left-to-right)</li>
+</ol>
+<p>So, <code>**++pp + 2</code> would be parsed as <code>*(*(+pp)) + 2</code>. Thus, <code>pp</code> is now incremented to point to the address of <code>str+1</code>. Then, it is dereferenced twice to yield the string literal <code>BBBBB</code> which is a <code>char*</code>. Finally, an offset of <code>2</code>, will print the text <code>BBB</code>. ## Passing C-style arrays</p>
+<p>Arrays cannot be directly passed by value. Instead, an array is as a pointer to its first element.</p>
+<div class="sourceCode" id="cb23" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb23-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> vec_norm<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> vec<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>n<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb23-2"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb23-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> sum_of_squares<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span>  </span>
+<span id="cb23-4">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">for</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>n<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb23-5">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb23-6">        sum_of_squares <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+=</span> vec<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span></span>
+<span id="cb23-7">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb23-8">    </span>
+<span id="cb23-9">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> sqrt<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>sum_of_squares<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb23-10"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>Multi-dimensional arrays can be passed in a similar fashion.</p>
+<div class="sourceCode" id="cb24" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb24-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> frobenius_norm<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> mat<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>num_rows<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>num_cols<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb24-2"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb24-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> sum_of_squares<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span>  </span>
+<span id="cb24-4">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">for</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>m<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb24-5">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb24-6">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">for</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> j<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span> j<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>n<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++</span>j<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb24-7">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb24-8">            sum_of_squares <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+=</span> mat<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">][</span>j<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span></span>
+<span id="cb24-9">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb24-10">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb24-11">    </span>
+<span id="cb24-12">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> sqrt<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>sum_of_squares<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb24-13"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<p>The C++ language supports two families of indirections: pointers and references. A reference can be seen as an alias for an existing entity. We deliberately did not use the word object, since one could refer to a function and we already know that a function is not an object.</p>
+<p>Pointers are objects. As such they occupy storage. References, on the other hand, are not objects, they do not use any storage of their own.</p>
+<p>The <code>sizeof</code> operator applied to a reference, will yield the size of whatever it refers to. In C++, a reference is always bound to an object and remains bound to that object until the end of the reference’s lifetime. A pointer, on the other hand, can point to numerous distinct objects during its lifetime.</p>
+<p>Another difference between pointers and references is that, contrary to the situation, there is no such thing as reference arithmetic. This makes references safer than pointers.</p>
+</section>
+<section id="understanding-the-fundamental-properties-of-objects" class="level2">
+<h2 class="anchored" data-anchor-id="understanding-the-fundamental-properties-of-objects">Understanding the fundamental properties of objects</h2>
+<p>We saw earlier that in C++, an object has a type and an address. It occupies a region of storage from the beginning of it’s construction to the end of it’s destruction.</p>
+<section id="object-lifetime" class="level3">
+<h3 class="anchored" data-anchor-id="object-lifetime">Object lifetime</h3>
+<p>In C++, generally speaking, automatic objects are destructed at the end of their scope in a well-defined order. Static(global) objects are destructed on program termination in a somewhat well-defined order. Dynamically allocated objects are destroyed when your program says so.</p>
+<p>Let’s examine some aspects of object lifetime with the following very simple program:</p>
+<div class="sourceCode" id="cb25" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb25-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;string&gt;</span></span>
+<span id="cb25-2"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;print&gt;</span></span>
+<span id="cb25-3"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;format&gt;</span></span>
+<span id="cb25-4"></span>
+<span id="cb25-5"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb25-6">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>s<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb25-7">    X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string_view<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>s<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span> s<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> s <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb25-8">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb25-9">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>print<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"X::X(</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{}</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">)</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> s<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb25-10">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb25-11"></span>
+<span id="cb25-12">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">~</span>X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb25-13">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>print<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"~X::X() for </span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{}\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> s<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb25-14">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb25-15"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb25-16"></span>
+<span id="cb25-17">X glob<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"glob"</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb25-18"></span>
+<span id="cb25-19"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> g<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb25-20">    X xg<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"g()"</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb25-21"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb25-22"></span>
+<span id="cb25-23"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span></span>
+<span id="cb25-24"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb25-25">    X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> p0 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"p0"</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb25-26">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[[</span><span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">maybe_unused</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]]</span> X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> p1 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"p1"</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span> <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// will leak</span></span>
+<span id="cb25-27">    X xmain<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"main()"</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb25-28">    g<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="cb25-29">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">delete</span> p0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb25-30">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// oops, forgot to delete p1</span></span>
+<span id="cb25-31">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb25-32"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/jEo3anfso">Compiler Explorer</a></p>
+<p>When executed, the program will print the following:</p>
+<div class="sourceCode" id="cb26" style="background: #f1f3f5;"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb26-1">X::X(glob)</span>
+<span id="cb26-2">X::X(p0)</span>
+<span id="cb26-3">X::X(p1)</span>
+<span id="cb26-4">X::X(main())</span>
+<span id="cb26-5">X::X(g())</span>
+<span id="cb26-6">~X::X() for g()</span>
+<span id="cb26-7">~X::X() for p0</span>
+<span id="cb26-8">~X::X() for main()</span>
+<span id="cb26-9">~X::X() for glob</span></code></pre></div>
+<p>The fact that the number of constructors and destructors do not match is a sign that we did something wrong. More specifically, in this example, we manually created an object (pointed to by <code>p1</code>) with the operator <code>new</code> but never manually destructed that object afterward. This is a <em>memory leak</em>.</p>
+</section>
+</section>
+<section id="object-size-alignment-and-padding" class="level2">
+<h2 class="anchored" data-anchor-id="object-size-alignment-and-padding">Object size, alignment and padding</h2>
+<p>Since each object occupies storage, the space associated with an object is an important(if low-level) property of C++ types. For example, look at the following code:</p>
+<div class="sourceCode" id="cb27" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb27-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> B<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// fporward declaraion: there will be a class B</span></span>
+<span id="cb27-2">            <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// at some point in the future</span></span>
+<span id="cb27-3">            </span>
+<span id="cb27-4"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> f<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>B<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*);</span> <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// fine, we know what NB is, even if don't know the details yet,</span></span>
+<span id="cb27-5">            <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// and all object addresses are of the same size</span></span>
+<span id="cb27-6"></span>
+<span id="cb27-7"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> D <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span> B<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span>  <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// oops! This is the definition of class D. To determine</span></span>
+<span id="cb27-8">                <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// sizeof(D), we have to know how big sizeof(B) is and what</span></span>
+<span id="cb27-9">                <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// a B object contains since a D is a B</span></span></code></pre></div>
+<p>In the above example, trying to define the <code>D</code> class would not compile. This is because in order to create a<code>D</code> object, the compiler needs to reserve enough space for a <code>D</code> object, but a <code>D</code> object is also a <code>B</code> object and as such we cannot kn ow the size of a <code>D</code> object without knowing the size of <code>B</code> object.</p>
+<p>The size of an object or equivalently of a type can be obtained through the <code>sizeof</code> operator. This operator yields a compile-time, non-zero unsigned integral value corresponding to the number of bytes required to store an object.</p>
+<div class="sourceCode" id="cb28" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb28-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;print&gt;</span></span>
+<span id="cb28-2"></span>
+<span id="cb28-3"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb28-4">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> c<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb28-5">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// a  char precisely occupies one byte of storage, per</span></span>
+<span id="cb28-6">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// standard wording</span></span>
+<span id="cb28-7">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">static_assert</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>c<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">==</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb28-8"></span>
+<span id="cb28-9">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> Tiny<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb28-10">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// all C++ types occupy non-zero bytes of storage by </span></span>
+<span id="cb28-11">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// definition, even if they are empty like type Tiny</span></span>
+<span id="cb28-12">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">static_assert</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>Tiny<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">==</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb28-13"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>In the preceding example, the <code>Tiny</code> class is empty because it has no data-member. A class could have member functions and still be empty.</p>
+<p>A C++ object always occupies atleast one byte of storage, even in the case of empty classes such as <code>Tiny</code>. That’s because if the object’s size was zero, that object could be at the same memory location as its immediate neighbor, which would be somewhat hard to reason about.</p>
+<p>C++ differs from many other languages in that it does not standardize the size of all fundamental types. For example, <code>sizeof(int)</code> can yield different values depending on the compiler and the platform. Still there are rules concerning the size of objects:</p>
+<ul>
+<li>The size reported by operator <code>sizeof</code> for objects of type <code>signed char</code>, <code>unsigned char</code> and <code>char</code> is <img src="https://latex.codecogs.com/png.latex?1">, and the same goes for <code>sizeof(std::byte)</code> as each of these types can be used to represent a single byte.</li>
+<li>The standard specifies a minimum width for the fundamental types:
+<ul>
+<li>Signed Integer Types : Signed integers are represented in two’s complement form. The rules of binary arithmetic are the same for two’s complement as the standard base-2 representation. Hence, the same binary adder hardware circuits can be used for signed integer addition.</li>
+</ul></li>
+</ul>
+<table class="table">
+<thead>
+<tr class="header">
+<th>Type</th>
+<th>Minimum width <img src="https://latex.codecogs.com/png.latex?N"></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>signed char</code></td>
+<td><img src="https://latex.codecogs.com/png.latex?1"> byte</td>
+</tr>
+<tr class="even">
+<td><code>short</code></td>
+<td><img src="https://latex.codecogs.com/png.latex?2"> bytes</td>
+</tr>
+<tr class="odd">
+<td><code>int</code></td>
+<td><img src="https://latex.codecogs.com/png.latex?2"> bytes</td>
+</tr>
+<tr class="even">
+<td><code>long</code></td>
+<td><img src="https://latex.codecogs.com/png.latex?4"> bytes</td>
+</tr>
+<tr class="odd">
+<td><code>long long</code></td>
+<td><img src="https://latex.codecogs.com/png.latex?8"> bytes</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>For each of the signed integer types, there exists the corresponding, but different, <em>standard unsigned integer</em> types. An unsigned integer type has the same width <img src="https://latex.codecogs.com/png.latex?N"> as the corresponding unsigned integer type. The range of representable values for an unsigned type is <img src="https://latex.codecogs.com/png.latex?0"> to <img src="https://latex.codecogs.com/png.latex?2%5EN%20-%201">. Arithmetic for the unsigned type is performed modulo <img src="https://latex.codecogs.com/png.latex?2%5EN">. Unsigned arithmetic does not overflow. Each value <img src="https://latex.codecogs.com/png.latex?x"> of an unsigned integer type with <img src="https://latex.codecogs.com/png.latex?N"> has a unique representation <img src="https://latex.codecogs.com/png.latex?x%20=%20x_0%202%5E0%20+%20x_1%202%5E1%20+%20%5Cldots%20+%20x_%7BN-1%7D2%5E%7BN-1%7D">, where each coefficient <img src="https://latex.codecogs.com/png.latex?x_i"> is either <img src="https://latex.codecogs.com/png.latex?0"> or <img src="https://latex.codecogs.com/png.latex?1">: this is called the base-2 representation of <img src="https://latex.codecogs.com/png.latex?x">.</li>
+<li>The size occupied by an object of any <code>struct</code> or <code>class</code> cannot be less than the sum of the size of its data-members.</li>
+</ul>
+<section id="empty-base-class-optimization-ebco" class="level3">
+<h3 class="anchored" data-anchor-id="empty-base-class-optimization-ebco">Empty base class optimization (EBCO)</h3>
+<p>Consider the following code snippet:</p>
+<div class="sourceCode" id="cb29" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb29-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb29-2"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> Y <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span> X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// private inheritance</span></span>
+<span id="cb29-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> c<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb29-4"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb29-5"></span>
+<span id="cb29-6"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span></span>
+<span id="cb29-7"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb29-8">    Y y<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb29-9">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">static_assert</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>Y<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">==</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb29-10">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb29-11"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p><a href="https://compiler-explorer.com/z/desWebdYE">Compiler Explorer</a> Since the base class is empty, and objects of the derived class <code>Y</code> occupy atleast one byte of storage, the base class can be flattened, when creating objects of the derived class <code>Y</code>. Note that, since the presence of <code>X</code> in <code>Y</code> is an implementation detail, not something that participates in the interface of <code>class Y</code>, I used private inheritance.</p>
+</section>
+</section>
+<section id="alignment" class="level2">
+<h2 class="anchored" data-anchor-id="alignment">Alignment</h2>
+<div class="sourceCode" id="cb30" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb30-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb30-2">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> c<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>     <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// atleast 1 byte</span></span>
+<span id="cb30-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">short</span> s<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// atleast 2 bytes</span></span>
+<span id="cb30-4">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>      <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// atleast 2 bytes</span></span>
+<span id="cb30-5">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">long</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">long</span> ll<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>  <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// atleast 8 bytes</span></span>
+<span id="cb30-6"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb30-7"></span>
+<span id="cb30-8"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb30-9">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">static_assert</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">13</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb30-10"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>We know that <code>sizeof(X)</code> will be atleast <img src="https://latex.codecogs.com/png.latex?13"> bytes. In practice however, <code>sizeof(X)</code> is likely to be equal to <img src="https://latex.codecogs.com/png.latex?32"> bytes. This might seem surprising at first, but it’s a logical consequence of something called <strong>alignment</strong>.</p>
+<p>The alignment of an object tells us where that object can be placed in memory. The <code>char</code> type has an alignment of <img src="https://latex.codecogs.com/png.latex?1">, and as such one can place a <code>char</code> object literally anywhere (as long as one can access that memory). <code>short</code> has an alignment of <code>2</code>. If a type has an alignment <img src="https://latex.codecogs.com/png.latex?n">, then objects of that type must be placed at an address that is a multiple of <img src="https://latex.codecogs.com/png.latex?n">.</p>
+<p>The alignment has to be a strictly positive power of <img src="https://latex.codecogs.com/png.latex?2">.</p>
+<p>The C++ language offers two operators related to alignment: - The <code>alignof</code> operator, which yields the natural alignment of a type <code>T</code> or of an object of that type. - The <code>alignas</code> operator, which lets the programmers impose the alignment of an object. this is often useful, when playing tricks with memory(as we will), or when interfacing wit with exotic hardware. Of course, <code>alignas</code> can only reasonably increase the natural alignment of a type <code>T</code>, not reduce it.</p>
+<p>For some fundamental type <code>T</code>, we can expect the assertion <code>sizeof(T)</code> is equal to <code>alignof(T)</code> to hold, but that assertion does not generalize to composite types. For example, consider again the <code>struct X</code>:</p>
+<div class="sourceCode" id="cb31" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb31-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb31-2">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> c<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>     <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// alignof(c) == 1</span></span>
+<span id="cb31-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">short</span> s<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// alignof(s) == 2</span></span>
+<span id="cb31-4">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>      <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// alignof(i) == 4 (most probable)</span></span>
+<span id="cb31-5">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">long</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">long</span> ll<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>  <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// alignof(ll) == 8 (most probable)</span></span>
+<span id="cb31-6"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p>Generally, speaking for a composite type, the alignment will correspond to the worst alignment of the data members. Here, worst means biggest. For <code>struct X</code>, the worst-aligned data member is type <code>long long</code>, and as such <code>X</code> objects will be aligned on <img src="https://latex.codecogs.com/png.latex?8">-byte boundaries, so it can be placed at an address <img src="https://latex.codecogs.com/png.latex?8">, <img src="https://latex.codecogs.com/png.latex?16">, <img src="https://latex.codecogs.com/png.latex?24"> and so forth. It is highly probable <code>sizeof(X) == 16</code> bytes.</p>
+<div class="sourceCode" id="cb32" style="background: #f1f3f5;"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb32-1">Offset  Content</span>
+<span id="cb32-2">------  -------</span>
+<span id="cb32-3">  0     | c  |  (char, 1 byte)</span>
+<span id="cb32-4">        +----+</span>
+<span id="cb32-5">  1     |pad |  (padding, 1 byte)</span>
+<span id="cb32-6">        +----+</span>
+<span id="cb32-7">  2     | s  |  (short, 2 bytes)</span>
+<span id="cb32-8">  3     |    |</span>
+<span id="cb32-9">        +----+</span>
+<span id="cb32-10">  4     | i  |  (int, 4 bytes)</span>
+<span id="cb32-11">  5     |    |</span>
+<span id="cb32-12">  6     |    |</span>
+<span id="cb32-13">  7     |    |</span>
+<span id="cb32-14">        +----+</span>
+<span id="cb32-15">  8     | ll |  (long long, 8 bytes)</span>
+<span id="cb32-16">  9     |    |</span>
+<span id="cb32-17"> 10     |    |</span>
+<span id="cb32-18"> 11     |    |</span>
+<span id="cb32-19"> 12     |    |</span>
+<span id="cb32-20"> 13     |    |</span>
+<span id="cb32-21"> 14     |    |</span>
+<span id="cb32-22"> 15     |    |</span>
+<span id="cb32-23">        +----+</span></code></pre></div>
+<p>Now, that we know about alignment, just changing the order of the elements in a <code>struct</code> can affect memory consumption. We should always code <code>struct</code>s in the order of largest to smallest data-members.</p>
+
+
+</section>
+</section>
+
+ ]]></description>
+  <category>C++</category>
+  <guid>http://quantdev.blog/posts/objects-pointers-and-references/index.html</guid>
+  <pubDate>Thu, 25 Dec 2025 00:00:00 GMT</pubDate>
+  <media:content url="http://quantdev.blog/posts/objects-pointers-and-references/cpp.jpg" medium="image" type="image/jpeg"/>
+</item>
 <item>
   <title>Lock-free SPSC Queue</title>
   <dc:creator>Quasar </dc:creator>
@@ -31941,66 +34482,6 @@ font-style: inherit;">}</span></span></code></pre></div>
   <guid>http://quantdev.blog/posts/virtualization/index.html</guid>
   <pubDate>Wed, 21 May 2025 23:00:00 GMT</pubDate>
   <media:content url="http://quantdev.blog/posts/virtualization/cpp.jpg" medium="image" type="image/jpeg"/>
-</item>
-<item>
-  <title>Quanto Options</title>
-  <dc:creator>Quasar </dc:creator>
-  <link>http://quantdev.blog/posts/quanto-options/index.html</link>
-  <description><![CDATA[ 
-
-
-
-
-<section id="a-quick-refresher" class="level1">
-<h1>A quick refresher</h1>
-<p>A quanto option is a derivative where the underlying is denominated in one currency, but the option-payoff is settled in a different one (the quanto-currency) at a pre-defined fixed exchange rate <img src="https://latex.codecogs.com/png.latex?Q">.</p>
-<p>I take the example of gold quoted as <img src="https://latex.codecogs.com/png.latex?XAU/USD"> that is quantoed in <img src="https://latex.codecogs.com/png.latex?INR">.</p>
-<p>Define :</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0AS_T%20&amp;:=%20%5Ctext%7BPrice%20of%20gold%20in%20the%20underlying%20currency%7D%20%5C%5C%0AX_T%20&amp;:=%20%5Ctext%7BPrice%20of%20the%20underlying%20currency%20in%20quanto%20currency%20terms%7D%5C%5C%0AK%20&amp;:=%20%5Ctext%7BStrike%20expressed%20in%20underlying%20currency%20terms%7D%5C%5C%0AQ%20&amp;:=%20%5Ctext%7BPre-specified%20exchange%20rate%7D%0A%5Cend%7Balign*%7D%0A"></p>
-<p>Since the payoff is in <img src="https://latex.codecogs.com/png.latex?INR">, we take <img src="https://latex.codecogs.com/png.latex?INR"> as the base currency or numeraire in the Black-Scholes model.</p>
-<p>Then, the payoff of the quanto-call option is:</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0AV_T%20=%20Q%5Cleft(%5Cfrac%7BS_T%7D%7BX_T%7D%20-%20K%5Cright)%5E%7B+%7D%0A"></p>
-<p><img src="https://latex.codecogs.com/png.latex?S_T/X_T"> has units <img src="https://latex.codecogs.com/png.latex?%5Cfrac%7BXAU%7D%7BUSD%7D">, and <img src="https://latex.codecogs.com/png.latex?Q"> - the pre-specified conversion factor has units <img src="https://latex.codecogs.com/png.latex?%5Cfrac%7BUSD%7D%7BINR%7D">.</p>
-</section>
-<section id="the-setup" class="level1">
-<h1>The Setup</h1>
-<p>The domestic risk-neutral measure <img src="https://latex.codecogs.com/png.latex?Q%5E%7BINR%7D"> is the probability measure linked to the domestic money-market account <img src="https://latex.codecogs.com/png.latex?M_T%5E%7BINR%7D">.</p>
-<p>The risk-neutral measure <img src="https://latex.codecogs.com/png.latex?Q%5E%7BUSD%7D"> is the probability measure linked to the underlying money-market account expressed in quanto currency terms, <img src="https://latex.codecogs.com/png.latex?(M_T%5E%7BUSD%7D%20%5Ccdot%20X_T)">. <img src="https://latex.codecogs.com/png.latex?M_T%5E%7BUSD%7D"> has units <img src="https://latex.codecogs.com/png.latex?USD%5E%7B-1%7D"> and <img src="https://latex.codecogs.com/png.latex?X_T"> has units <img src="https://latex.codecogs.com/png.latex?USD%20%5Ccdot%20INR%5E%7B-1%7D">.</p>
-<p>Consider the Black-Scholes model:</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0A%7BXAU/INR%20:%20%7D%20%5Cquad%20dS_t%20&amp;=%20r_%7BINR%7D%20S_t%20dt%20+%20%5Csigma_S%20S_t%20dW_%7BS%7D%5E%7BQ%5E%7BINR%7D%7D(t)%20%5C%5C%0A%7BUSD/INR%20:%20%7D%20%5Cquad%20dX_t%20&amp;=%20(r_%7BINR%7D%20-%20r_%7BUSD%7D)X_t%20dt%20+%20%5Csigma_X%20X(t)%20dW_X%5E%7BQ%5E%7BINR%7D%7D(t)%5C%5C%0AdW_%7BS%7D%5E%7BQ%5E%7BINR%7D%7D(t)%20%5Ccdot%20dW_X%5E%7BQ%5E%7BINR%7D%7D(t)%20&amp;=%20%5Crho_%7B(f,q),(d,q)%7D%20dt%0A%5Cend%7Balign*%7D%0A"></p>
-<p>where <img src="https://latex.codecogs.com/png.latex?(W%5E%7BQ%5E%7BINR%7D%7D(t),t%5Cgeq%200)"> is a <img src="https://latex.codecogs.com/png.latex?Q%5E%7BINR%7D">-standard brownian motion.</p>
-</section>
-<section id="the-evolution-of-the-underlying-xau-usd" class="level1">
-<h1>The evolution of the underlying XAU-USD</h1>
-<p>The actual underlying is :</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0A%5Ctext%7BXAU/USD%20%7D%20:=%20%5Cfrac%7BS(t)%7D%7BX(t)%7D%0A"></p>
-<p>Using Ito’s formula, we obtain:</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0Ad%5Cleft(%5Cfrac%7B1%7D%7BX_t%7D%5Cright)%20&amp;=%20-%5Cfrac%7B1%7D%7BX_t%5E2%7DdX_t%20+%20%5Cfrac%7B1%7D%7B2%7D%5Ccdot%5Cfrac%7B2%7D%7BX_t%5E3%7D%20(dX_t)%5E2%20%5C%5C%0A&amp;=%20-%5Cfrac%7B1%7D%7BX_t%7D%5B(r_%7BINR%7D%20-%20r_%7BUSD%7D)%20dt%20+%20%5Csigma_X%20dW_X%5E%7BQ%5E%7BINR%7D%7D(t)%5D%20+%20%5Cfrac%7B1%7D%7BX_t%7D%5Csigma_X%5E2%20dt%5C%5C%0A&amp;=%20%5Cfrac%7B1%7D%7BX_t%7D%20%5B(%5Csigma_X%5E2%20+%20r_%7BUSD%7D%20-%20r_%7BINR%7D)%20dt%20-%20%5Csigma_X%20dW_X%5E%7BQ%5E%7BINR%7D%7D(t)%5D%0A%5Cend%7Balign*%7D%0A"></p>
-<p>and hence:</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0Ad%5Cleft(%5Cfrac%7BS_t%7D%7BX_t%7D%5Cright)%20&amp;=%20S_t%20%5Ccdot%20d%5Cleft(%5Cfrac%7B1%7D%7BX_t%7D%5Cright)%20+%20%5Cfrac%7B1%7D%7BX_t%7D%20dS_t%20+%20dS_t%20%5Ccdot%20d%5Cleft(%5Cfrac%7B1%7D%7BX_t%7D%5Cright)%5C%5C%0A&amp;=%20%5Cfrac%7BS_t%7D%7BX_t%7D%5B(%5Csigma_X%5E2%20+%20r_%7BUSD%7D%20-%20r_%7BINR%7D)%20dt%20-%20%5Csigma_X%20dW_X%5E%7BQ%5E%7BINR%7D%7D(t)%5D%20+%20%5Cfrac%7BS_t%7D%7BX_t%7D%5Br_%7BINR%7D%20dt%20+%20%5Csigma_S%20dW_%7BS%7D%5E%7BQ%5E%7BINR%7D%7D(t)%5D%20%5C%5C%0A&amp;-%5Cfrac%7BS_t%7D%7BX_t%7D%20%5B((%5Csigma_X%5E2%20+%20r_%7BUSD%7D%20-%20r_%7BINR%7D)%20dt%20-%20%5Csigma_X%20dW_X%5E%7BQ%5E%7BINR%7D%7D(t))(r_%7BINR%7D%20dt%20+%20%5Csigma_S%20dW_%7BS%7D%5E%7BQ%5E%7BINR%7D%7D(t))%5D%20%5C%5C%0A&amp;=%5Cfrac%7BS_t%7D%7BX_t%7D%5B(%5Csigma_X%5E2%20+r_%7BUSD%7D%20+%20%5Crho%20%5Csigma_X%20%5Csigma_S%20)%20dt%20+%20%5Csigma_S%20dW_S%5E%7BQ%5E%7BINR%7D(t)%7D%20-%20%5Csigma_X%20dW_X%5E%7BQ%5E%7BINR%7D%7D(t)%5D%0A%5Cend%7Balign*%7D%0A"></p>
-<p>We can find an orthogonal decomposition of the random vector process <img src="https://latex.codecogs.com/png.latex?%5Cbegin%7Bbmatrix%7D%20W_S%5E%7BQ%5E%7BINR%7D%7D(t)%20%5C%5C%20W_X%5E%7BQ%5E%7BINR%7D%7D(t)%5Cend%7Bbmatrix%7D">.</p>
-<p>Define : <img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Bbmatrix%7D%0AW_S%5E%7BQ%5E%7BINR%7D%7D(t)%20%5C%5C%0AW_X%5E%7BQ%5E%7BINR%7D%7D(t)%0A%5Cend%7Bbmatrix%7D%20=%0A%5Cbegin%7Bbmatrix%7D%0AZ_S%5E%7BQ%5E%7BINR%7D%7D(t)%20%5C%5C%0A%5Crho%20Z_S%5E%7BQ%5E%7BINR%7D%7D(t)%20+%20%5Csqrt%7B1-%5Crho%5E2%7D%20Z_X%5E%7BQ%5E%7BINR%7D%7D(t)%0A%5Cend%7Bbmatrix%7D%0A"></p>
-<p>where <img src="https://latex.codecogs.com/png.latex?Z_S%5E%7BQ%5E%7BINR%7D%7D(t)"> and <img src="https://latex.codecogs.com/png.latex?Z_X%5E%7BQ%5E%7BINR%7D%7D(t)"> are independent standard brownian motions.</p>
-<p>So, the SDE can be written as:</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0Ad%5Cleft(%5Cfrac%7BS_t%7D%7BX_t%7D%5Cright)%20&amp;=%20%5Cfrac%7BS_t%7D%7BX_t%7D%5B(%5Csigma_X%5E2%20+r_%7BUSD%7D%20+%20%5Crho%20%5Csigma_X%20%5Csigma_S%20)%20dt%20+%20%5Csigma_S%20dZ_S%5E%7BQ%5E%7BINR%7D%7D(t)%20-%20%5Csigma_X%20(%5Crho%20%5Ccdot%20dZ_S%5E%7BQ%5E%7BINR%7D%7D(t)%20+%20%20%5Csqrt%7B1-%5Crho%5E2%7D%20%5Ccdot%20dZ_X%5E%7BQ%5E%7BINR%7D%7D(t))%5D%20%5C%5C%0A&amp;=%5Cfrac%7BS_t%7D%7BX_t%7D%5B(%5Csigma_X%5E2%20+r_%7BUSD%7D%20+%20%5Crho%20%5Csigma_X%20%5Csigma_S%20)%20dt%20+%20(%5Csigma_S%20-%20%5Crho%20%5Csigma_X%20)%20dZ_S%5E%7BQ%5E%7BINR%7D%7D(t)%20-%20(%5Csigma_X%20%5Csqrt%7B1-%5Crho%5E2%7D)%20dZ_X%5E%7BQ%5E%7BINR%7D%7D(t)%5D%0A%5Cend%7Balign*%7D%0A"></p>
-<p>Define:</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0AB%5E%7BQ%5E%7BINR%7D%7D(t)%20=%20%5Cfrac%7B(%5Csigma_S%20-%20%5Crho%20%5Csigma_X%20)%20Z_S%5E%7BQ%5E%7BINR%7D%7D(t)%20-%20(%5Csigma_X%20%5Csqrt%7B1-%5Crho%5E2%7D)%20Z_X%5E%7BQ%5E%7BINR%7D%7D(t)%7D%7B(%5Csigma_S%20-%20%5Crho%20%5Csigma_X%20)%5E2%20+%20(%5Csigma_X%20%5Csqrt%7B1-%5Crho%5E2%7D)%5E2%7D%0A"></p>
-<p>It’s easy to see that <img src="https://latex.codecogs.com/png.latex?B%5E%7BQ%5E%7BINR%7D%7D(t)"> is Gaussian and has mean and variance given by <img src="https://latex.codecogs.com/png.latex?%5Cmathcal%7BN%7D(0,t)">.</p>
-<p>Consequently, we can re-write the SDE as:</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0Ad%5Cleft(%5Cfrac%7BS_t%7D%7BX_t%7D%5Cright)%20=%20%5Cfrac%7BS_t%7D%7BX_t%7D%5B(%5Csigma_X%5E2%20+r_%7BUSD%7D%20+%20%5Crho%20%5Csigma_X%20%5Csigma_S%20)%20dt%20+%20(%5Csigma_S%5E2%20-%202%5Crho%20%5Csigma_S%20%5Csigma_X%20+%20%5Csigma_X%5E2)dB%5E%7BQ%5E%7BINR%7D%7D(t)%5D%0A"></p>
-<p>Thus, <img src="https://latex.codecogs.com/png.latex?(%5Cfrac%7BS_t%7D%7BX_t%7D)_%7Bt%5Cgeq%200%7D"> follows a geometric brownian motion:</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cfrac%7BS_t%7D%7BX_t%7D%20=%20%5Cfrac%7BS_0%7D%7BX_0%7D%5Cexp%5Cleft%5B%5Cleft(%5Calpha%20-%20%5Cfrac%7B%5Cbeta%5E2%7D%7B2%7D%5Cright)T+%5Cbeta%20B%5E%7BQ%5E%7BINR%7D%7D(T)%5Cright%5D%0A"></p>
-<p>where <img src="https://latex.codecogs.com/png.latex?%5Calpha%20=%20%5Csigma_X%5E2%20+r_%7BUSD%7D%20+%20%5Crho%20%5Csigma_X%20%5Csigma_S">, <img src="https://latex.codecogs.com/png.latex?%5Cbeta%20=%20%5Csigma_S%5E2%20-%202%5Crho%20%5Csigma_S%20%5Csigma_X%20+%20%5Csigma_X%5E2"></p>
-<p>This can easily be plugged into the Black formula to derive analytic expressions for quanto vanilla calls and puts.</p>
-
-
-</section>
-
- ]]></description>
-  <category>Fin Math</category>
-  <guid>http://quantdev.blog/posts/quanto-options/index.html</guid>
-  <pubDate>Thu, 15 May 2025 23:00:00 GMT</pubDate>
-  <media:content url="http://quantdev.blog/posts/quanto-options/image.jpg" medium="image" type="image/jpeg"/>
 </item>
 </channel>
 </rss>
