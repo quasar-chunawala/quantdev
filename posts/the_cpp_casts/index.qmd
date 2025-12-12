@@ -1,0 +1,167 @@
+---
+title: "The C++ casts"
+author: "Quasar"
+date: "2025-12-12"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# The C++ casts
+
+Traditionally, C++ has supported four ways to perform those explicit type conversions we call casts - `static_cast`, `dynamic_cast`, `const_cast` and `reinterprete_cast`.  C++11 added a fifth one `duration_cast`. Finally, C++20 introduced a sixth case `bit_cast`.
+
+## Your best friend (most of the time) - `static_cast`
+
+The best, most efficient tool in our type-casting toolset is `static_cast`. `static_cast` performs compile-time conversion between related types. It is mostly safe, costs essentially nothing in most cases, and can be used in a `constexpr` context. 
+
+You can also use `static_cast` in situations involving potential risks, such as converting an `int` to a `float` or vice versa. In the latter case, it explicitly acknowledges the loss of the decimal part. 
+
+You can can use `static_cast` to cast a pointer or a reference from a derived class to one of its direct or indirect base classes (as long as there is no ambiguity), which is totally safe. 
+
+Casting from a base class to a derived class is extremely risky if the cast is incorrect, as it does not perform runtime checks.
+
+Here are some examples:
+
+```cpp
+#include <print>
+
+struct B{ 
+    virtual ~B() = default;
+};
+
+struct D0: B { /*...*/ };
+struct D1: B { /*...*/ };
+
+class X{
+    public:
+    X(int, double){}
+};
+
+void f(D0*){}
+void f(D1*){}
+
+int main()
+{
+    const float x = 3.14159f;
+    int n = static_cast<int>(x);    // ok, no warning
+
+    X x0{ 3, 3.5 }; // ok
+
+    X x1(3.5, 0);   // compiles, 
+    // probably warns (narrowing conversion)
+
+    //X x2{3.5, 0}; // does not compile
+                    // narrowing is not allowed within braces
+
+    X x3{ static_cast<int>(x), 3 }; // ok
+
+    D0 d0;
+    // illegal, no base-derived relatonship between D0 and D1
+    //D1* d1 = static_cast<D1*>(&d0);
+
+    B* b = static_cast<B*>(&d0);     // ok
+    // f(*b)                         // illegal
+    f(static_cast<D0*>(b));         // ok
+    f(static_cast<D1*>(b));         // compiles, but very dangerous
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/Y7684n73e)
+Pay special attention to the last use of `static_cast` of the preceding example - converting from a base class to one of its derived classes is appropriately done with `static_cast`. However, you must ensure that the conversion leads to an object of the chosen type, as there is no run-time verification made of the validity of that conversion. Only compile-time checks are done.
+
+## A sign something's wrong - `dynamic_cast`
+
+There will be cases where you have a pointer or a reference to an object of some class type and that happens to be different (but related to) the type needed. This often happens - for example, in game engines where most classes derive from some `Component` base and functions tend to take `Component*` arguments but need to access members from an object of the derived class they expect. 
+
+The main problem here is, typically that the function's interface is wrong - it accepts arguments of types that are insufficiently precise. Still, we all have software to deliver, and sometimes we need to make things work even though we made some choices along the way, that we will revisit later on.
+
+The safe way to do such casts is `dynamic_cast`. This cast lets you convert a pointer or reference from one type to another, related type in a way that lets you test whether the conversion worked or not; with pointers, an incorrect conversion yields `nullptr`, whereas with references, an incorrect conversion throws `std::bad_cast`. The relatedness of types with `dynamic_cast` is not limited to base-derived relationships and includes casting from one base to another base in a multiple inheritance design. However, note that in most cases, `dynamic_cast` requires that the expression that is cast to another type is of the polymorphic type, in the sense that it must have atleast one `virtual` member function.
+
+Here are some examples:
+
+```cpp
+#include <iostream>
+
+struct B0{
+    virtual int f() const = 0;
+    virtual ~B0() = default;
+};
+
+struct B1{
+    virtual int g() const = 0;
+    virtual ~B1() = default;
+};
+
+class D0 : public B0{
+    public:
+    int f() const override{
+        return 3;
+    }
+};
+
+class D1 : public B1{
+    public:
+    int g() const override{
+        return 4;
+    }
+};
+
+class D : public D0, public D1{};
+
+int f(D* p){
+    return p ? p -> f() + p->g() : -1;
+}
+
+// g has the wrong interfacce: it accepts a D0& but 
+// tries to use it as a D1&, which makes sense if the 
+// referred object is publiclly D0 and D1 (for example)
+// class D
+int g(D0& d0){
+    D1& d1 = dynamic_cast<D1&>(d0); //throws if wrong
+    return d1.g();
+}
+
+int main()
+{
+    D d;
+    f(&d);      // ok
+    g(d);       // ok, D is a D0
+    D0 d0;
+    // calls f(nullptr) as &d0 does not point to a D
+    std::cout << f(dynamic_cast<D*>(&d0)) << "\n";
+
+    try{
+        g(d0);  // compile, but will throw std::bad_cast
+    }catch(std::bad_cast& ex){
+        std::cerr << "Nice try!" << "\n";
+    }
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/fdq4qYaKE)
+
+Note that, even though this example displays a message when `std::bad_cast` ism thrown, this is in no way what we could call exception handling; we did not solve the problem, and code execution continues in a potentially corrupt state, which could make things worse in more serious code. In a toy example such as this, just letting the code fail and stop executing would also have been a more reasonable choice.
+
+Note that, the use of `dynamic_cast` requires binaries to be compiled with **runtime type information(RTTI)** included, leading to larger binaries. Unsurprisingly; due to these costs, some application domains will tend to avoid this cost.
+
+## Playing tricks with safety - `const_cast`
+
+Neither `static_cast` nor `dynamic_cast`, can change  *cv*-qualifiers of an expression. To do this, you need `const_cast`. With `const_cast`,  you can add or remove the `const` or `volatile` qualifiers from an expression. As you might guess, this only makes sense on a pointer or a reference.
+
+## *Believe me compiler* - `reinterprete_cast`
+
+Sometimes, you just have to make the compiler believe you. For example, knowing `sizeof(int) == 4` on your platform, you might want to treat `int` as `char[4]` to interoperate with an existing API that expects that type. Note that, you should ensure that this property holds (maybe through `static_assert`), rather than relying on the belief that the property holds on all platforms (it does not).
+
+That's what `reinterpret_cast` gives you - the ability to cast a pointer of some type to a pointer of an unrelated type. This can be used in situations where you seek to benefit from pointer-interconvertibility, just as this this can be used to lie to the type system in several rather dangerous and non-portable ways.
+
+Also note that, `reinterpret_cast` only changes the type associated with an expression - for example, it does not perform the slight address adjustments, that `static_cast` would make when converting from a derived class to a base class in multiple inheritance situations. 
+
+```cpp
+struct B0{}
+```
+
+## References
+
+- [C++ Memory Management](https://amzn.eu/d/7bRAPXQ) by *Patrice Roy*, Packt Publishers
