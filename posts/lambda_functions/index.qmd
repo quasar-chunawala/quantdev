@@ -21,7 +21,7 @@ An example of the most minimal lambda expression is:
 []{};
 ```
 
-`[]` section is called the lambda introducer and the empty `{}` part is for the function body. The `[]` does not only introduce the lambda but also holds the list of *captured variables*. It's called the *capture clause*. 
+`[]` section is called the lambda introducer and the empty `{}` part is for the function body. 
 
 By capturing a variable, you create a member copy of that variable in the closure type. Then, inside the lambda body, you can access it. 
 
@@ -96,9 +96,80 @@ class __lambda_4_23
   {
     return 0.5 * (1.0 - erf(-x / sqrt(2.0)));
   }  
-  
+
+  /* ... */
 };
 
 __lambda_4_23 cum_normal_cdf = __lambda_4_23{};
 ```
 
+## Constructors and copying
+
+In the specification of the feature at [expr.prim.lambda](https://timsong-cpp.github.io/cppwp/n3337/expr.prim.lambda#19), we can also read the following:
+
+> The closure-type associated with a lambda expression has a deleted default constructor and a deleted copy assignment operator. 
+
+That's why you cannot write:
+
+```cpp
+double x{10}, y{20};
+auto foo = [&x, &y]{ ++x; ++y; };
+decltype(foo) fooCopy;
+```
+[Compiler Explorer](https://compiler-explorer.com/z/7q9bbhro1)
+
+```shell
+<source>: In function 'int main()':
+<source>:9:19: error: use of deleted function 'main()::<lambda()>::<lambda>()'
+    9 |     decltype(foo) fooCopy;
+      |                   ^~~~~~~
+<source>:5:23: note: a lambda closure type has a deleted default constructor
+    5 |     auto foo = [&x, &y] {
+      |                       ^
+<source>:9:19: note: use '-fdiagnostics-all-candidates' to display considered candidates
+    9 |     decltype(foo) fooCopy;
+      |  
+```
+
+However, we can copy lambdas:
+
+```cpp
+#include <cmath>
+#include <print>
+#include <type_traits>
+
+using Point = std::pair<double, double>;
+
+int main() {
+    auto distance = [](Point x, Point y) noexcept {
+        return sqrt(pow((x.first - y.first), 2) +
+                    pow((x.second - y.second), 2));
+    };
+
+    Point p{3.0, 4.0};
+    Point origin{0.0, 0.0};
+    std::print("Distance to (3,4) from the origin = {}", distance(p, origin));
+
+    auto distance_copy = distance;
+    static_assert(std::is_same_v<decltype(distance), decltype(distance_copy)>);
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/nf7MWaY4z)
+
+## Captures
+
+The `[]` does not only introduce the lambda but also holds the list of *captured variables*. It's called the *capture clause*. By capturing a variable from outside the scope of the lambda, you create a non-static data member in the closure type. Then, inside the lambda body, you can access it. 
+
+The syntax for captures in C++11 are:
+
+| Syntax | Description |
+|--------|-------------|
+| `[&]` | Capture by reference all automatic storage duration variables declared in the reaching scope. |
+| `[=]` | Capture by value (create a copy) all automatic storage duration variables declared in the reaching scope. |
+| `[x, &y]` | Capture `x` by value, capture `y` by reference |
+| `[args...]` | Capture a template argument pack all by value |
+| `[&args...]` | Capture a template argument pack all by reference |
+| `[this]` | Captures the `this` pointer inside the member function |
+
+: Lambda capture syntax in C++ {#tbl-lambda-syntax}
