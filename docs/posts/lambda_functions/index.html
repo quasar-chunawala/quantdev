@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Quasar">
-<meta name="dcterms.date" content="2025-12-12">
+<meta name="dcterms.date" content="2025-12-13">
 
 <title>quantdev.blog - Lambda Functions</title>
 <style>
@@ -193,7 +193,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <div>
       <div class="quarto-title-meta-heading">Published</div>
       <div class="quarto-title-meta-contents">
-        <p class="date">December 12, 2025</p>
+        <p class="date">December 13, 2025</p>
       </div>
     </div>
     
@@ -212,6 +212,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a>
   <ul class="collapse">
   <li><a href="#lambdas-in-c11" id="toc-lambdas-in-c11" class="nav-link" data-scroll-target="#lambdas-in-c11">Lambdas in C++11</a></li>
+  <li><a href="#core-definitions" id="toc-core-definitions" class="nav-link" data-scroll-target="#core-definitions">Core Definitions</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -230,7 +231,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>An example of the most minimal lambda expression is:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="co">// 1. the simplest lambda</span></span>
 <span id="cb1-2"><a href="#cb1-2"></a><span class="op">[]{};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p><code>[]</code> section is called the lambda introducer and the empty <code>{}</code> part is for the function body.</p>
+<p><code>[]</code> section is called the lambda introducer and the empty <code>{}</code> part is for the function body. The <code>[]</code> does not only introduce the lambda but also holds the list of <em>captured variables</em>. It’s called the <em>capture clause</em>.</p>
+<p>By capturing a variable, you create a member copy of that variable in the closure type. Then, inside the lambda body, you can access it.</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="co">// with a parameter</span></span>
 <span id="cb2-2"><a href="#cb2-2"></a><span class="kw">auto</span> area <span class="op">=</span> <span class="op">[](</span><span class="dt">double</span> radius<span class="op">){</span></span>
 <span id="cb2-3"><a href="#cb2-3"></a>    <span class="cf">return</span> <span class="bu">std::</span>pi<span class="op"> *</span> radius <span class="op">*</span> radius<span class="op">;</span></span>
@@ -259,6 +261,33 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb4-12"><a href="#cb4-12"></a>    <span class="cf">return</span> a <span class="op">&lt;</span> b<span class="op">;</span></span>
 <span id="cb4-13"><a href="#cb4-13"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Before the body of the lambda, you can use other specifiers. In the code, we used <code>mutable</code> (so that we can change the captured variable) and also <code>noexcept</code>. The third lambda uses <code>mutable</code> and <code>noexcept</code> and they have to appear in that order (you cannot write <code>noexcept mutable</code> as the compiler will reject it).</p>
+<p>While the <code>()</code> part is optional, if you want to apply <code>mutable</code> or <code>noexcept</code> then <code>()</code> needs to be in the expression.</p>
+</section>
+<section id="core-definitions" class="level2">
+<h2 class="anchored" data-anchor-id="core-definitions">Core Definitions</h2>
+<p>The core definition from the C++ standard from <a href="https://timsong-cpp.github.io/cppwp/n3337/expr.prim.lambda#2">expr.prim.lambda#2</a> says:</p>
+<blockquote class="blockquote">
+<p>The evaluation of a lambda-expression results in a <em>prvalue</em> temporary. This temporary is called the <em>closure object</em>.</p>
+</blockquote>
+<p>From the above definition, we can understand that the compiler generates a unique wrapper class (closure type) from a lambda expression.</p>
+<p>Consider the following code snip:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="pp">#include </span><span class="im">&lt;cmath&gt;</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a></span>
+<span id="cb5-3"><a href="#cb5-3"></a><span class="kw">auto</span> cum_normal_cdf <span class="op">=</span> <span class="op">[](</span><span class="dt">double</span> x<span class="op">){</span></span>
+<span id="cb5-4"><a href="#cb5-4"></a>    <span class="cf">return</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> <span class="bu">std::</span>erf<span class="op">(-</span>x<span class="op">/</span><span class="bu">std::</span>sqrt<span class="op">(</span><span class="fl">2.0</span><span class="op">)))</span></span>
+<span id="cb5-5"><a href="#cb5-5"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>CppInsights reveals that the C++ compiler creates the following class, where the function call operator <code>()</code> is overloaded.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb6-1"><a href="#cb6-1"></a>class __lambda_4_23</span>
+<span id="cb6-2"><a href="#cb6-2"></a>{</span>
+<span id="cb6-3"><a href="#cb6-3"></a>  public: </span>
+<span id="cb6-4"><a href="#cb6-4"></a>  inline /*constexpr */ double operator()(double x) const</span>
+<span id="cb6-5"><a href="#cb6-5"></a>  {</span>
+<span id="cb6-6"><a href="#cb6-6"></a>    return 0.5 * (1.0 - erf(-x / sqrt(2.0)));</span>
+<span id="cb6-7"><a href="#cb6-7"></a>  }  </span>
+<span id="cb6-8"><a href="#cb6-8"></a>  </span>
+<span id="cb6-9"><a href="#cb6-9"></a>};</span>
+<span id="cb6-10"><a href="#cb6-10"></a></span>
+<span id="cb6-11"><a href="#cb6-11"></a>__lambda_4_23 cum_normal_cdf = __lambda_4_23{};</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>
