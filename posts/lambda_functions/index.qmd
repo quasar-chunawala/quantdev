@@ -176,7 +176,7 @@ The syntax for captures in C++11 are:
 
 Note that for `[=]` and `[&]` cases, the compiler generates data members for all used variables inside the lambda body. This is a convenient syntax where you don't want to explicitly mention which variables you capture.
 
-## The `mutable` keyword
+### The `mutable` keyword
 
 By default the `operator()` of the closure type is marked as `const` and you cannot modify the captured variables inside the body of the lambda. If you want to change this behavior, you need to add the `mutable` keyword after the parameter list. This syntax removes the `const` from the call operator declaration in the closure type.
 
@@ -264,7 +264,7 @@ const auto lam = [x]() mutable { ++x; };
 
 The last line won't compile as we cannot call a non-`const` member function on a `const` object. 
 
-## Capturing Global Variables
+### Capturing Global Variables
 
 If you have a global variable and you use `[=]` in your lambda, you might think that your global object is also captured by value. But, it's not. 
 
@@ -310,7 +310,7 @@ It's because only variables with automatic storage duration can be captured.
 
 If you use `[=]` explicitly, the compiler won't help you and it generates an error.
 
-## Capturing `static` variables
+### Capturing `static` variables
 
 Similar to capturing global variables, you'll get the same issues with `static` objects:
 
@@ -345,7 +345,7 @@ int main() {
 13
 ```
 
-## Caturing a class member and the `this` pointer
+### Caturing a class member and the `this` pointer
 
 Things get a bit more complicated where you're in a class member function and you want to capture a data member. Since all non-static data members are related to the `this` pointer, it also has to be stored somewhere.
 
@@ -414,7 +414,7 @@ The value of the value-captured variable is the value at the time the lambda is 
 
 The C++ closures do not extend the lifetimes of the captured references. We must be sure that the capture variable still lives when the lambda is invoked.
 
-## Moveable-only objects
+### Moveable-only objects
 
 If you have an object that is moveable only(for example a `unique_ptr`), then we can move the object into a member of the closure type:
 
@@ -444,3 +444,107 @@ After definition pointer in main(): 0
 pointer in lambda: 0x209772b0
 value in lambda: 10
 ```
+
+### Preserving `const`
+
+If you capture a `const` variable, then the `const`-ness is preserved:
+
+```cpp
+#include <iostream>
+#include <type_traits>
+
+int main(){
+    const int x{10};
+    auto foo = [x]() mutable{
+        std::cout << std::is_const<decltype(x)>::value << "\n";
+        x = 11;
+    }
+
+    foo();
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/GEGnYh81K)
+
+This code will not compile. 
+
+```shell
+<source>: In lambda function:
+<source>:9:15: error: assignment of read-only variable 'x'
+    9 |             x = 11;
+      |             ~~^~~~
+<source>: In function 'int main()':
+<source>:12:5: error: expected ',' or ';' before 'foo'
+   12 |     foo();
+      |     ^~~
+```
+
+### Capturing a parameter pack
+
+We can also leverage captures with variadic templates. The compiler expands the pack into a list of non-static data members whihc might be handy, if you want to use lambda in templated code.
+
+```cpp
+#include <iostream>
+#include <tuple>
+
+template <class... Args>
+void captureTest(Args... args) {
+    const auto lambda = [args...] {
+        const auto tup = std::make_tuple(args...);
+        std::cout << "tuple size: " << std::tuple_size<decltype(tup)>::value
+                  << "\n";
+        std::cout << "tuple 1st: " << std::get<0>(tup) << "\n";
+    };
+    lambda();
+}
+
+int main() {
+    captureTest(1, 2, 3, 4);
+    captureTest("Hello World", 10.0f);
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/eGYEPxo8M)
+
+Output:
+
+```shell
+tuple size: 4
+tuple 1st: 1
+tuple size: 2
+tuple 1st: Hello World
+```
+
+## Return Type
+
+In most cases, you can skip the return type of the lambda and the compiler will deduce the typename for you. The compiler is able to deduce the return type as long as all of your return statements are of the same type.
+
+## IIFE - Immediately Invoked Functional Expression
+
+In most of the examples, we've seen so far, notice that we defined ht lambda and then immediately called it later. However, you can also invoke a lambda immediately.
+
+```cpp
+#include <iostream>
+
+int main(){
+    int x{1}, y{1};
+    [&]() noexcept { ++x; ++y; }();     // call
+    std::cout << x << ", " << y;
+}
+```
+
+# Lambdas in C++14
+
+## Default parameters for lambda functions
+
+Let's start with smaller updates. In C++14, you can use default parameters in a lambda function definition.
+
+```cpp
+#include <iostream>
+
+int main()
+{
+    const auto lam = [](int x = 10){ std::cout << x << "\n"; };
+    lam();
+    lam(100);
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/W7ne1jKh5)
