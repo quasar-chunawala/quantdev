@@ -216,6 +216,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#constructors-and-copying" id="toc-constructors-and-copying" class="nav-link" data-scroll-target="#constructors-and-copying">Constructors and copying</a></li>
   <li><a href="#captures" id="toc-captures" class="nav-link" data-scroll-target="#captures">Captures</a></li>
   <li><a href="#the-mutable-keyword" id="toc-the-mutable-keyword" class="nav-link" data-scroll-target="#the-mutable-keyword">The <code>mutable</code> keyword</a></li>
+  <li><a href="#capturing-global-variables" id="toc-capturing-global-variables" class="nav-link" data-scroll-target="#capturing-global-variables">Capturing Global Variables</a></li>
+  <li><a href="#capturing-static-variables" id="toc-capturing-static-variables" class="nav-link" data-scroll-target="#capturing-static-variables">Capturing <code>static</code> variables</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -421,6 +423,74 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb13-3"><a href="#cb13-3"></a>in main(): 1 1</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>In the above example, we can change the values of <code>x</code> and <code>y</code>. Since those are only the copies of <code>x</code> and <code>y</code> from the enclosing scope, we don’t see their new values after <code>foo</code> is invoked.</p>
 <p>On the other hand, if you capture by reference, you don’t need to apply the <code>mutable</code> keyword to modify the value. This is because the captured data members are references which means that you cannot rebound them to a new object anyway, but you can change the referenced values.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb14-2"><a href="#cb14-2"></a></span>
+<span id="cb14-3"><a href="#cb14-3"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb14-4"><a href="#cb14-4"></a>    <span class="dt">int</span> x<span class="op">{</span><span class="dv">1</span><span class="op">};</span></span>
+<span id="cb14-5"><a href="#cb14-5"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> x <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb14-6"><a href="#cb14-6"></a>    <span class="at">const</span> <span class="kw">auto</span> foo <span class="op">=</span> <span class="op">[&amp;</span>x<span class="op">]()</span> <span class="kw">noexcept</span> <span class="op">{</span> <span class="op">++</span>x<span class="op">;</span> <span class="op">};</span></span>
+<span id="cb14-7"><a href="#cb14-7"></a>    foo<span class="op">();</span></span>
+<span id="cb14-8"><a href="#cb14-8"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> x <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb14-9"><a href="#cb14-9"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-10"><a href="#cb14-10"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/Yjjqdd3zf">Compiler Explorer</a></p>
+<p>Output:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb15-1"><a href="#cb15-1"></a>Program stdout</span>
+<span id="cb15-2"><a href="#cb15-2"></a>1</span>
+<span id="cb15-3"><a href="#cb15-3"></a>2</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>In the above example, the lambda is not specified with <code>mutable</code> but it can change the referenced value.</p>
+<p>One important thing is that when you apply <code>mutable</code>, then you canot mark your resulting closure object with <code>const</code> as it prevents you from invoking the lambda!</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb16-1"><a href="#cb16-1"></a><span class="dt">int</span> x<span class="op">{</span><span class="dv">10</span><span class="op">};</span></span>
+<span id="cb16-2"><a href="#cb16-2"></a><span class="at">const</span> <span class="kw">auto</span> lam <span class="op">=</span> <span class="op">[</span>x<span class="op">]()</span> <span class="at">mutable</span> <span class="op">{</span> <span class="op">++</span>x<span class="op">;</span> <span class="op">};</span></span>
+<span id="cb16-3"><a href="#cb16-3"></a><span class="co">// lam(); // compile eror</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The last line won’t compile as we cannot call a non-<code>const</code> member function on a <code>const</code> object.</p>
+</section>
+<section id="capturing-global-variables" class="level2">
+<h2 class="anchored" data-anchor-id="capturing-global-variables">Capturing Global Variables</h2>
+<p>If you have a global variable and you use <code>[=]</code> in your lambda, you might think that your global object is also captured by value. But, it’s not.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb17-1"><a href="#cb17-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb17-2"><a href="#cb17-2"></a></span>
+<span id="cb17-3"><a href="#cb17-3"></a><span class="dt">int</span> global<span class="op">{</span><span class="dv">10</span><span class="op">};</span></span>
+<span id="cb17-4"><a href="#cb17-4"></a></span>
+<span id="cb17-5"><a href="#cb17-5"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb17-6"><a href="#cb17-6"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> global <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb17-7"><a href="#cb17-7"></a>    <span class="kw">auto</span> foo <span class="op">=</span> <span class="op">[=]()</span> <span class="at">mutable</span> <span class="kw">noexcept</span> <span class="op">{</span> <span class="op">++</span>global<span class="op">;</span> <span class="op">};</span></span>
+<span id="cb17-8"><a href="#cb17-8"></a>    foo<span class="op">();</span></span>
+<span id="cb17-9"><a href="#cb17-9"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> global <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb17-10"><a href="#cb17-10"></a>    <span class="at">const</span> <span class="kw">auto</span> increaseGlobal <span class="op">=</span> <span class="op">[]()</span> <span class="kw">noexcept</span> <span class="op">{</span> <span class="op">++</span>global<span class="op">;</span> <span class="op">};</span></span>
+<span id="cb17-11"><a href="#cb17-11"></a>    increaseGlobal<span class="op">();</span></span>
+<span id="cb17-12"><a href="#cb17-12"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> global <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb17-13"><a href="#cb17-13"></a>    <span class="at">const</span> <span class="kw">auto</span> moreIncreaseGlobal <span class="op">=</span> <span class="op">[</span>global<span class="op">]()</span> <span class="kw">noexcept</span> <span class="op">{</span> <span class="op">++</span>global<span class="op">;</span> <span class="op">};</span></span>
+<span id="cb17-14"><a href="#cb17-14"></a>    moreIncreaseGlobal<span class="op">();</span></span>
+<span id="cb17-15"><a href="#cb17-15"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> global <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb17-16"><a href="#cb17-16"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/aTG3qP5vM">Compiler Explorer</a></p>
+<p>Output:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb18-1"><a href="#cb18-1"></a>10</span>
+<span id="cb18-2"><a href="#cb18-2"></a>11</span>
+<span id="cb18-3"><a href="#cb18-3"></a>12</span>
+<span id="cb18-4"><a href="#cb18-4"></a>13</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>In the above example, we have defined a static variable <code>global</code> and then used it with several lambdas defined in the <code>main()</code> function. If you run the code, then no matter the way you captgure, it will always point to the global object, and no local copies will be created.</p>
+<p>Line 13 of the code causes the compiler to generate the following warning:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb19-1"><a href="#cb19-1"></a>source&gt;: In function 'int main()':</span>
+<span id="cb19-2"><a href="#cb19-2"></a>&lt;source&gt;:13:38: warning: capture of variable 'global' with non-automatic storage duration</span>
+<span id="cb19-3"><a href="#cb19-3"></a>   13 |     const auto moreIncreaseGlobal = [global]() noexcept { ++global; };</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>It’s because only variables with automatic storage duration can be captured.</p>
+<p>If you use <code>[=]</code> explicitly, the compiler won’t help you and it generates an error.</p>
+</section>
+<section id="capturing-static-variables" class="level2">
+<h2 class="anchored" data-anchor-id="capturing-static-variables">Capturing <code>static</code> variables</h2>
+<p>Similar to capturing global variables, you’ll get the same issues with <code>static</code> objects:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb20-1"><a href="#cb20-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb20-2"><a href="#cb20-2"></a></span>
+<span id="cb20-3"><a href="#cb20-3"></a><span class="dt">void</span> bar<span class="op">(){</span></span>
+<span id="cb20-4"><a href="#cb20-4"></a>    <span class="at">static</span> <span class="dt">int</span> static_int<span class="op">{</span><span class="dv">10</span><span class="op">};</span></span>
+<span id="cb20-5"><a href="#cb20-5"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> static_int <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb20-6"><a href="#cb20-6"></a>    <span class="kw">auto</span> foo <span class="op">=</span> <span class="op">[=]()</span> <span class="at">mutable</span> <span class="kw">noexcept</span><span class="op">{</span> <span class="op">++</span>static_int<span class="op">;</span> <span class="op">};</span></span>
+<span id="cb20-7"><a href="#cb20-7"></a>    foo<span class="op">();</span></span>
+<span id="cb20-8"><a href="#cb20-8"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> static_int <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb20-9"><a href="#cb20-9"></a>    <span class="at">const</span> </span>
+<span id="cb20-10"><a href="#cb20-10"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>

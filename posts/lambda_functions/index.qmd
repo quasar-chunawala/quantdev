@@ -230,3 +230,99 @@ in main(): 1 1
 In the above example, we can change the values of `x` and `y`. Since those are only the copies of `x` and `y` from the enclosing scope, we don't see their new values after `foo` is invoked. 
 
 On the other hand, if you capture by reference, you don't need to apply the `mutable` keyword to modify the value. This is because the captured data members are references which means that you cannot rebound them to a new object anyway, but you can change the referenced values. 
+
+```cpp
+#include <iostream>
+
+int main() {
+    int x{1};
+    std::cout << x << "\n";
+    const auto foo = [&x]() noexcept { ++x; };
+    foo();
+    std::cout << x << "\n";
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/Yjjqdd3zf)
+
+Output:
+```shell
+Program stdout
+1
+2
+```
+
+In the above example, the lambda is not specified with `mutable` but it can change the referenced value.
+
+One important thing is that when you apply `mutable`, then you canot mark your resulting closure object with `const` as it prevents you from invoking the lambda!
+
+```cpp
+int x{10};
+const auto lam = [x]() mutable { ++x; };
+// lam(); // compile eror
+```
+
+The last line won't compile as we cannot call a non-`const` member function on a `const` object. 
+
+## Capturing Global Variables
+
+If you have a global variable and you use `[=]` in your lambda, you might think that your global object is also captured by value. But, it's not. 
+
+```cpp
+#include <iostream>
+
+int global{10};
+
+int main() {
+    std::cout << global << "\n";
+    auto foo = [=]() mutable noexcept { ++global; };
+    foo();
+    std::cout << global << "\n";
+    const auto increaseGlobal = []() noexcept { ++global; };
+    increaseGlobal();
+    std::cout << global << "\n";
+    const auto moreIncreaseGlobal = [global]() noexcept { ++global; };
+    moreIncreaseGlobal();
+    std::cout << global << "\n";
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/aTG3qP5vM)
+
+Output:
+```shell
+10
+11
+12
+13
+```
+
+In the above example, we have defined a static variable `global` and then used it with several lambdas defined in the `main()` function. If you run the code, then no matter the way you captgure, it will always point to the global object, and no local copies will be created.
+
+Line 13 of the code causes the compiler to generate the following warning:
+
+```shell
+source>: In function 'int main()':
+<source>:13:38: warning: capture of variable 'global' with non-automatic storage duration
+   13 |     const auto moreIncreaseGlobal = [global]() noexcept { ++global; };
+```
+
+It's because only variables with automatic storage duration can be captured. 
+
+If you use `[=]` explicitly, the compiler won't help you and it generates an error.
+
+## Capturing `static` variables
+
+Similar to capturing global variables, you'll get the same issues with `static` objects:
+
+```cpp
+#include <iostream>
+
+void bar(){
+    static int static_int{10};
+    std::cout << static_int << "\n";
+    auto foo = [=]() mutable noexcept{ ++static_int; };
+    foo();
+    std::cout << static_int << "\n";
+    const 
+}
+```
