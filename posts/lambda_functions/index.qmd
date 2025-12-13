@@ -173,3 +173,60 @@ The syntax for captures in C++11 are:
 | `[this]` | Captures the `this` pointer inside the member function |
 
 : Lambda capture syntax in C++ {#tbl-lambda-syntax}
+
+Note that for `[=]` and `[&]` cases, the compiler generates data members for all used variables inside the lambda body. This is a convenient syntax where you don't want to explicitly mention which variables you capture.
+
+## The `mutable` keyword
+
+By default the `operator()` of the closure type is marked as `const` and you cannot modify the captured variables inside the body of the lambda. If you want to change this behavior, you need to add the `mutable` keyword after the parameter list. This syntax removes the `const` from the call operator declaration in the closure type.
+
+If you have a simple lambda expression with a `mutable`:
+
+```cpp
+int x{1};
+auto foo = [x]() mutable { ++x; };
+```
+
+It will be expanded into the following function object:
+
+```shell
+struct __lambda_x1 {
+    void operator()() { ++x; }
+    int x;
+};
+```
+
+The call operator can change the value of the member-fields(capture variables).
+
+```cpp
+#include <iostream>
+
+int main() {
+    const auto print = [](const char* str, int x, int y) {
+        std::cout << str << ": " << x << " " << y << "\n";
+    };
+
+    int x{1}, y{1};
+    print("in main", x, y);
+    auto foo = [x, y, &print]() mutable {
+        ++x;
+        ++y;
+        print("in foo", x, y);
+    };
+    foo();
+    print("in main()", x, y);
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/9Tncca1do)
+
+Output:
+```shell
+in main: 1 1
+in foo: 2 2
+in main(): 1 1
+```
+
+In the above example, we can change the values of `x` and `y`. Since those are only the copies of `x` and `y` from the enclosing scope, we don't see their new values after `foo` is invoked. 
+
+On the other hand, if you capture by reference, you don't need to apply the `mutable` keyword to modify the value. This is because the captured data members are references which means that you cannot rebound them to a new object anyway, but you can change the referenced values. 

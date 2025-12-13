@@ -215,6 +215,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#core-definitions" id="toc-core-definitions" class="nav-link" data-scroll-target="#core-definitions">Core Definitions</a></li>
   <li><a href="#constructors-and-copying" id="toc-constructors-and-copying" class="nav-link" data-scroll-target="#constructors-and-copying">Constructors and copying</a></li>
   <li><a href="#captures" id="toc-captures" class="nav-link" data-scroll-target="#captures">Captures</a></li>
+  <li><a href="#the-mutable-keyword" id="toc-the-mutable-keyword" class="nav-link" data-scroll-target="#the-mutable-keyword">The <code>mutable</code> keyword</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -381,6 +382,45 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tbody>
 </table>
 </div>
+<p>Note that for <code>[=]</code> and <code>[&amp;]</code> cases, the compiler generates data members for all used variables inside the lambda body. This is a convenient syntax where you don’t want to explicitly mention which variables you capture.</p>
+</section>
+<section id="the-mutable-keyword" class="level2">
+<h2 class="anchored" data-anchor-id="the-mutable-keyword">The <code>mutable</code> keyword</h2>
+<p>By default the <code>operator()</code> of the closure type is marked as <code>const</code> and you cannot modify the captured variables inside the body of the lambda. If you want to change this behavior, you need to add the <code>mutable</code> keyword after the parameter list. This syntax removes the <code>const</code> from the call operator declaration in the closure type.</p>
+<p>If you have a simple lambda expression with a <code>mutable</code>:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1"></a><span class="dt">int</span> x<span class="op">{</span><span class="dv">1</span><span class="op">};</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a><span class="kw">auto</span> foo <span class="op">=</span> <span class="op">[</span>x<span class="op">]()</span> <span class="at">mutable</span> <span class="op">{</span> <span class="op">++</span>x<span class="op">;</span> <span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>It will be expanded into the following function object:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb11-1"><a href="#cb11-1"></a>struct __lambda_x1 {</span>
+<span id="cb11-2"><a href="#cb11-2"></a>    void operator()() { ++x; }</span>
+<span id="cb11-3"><a href="#cb11-3"></a>    int x;</span>
+<span id="cb11-4"><a href="#cb11-4"></a>};</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The call operator can change the value of the member-fields(capture variables).</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb12-2"><a href="#cb12-2"></a></span>
+<span id="cb12-3"><a href="#cb12-3"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb12-4"><a href="#cb12-4"></a>    <span class="at">const</span> <span class="kw">auto</span> print <span class="op">=</span> <span class="op">[](</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> str<span class="op">,</span> <span class="dt">int</span> x<span class="op">,</span> <span class="dt">int</span> y<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb12-5"><a href="#cb12-5"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> str <span class="op">&lt;&lt;</span> <span class="st">": "</span> <span class="op">&lt;&lt;</span> x <span class="op">&lt;&lt;</span> <span class="st">" "</span> <span class="op">&lt;&lt;</span> y <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb12-6"><a href="#cb12-6"></a>    <span class="op">};</span></span>
+<span id="cb12-7"><a href="#cb12-7"></a></span>
+<span id="cb12-8"><a href="#cb12-8"></a>    <span class="dt">int</span> x<span class="op">{</span><span class="dv">1</span><span class="op">},</span> y<span class="op">{</span><span class="dv">1</span><span class="op">};</span></span>
+<span id="cb12-9"><a href="#cb12-9"></a>    print<span class="op">(</span><span class="st">"in main"</span><span class="op">,</span> x<span class="op">,</span> y<span class="op">);</span></span>
+<span id="cb12-10"><a href="#cb12-10"></a>    <span class="kw">auto</span> foo <span class="op">=</span> <span class="op">[</span>x<span class="op">,</span> y<span class="op">,</span> <span class="op">&amp;</span>print<span class="op">]()</span> <span class="at">mutable</span> <span class="op">{</span></span>
+<span id="cb12-11"><a href="#cb12-11"></a>        <span class="op">++</span>x<span class="op">;</span></span>
+<span id="cb12-12"><a href="#cb12-12"></a>        <span class="op">++</span>y<span class="op">;</span></span>
+<span id="cb12-13"><a href="#cb12-13"></a>        print<span class="op">(</span><span class="st">"in foo"</span><span class="op">,</span> x<span class="op">,</span> y<span class="op">);</span></span>
+<span id="cb12-14"><a href="#cb12-14"></a>    <span class="op">};</span></span>
+<span id="cb12-15"><a href="#cb12-15"></a>    foo<span class="op">();</span></span>
+<span id="cb12-16"><a href="#cb12-16"></a>    print<span class="op">(</span><span class="st">"in main()"</span><span class="op">,</span> x<span class="op">,</span> y<span class="op">);</span></span>
+<span id="cb12-17"><a href="#cb12-17"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb12-18"><a href="#cb12-18"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/9Tncca1do">Compiler Explorer</a></p>
+<p>Output:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb13-1"><a href="#cb13-1"></a>in main: 1 1</span>
+<span id="cb13-2"><a href="#cb13-2"></a>in foo: 2 2</span>
+<span id="cb13-3"><a href="#cb13-3"></a>in main(): 1 1</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>In the above example, we can change the values of <code>x</code> and <code>y</code>. Since those are only the copies of <code>x</code> and <code>y</code> from the enclosing scope, we don’t see their new values after <code>foo</code> is invoked.</p>
+<p>On the other hand, if you capture by reference, you don’t need to apply the <code>mutable</code> keyword to modify the value. This is because the captured data members are references which means that you cannot rebound them to a new object anyway, but you can change the referenced values.</p>
 
 
 </section>
