@@ -652,3 +652,73 @@ int main()
 The code above shows two calls to `std::find_if`. In the first scernario, we capture `prefix` and compare the input value against `prefix + "bar"s`. Everytime the lambda is invokes, a temporary value that stores the sum of those strings has to be created and computed.
 
 The second call to `find_if` shows an optimisation: we create a captured variable `savedString` that computes the sum of the strings. then, we can safely refer to it in the lambda body. The sum of the strings will run only once and not with every invocation of the lambda. 
+
+## Capturing a class data member
+
+An initialiser can also be used to capture data members without worrying about `*this` pointer. We can capgture a copy of a data member and not bother with dangling references. 
+
+```cpp
+#include <algorithm>
+#include <iostream>
+
+struct Baz{
+    auto foo() const{
+        return [s=s]{ std::cout << s << "\n"; };
+    }
+
+    std::string s;
+};
+
+int main()
+{
+    const auto f1 = Baz{"abc"}.foo();
+    const auto f2 = Baz{"xyz"}.foo();
+    f1();
+    f2();
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/TY98T8nxM)
+
+## Generic Lambdas
+
+The early specification of lambda expressions allowed us to create anonymous function objects (closure types) and pass them to various generic algorithms from the standard library. However, closures were not generic on their own. For example, you couldn't specify a template parameter as a lambda parameter.
+
+Fortunately, since C++14, the Standard introduced *generic lambdas* and now we can write:
+
+```cpp
+const auto foo = [](auto x, int y){ std::print("{}, {}", x, y); };
+foo(10, 1)
+foo(10.1234, 2);
+foo("hello world",3);
+```
+
+Please notice `auto x` as a parameter to the lambda. This is equivalent to using a template declaration in the call operator of the closure type:
+
+```cpp
+struct{
+    template<typename T>
+    void operator()(Tx, int y) const{
+        std::print("{}, {}", x, y);
+    }
+} someInstance;
+```
+
+If there are more `auto` arguments, then the code expands to separate template parameters:
+
+```cpp
+const auto fooDouble = [](auto x, auto y){ /*...*/ };
+```
+
+expands into:
+
+```cpp
+struct{
+    template<typename T, typenname U>
+    void operator()(Tx, U y) const{
+        /* ... */
+    }
+} someInstance;
+```
+
+## Variadic Generic Arguments
+
