@@ -3857,8 +3857,175 @@ font-style: inherit;">}</span></span></code></pre></div>
 <li>Extension to aggregate initialisation - before C++17, you couldn’t aggregate initialise type that derives from other types.</li>
 </ul>
 <p>The <code>using</code> declaration is important for bringing the function call operator - <code>operator()</code> into the same scope of the <code>overloaded</code> structure. In C++17, we got a syntax that supports variadic templates, which was not possible in the previous revisions of the language.</p>
+<p>Let’s try and understand the remaining features:</p>
+<section id="custom-template-argument-deduction-rules" class="level3">
+<h3 class="anchored" data-anchor-id="custom-template-argument-deduction-rules">Custom Template Argument Deduction Rules</h3>
+<p>We derive from lambdas, and then we expose their <code>operator()</code> as we saw in the previous section. But, how can we create objects of this <code>overload</code> type?</p>
+<p>As you know, there’s no way to know up-front, the type of the lambda, as compiler has to generate some unique typename for each of them. For example, we cannot just write:</p>
+<div class="sourceCode" id="cb52" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb52-1">overload<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>LambdaType1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> LambdaType2<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> myOverload<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{...}</span></span></code></pre></div>
+<p>The only way that could work would be some <code>make</code> function (as template argument deduction works for function templates):</p>
+<div class="sourceCode" id="cb53" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb53-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb53-2"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> make_overloader<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;...</span> t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb53-3">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> overloaded<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...&gt;{</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>forward<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;(</span>t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)...};</span></span>
+<span id="cb53-4"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>With the template argument deduction rules that were added in C++17, we can simplify the creation of common template types and the <code>make_overloader</code> function is not needed. For simple types, we can write:</p>
+<div class="sourceCode" id="cb54" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb54-1"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>pair<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>strDouble<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Hello"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">},</span> <span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10.0</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p>There’s also the option to define custom deduction guides. The standard library uses a lot of them, for exmaple, for <code>std::array</code>:</p>
+<div class="sourceCode" id="cb55" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb55-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...</span> U<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb55-2"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span>U<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...(</span>U<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)&gt;;</span></span></code></pre></div>
+<p>and the above rules allows us to write:</p>
+<div class="sourceCode" id="cb56" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb56-1"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>test<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p>For the <code>overloaded</code> pattern, we can specify a custom deduction guide:</p>
+<div class="sourceCode" id="cb57" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb57-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...</span> Ts<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> overloaded<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>Ts<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> overloaded<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Ts<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...&gt;;</span></span></code></pre></div>
 
 
+</section>
 </section>
 </section>
 

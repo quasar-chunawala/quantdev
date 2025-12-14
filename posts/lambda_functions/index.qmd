@@ -916,4 +916,50 @@ Let's deep-dive into the basic mechanics of this pattern. It benefits from three
 
 The `using` declaration is important for bringing the function call operator - `operator()` into the same scope of the `overloaded` structure. In C++17,  we got a syntax that supports variadic templates, which was not possible in the previous revisions of the language.
 
+Let's try and understand the remaining features:
+
+### Custom Template Argument Deduction Rules
+
+We derive from lambdas, and then we expose their `operator()` as we saw in the previous section. But, how can we create objects of this `overload` type?
+
+As you know, there's no way to know up-front, the type of the lambda, as compiler has to generate some unique typename for each of them. For example, we cannot just write:
+
+```cpp
+overload<LambdaType1, LambdaType2> myOverload{...}
+```
+
+The only way that could work would be some `make` function (as template argument deduction works for function templates):
+
+```cpp
+template<typename... T>
+constexpr auto make_overloader(T&&... t){
+    return overloaded<T...>{std::forward<T>(t)...};
+}
+```
+
+With the template argument deduction rules that were added in C++17, we can simplify the creation of common template types and the `make_overloader` function is not needed. For simple types, we can write:
+
+```cpp
+std::pair strDouble{ std::string{"Hello"}, 10.0 };
+```
+
+There's also the option to define custom deduction guides. The standard library uses a lot of them, for exmaple, for `std::array`:
+
+```cpp
+template<class T, class... U>
+std::array(T,U...) -> array<T, 1 + sizeof...(U)>;
+```
+
+and the above rules allows us to write:
+
+```cpp
+std::array test{1, 2, 3, 4, 5};
+```
+
+For the `overloaded` pattern, we can specify a custom deduction guide:
+
+```cpp
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+```
+
 
