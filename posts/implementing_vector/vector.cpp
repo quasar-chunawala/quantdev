@@ -76,7 +76,7 @@ namespace dev {
         }
 
         vector(const vector& other)
-        : m_data{operator new(sizeof(T) * other.size())},
+        : m_data{static_cast<T*>(operator new(sizeof(T) * other.size()))},
         m_size{other.size()},
         m_capacity{other.capacity()} {
             try {
@@ -239,7 +239,57 @@ namespace dev {
             std::destroy_at(ptr_to_last);
             --m_size;
         }
-    };
+
+        bool operator==(const vector& other){
+            return size() == other.size() && 
+            std::equal(begin(), end(), other.begin());
+        }
+
+        // Dynamically allocates a chunk of uninitialized memory on the heap
+        // that can hold `new_capacity` number of elements.
+        // Allocation excepts are propogated to the caller.
+        pointer allocate_helper(size_type new_capacity){
+            return static_cast<pointer>(operator new(sizeof(value_type) * new_capacity));
+        }
+
+        void deallocate_helper(pointer ptr){
+            operator delete(ptr);
+        }
+
+        // Copies elements from old storage to new
+        // If T's copy/move ctor throws, the objects already constructed are
+        // destroyed and the exception is propagated to the caller.
+        void copy_old_storage_to_new(pointer source_first, size_t num_elements, pointer destination_first){
+            if constexpr(std::is_nothrow_move_constructible_v<T>){
+                std::uninitialized_move(source_first, source_first + num_elements, destination_first);
+            }
+            else{
+                try{
+                    std::uninitialized_copy(source_first, source_first + num_elements, destination_first);
+                }catch(std::exception& ex){
+                    throw ex;
+                }
+            }
+        }
+
+        void reserve(size_type new_capacity){
+            if(new_capacity <= capacity())
+                return;
+            
+            auto ptr_new_blk = allocate_helper(new_capacity);
+            try{
+                copy_old_storage_to_new(m_data, m_size, ptr_new_blk);
+            }catch(std::exception& ex){
+                deallocate_helper(ptr_new_blk);
+                throw ex;   // rethrow
+            }
+
+            std::destroy(m_data, m_data + m_size);
+            deallocate_helper(m_data);
+            m_data = ptr_new_blk;
+            m_capacity = new_capacity;
+        }        
+    };    
 }  // namespace dev
 
 TEST(VectorTest, DefaultConstructorTest) {
@@ -263,6 +313,111 @@ TEST(VectorTest, ParameterizedConstructorTest){
     for(auto i{0uz}; i < v.size(); ++i){
         EXPECT_EQ(v[i], 5.5);
     }
+}
+
+TEST(VectorTest, CopyConstructorTest){
+    dev::vector v1{ 1.0, 2.0, 3.0, 4.0, 5.0 };
+    dev::vector v2(v1);
+
+    EXPECT_EQ(v1.size() == v2.size(), true);
+
+    for (int i{ 0 }; i < v1.size(); ++i)
+        EXPECT_EQ(v1[i], v2[i]);
+}
+
+TEST(VectorTest, MoveConstructorTest){
+    dev::vector<int> v1{ 1, 2, 3 };
+    dev::vector<int> v2(std::move(v1));
+    EXPECT_EQ(v1.size(), 0);
+    EXPECT_EQ(v1.capacity(), 0);
+    EXPECT_EQ(v2.size(), 3);
+    for(auto i{0uz}; i<v2.size(); ++ i)
+        EXPECT_EQ(v2[i], i + 1);
+}
+
+TEST(VectorTest, CopyAssignmentTest)
+{
+    dev::vector<int> v1{ 1, 2, 3 };
+    dev::vector<int> v2;
+    v2 = v1;
+
+    EXPECT_EQ(v1.size(), v2.size());
+    EXPECT_EQ(v1.capacity(), v2.capacity());
+    for (int i = 0; i < v1.size(); ++i) {
+        EXPECT_EQ(v1[i], v2[i]);
+    }
+}
+
+TEST(VectorTest, MoveAssignmentTest)
+{
+    dev::vector<int> v1{ 1, 2, 3 };
+    dev::vector<int> v2;
+    v2 = std::move(v1);
+
+    EXPECT_EQ(v1.size(), 0);
+    EXPECT_EQ(v1.capacity(), 0);
+    EXPECT_EQ(v2.size(), 3);
+    for (int i = 0; i < v1.size(); ++i) {
+        EXPECT_EQ(v2[i], i+1);
+    }
+}
+
+TEST(VectorTest, AtTest)
+{
+    dev::vector<int> v{ 1, 2, 3 };
+    EXPECT_EQ(v.at(0), 1);
+    EXPECT_EQ(v.at(1), 2);
+    EXPECT_EQ(v.at(2), 3);
+
+    EXPECT_THROW(v.at(3), std::out_of_range);
+}
+
+TEST(VectorTest, SubscriptOperatorTest)
+{
+    dev::vector<int> v{ 1, 2, 3 };
+    for (int i{0uz}; i < v.size(); ++i) {
+        EXPECT_EQ(v[i], i+1);
+    }
+}
+
+TEST(VectorTest, FrontAndBackTest)
+{
+    dev::vector<int> v{ 1, 2, 3 };
+    EXPECT_EQ(v.front(), 1);
+    EXPECT_EQ(v.back(), 3);
+}
+
+TEST(VectorTest, EmptyTest)
+{
+    dev::vector<int> v;
+    EXPECT_EQ(v.empty(), true);
+
+    v.push_back(42);
+    EXPECT_EQ(v.empty(), false);
+}
+
+TEST(VectorTest, SizeAndCapacityTest)
+{
+    dev::vector<int> v;
+    EXPECT_EQ(v.size(), 0);
+    EXPECT_GE(v.capacity(), 0);
+
+    v.push_back(42);
+    EXPECT_EQ(v.size(), 1);
+    EXPECT_GT(v.capacity(), 0);
+
+    v.push_back(v.back());
+    EXPECT_EQ(v.size(), 2);
+    EXPECT_EQ(v[1], 42);
+}
+
+
+TEST(VectorTest, ReserveTest)
+{
+    dev::vector<int> v;
+    v.reserve(10);
+    EXPECT_GE(v.capacity(), 10);
+    EXPECT_EQ(v.size(), 0);
 }
 
 int main(int argc, char** argv) {

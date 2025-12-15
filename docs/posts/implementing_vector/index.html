@@ -218,6 +218,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#iterators" id="toc-iterators" class="nav-link" data-scroll-target="#iterators">Iterators</a></li>
   <li><a href="#basic-services-of-a-vector-like-class" id="toc-basic-services-of-a-vector-like-class" class="nav-link" data-scroll-target="#basic-services-of-a-vector-like-class">Basic services of a vector-like class</a></li>
   <li><a href="#implementing-reserve" id="toc-implementing-reserve" class="nav-link" data-scroll-target="#implementing-reserve">Implementing <code>reserve()</code></a></li>
+  <li><a href="#implementing-resize" id="toc-implementing-resize" class="nav-link" data-scroll-target="#implementing-resize">Implementing <code>resize()</code></a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -550,13 +551,54 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="implementing-reserve" class="level3">
 <h3 class="anchored" data-anchor-id="implementing-reserve">Implementing <code>reserve()</code></h3>
 <p><code>reserve(size_type new_capacity)</code> increases the capacity of the vector(the total number of elements that the vector can hold without requiring reallocation) to a value that’s greater or equal to <code>new_capacity</code>. If <code>new_capacity</code> is greater than the current <code>capacity()</code>, new storage is allocated, otherwise the function does nothing.</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="dt">void</span> reserve<span class="op">(</span><span class="dt">size_type</span> new_capacity<span class="op">){</span></span>
-<span id="cb5-2"><a href="#cb5-2"></a>    <span class="cf">if</span><span class="op">(</span>new_capacity <span class="op">&lt;=</span> capacity<span class="op">())</span></span>
-<span id="cb5-3"><a href="#cb5-3"></a>        <span class="cf">return</span><span class="op">;</span></span>
-<span id="cb5-4"><a href="#cb5-4"></a></span>
-<span id="cb5-5"><a href="#cb5-5"></a>    <span class="kw">auto</span> ptr_new_blk <span class="op">=</span> allocate_helper<span class="op">(</span>new_capacity<span class="op">);</span></span>
-<span id="cb5-6"><a href="#cb5-6"></a>    copy_data<span class="op">()</span></span>
-<span id="cb5-7"><a href="#cb5-7"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>We introduce the helper functions <code>allocate_helper</code> and <code>copy_old_storage_to_new</code>.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="co">// Dynamically allocates a chunk of uninitialized memory on the heap</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a><span class="co">// that can hold `new_capacity` number of elements.</span></span>
+<span id="cb5-3"><a href="#cb5-3"></a><span class="co">// Allocation excepts are propogated to the caller.</span></span>
+<span id="cb5-4"><a href="#cb5-4"></a>pointer allocate_helper<span class="op">(</span><span class="dt">size_type</span> new_capacity<span class="op">){</span></span>
+<span id="cb5-5"><a href="#cb5-5"></a>    <span class="cf">return</span> <span class="kw">static_cast</span><span class="op">&lt;</span>pointer<span class="op">&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span><span class="dt">value_type</span><span class="op">)</span> <span class="op">*</span> new_capacity<span class="op">));</span></span>
+<span id="cb5-6"><a href="#cb5-6"></a><span class="op">}</span></span>
+<span id="cb5-7"><a href="#cb5-7"></a></span>
+<span id="cb5-8"><a href="#cb5-8"></a><span class="dt">void</span> deallocate_helper<span class="op">(</span>pointer ptr<span class="op">){</span></span>
+<span id="cb5-9"><a href="#cb5-9"></a>    <span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span>ptr<span class="op">);</span></span>
+<span id="cb5-10"><a href="#cb5-10"></a><span class="op">}</span></span>
+<span id="cb5-11"><a href="#cb5-11"></a></span>
+<span id="cb5-12"><a href="#cb5-12"></a><span class="co">// Copies elements from old storage to new</span></span>
+<span id="cb5-13"><a href="#cb5-13"></a><span class="co">// If T's copy/move ctor throws, the objects already constructed are</span></span>
+<span id="cb5-14"><a href="#cb5-14"></a><span class="co">// destroyed and the exception is propagated to the caller.</span></span>
+<span id="cb5-15"><a href="#cb5-15"></a><span class="dt">void</span> copy_old_storage_to_new<span class="op">(</span>pointer source_first<span class="op">,</span> <span class="dt">size_t</span> num_elements<span class="op">,</span> pointer destination_first<span class="op">){</span></span>
+<span id="cb5-16"><a href="#cb5-16"></a>    <span class="cf">if</span> <span class="kw">constexpr</span><span class="op">(</span><span class="bu">std::</span>is_nothrow_move_constructible_v<span class="op">&lt;</span>T<span class="op">&gt;){</span></span>
+<span id="cb5-17"><a href="#cb5-17"></a>        <span class="bu">std::</span>uninitialized_move<span class="op">(</span>source_first<span class="op">,</span> source_first <span class="op">+</span> num_elements<span class="op">,</span> destination_first<span class="op">);</span></span>
+<span id="cb5-18"><a href="#cb5-18"></a>    <span class="op">}</span></span>
+<span id="cb5-19"><a href="#cb5-19"></a>    <span class="cf">else</span><span class="op">{</span></span>
+<span id="cb5-20"><a href="#cb5-20"></a>        <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb5-21"><a href="#cb5-21"></a>            <span class="bu">std::</span>uninitialized_copy<span class="op">(</span>source_first<span class="op">,</span> source_first <span class="op">+</span> num_elements<span class="op">,</span> destination_first<span class="op">);</span></span>
+<span id="cb5-22"><a href="#cb5-22"></a>        <span class="op">}</span><span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">){</span></span>
+<span id="cb5-23"><a href="#cb5-23"></a>            <span class="cf">throw</span> ex<span class="op">;</span></span>
+<span id="cb5-24"><a href="#cb5-24"></a>        <span class="op">}</span></span>
+<span id="cb5-25"><a href="#cb5-25"></a>    <span class="op">}</span></span>
+<span id="cb5-26"><a href="#cb5-26"></a><span class="op">}</span></span>
+<span id="cb5-27"><a href="#cb5-27"></a></span>
+<span id="cb5-28"><a href="#cb5-28"></a><span class="dt">void</span> reserve<span class="op">(</span><span class="dt">size_type</span> new_capacity<span class="op">){</span></span>
+<span id="cb5-29"><a href="#cb5-29"></a>    <span class="cf">if</span><span class="op">(</span>new_capacity <span class="op">&lt;=</span> capacity<span class="op">())</span></span>
+<span id="cb5-30"><a href="#cb5-30"></a>        <span class="cf">return</span><span class="op">;</span></span>
+<span id="cb5-31"><a href="#cb5-31"></a>    </span>
+<span id="cb5-32"><a href="#cb5-32"></a>    <span class="kw">auto</span> ptr_new_blk <span class="op">=</span> allocate_helper<span class="op">(</span>new_capacity<span class="op">);</span></span>
+<span id="cb5-33"><a href="#cb5-33"></a>    <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb5-34"><a href="#cb5-34"></a>        copy_old_storage_to_new<span class="op">(</span><span class="va">m_data</span><span class="op">,</span> <span class="va">m_size</span><span class="op">,</span> ptr_new_blk<span class="op">);</span></span>
+<span id="cb5-35"><a href="#cb5-35"></a>    <span class="op">}</span><span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">){</span></span>
+<span id="cb5-36"><a href="#cb5-36"></a>        deallocate_helper<span class="op">(</span>ptr_new_blk<span class="op">);</span></span>
+<span id="cb5-37"><a href="#cb5-37"></a>        <span class="cf">throw</span> ex<span class="op">;</span>   <span class="co">// rethrow</span></span>
+<span id="cb5-38"><a href="#cb5-38"></a>    <span class="op">}</span></span>
+<span id="cb5-39"><a href="#cb5-39"></a>    </span>
+<span id="cb5-40"><a href="#cb5-40"></a>    <span class="bu">std::</span>destroy<span class="op">(</span><span class="va">m_data</span><span class="op">,</span> <span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">);</span></span>
+<span id="cb5-41"><a href="#cb5-41"></a>    deallocate_helper<span class="op">(</span><span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb5-42"><a href="#cb5-42"></a>    <span class="va">m_data</span> <span class="op">=</span> ptr_new_blk<span class="op">;</span></span>
+<span id="cb5-43"><a href="#cb5-43"></a>    <span class="va">m_capacity</span> <span class="op">=</span> new_capacity<span class="op">;</span>    </span>
+<span id="cb5-44"><a href="#cb5-44"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="implementing-resize" class="level3">
+<h3 class="anchored" data-anchor-id="implementing-resize">Implementing <code>resize()</code></h3>
 
 
 </section>
