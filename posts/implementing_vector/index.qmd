@@ -395,10 +395,81 @@ void reserve(size_type new_capacity){
     m_capacity = new_capacity;    
 }
 ```
+[Compiler Explorer](https://compiler-explorer.com/z/ajWYcjaYd)
+
+There's a general trick that you would have seen in all of this. Do not modify your object until you know, you can safely do. Try to do the potentially throwing operations first, then do the operations until you can mutate your object. You will sleep better, and the risks of object corruption will be alleviated.
 
 ### Implementing `resize()`
 
-The `resize(size_type count)` method resizes the container to contain `count` elements:
+The distinction between `resize()` and `reserve()` is that `reserve()` only affects the capacity of the container, whereas `resize()` modifies the size and capacity both.
 
-- If the `count` is equal to the current size, do nothing. 
-- 
+The `resize(size_type new_size)` method resizes the container to contain `count` elements:
+
+- If the `new_size` is equal to the current size, do nothing. 
+- If the current size is greater than the `new_size`, the container is reduced to its first `new_size` elements.
+- If the current size is less than `new_size`, then:
+    - Additional default-constructed elements are appended.
+
+```cpp
+void resize(size_type new_size){
+    size_type current_size = m_size;
+    if(new_size == current_size)
+        return;
+
+    if(new_size < current_size)
+    {
+        // Reduce the container to count elements
+        std::destroy(m_data + new_size, m_data + m_size);
+    }
+
+    if(new_size > current_size)
+    {
+        reserve(new_size);
+
+        // Default construct elements at indicates
+        // [current_size,...,new_size-1]
+        for (auto p{ begin() + current_size }; p != begin() + new_size; ++p)
+            std::construct_at(p, value_type{});
+    }
+    m_size = new_size;
+}    
+```
+
+## How to think about adding elements to our container?
+
+We will code up a `push_back(T&&)` member function that accepts a universal reference `T&&`. If `T` is move constructible, then the value will be moved. If `T` is copy constructible then the value will be copied. 
+
+The `emplace_back(Args...)` will take a variadic pack of constructor arguments, and then perfectly forward them to the constructor of a `T` object, that will be placed at the end of the container. A reference to the newly constructed object is returned by `emplace_back()`, for convenience, in case the user-code would like to use it right away.
+
+We would like to first check whether the container is full. We have a dichotomy. If the container is full, we take the so-called slow path, else we take the fast lane.
+
+### `push_back_slow_path(value)`
+
+In this case, we would like to grow our container; we allocate more memory, than what the container currently holds. We leave the memory uninitialized. Memory allocation, can of course, fail. 
+
+We then add the new value at the index `m_size`. Appending the new element may fail.
+
+We copy/move construct the existing elements of the container from the old storage to the new block of storage. 
+
+If all three steps were successful, we replace the values in the member variables `m_data`, `m_size` and `m_capacity`.
+
+If either of the last couple of steps fail, we free the newly obtained block of storage. 
+
+### `push_back_fast_path(value)`
+
+In this case, we simply copy/move construct `value` at the end of the container and update the size of the container. 
+
+### Edge-case 
+
+Consider the following edge-case, where the `value` to be added is an element of the vector itself. If there is a reallocation, then the elements of the container are relocated to a new region. So, `value` might become a dangling reference. 
+
+```cpp
+dev::vector<int> vec{ 1 };
+for (int i = 0; i < 10; ++i) {
+    vec.push_back(vec.back());
+    EXPECT_EQ(vec.back(), 1);
+}
+```
+Our design takes care of this edge case.
+
+

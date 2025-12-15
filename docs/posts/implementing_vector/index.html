@@ -220,6 +220,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#implementing-reserve" id="toc-implementing-reserve" class="nav-link" data-scroll-target="#implementing-reserve">Implementing <code>reserve()</code></a></li>
   <li><a href="#implementing-resize" id="toc-implementing-resize" class="nav-link" data-scroll-target="#implementing-resize">Implementing <code>resize()</code></a></li>
   </ul></li>
+  <li><a href="#how-to-think-about-adding-elements-to-our-container" id="toc-how-to-think-about-adding-elements-to-our-container" class="nav-link" data-scroll-target="#how-to-think-about-adding-elements-to-our-container">How to think about adding elements to our container?</a>
+  <ul class="collapse">
+  <li><a href="#push_back_slow_pathvalue" id="toc-push_back_slow_pathvalue" class="nav-link" data-scroll-target="#push_back_slow_pathvalue"><code>push_back_slow_path(value)</code></a></li>
+  <li><a href="#push_back_fast_pathvalue" id="toc-push_back_fast_pathvalue" class="nav-link" data-scroll-target="#push_back_fast_pathvalue"><code>push_back_fast_path(value)</code></a></li>
+  <li><a href="#edge-case" id="toc-edge-case" class="nav-link" data-scroll-target="#edge-case">Edge-case</a></li>
+  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -596,14 +602,71 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb5-42"><a href="#cb5-42"></a>    <span class="va">m_data</span> <span class="op">=</span> ptr_new_blk<span class="op">;</span></span>
 <span id="cb5-43"><a href="#cb5-43"></a>    <span class="va">m_capacity</span> <span class="op">=</span> new_capacity<span class="op">;</span>    </span>
 <span id="cb5-44"><a href="#cb5-44"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/ajWYcjaYd">Compiler Explorer</a></p>
+<p>There’s a general trick that you would have seen in all of this. Do not modify your object until you know, you can safely do. Try to do the potentially throwing operations first, then do the operations until you can mutate your object. You will sleep better, and the risks of object corruption will be alleviated.</p>
 </section>
 <section id="implementing-resize" class="level3">
 <h3 class="anchored" data-anchor-id="implementing-resize">Implementing <code>resize()</code></h3>
-<p>The <code>resize(size_type count)</code> method resizes the container to contain <code>count</code> elements:</p>
+<p>The distinction between <code>resize()</code> and <code>reserve()</code> is that <code>reserve()</code> only affects the capacity of the container, whereas <code>resize()</code> modifies the size and capacity both.</p>
+<p>The <code>resize(size_type new_size)</code> method resizes the container to contain <code>count</code> elements:</p>
 <ul>
-<li>If the <code>count</code> is equal to the current size, do nothing.</li>
-<li></li>
+<li>If the <code>new_size</code> is equal to the current size, do nothing.</li>
+<li>If the current size is greater than the <code>new_size</code>, the container is reduced to its first <code>new_size</code> elements.</li>
+<li>If the current size is less than <code>new_size</code>, then:
+<ul>
+<li>Additional default-constructed elements are appended.</li>
+</ul></li>
 </ul>
+<div class="sourceCode" id="cb6"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="dt">void</span> resize<span class="op">(</span><span class="dt">size_type</span> new_size<span class="op">){</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a>    <span class="dt">size_type</span> current_size <span class="op">=</span> <span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb6-3"><a href="#cb6-3"></a>    <span class="cf">if</span><span class="op">(</span>new_size <span class="op">==</span> current_size<span class="op">)</span></span>
+<span id="cb6-4"><a href="#cb6-4"></a>        <span class="cf">return</span><span class="op">;</span></span>
+<span id="cb6-5"><a href="#cb6-5"></a></span>
+<span id="cb6-6"><a href="#cb6-6"></a>    <span class="cf">if</span><span class="op">(</span>new_size <span class="op">&lt;</span> current_size<span class="op">)</span></span>
+<span id="cb6-7"><a href="#cb6-7"></a>    <span class="op">{</span></span>
+<span id="cb6-8"><a href="#cb6-8"></a>        <span class="co">// Reduce the container to count elements</span></span>
+<span id="cb6-9"><a href="#cb6-9"></a>        <span class="bu">std::</span>destroy<span class="op">(</span><span class="va">m_data</span> <span class="op">+</span> new_size<span class="op">,</span> <span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">);</span></span>
+<span id="cb6-10"><a href="#cb6-10"></a>    <span class="op">}</span></span>
+<span id="cb6-11"><a href="#cb6-11"></a></span>
+<span id="cb6-12"><a href="#cb6-12"></a>    <span class="cf">if</span><span class="op">(</span>new_size <span class="op">&gt;</span> current_size<span class="op">)</span></span>
+<span id="cb6-13"><a href="#cb6-13"></a>    <span class="op">{</span></span>
+<span id="cb6-14"><a href="#cb6-14"></a>        reserve<span class="op">(</span>new_size<span class="op">);</span></span>
+<span id="cb6-15"><a href="#cb6-15"></a></span>
+<span id="cb6-16"><a href="#cb6-16"></a>        <span class="co">// Default construct elements at indicates</span></span>
+<span id="cb6-17"><a href="#cb6-17"></a>        <span class="co">// [current_size,...,new_size-1]</span></span>
+<span id="cb6-18"><a href="#cb6-18"></a>        <span class="cf">for</span> <span class="op">(</span><span class="kw">auto</span> p<span class="op">{</span> begin<span class="op">()</span> <span class="op">+</span> current_size <span class="op">};</span> p <span class="op">!=</span> begin<span class="op">()</span> <span class="op">+</span> new_size<span class="op">;</span> <span class="op">++</span>p<span class="op">)</span></span>
+<span id="cb6-19"><a href="#cb6-19"></a>            <span class="bu">std::</span>construct_at<span class="op">(</span>p<span class="op">,</span> <span class="dt">value_type</span><span class="op">{});</span></span>
+<span id="cb6-20"><a href="#cb6-20"></a>    <span class="op">}</span></span>
+<span id="cb6-21"><a href="#cb6-21"></a>    <span class="va">m_size</span> <span class="op">=</span> new_size<span class="op">;</span></span>
+<span id="cb6-22"><a href="#cb6-22"></a><span class="op">}</span>    </span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+</section>
+<section id="how-to-think-about-adding-elements-to-our-container" class="level2">
+<h2 class="anchored" data-anchor-id="how-to-think-about-adding-elements-to-our-container">How to think about adding elements to our container?</h2>
+<p>We will code up a <code>push_back(T&amp;&amp;)</code> member function that accepts a universal reference <code>T&amp;&amp;</code>. If <code>T</code> is move constructible, then the value will be moved. If <code>T</code> is copy constructible then the value will be copied.</p>
+<p>The <code>emplace_back(Args...)</code> will take a variadic pack of constructor arguments, and then perfectly forward them to the constructor of a <code>T</code> object, that will be placed at the end of the container. A reference to the newly constructed object is returned by <code>emplace_back()</code>, for convenience, in case the user-code would like to use it right away.</p>
+<p>We would like to first check whether the container is full. We have a dichotomy. If the container is full, we take the so-called slow path, else we take the fast lane.</p>
+<section id="push_back_slow_pathvalue" class="level3">
+<h3 class="anchored" data-anchor-id="push_back_slow_pathvalue"><code>push_back_slow_path(value)</code></h3>
+<p>In this case, we would like to grow our container; we allocate more memory, than what the container currently holds. We leave the memory uninitialized. Memory allocation, can of course, fail.</p>
+<p>We then add the new value at the index <code>m_size</code>. Appending the new element may fail.</p>
+<p>We copy/move construct the existing elements of the container from the old storage to the new block of storage.</p>
+<p>If all three steps were successful, we replace the values in the member variables <code>m_data</code>, <code>m_size</code> and <code>m_capacity</code>.</p>
+<p>If either of the last couple of steps fail, we free the newly obtained block of storage.</p>
+</section>
+<section id="push_back_fast_pathvalue" class="level3">
+<h3 class="anchored" data-anchor-id="push_back_fast_pathvalue"><code>push_back_fast_path(value)</code></h3>
+<p>In this case, we simply copy/move construct <code>value</code> at the end of the container and update the size of the container.</p>
+</section>
+<section id="edge-case" class="level3">
+<h3 class="anchored" data-anchor-id="edge-case">Edge-case</h3>
+<p>Consider the following edge-case, where the <code>value</code> to be added is an element of the vector itself. If there is a reallocation, then the elements of the container are relocated to a new region. So, <code>value</code> might become a dangling reference.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a>dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> vec<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span></span>
+<span id="cb7-2"><a href="#cb7-2"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">10</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a>    vec<span class="op">.</span>push_back<span class="op">(</span>vec<span class="op">.</span>back<span class="op">());</span></span>
+<span id="cb7-4"><a href="#cb7-4"></a>    EXPECT_EQ<span class="op">(</span>vec<span class="op">.</span>back<span class="op">(),</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Our design takes care of this edge case.</p>
 
 
 </section>
