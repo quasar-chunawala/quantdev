@@ -355,6 +355,74 @@ int main(){
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/Gv65nrhrs)
 
+## Understanding the constrained algorithms
+
+The standard library provides over a hundred general-purpose algorithms. Most of these algorithms have a new constrained version in
+`std::ranges` namespace. These algorithms are found in the `<algorithm>`, `<numeric>` and `<memory>` header.
+
+- They have the same name as the existing algorithms.
+- They have overloads that allow you to specify a range, either with a `begin` iterator and an `end` sentinel, or as a single range argument.
+- They have modified return types that provide more information about the execution. 
+- They support projections to apply to the processed elements. A **projection** is an entity that can be invoked. It can be a pointer to a member function, a lambda expression, or a function pointer. Such a projection is applied to the range element *before* the algorithm logic uses the element. 
+
+From [cppreference.com](https://en.cppreference.com/w/cpp/algorithm/ranges/copy.html), the rangified version of the `copy_if` algorithm has the following overloads:
+
+```cpp
+template< std::input_iterator I, std::sentinel_for<I> S, std::weakly_incrementable O,
+          class Proj = std::identity,
+          std::indirect_unary_predicate<std::projected<I, Proj>> Pred >
+requires std::indirectly_copyable<I, O>
+constexpr copy_if_result<I, O>
+    copy_if( I first, S last, O result, Pred pred, Proj proj = {} );
+```
+
+```cpp
+template< ranges::input_range R, std::weakly_incrementable O,
+          class Proj = std::identity,
+          std::indirect_unary_predicate<
+              std::projected<ranges::iterator_t<R>, Proj>> Pred >
+requires std::indirectly_copyable<ranges::iterator_t<R>, O>
+constexpr copy_if_result<ranges::borrowed_iterator_t<R>, O>
+    copy_if( R&& r, O result, Pred pred, Proj proj = {} );
+```
+
+The signatures may look cryptic, but it's easy to code up a few quick examples.
+
+```cpp
+#include <iostream>
+#include <ranges>
+#include <algorithm>
+#include <vector>
+
+namespace stdr = std::ranges;
+namespace stdv = std::ranges::views;
+
+int main()
+{
+    std::vector<int> v{1, 1, 2, 3, 5, 8, 13};
+    std::vector<int> o;
+
+    auto filter_odd = [](int n){ return n % 2 == 1; };
+    auto e1 = stdr::copy_if(v, std::back_inserter(o), filter_odd);
+
+    int arr[] = {1, 1, 2, 3, 5, 8, 13 };
+    auto e2 = stdr::copy_if(arr,
+        std::back_inserter(o), filter_odd
+    );
+
+    auto rng = stdr::iota_view(1,10);
+    auto e3 = stdr::copy_if(r, std::back_inserter(o), filter_odd);
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/v4hTef7Wb)
+
+These examples show two things: how to copy elements from a `std::vector` object and an array and how to copy elements from a view(a range adaptor). What they don't show is projections. I'll explore some examples on this shortly.
+
+A projection is an invocable entity. It's basically a function adaptor. It affects the predicate, providing a way to perform function composition. It does not provide a way to change the algorithm. For instance, let's say we have the following type:
+
+
+
 # References {.appendix}
 
 - *[Ranges and Iterators for numerical Problems](https://youtu.be/qXdPFj-FTcA?si=3xX3r8eIF4TlWXwr), Karsten Ahnert at Meeting C++ 2014*
