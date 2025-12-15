@@ -225,8 +225,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#push_back_slow_pathvalue" id="toc-push_back_slow_pathvalue" class="nav-link" data-scroll-target="#push_back_slow_pathvalue"><code>push_back_slow_path(value)</code></a></li>
   <li><a href="#push_back_fast_pathvalue" id="toc-push_back_fast_pathvalue" class="nav-link" data-scroll-target="#push_back_fast_pathvalue"><code>push_back_fast_path(value)</code></a></li>
   <li><a href="#edge-case" id="toc-edge-case" class="nav-link" data-scroll-target="#edge-case">Edge-case</a></li>
+  <li><a href="#coding-up-emplace_back" id="toc-coding-up-emplace_back" class="nav-link" data-scroll-target="#coding-up-emplace_back">Coding up <code>emplace_back</code></a></li>
   </ul></li>
+  <li><a href="#implementing-insertconst_iterator-position-const-t-value" id="toc-implementing-insertconst_iterator-position-const-t-value" class="nav-link" data-scroll-target="#implementing-insertconst_iterator-position-const-t-value">Implementing <code>insert(const_iterator position, const T&amp; value)</code></a></li>
   </ul></li>
+  <li><a href="#complete-implementation-with-unit-tests" id="toc-complete-implementation-with-unit-tests" class="nav-link" data-scroll-target="#complete-implementation-with-unit-tests">Complete implementation with unit tests</a></li>
   </ul>
 </nav>
     </div>
@@ -719,10 +722,713 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb8-50"><a href="#cb8-50"></a>        push_back_fast_path<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>U<span class="op">&gt;(</span>value<span class="op">));</span></span>
 <span id="cb8-51"><a href="#cb8-51"></a>    <span class="op">}</span></span>
 <span id="cb8-52"><a href="#cb8-52"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-
-
+</section>
+<section id="coding-up-emplace_back" class="level3">
+<h3 class="anchored" data-anchor-id="coding-up-emplace_back">Coding up <code>emplace_back</code></h3>
+<p>Again we have a fork - <code>emplace_back_slow_path</code> and <code>emplace_back_fast_path</code>.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Args<span class="op">&gt;</span></span>
+<span id="cb9-2"><a href="#cb9-2"></a>reference emplace_back_slow_path<span class="op">(</span>Args<span class="op">...</span> args<span class="op">){</span></span>
+<span id="cb9-3"><a href="#cb9-3"></a>    <span class="co">// allocate more memory</span></span>
+<span id="cb9-4"><a href="#cb9-4"></a>    <span class="dt">size_type</span> offset <span class="op">=</span> size<span class="op">();</span></span>
+<span id="cb9-5"><a href="#cb9-5"></a>    <span class="dt">size_type</span> new_size <span class="op">=</span> <span class="va">m_size</span> <span class="op">+</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb9-6"><a href="#cb9-6"></a>    <span class="dt">size_type</span> new_capacity <span class="op">=</span> growth_factor <span class="op">*</span> capacity<span class="op">();</span></span>
+<span id="cb9-7"><a href="#cb9-7"></a>    <span class="kw">auto</span> ptr_new_blk <span class="op">=</span> allocate_helper<span class="op">(</span>new_capacity<span class="op">);</span></span>
+<span id="cb9-8"><a href="#cb9-8"></a></span>
+<span id="cb9-9"><a href="#cb9-9"></a>    <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb9-10"><a href="#cb9-10"></a>        <span class="co">// copy/move construct the existing elements </span></span>
+<span id="cb9-11"><a href="#cb9-11"></a>        <span class="co">// of the container from the old storage </span></span>
+<span id="cb9-12"><a href="#cb9-12"></a>        <span class="co">// to the new block of storage.</span></span>
+<span id="cb9-13"><a href="#cb9-13"></a>        copy_old_storage_to_new<span class="op">(</span><span class="va">m_data</span><span class="op">,</span> <span class="va">m_size</span><span class="op">,</span> ptr_new_blk<span class="op">);</span></span>
+<span id="cb9-14"><a href="#cb9-14"></a>    <span class="op">}</span><span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">){</span></span>
+<span id="cb9-15"><a href="#cb9-15"></a>        deallocate_helper<span class="op">(</span>ptr_new_blk<span class="op">);</span></span>
+<span id="cb9-16"><a href="#cb9-16"></a>        <span class="cf">throw</span> ex<span class="op">;</span>   <span class="co">// rethrow</span></span>
+<span id="cb9-17"><a href="#cb9-17"></a>    <span class="op">}</span></span>
+<span id="cb9-18"><a href="#cb9-18"></a></span>
+<span id="cb9-19"><a href="#cb9-19"></a>    <span class="bu">std::</span>construct_at<span class="op">(</span>ptr_new_blk <span class="op">+</span> <span class="va">m_size</span><span class="op">,</span> <span class="bu">std::</span>forward<span class="op">&lt;</span>Args<span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb9-20"><a href="#cb9-20"></a>    deallocate_helper<span class="op">(</span><span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb9-21"><a href="#cb9-21"></a>    <span class="va">m_data</span> <span class="op">=</span> ptr_new_blk<span class="op">;</span></span>
+<span id="cb9-22"><a href="#cb9-22"></a>    <span class="op">++</span><span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb9-23"><a href="#cb9-23"></a>    <span class="cf">return</span> back<span class="op">();</span></span>
+<span id="cb9-24"><a href="#cb9-24"></a><span class="op">}</span></span>
+<span id="cb9-25"><a href="#cb9-25"></a></span>
+<span id="cb9-26"><a href="#cb9-26"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Args<span class="op">&gt;</span></span>
+<span id="cb9-27"><a href="#cb9-27"></a>reference emplace_back_fast_path<span class="op">(</span>Args<span class="op">...</span> args<span class="op">){</span></span>
+<span id="cb9-28"><a href="#cb9-28"></a>    <span class="bu">std::</span>construct_at<span class="op">(</span><span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">,</span> <span class="bu">std::</span>forward<span class="op">&lt;</span>Args<span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb9-29"><a href="#cb9-29"></a>    <span class="op">++</span><span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb9-30"><a href="#cb9-30"></a>    <span class="cf">return</span> back<span class="op">();</span></span>
+<span id="cb9-31"><a href="#cb9-31"></a><span class="op">}</span></span>
+<span id="cb9-32"><a href="#cb9-32"></a></span>
+<span id="cb9-33"><a href="#cb9-33"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Args<span class="op">&gt;</span></span>
+<span id="cb9-34"><a href="#cb9-34"></a>reference emplace_back<span class="op">(</span>Args<span class="op">...</span> args<span class="op">){</span></span>
+<span id="cb9-35"><a href="#cb9-35"></a>    <span class="cf">if</span><span class="op">(</span>is_full<span class="op">())</span></span>
+<span id="cb9-36"><a href="#cb9-36"></a>        <span class="cf">return</span> emplace_back_slow_path<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Args<span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb9-37"><a href="#cb9-37"></a>    <span class="cf">else</span></span>
+<span id="cb9-38"><a href="#cb9-38"></a>        <span class="cf">return</span> emplace_back_fast_path<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Args<span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb9-39"><a href="#cb9-39"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/eKfnMfvqs">Compiler Explorer</a></p>
 </section>
 </section>
+<section id="implementing-insertconst_iterator-position-const-t-value" class="level2">
+<h2 class="anchored" data-anchor-id="implementing-insertconst_iterator-position-const-t-value">Implementing <code>insert(const_iterator position, const T&amp; value)</code></h2>
+<p>The <code>insert</code> function inserts the given value into the vector before the specified <code>position</code>, possibly using move-semantics. Note that, this kind of operation could be expensive for a vector, and if it is frequently used, it can trigger reallocation. The user should consider using <code>std::list</code>.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> U<span class="op">&gt;</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a>iterator insert_slow_path<span class="op">(</span>const_iterator insert_it<span class="op">,</span> U<span class="op">&amp;&amp;</span> value<span class="op">){</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a>    <span class="co">// If a reallocation is triggered, all iterators are</span></span>
+<span id="cb10-4"><a href="#cb10-4"></a>    <span class="co">// invalidated and additionally `value` would also become a</span></span>
+<span id="cb10-5"><a href="#cb10-5"></a>    <span class="co">// dangling reference, if it refers to an existing element of</span></span>
+<span id="cb10-6"><a href="#cb10-6"></a>    <span class="co">// the vector.</span></span>
+<span id="cb10-7"><a href="#cb10-7"></a>    <span class="co">// </span><span class="al">TODO</span></span>
+<span id="cb10-8"><a href="#cb10-8"></a><span class="op">}</span></span>
+<span id="cb10-9"><a href="#cb10-9"></a></span>
+<span id="cb10-10"><a href="#cb10-10"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> U<span class="op">&gt;</span></span>
+<span id="cb10-11"><a href="#cb10-11"></a>iterator insert_fast_path<span class="op">(</span>const_iterator position<span class="op">,</span> U<span class="op">&amp;&amp;</span> value<span class="op">){</span></span>
+<span id="cb10-12"><a href="#cb10-12"></a>    <span class="kw">auto</span> <span class="va">pos_</span> <span class="op">=</span> position<span class="op">;</span></span>
+<span id="cb10-13"><a href="#cb10-13"></a>    <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span><span class="bu">std::</span>is_nothrow_move_constructible_v<span class="op">&lt;</span>T<span class="op">&gt;)</span> <span class="op">{</span></span>
+<span id="cb10-14"><a href="#cb10-14"></a>        <span class="bu">std::</span>uninitialized_move<span class="op">(</span>end<span class="op">()</span> <span class="op">-</span> <span class="dv">1</span><span class="op">,</span> end<span class="op">(),</span> end<span class="op">());</span></span>
+<span id="cb10-15"><a href="#cb10-15"></a>        <span class="bu">std::</span>move_backward<span class="op">(</span><span class="va">pos_</span><span class="op">,</span> end<span class="op">(),</span> end<span class="op">());</span></span>
+<span id="cb10-16"><a href="#cb10-16"></a>        <span class="op">*</span><span class="va">pos_</span> <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span>value<span class="op">);</span></span>
+<span id="cb10-17"><a href="#cb10-17"></a>    <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb10-18"><a href="#cb10-18"></a>        <span class="bu">std::</span>uninitialized_copy<span class="op">(</span>end<span class="op">()</span> <span class="op">-</span> <span class="dv">1</span><span class="op">,</span> end<span class="op">(),</span> end<span class="op">());</span></span>
+<span id="cb10-19"><a href="#cb10-19"></a>        <span class="bu">std::</span>copy_backward<span class="op">(</span><span class="va">pos_</span><span class="op">,</span> end<span class="op">(),</span> end<span class="op">());</span></span>
+<span id="cb10-20"><a href="#cb10-20"></a>        <span class="op">*</span><span class="va">pos_</span> <span class="op">=</span> value<span class="op">;</span></span>
+<span id="cb10-21"><a href="#cb10-21"></a>    <span class="op">}</span></span>
+<span id="cb10-22"><a href="#cb10-22"></a>    <span class="op">++</span><span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb10-23"><a href="#cb10-23"></a>    <span class="cf">return</span> <span class="va">pos_</span><span class="op">;</span></span>
+<span id="cb10-24"><a href="#cb10-24"></a><span class="op">}</span></span>
+<span id="cb10-25"><a href="#cb10-25"></a></span>
+<span id="cb10-26"><a href="#cb10-26"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> U<span class="op">&gt;</span></span>
+<span id="cb10-27"><a href="#cb10-27"></a>iterator insert<span class="op">(</span>const_iterator position<span class="op">,</span> U<span class="op">&amp;&amp;</span> value<span class="op">)</span></span>
+<span id="cb10-28"><a href="#cb10-28"></a><span class="op">{</span></span>
+<span id="cb10-29"><a href="#cb10-29"></a>    <span class="cf">if</span><span class="op">(</span>is_full<span class="op">())</span></span>
+<span id="cb10-30"><a href="#cb10-30"></a>        <span class="cf">return</span> insert_slow_path<span class="op">(</span>position<span class="op">,</span> <span class="bu">std::</span>forward<span class="op">&lt;</span>U<span class="op">&gt;(</span>value<span class="op">));</span></span>
+<span id="cb10-31"><a href="#cb10-31"></a>    <span class="cf">else</span></span>
+<span id="cb10-32"><a href="#cb10-32"></a>        <span class="cf">return</span> insert_fast_path<span class="op">(</span>position<span class="op">,</span> <span class="bu">std::</span>forward<span class="op">&lt;</span>U<span class="op">&gt;(</span>value<span class="op">));</span></span>
+<span id="cb10-33"><a href="#cb10-33"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+</section>
+<section id="complete-implementation-with-unit-tests" class="level1">
+<h1>Complete implementation with unit tests</h1>
+<div class="sourceCode" id="cb11"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1"></a><span class="co">// Write your solution here</span></span>
+<span id="cb11-2"><a href="#cb11-2"></a><span class="co">// C++20 for C++</span></span>
+<span id="cb11-3"><a href="#cb11-3"></a><span class="pp">#include </span><span class="im">&lt;gtest/gtest.h&gt;</span></span>
+<span id="cb11-4"><a href="#cb11-4"></a><span class="pp">#include </span><span class="im">&lt;cstddef&gt;</span></span>
+<span id="cb11-5"><a href="#cb11-5"></a><span class="pp">#include </span><span class="im">&lt;cstdint&gt;</span></span>
+<span id="cb11-6"><a href="#cb11-6"></a><span class="pp">#include </span><span class="im">&lt;format&gt;</span></span>
+<span id="cb11-7"><a href="#cb11-7"></a><span class="pp">#include </span><span class="im">&lt;initializer_list&gt;</span></span>
+<span id="cb11-8"><a href="#cb11-8"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb11-9"><a href="#cb11-9"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb11-10"><a href="#cb11-10"></a><span class="pp">#include </span><span class="im">&lt;stdexcept&gt;</span></span>
+<span id="cb11-11"><a href="#cb11-11"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
+<span id="cb11-12"><a href="#cb11-12"></a><span class="pp">#include </span><span class="im">&lt;utility&gt;</span></span>
+<span id="cb11-13"><a href="#cb11-13"></a></span>
+<span id="cb11-14"><a href="#cb11-14"></a><span class="kw">namespace</span> dev <span class="op">{</span></span>
+<span id="cb11-15"><a href="#cb11-15"></a>    <span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb11-16"><a href="#cb11-16"></a>    <span class="kw">class</span> vector <span class="op">{</span></span>
+<span id="cb11-17"><a href="#cb11-17"></a>        <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb11-18"><a href="#cb11-18"></a>        <span class="kw">using</span> <span class="dt">size_type</span> <span class="op">=</span> <span class="bu">std::</span>size_t<span class="op">;</span></span>
+<span id="cb11-19"><a href="#cb11-19"></a>        <span class="kw">using</span> pointer <span class="op">=</span> T<span class="op">*;</span></span>
+<span id="cb11-20"><a href="#cb11-20"></a>        <span class="kw">using</span> const_pointer <span class="op">=</span> <span class="at">const</span> T<span class="op">*;</span></span>
+<span id="cb11-21"><a href="#cb11-21"></a>        <span class="kw">using</span> reference <span class="op">=</span> T<span class="op">&amp;;</span></span>
+<span id="cb11-22"><a href="#cb11-22"></a>        <span class="kw">using</span> const_reference <span class="op">=</span> <span class="at">const</span> T<span class="op">&amp;;</span></span>
+<span id="cb11-23"><a href="#cb11-23"></a>        <span class="kw">using</span> iterator <span class="op">=</span> pointer<span class="op">;</span></span>
+<span id="cb11-24"><a href="#cb11-24"></a>        <span class="kw">using</span> const_iterator <span class="op">=</span> const_pointer<span class="op">;</span></span>
+<span id="cb11-25"><a href="#cb11-25"></a>        <span class="kw">constexpr</span> <span class="at">static</span> <span class="bu">std::</span>size_t<span class="op"> </span>initial_capacity<span class="op">{</span><span class="dv">1</span><span class="op">};</span></span>
+<span id="cb11-26"><a href="#cb11-26"></a>        <span class="kw">constexpr</span> <span class="at">static</span> <span class="dt">unsigned</span> <span class="dt">short</span> growth_factor<span class="op">{</span><span class="dv">2</span><span class="op">};</span></span>
+<span id="cb11-27"><a href="#cb11-27"></a></span>
+<span id="cb11-28"><a href="#cb11-28"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb11-29"><a href="#cb11-29"></a>        pointer <span class="va">m_data</span><span class="op">;</span></span>
+<span id="cb11-30"><a href="#cb11-30"></a>        <span class="dt">size_type</span> <span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb11-31"><a href="#cb11-31"></a>        <span class="dt">size_type</span> <span class="va">m_capacity</span><span class="op">;</span></span>
+<span id="cb11-32"><a href="#cb11-32"></a></span>
+<span id="cb11-33"><a href="#cb11-33"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb11-34"><a href="#cb11-34"></a></span>
+<span id="cb11-35"><a href="#cb11-35"></a>        iterator begin<span class="op">(){</span> <span class="cf">return</span> <span class="va">m_data</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb11-36"><a href="#cb11-36"></a>        const_iterator begin<span class="op">()</span> <span class="at">const</span><span class="op">{</span> <span class="cf">return</span> <span class="va">m_data</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb11-37"><a href="#cb11-37"></a>        iterator end<span class="op">(){</span> <span class="cf">return</span> begin<span class="op">()</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb11-38"><a href="#cb11-38"></a>        const_iterator end<span class="op">()</span> <span class="at">const</span><span class="op">{</span> <span class="cf">return</span> begin<span class="op">()</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb11-39"><a href="#cb11-39"></a>        </span>
+<span id="cb11-40"><a href="#cb11-40"></a>        <span class="dt">size_type</span> size<span class="op">()</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> <span class="va">m_size</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb11-41"><a href="#cb11-41"></a>        <span class="dt">size_type</span> capacity<span class="op">()</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> <span class="va">m_capacity</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb11-42"><a href="#cb11-42"></a></span>
+<span id="cb11-43"><a href="#cb11-43"></a>        vector<span class="op">()</span></span>
+<span id="cb11-44"><a href="#cb11-44"></a>        <span class="op">:</span> <span class="va">m_data</span><span class="op">{</span><span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)))},</span></span>
+<span id="cb11-45"><a href="#cb11-45"></a>        <span class="va">m_size</span><span class="op">{</span><span class="dv">0</span><span class="op">},</span></span>
+<span id="cb11-46"><a href="#cb11-46"></a>        <span class="va">m_capacity</span><span class="op">{</span>initial_capacity<span class="op">}</span> <span class="op">{}</span></span>
+<span id="cb11-47"><a href="#cb11-47"></a></span>
+<span id="cb11-48"><a href="#cb11-48"></a>        vector<span class="op">(</span><span class="dt">size_t</span> n<span class="op">,</span> <span class="at">const</span> T<span class="op">&amp;</span> initial_value<span class="op">)</span></span>
+<span id="cb11-49"><a href="#cb11-49"></a>        <span class="op">:</span> <span class="va">m_data</span><span class="op">{</span><span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)</span> <span class="op">*</span> n<span class="op">))},</span></span>
+<span id="cb11-50"><a href="#cb11-50"></a>        <span class="va">m_size</span><span class="op">{</span><span class="dv">0</span><span class="op">},</span></span>
+<span id="cb11-51"><a href="#cb11-51"></a>        <span class="va">m_capacity</span><span class="op">{</span>n<span class="op">}</span> <span class="op">{</span></span>
+<span id="cb11-52"><a href="#cb11-52"></a>            <span class="cf">try</span> <span class="op">{</span></span>
+<span id="cb11-53"><a href="#cb11-53"></a>                <span class="bu">std::</span>uninitialized_fill_n<span class="op">(</span><span class="va">m_data</span><span class="op">,</span> n<span class="op">,</span> initial_value<span class="op">);</span></span>
+<span id="cb11-54"><a href="#cb11-54"></a>                <span class="va">m_size</span> <span class="op">=</span> n<span class="op">;</span></span>
+<span id="cb11-55"><a href="#cb11-55"></a>            <span class="op">}</span> <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-56"><a href="#cb11-56"></a>                <span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span><span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb11-57"><a href="#cb11-57"></a>                <span class="va">m_capacity</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb11-58"><a href="#cb11-58"></a>            <span class="op">}</span></span>
+<span id="cb11-59"><a href="#cb11-59"></a>        <span class="op">}</span></span>
+<span id="cb11-60"><a href="#cb11-60"></a></span>
+<span id="cb11-61"><a href="#cb11-61"></a>        vector<span class="op">(</span><span class="bu">std::</span>initializer_list<span class="op">&lt;</span>T<span class="op">&gt;</span> list<span class="op">)</span></span>
+<span id="cb11-62"><a href="#cb11-62"></a>        <span class="op">:</span> <span class="va">m_data</span><span class="op">{</span><span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)</span> <span class="op">*</span></span>
+<span id="cb11-63"><a href="#cb11-63"></a>                                                    list<span class="op">.</span>size<span class="op">()))},</span></span>
+<span id="cb11-64"><a href="#cb11-64"></a>        <span class="va">m_size</span><span class="op">{</span>list<span class="op">.</span>size<span class="op">()},</span></span>
+<span id="cb11-65"><a href="#cb11-65"></a>        <span class="va">m_capacity</span><span class="op">{</span>list<span class="op">.</span>size<span class="op">()}</span> <span class="op">{</span></span>
+<span id="cb11-66"><a href="#cb11-66"></a>            <span class="cf">try</span> <span class="op">{</span></span>
+<span id="cb11-67"><a href="#cb11-67"></a>                <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span><span class="bu">std::</span>is_nothrow_move_constructible_v<span class="op">&lt;</span>T<span class="op">&gt;)</span> <span class="op">{</span></span>
+<span id="cb11-68"><a href="#cb11-68"></a>                    <span class="bu">std::</span>uninitialized_move<span class="op">(</span>list<span class="op">.</span>begin<span class="op">(),</span> list<span class="op">.</span>end<span class="op">(),</span> <span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb11-69"><a href="#cb11-69"></a>                <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb11-70"><a href="#cb11-70"></a>                    <span class="bu">std::</span>uninitialized_copy<span class="op">(</span>list<span class="op">.</span>begin<span class="op">(),</span> list<span class="op">.</span>end<span class="op">(),</span> <span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb11-71"><a href="#cb11-71"></a>                <span class="op">}</span></span>
+<span id="cb11-72"><a href="#cb11-72"></a>            <span class="op">}</span> <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-73"><a href="#cb11-73"></a>                <span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span><span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb11-74"><a href="#cb11-74"></a>                <span class="va">m_size</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb11-75"><a href="#cb11-75"></a>                <span class="va">m_capacity</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb11-76"><a href="#cb11-76"></a>            <span class="op">}</span></span>
+<span id="cb11-77"><a href="#cb11-77"></a>        <span class="op">}</span></span>
+<span id="cb11-78"><a href="#cb11-78"></a></span>
+<span id="cb11-79"><a href="#cb11-79"></a>        vector<span class="op">(</span><span class="at">const</span> vector<span class="op">&amp;</span> other<span class="op">)</span></span>
+<span id="cb11-80"><a href="#cb11-80"></a>        <span class="op">:</span> <span class="va">m_data</span><span class="op">{</span><span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)</span> <span class="op">*</span> other<span class="op">.</span>size<span class="op">()))},</span></span>
+<span id="cb11-81"><a href="#cb11-81"></a>        <span class="va">m_size</span><span class="op">{</span>other<span class="op">.</span>size<span class="op">()},</span></span>
+<span id="cb11-82"><a href="#cb11-82"></a>        <span class="va">m_capacity</span><span class="op">{</span>other<span class="op">.</span>capacity<span class="op">()}</span> <span class="op">{</span></span>
+<span id="cb11-83"><a href="#cb11-83"></a>            <span class="cf">try</span> <span class="op">{</span></span>
+<span id="cb11-84"><a href="#cb11-84"></a>                <span class="co">// Perform a deep-copy of all the Ts</span></span>
+<span id="cb11-85"><a href="#cb11-85"></a>                <span class="bu">std::</span>uninitialized_copy<span class="op">(</span>other<span class="op">.</span><span class="va">m_data</span><span class="op">,</span> other<span class="op">.</span><span class="va">m_data</span> <span class="op">+</span> other<span class="op">.</span><span class="va">m_size</span><span class="op">,</span></span>
+<span id="cb11-86"><a href="#cb11-86"></a>                                        <span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb11-87"><a href="#cb11-87"></a>            <span class="op">}</span> <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-88"><a href="#cb11-88"></a>                <span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span><span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb11-89"><a href="#cb11-89"></a>                <span class="bu">std::</span>string<span class="op"> </span>error_msg <span class="op">=</span></span>
+<span id="cb11-90"><a href="#cb11-90"></a>                    <span class="bu">std::</span>format<span class="op">(</span><span class="st">"Error while copying in copy ctor </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> ex<span class="op">.</span>what<span class="op">());</span></span>
+<span id="cb11-91"><a href="#cb11-91"></a>                <span class="cf">throw</span> <span class="bu">std::</span>logic_error<span class="op">(</span>error_msg<span class="op">);</span></span>
+<span id="cb11-92"><a href="#cb11-92"></a>            <span class="op">}</span></span>
+<span id="cb11-93"><a href="#cb11-93"></a>        <span class="op">}</span></span>
+<span id="cb11-94"><a href="#cb11-94"></a></span>
+<span id="cb11-95"><a href="#cb11-95"></a>        vector<span class="op">(</span>vector<span class="op">&amp;&amp;</span> other<span class="op">)</span> <span class="kw">noexcept</span></span>
+<span id="cb11-96"><a href="#cb11-96"></a>        <span class="op">:</span> <span class="va">m_data</span><span class="op">{</span><span class="bu">std::</span>exchange<span class="op">(</span>other<span class="op">.</span><span class="va">m_data</span><span class="op">,</span> <span class="kw">nullptr</span><span class="op">)},</span></span>
+<span id="cb11-97"><a href="#cb11-97"></a>        <span class="va">m_size</span><span class="op">{</span><span class="bu">std::</span>exchange<span class="op">(</span>other<span class="op">.</span><span class="va">m_size</span><span class="op">,</span> <span class="dv">0</span><span class="op">)},</span></span>
+<span id="cb11-98"><a href="#cb11-98"></a>        <span class="va">m_capacity</span><span class="op">{</span><span class="bu">std::</span>exchange<span class="op">(</span>other<span class="op">.</span><span class="va">m_capacity</span><span class="op">,</span> <span class="dv">0</span><span class="op">)}</span> </span>
+<span id="cb11-99"><a href="#cb11-99"></a>        <span class="op">{}</span></span>
+<span id="cb11-100"><a href="#cb11-100"></a></span>
+<span id="cb11-101"><a href="#cb11-101"></a>        <span class="dt">void</span> swap<span class="op">(</span>vector<span class="op">&amp;</span> other<span class="op">)</span> <span class="kw">noexcept</span> <span class="op">{</span></span>
+<span id="cb11-102"><a href="#cb11-102"></a>            <span class="bu">std::</span>swap<span class="op">(</span><span class="kw">this</span><span class="op">-&gt;</span><span class="va">m_data</span><span class="op">,</span> other<span class="op">.</span><span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb11-103"><a href="#cb11-103"></a>            <span class="bu">std::</span>swap<span class="op">(</span><span class="kw">this</span><span class="op">-&gt;</span><span class="va">m_size</span><span class="op">,</span> other<span class="op">.</span><span class="va">m_size</span><span class="op">);</span></span>
+<span id="cb11-104"><a href="#cb11-104"></a>            <span class="bu">std::</span>swap<span class="op">(</span><span class="kw">this</span><span class="op">-&gt;</span><span class="va">m_capacity</span><span class="op">,</span> other<span class="op">.</span><span class="va">m_capacity</span><span class="op">);</span></span>
+<span id="cb11-105"><a href="#cb11-105"></a>        <span class="op">}</span></span>
+<span id="cb11-106"><a href="#cb11-106"></a></span>
+<span id="cb11-107"><a href="#cb11-107"></a>        vector<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span><span class="at">const</span> vector<span class="op">&amp;</span> other<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-108"><a href="#cb11-108"></a>            vector<span class="op">(</span>other<span class="op">).</span>swap<span class="op">(*</span><span class="kw">this</span><span class="op">);</span></span>
+<span id="cb11-109"><a href="#cb11-109"></a>            <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb11-110"><a href="#cb11-110"></a>        <span class="op">}</span></span>
+<span id="cb11-111"><a href="#cb11-111"></a></span>
+<span id="cb11-112"><a href="#cb11-112"></a>        vector<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">=(</span>vector<span class="op">&amp;&amp;</span> other<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-113"><a href="#cb11-113"></a>            vector<span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span>other<span class="op">)).</span>swap<span class="op">(*</span><span class="kw">this</span><span class="op">);</span></span>
+<span id="cb11-114"><a href="#cb11-114"></a>            <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb11-115"><a href="#cb11-115"></a>        <span class="op">}</span></span>
+<span id="cb11-116"><a href="#cb11-116"></a></span>
+<span id="cb11-117"><a href="#cb11-117"></a>        <span class="dt">bool</span> is_full<span class="op">()</span> <span class="op">{</span> <span class="cf">return</span> size<span class="op">()</span> <span class="op">==</span> capacity<span class="op">();</span> <span class="op">}</span></span>
+<span id="cb11-118"><a href="#cb11-118"></a>        <span class="dt">bool</span> empty<span class="op">()</span> <span class="op">{</span> <span class="cf">return</span> <span class="va">m_size</span> <span class="op">==</span> <span class="dv">0</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb11-119"><a href="#cb11-119"></a></span>
+<span id="cb11-120"><a href="#cb11-120"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> U<span class="op">&gt;</span></span>
+<span id="cb11-121"><a href="#cb11-121"></a>        <span class="dt">void</span> push_back_slow_path<span class="op">(</span>U<span class="op">&amp;&amp;</span> value<span class="op">){</span></span>
+<span id="cb11-122"><a href="#cb11-122"></a>            <span class="co">// allocate more memory</span></span>
+<span id="cb11-123"><a href="#cb11-123"></a>            <span class="dt">size_type</span> offset <span class="op">=</span> size<span class="op">();</span></span>
+<span id="cb11-124"><a href="#cb11-124"></a>            <span class="dt">size_type</span> new_size <span class="op">=</span> <span class="va">m_size</span> <span class="op">+</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb11-125"><a href="#cb11-125"></a>            <span class="dt">size_type</span> new_capacity <span class="op">=</span> growth_factor <span class="op">*</span> capacity<span class="op">();</span></span>
+<span id="cb11-126"><a href="#cb11-126"></a>            <span class="kw">auto</span> ptr_new_blk <span class="op">=</span> allocate_helper<span class="op">(</span>new_capacity<span class="op">);</span></span>
+<span id="cb11-127"><a href="#cb11-127"></a></span>
+<span id="cb11-128"><a href="#cb11-128"></a>            <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb11-129"><a href="#cb11-129"></a>                <span class="co">// Copy-construct the new value at the index m_size</span></span>
+<span id="cb11-130"><a href="#cb11-130"></a>                <span class="bu">std::</span>construct_at<span class="op">(</span>ptr_new_blk <span class="op">+</span> <span class="va">m_size</span><span class="op">,</span> value<span class="op">);</span></span>
+<span id="cb11-131"><a href="#cb11-131"></a>            <span class="op">}</span><span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">){</span></span>
+<span id="cb11-132"><a href="#cb11-132"></a>                deallocate_helper<span class="op">(</span>ptr_new_blk<span class="op">);</span></span>
+<span id="cb11-133"><a href="#cb11-133"></a>                <span class="cf">throw</span> ex<span class="op">;</span>   <span class="co">// rethrow                </span></span>
+<span id="cb11-134"><a href="#cb11-134"></a>            <span class="op">}</span></span>
+<span id="cb11-135"><a href="#cb11-135"></a>            </span>
+<span id="cb11-136"><a href="#cb11-136"></a>            <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb11-137"><a href="#cb11-137"></a>                <span class="co">// copy/move construct the existing elements </span></span>
+<span id="cb11-138"><a href="#cb11-138"></a>                <span class="co">// of the container from the old storage </span></span>
+<span id="cb11-139"><a href="#cb11-139"></a>                <span class="co">// to the new block of storage.</span></span>
+<span id="cb11-140"><a href="#cb11-140"></a>                copy_old_storage_to_new<span class="op">(</span><span class="va">m_data</span><span class="op">,</span> <span class="va">m_size</span><span class="op">,</span> ptr_new_blk<span class="op">);</span></span>
+<span id="cb11-141"><a href="#cb11-141"></a>            <span class="op">}</span><span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">){</span></span>
+<span id="cb11-142"><a href="#cb11-142"></a>                <span class="bu">std::</span>destroy_at<span class="op">(</span>ptr_new_blk <span class="op">+</span> <span class="va">m_size</span><span class="op">);</span></span>
+<span id="cb11-143"><a href="#cb11-143"></a>                deallocate_helper<span class="op">(</span>ptr_new_blk<span class="op">);</span></span>
+<span id="cb11-144"><a href="#cb11-144"></a>                <span class="cf">throw</span> ex<span class="op">;</span>   <span class="co">// rethrow</span></span>
+<span id="cb11-145"><a href="#cb11-145"></a>            <span class="op">}</span></span>
+<span id="cb11-146"><a href="#cb11-146"></a></span>
+<span id="cb11-147"><a href="#cb11-147"></a>            <span class="co">// deallocate the old storage, if we are here</span></span>
+<span id="cb11-148"><a href="#cb11-148"></a>            deallocate_helper<span class="op">(</span><span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb11-149"><a href="#cb11-149"></a></span>
+<span id="cb11-150"><a href="#cb11-150"></a>            <span class="va">m_data</span> <span class="op">=</span> ptr_new_blk<span class="op">;</span></span>
+<span id="cb11-151"><a href="#cb11-151"></a>            <span class="op">++</span><span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb11-152"><a href="#cb11-152"></a>            <span class="va">m_capacity</span> <span class="op">=</span> new_capacity<span class="op">;</span></span>
+<span id="cb11-153"><a href="#cb11-153"></a>        <span class="op">}</span></span>
+<span id="cb11-154"><a href="#cb11-154"></a></span>
+<span id="cb11-155"><a href="#cb11-155"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> U<span class="op">&gt;</span></span>
+<span id="cb11-156"><a href="#cb11-156"></a>        <span class="dt">void</span> push_back_fast_path<span class="op">(</span>U<span class="op">&amp;&amp;</span> value<span class="op">){</span></span>
+<span id="cb11-157"><a href="#cb11-157"></a>            <span class="bu">std::</span>construct_at<span class="op">(</span><span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">,</span> value<span class="op">);</span></span>
+<span id="cb11-158"><a href="#cb11-158"></a>            <span class="op">++</span><span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb11-159"><a href="#cb11-159"></a>        <span class="op">}</span>        </span>
+<span id="cb11-160"><a href="#cb11-160"></a></span>
+<span id="cb11-161"><a href="#cb11-161"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> U<span class="op">&gt;</span></span>
+<span id="cb11-162"><a href="#cb11-162"></a>        <span class="dt">void</span> push_back<span class="op">(</span>U<span class="op">&amp;&amp;</span> value<span class="op">)</span></span>
+<span id="cb11-163"><a href="#cb11-163"></a>        <span class="op">{</span></span>
+<span id="cb11-164"><a href="#cb11-164"></a>            <span class="cf">if</span><span class="op">(</span>is_full<span class="op">())</span></span>
+<span id="cb11-165"><a href="#cb11-165"></a>            <span class="op">{</span></span>
+<span id="cb11-166"><a href="#cb11-166"></a>                push_back_slow_path<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>U<span class="op">&gt;(</span>value<span class="op">));</span></span>
+<span id="cb11-167"><a href="#cb11-167"></a>            <span class="op">}</span></span>
+<span id="cb11-168"><a href="#cb11-168"></a>            <span class="cf">else</span><span class="op">{</span></span>
+<span id="cb11-169"><a href="#cb11-169"></a>                push_back_fast_path<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>U<span class="op">&gt;(</span>value<span class="op">));</span></span>
+<span id="cb11-170"><a href="#cb11-170"></a>            <span class="op">}</span></span>
+<span id="cb11-171"><a href="#cb11-171"></a>        <span class="op">}</span></span>
+<span id="cb11-172"><a href="#cb11-172"></a>        <span class="co">/*void push_back(T value) {</span></span>
+<span id="cb11-173"><a href="#cb11-173"></a><span class="co">            std::size_t offset = size();</span></span>
+<span id="cb11-174"><a href="#cb11-174"></a><span class="co">            if (m_size == m_capacity - 1) {</span></span>
+<span id="cb11-175"><a href="#cb11-175"></a><span class="co">                // Allocate new memory</span></span>
+<span id="cb11-176"><a href="#cb11-176"></a><span class="co">                std::size_t new_size = size() + 1;</span></span>
+<span id="cb11-177"><a href="#cb11-177"></a><span class="co">                std::size_t new_capacity = 3 * m_capacity;</span></span>
+<span id="cb11-178"><a href="#cb11-178"></a><span class="co">                T* new_memory_block = static_cast&lt;T*&gt;(operator new(</span></span>
+<span id="cb11-179"><a href="#cb11-179"></a><span class="co">                    sizeof(T) * new_capacity));</span></span>
+<span id="cb11-180"><a href="#cb11-180"></a><span class="co">                T* ptr_to_new_T{nullptr};</span></span>
+<span id="cb11-181"><a href="#cb11-181"></a></span>
+<span id="cb11-182"><a href="#cb11-182"></a><span class="co">                try {</span></span>
+<span id="cb11-183"><a href="#cb11-183"></a><span class="co">                    // Construct the new T in new memory block</span></span>
+<span id="cb11-184"><a href="#cb11-184"></a><span class="co">                    ptr_to_new_T =</span></span>
+<span id="cb11-185"><a href="#cb11-185"></a><span class="co">                        new (new_memory_block + offset) T(value);</span></span>
+<span id="cb11-186"><a href="#cb11-186"></a><span class="co">                } catch (std::exception&amp; ex) {</span></span>
+<span id="cb11-187"><a href="#cb11-187"></a><span class="co">                    operator delete(new_memory_block);</span></span>
+<span id="cb11-188"><a href="#cb11-188"></a><span class="co">                    std::string error_msg = std::format(</span></span>
+<span id="cb11-189"><a href="#cb11-189"></a><span class="co">                        "Failed to copy-construct T : {}", ex.what());</span></span>
+<span id="cb11-190"><a href="#cb11-190"></a><span class="co">                    throw std::logic_error(error_msg);</span></span>
+<span id="cb11-191"><a href="#cb11-191"></a><span class="co">                }</span></span>
+<span id="cb11-192"><a href="#cb11-192"></a></span>
+<span id="cb11-193"><a href="#cb11-193"></a><span class="co">                try {</span></span>
+<span id="cb11-194"><a href="#cb11-194"></a><span class="co">                    // Copy/move- the Ts from the old storage to new</span></span>
+<span id="cb11-195"><a href="#cb11-195"></a><span class="co">                    if constexpr (std::is_nothrow_move_constructible_v&lt;T&gt;) {</span></span>
+<span id="cb11-196"><a href="#cb11-196"></a><span class="co">                        std::uninitialized_move(m_data, m_data + offset,</span></span>
+<span id="cb11-197"><a href="#cb11-197"></a><span class="co">                                                new_memory_block);</span></span>
+<span id="cb11-198"><a href="#cb11-198"></a><span class="co">                    } else {</span></span>
+<span id="cb11-199"><a href="#cb11-199"></a><span class="co">                        std::uninitialized_copy(m_data, m_data + offset,</span></span>
+<span id="cb11-200"><a href="#cb11-200"></a><span class="co">                                                new_memory_block);</span></span>
+<span id="cb11-201"><a href="#cb11-201"></a><span class="co">                    }</span></span>
+<span id="cb11-202"><a href="#cb11-202"></a><span class="co">                } catch (std::exception&amp; ex) {</span></span>
+<span id="cb11-203"><a href="#cb11-203"></a><span class="co">                    std::destroy_at(ptr_to_new_T);</span></span>
+<span id="cb11-204"><a href="#cb11-204"></a><span class="co">                    operator delete(new_memory_block);</span></span>
+<span id="cb11-205"><a href="#cb11-205"></a><span class="co">                    std::string error_msg = std::format(</span></span>
+<span id="cb11-206"><a href="#cb11-206"></a><span class="co">                        "Failed to copy/move data from old to new storage, "</span></span>
+<span id="cb11-207"><a href="#cb11-207"></a><span class="co">                        "exception : {}",</span></span>
+<span id="cb11-208"><a href="#cb11-208"></a><span class="co">                        ex.what());</span></span>
+<span id="cb11-209"><a href="#cb11-209"></a><span class="co">                    throw std::logic_error(error_msg);</span></span>
+<span id="cb11-210"><a href="#cb11-210"></a><span class="co">                }</span></span>
+<span id="cb11-211"><a href="#cb11-211"></a></span>
+<span id="cb11-212"><a href="#cb11-212"></a><span class="co">                // Destroy the objects in the old storage</span></span>
+<span id="cb11-213"><a href="#cb11-213"></a><span class="co">                auto p{m_data};</span></span>
+<span id="cb11-214"><a href="#cb11-214"></a><span class="co">                for (auto p{m_data}; p &lt; m_data + m_size; ++p) {</span></span>
+<span id="cb11-215"><a href="#cb11-215"></a><span class="co">                    p-&gt;~T();</span></span>
+<span id="cb11-216"><a href="#cb11-216"></a><span class="co">                }</span></span>
+<span id="cb11-217"><a href="#cb11-217"></a></span>
+<span id="cb11-218"><a href="#cb11-218"></a><span class="co">                // Deallocate old storage</span></span>
+<span id="cb11-219"><a href="#cb11-219"></a><span class="co">                operator delete(m_data);</span></span>
+<span id="cb11-220"><a href="#cb11-220"></a></span>
+<span id="cb11-221"><a href="#cb11-221"></a><span class="co">                // Reassign internal buffer pointer and update size and capacity</span></span>
+<span id="cb11-222"><a href="#cb11-222"></a><span class="co">                m_data = new_memory_block;</span></span>
+<span id="cb11-223"><a href="#cb11-223"></a><span class="co">                m_size = new_size;</span></span>
+<span id="cb11-224"><a href="#cb11-224"></a><span class="co">                m_capacity = new_capacity;</span></span>
+<span id="cb11-225"><a href="#cb11-225"></a><span class="co">            } else {</span></span>
+<span id="cb11-226"><a href="#cb11-226"></a><span class="co">                try {</span></span>
+<span id="cb11-227"><a href="#cb11-227"></a><span class="co">                    std::construct_at(m_data + offset, value);</span></span>
+<span id="cb11-228"><a href="#cb11-228"></a><span class="co">                    m_size += 1;</span></span>
+<span id="cb11-229"><a href="#cb11-229"></a><span class="co">                } catch (std::exception&amp; ex) {</span></span>
+<span id="cb11-230"><a href="#cb11-230"></a><span class="co">                    std::string error_msg = std::format(</span></span>
+<span id="cb11-231"><a href="#cb11-231"></a><span class="co">                        "Failed to copy-construct T, exception : {}",</span></span>
+<span id="cb11-232"><a href="#cb11-232"></a><span class="co">                        ex.what());</span></span>
+<span id="cb11-233"><a href="#cb11-233"></a><span class="co">                    throw std::logic_error(error_msg);</span></span>
+<span id="cb11-234"><a href="#cb11-234"></a><span class="co">                }</span></span>
+<span id="cb11-235"><a href="#cb11-235"></a><span class="co">            }</span></span>
+<span id="cb11-236"><a href="#cb11-236"></a><span class="co">        }*/</span></span>
+<span id="cb11-237"><a href="#cb11-237"></a>        </span>
+<span id="cb11-238"><a href="#cb11-238"></a>        reference <span class="kw">operator</span><span class="op">[](</span><span class="dt">size_type</span> idx<span class="op">){</span></span>
+<span id="cb11-239"><a href="#cb11-239"></a>            <span class="cf">return</span> <span class="va">m_data</span><span class="op">[</span>idx<span class="op">];</span></span>
+<span id="cb11-240"><a href="#cb11-240"></a>        <span class="op">}</span></span>
+<span id="cb11-241"><a href="#cb11-241"></a></span>
+<span id="cb11-242"><a href="#cb11-242"></a>        const_reference <span class="kw">operator</span><span class="op">[](</span><span class="dt">size_type</span> idx<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb11-243"><a href="#cb11-243"></a>            <span class="cf">return</span> <span class="va">m_data</span><span class="op">[</span>idx<span class="op">];</span></span>
+<span id="cb11-244"><a href="#cb11-244"></a>        <span class="op">}</span></span>
+<span id="cb11-245"><a href="#cb11-245"></a></span>
+<span id="cb11-246"><a href="#cb11-246"></a>        <span class="co">// precondition: !empty()</span></span>
+<span id="cb11-247"><a href="#cb11-247"></a>        reference front<span class="op">(){</span> <span class="cf">return</span> <span class="op">(*</span><span class="kw">this</span><span class="op">)[</span><span class="dv">0</span><span class="op">];</span> <span class="op">}</span></span>
+<span id="cb11-248"><a href="#cb11-248"></a>        const_reference front<span class="op">()</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">(*</span><span class="kw">this</span><span class="op">)[</span><span class="dv">0</span><span class="op">];</span> <span class="op">}</span></span>
+<span id="cb11-249"><a href="#cb11-249"></a>        reference back<span class="op">(){</span> <span class="cf">return</span> <span class="op">(*</span><span class="kw">this</span><span class="op">)[</span><span class="va">m_size</span> <span class="op">-</span> <span class="dv">1</span><span class="op">];</span> <span class="op">}</span></span>
+<span id="cb11-250"><a href="#cb11-250"></a>        const_reference back<span class="op">()</span> <span class="at">const</span><span class="op">{</span> <span class="cf">return</span> <span class="op">(*</span><span class="kw">this</span><span class="op">)[</span><span class="va">m_size</span> <span class="op">-</span> <span class="dv">1</span><span class="op">];</span> <span class="op">}</span></span>
+<span id="cb11-251"><a href="#cb11-251"></a></span>
+<span id="cb11-252"><a href="#cb11-252"></a>        <span class="at">const</span> T<span class="op">&amp;</span> at<span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>index<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb11-253"><a href="#cb11-253"></a>            <span class="cf">if</span> <span class="op">(</span>index <span class="op">&lt;</span> <span class="dv">0</span> <span class="op">||</span> index <span class="op">&gt;=</span> <span class="va">m_size</span><span class="op">)</span></span>
+<span id="cb11-254"><a href="#cb11-254"></a>                <span class="cf">throw</span> <span class="bu">std::</span>out_of_range<span class="op">(</span><span class="st">"Array index out of bounds!"</span><span class="op">);</span></span>
+<span id="cb11-255"><a href="#cb11-255"></a></span>
+<span id="cb11-256"><a href="#cb11-256"></a>            <span class="cf">return</span> <span class="va">m_data</span><span class="op">[</span>index<span class="op">];</span></span>
+<span id="cb11-257"><a href="#cb11-257"></a>        <span class="op">}</span></span>
+<span id="cb11-258"><a href="#cb11-258"></a>        <span class="dt">void</span> shrink_to_fit<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb11-259"><a href="#cb11-259"></a>            <span class="co">// Allocate a new memory block of capacity = m_size</span></span>
+<span id="cb11-260"><a href="#cb11-260"></a>            T<span class="op">*</span> new_memory_block <span class="op">=</span></span>
+<span id="cb11-261"><a href="#cb11-261"></a>                <span class="kw">static_cast</span><span class="op">&lt;</span>T<span class="op">*&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)</span> <span class="op">*</span> <span class="va">m_size</span><span class="op">));</span></span>
+<span id="cb11-262"><a href="#cb11-262"></a></span>
+<span id="cb11-263"><a href="#cb11-263"></a>            <span class="cf">try</span> <span class="op">{</span></span>
+<span id="cb11-264"><a href="#cb11-264"></a>                <span class="co">// Copy/move the Ts from the old storage to new storage</span></span>
+<span id="cb11-265"><a href="#cb11-265"></a>                <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span><span class="bu">std::</span>is_nothrow_move_constructible_v<span class="op">&lt;</span>T<span class="op">&gt;)</span> <span class="op">{</span></span>
+<span id="cb11-266"><a href="#cb11-266"></a>                    <span class="bu">std::</span>uninitialized_move<span class="op">(</span><span class="va">m_data</span><span class="op">,</span> <span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">,</span></span>
+<span id="cb11-267"><a href="#cb11-267"></a>                                            new_memory_block<span class="op">);</span></span>
+<span id="cb11-268"><a href="#cb11-268"></a>                <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb11-269"><a href="#cb11-269"></a>                    <span class="bu">std::</span>uninitialized_copy<span class="op">(</span><span class="va">m_data</span><span class="op">,</span> <span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">,</span></span>
+<span id="cb11-270"><a href="#cb11-270"></a>                                            new_memory_block<span class="op">);</span></span>
+<span id="cb11-271"><a href="#cb11-271"></a>                <span class="op">}</span></span>
+<span id="cb11-272"><a href="#cb11-272"></a>            <span class="op">}</span> <span class="cf">catch</span> <span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-273"><a href="#cb11-273"></a>                <span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span>new_memory_block<span class="op">);</span></span>
+<span id="cb11-274"><a href="#cb11-274"></a>                <span class="bu">std::</span>string<span class="op"> </span>error_msg <span class="op">=</span> <span class="bu">std::</span>format<span class="op">(</span></span>
+<span id="cb11-275"><a href="#cb11-275"></a>                    <span class="st">"Internal error in shrink_to_fit() : </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> ex<span class="op">.</span>what<span class="op">());</span></span>
+<span id="cb11-276"><a href="#cb11-276"></a>                <span class="cf">throw</span> <span class="bu">std::</span>logic_error<span class="op">(</span>error_msg<span class="op">);</span></span>
+<span id="cb11-277"><a href="#cb11-277"></a>            <span class="op">}</span></span>
+<span id="cb11-278"><a href="#cb11-278"></a></span>
+<span id="cb11-279"><a href="#cb11-279"></a>            <span class="co">// Destroy objects in old storage and deallocate memory</span></span>
+<span id="cb11-280"><a href="#cb11-280"></a>            <span class="cf">for</span> <span class="op">(</span><span class="kw">auto</span> p<span class="op">{</span><span class="va">m_data</span><span class="op">};</span> p <span class="op">&lt;</span> <span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">;</span> <span class="op">++</span>p<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-281"><a href="#cb11-281"></a>                <span class="bu">std::</span>destroy_at<span class="op">&lt;</span>T<span class="op">&gt;(</span>p<span class="op">);</span></span>
+<span id="cb11-282"><a href="#cb11-282"></a>            <span class="op">}</span></span>
+<span id="cb11-283"><a href="#cb11-283"></a>            <span class="co">// Deallocate memory</span></span>
+<span id="cb11-284"><a href="#cb11-284"></a>            <span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span><span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb11-285"><a href="#cb11-285"></a></span>
+<span id="cb11-286"><a href="#cb11-286"></a>            <span class="co">// Reassign internal buffer pointer and set size and capacity</span></span>
+<span id="cb11-287"><a href="#cb11-287"></a>            <span class="va">m_data</span> <span class="op">=</span> new_memory_block<span class="op">;</span></span>
+<span id="cb11-288"><a href="#cb11-288"></a>            <span class="va">m_capacity</span> <span class="op">=</span> <span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb11-289"><a href="#cb11-289"></a>        <span class="op">}</span></span>
+<span id="cb11-290"><a href="#cb11-290"></a>        <span class="dt">void</span> pop_back<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb11-291"><a href="#cb11-291"></a>            T<span class="op">*</span> ptr_to_last <span class="op">=</span> <span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span> <span class="op">-</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb11-292"><a href="#cb11-292"></a>            <span class="bu">std::</span>destroy_at<span class="op">(</span>ptr_to_last<span class="op">);</span></span>
+<span id="cb11-293"><a href="#cb11-293"></a>            <span class="op">--</span><span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb11-294"><a href="#cb11-294"></a>        <span class="op">}</span></span>
+<span id="cb11-295"><a href="#cb11-295"></a></span>
+<span id="cb11-296"><a href="#cb11-296"></a>        <span class="dt">bool</span> <span class="kw">operator</span><span class="op">==(</span><span class="at">const</span> vector<span class="op">&amp;</span> other<span class="op">){</span></span>
+<span id="cb11-297"><a href="#cb11-297"></a>            <span class="cf">return</span> size<span class="op">()</span> <span class="op">==</span> other<span class="op">.</span>size<span class="op">()</span> <span class="op">&amp;&amp;</span> </span>
+<span id="cb11-298"><a href="#cb11-298"></a>            <span class="bu">std::</span>equal<span class="op">(</span>begin<span class="op">(),</span> end<span class="op">(),</span> other<span class="op">.</span>begin<span class="op">());</span></span>
+<span id="cb11-299"><a href="#cb11-299"></a>        <span class="op">}</span></span>
+<span id="cb11-300"><a href="#cb11-300"></a></span>
+<span id="cb11-301"><a href="#cb11-301"></a>        <span class="co">// Dynamically allocates a chunk of uninitialized memory on the heap</span></span>
+<span id="cb11-302"><a href="#cb11-302"></a>        <span class="co">// that can hold `new_capacity` number of elements.</span></span>
+<span id="cb11-303"><a href="#cb11-303"></a>        <span class="co">// Allocation excepts are propogated to the caller.</span></span>
+<span id="cb11-304"><a href="#cb11-304"></a>        pointer allocate_helper<span class="op">(</span><span class="dt">size_type</span> new_capacity<span class="op">){</span></span>
+<span id="cb11-305"><a href="#cb11-305"></a>            <span class="cf">return</span> <span class="kw">static_cast</span><span class="op">&lt;</span>pointer<span class="op">&gt;(</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span><span class="dt">value_type</span><span class="op">)</span> <span class="op">*</span> new_capacity<span class="op">));</span></span>
+<span id="cb11-306"><a href="#cb11-306"></a>        <span class="op">}</span></span>
+<span id="cb11-307"><a href="#cb11-307"></a></span>
+<span id="cb11-308"><a href="#cb11-308"></a>        <span class="dt">void</span> deallocate_helper<span class="op">(</span>pointer ptr<span class="op">){</span></span>
+<span id="cb11-309"><a href="#cb11-309"></a>            <span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span>ptr<span class="op">);</span></span>
+<span id="cb11-310"><a href="#cb11-310"></a>        <span class="op">}</span></span>
+<span id="cb11-311"><a href="#cb11-311"></a></span>
+<span id="cb11-312"><a href="#cb11-312"></a>        <span class="co">// Copies elements from old storage to new</span></span>
+<span id="cb11-313"><a href="#cb11-313"></a>        <span class="co">// If T's copy/move ctor throws, the objects already constructed are</span></span>
+<span id="cb11-314"><a href="#cb11-314"></a>        <span class="co">// destroyed and the exception is propagated to the caller.</span></span>
+<span id="cb11-315"><a href="#cb11-315"></a>        <span class="dt">void</span> copy_old_storage_to_new<span class="op">(</span>pointer source_first<span class="op">,</span> <span class="dt">size_t</span> num_elements<span class="op">,</span> pointer destination_first<span class="op">){</span></span>
+<span id="cb11-316"><a href="#cb11-316"></a>            <span class="cf">if</span> <span class="kw">constexpr</span><span class="op">(</span><span class="bu">std::</span>is_nothrow_move_constructible_v<span class="op">&lt;</span>T<span class="op">&gt;){</span></span>
+<span id="cb11-317"><a href="#cb11-317"></a>                <span class="bu">std::</span>uninitialized_move<span class="op">(</span>source_first<span class="op">,</span> source_first <span class="op">+</span> num_elements<span class="op">,</span> destination_first<span class="op">);</span></span>
+<span id="cb11-318"><a href="#cb11-318"></a>            <span class="op">}</span></span>
+<span id="cb11-319"><a href="#cb11-319"></a>            <span class="cf">else</span><span class="op">{</span></span>
+<span id="cb11-320"><a href="#cb11-320"></a>                <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb11-321"><a href="#cb11-321"></a>                    <span class="bu">std::</span>uninitialized_copy<span class="op">(</span>source_first<span class="op">,</span> source_first <span class="op">+</span> num_elements<span class="op">,</span> destination_first<span class="op">);</span></span>
+<span id="cb11-322"><a href="#cb11-322"></a>                <span class="op">}</span><span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">){</span></span>
+<span id="cb11-323"><a href="#cb11-323"></a>                    <span class="cf">throw</span> ex<span class="op">;</span></span>
+<span id="cb11-324"><a href="#cb11-324"></a>                <span class="op">}</span></span>
+<span id="cb11-325"><a href="#cb11-325"></a>            <span class="op">}</span></span>
+<span id="cb11-326"><a href="#cb11-326"></a>        <span class="op">}</span></span>
+<span id="cb11-327"><a href="#cb11-327"></a></span>
+<span id="cb11-328"><a href="#cb11-328"></a>        <span class="dt">void</span> reserve<span class="op">(</span><span class="dt">size_type</span> new_capacity<span class="op">){</span></span>
+<span id="cb11-329"><a href="#cb11-329"></a>            <span class="cf">if</span><span class="op">(</span>new_capacity <span class="op">&lt;=</span> capacity<span class="op">())</span></span>
+<span id="cb11-330"><a href="#cb11-330"></a>                <span class="cf">return</span><span class="op">;</span></span>
+<span id="cb11-331"><a href="#cb11-331"></a>            </span>
+<span id="cb11-332"><a href="#cb11-332"></a>            <span class="kw">auto</span> ptr_new_blk <span class="op">=</span> allocate_helper<span class="op">(</span>new_capacity<span class="op">);</span></span>
+<span id="cb11-333"><a href="#cb11-333"></a>            <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb11-334"><a href="#cb11-334"></a>                copy_old_storage_to_new<span class="op">(</span><span class="va">m_data</span><span class="op">,</span> <span class="va">m_size</span><span class="op">,</span> ptr_new_blk<span class="op">);</span></span>
+<span id="cb11-335"><a href="#cb11-335"></a>            <span class="op">}</span><span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">){</span></span>
+<span id="cb11-336"><a href="#cb11-336"></a>                deallocate_helper<span class="op">(</span>ptr_new_blk<span class="op">);</span></span>
+<span id="cb11-337"><a href="#cb11-337"></a>                <span class="cf">throw</span> ex<span class="op">;</span>   <span class="co">// rethrow</span></span>
+<span id="cb11-338"><a href="#cb11-338"></a>            <span class="op">}</span></span>
+<span id="cb11-339"><a href="#cb11-339"></a></span>
+<span id="cb11-340"><a href="#cb11-340"></a>            <span class="bu">std::</span>destroy<span class="op">(</span><span class="va">m_data</span><span class="op">,</span> <span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">);</span></span>
+<span id="cb11-341"><a href="#cb11-341"></a>            deallocate_helper<span class="op">(</span><span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb11-342"><a href="#cb11-342"></a>            <span class="va">m_data</span> <span class="op">=</span> ptr_new_blk<span class="op">;</span></span>
+<span id="cb11-343"><a href="#cb11-343"></a>            <span class="va">m_capacity</span> <span class="op">=</span> new_capacity<span class="op">;</span></span>
+<span id="cb11-344"><a href="#cb11-344"></a>        <span class="op">}</span></span>
+<span id="cb11-345"><a href="#cb11-345"></a></span>
+<span id="cb11-346"><a href="#cb11-346"></a>        <span class="dt">void</span> resize<span class="op">(</span><span class="dt">size_type</span> new_size<span class="op">){</span></span>
+<span id="cb11-347"><a href="#cb11-347"></a>            <span class="dt">size_type</span> current_size <span class="op">=</span> <span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb11-348"><a href="#cb11-348"></a>            <span class="cf">if</span><span class="op">(</span>new_size <span class="op">==</span> current_size<span class="op">)</span></span>
+<span id="cb11-349"><a href="#cb11-349"></a>                <span class="cf">return</span><span class="op">;</span></span>
+<span id="cb11-350"><a href="#cb11-350"></a></span>
+<span id="cb11-351"><a href="#cb11-351"></a>            <span class="cf">if</span><span class="op">(</span>new_size <span class="op">&lt;</span> current_size<span class="op">)</span></span>
+<span id="cb11-352"><a href="#cb11-352"></a>            <span class="op">{</span></span>
+<span id="cb11-353"><a href="#cb11-353"></a>                <span class="co">// Reduce the container to count elements</span></span>
+<span id="cb11-354"><a href="#cb11-354"></a>                <span class="bu">std::</span>destroy<span class="op">(</span><span class="va">m_data</span> <span class="op">+</span> new_size<span class="op">,</span> <span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">);</span></span>
+<span id="cb11-355"><a href="#cb11-355"></a>            <span class="op">}</span></span>
+<span id="cb11-356"><a href="#cb11-356"></a></span>
+<span id="cb11-357"><a href="#cb11-357"></a>            <span class="cf">if</span><span class="op">(</span>new_size <span class="op">&gt;</span> current_size<span class="op">)</span></span>
+<span id="cb11-358"><a href="#cb11-358"></a>            <span class="op">{</span></span>
+<span id="cb11-359"><a href="#cb11-359"></a>                reserve<span class="op">(</span>new_size<span class="op">);</span></span>
+<span id="cb11-360"><a href="#cb11-360"></a></span>
+<span id="cb11-361"><a href="#cb11-361"></a>                <span class="co">// Default construct elements at indicates</span></span>
+<span id="cb11-362"><a href="#cb11-362"></a>                <span class="co">// [current_size,...,new_size-1]</span></span>
+<span id="cb11-363"><a href="#cb11-363"></a>                <span class="cf">for</span> <span class="op">(</span><span class="kw">auto</span> p<span class="op">{</span> begin<span class="op">()</span> <span class="op">+</span> current_size <span class="op">};</span> p <span class="op">!=</span> begin<span class="op">()</span> <span class="op">+</span> new_size<span class="op">;</span> <span class="op">++</span>p<span class="op">)</span></span>
+<span id="cb11-364"><a href="#cb11-364"></a>                    <span class="bu">std::</span>construct_at<span class="op">(</span>p<span class="op">,</span> <span class="dt">value_type</span><span class="op">{});</span></span>
+<span id="cb11-365"><a href="#cb11-365"></a>            <span class="op">}</span></span>
+<span id="cb11-366"><a href="#cb11-366"></a>            <span class="va">m_size</span> <span class="op">=</span> new_size<span class="op">;</span></span>
+<span id="cb11-367"><a href="#cb11-367"></a>        <span class="op">}</span></span>
+<span id="cb11-368"><a href="#cb11-368"></a></span>
+<span id="cb11-369"><a href="#cb11-369"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Args<span class="op">&gt;</span></span>
+<span id="cb11-370"><a href="#cb11-370"></a>        reference emplace_back_slow_path<span class="op">(</span>Args<span class="op">...</span> args<span class="op">){</span></span>
+<span id="cb11-371"><a href="#cb11-371"></a>            <span class="co">// allocate more memory</span></span>
+<span id="cb11-372"><a href="#cb11-372"></a>            <span class="dt">size_type</span> offset <span class="op">=</span> size<span class="op">();</span></span>
+<span id="cb11-373"><a href="#cb11-373"></a>            <span class="dt">size_type</span> new_size <span class="op">=</span> <span class="va">m_size</span> <span class="op">+</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb11-374"><a href="#cb11-374"></a>            <span class="dt">size_type</span> new_capacity <span class="op">=</span> growth_factor <span class="op">*</span> capacity<span class="op">();</span></span>
+<span id="cb11-375"><a href="#cb11-375"></a>            <span class="kw">auto</span> ptr_new_blk <span class="op">=</span> allocate_helper<span class="op">(</span>new_capacity<span class="op">);</span></span>
+<span id="cb11-376"><a href="#cb11-376"></a></span>
+<span id="cb11-377"><a href="#cb11-377"></a>            <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb11-378"><a href="#cb11-378"></a>                <span class="co">// copy/move construct the existing elements </span></span>
+<span id="cb11-379"><a href="#cb11-379"></a>                <span class="co">// of the container from the old storage </span></span>
+<span id="cb11-380"><a href="#cb11-380"></a>                <span class="co">// to the new block of storage.</span></span>
+<span id="cb11-381"><a href="#cb11-381"></a>                copy_old_storage_to_new<span class="op">(</span><span class="va">m_data</span><span class="op">,</span> <span class="va">m_size</span><span class="op">,</span> ptr_new_blk<span class="op">);</span></span>
+<span id="cb11-382"><a href="#cb11-382"></a>            <span class="op">}</span><span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">){</span></span>
+<span id="cb11-383"><a href="#cb11-383"></a>                deallocate_helper<span class="op">(</span>ptr_new_blk<span class="op">);</span></span>
+<span id="cb11-384"><a href="#cb11-384"></a>                <span class="cf">throw</span> ex<span class="op">;</span>   <span class="co">// rethrow</span></span>
+<span id="cb11-385"><a href="#cb11-385"></a>            <span class="op">}</span></span>
+<span id="cb11-386"><a href="#cb11-386"></a></span>
+<span id="cb11-387"><a href="#cb11-387"></a>            <span class="bu">std::</span>construct_at<span class="op">(</span>ptr_new_blk <span class="op">+</span> <span class="va">m_size</span><span class="op">,</span> <span class="bu">std::</span>forward<span class="op">&lt;</span>Args<span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb11-388"><a href="#cb11-388"></a>            deallocate_helper<span class="op">(</span><span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb11-389"><a href="#cb11-389"></a>            <span class="va">m_data</span> <span class="op">=</span> ptr_new_blk<span class="op">;</span></span>
+<span id="cb11-390"><a href="#cb11-390"></a>            <span class="op">++</span><span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb11-391"><a href="#cb11-391"></a>            <span class="cf">return</span> back<span class="op">();</span></span>
+<span id="cb11-392"><a href="#cb11-392"></a>        <span class="op">}</span></span>
+<span id="cb11-393"><a href="#cb11-393"></a></span>
+<span id="cb11-394"><a href="#cb11-394"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Args<span class="op">&gt;</span></span>
+<span id="cb11-395"><a href="#cb11-395"></a>        reference emplace_back_fast_path<span class="op">(</span>Args<span class="op">...</span> args<span class="op">){</span></span>
+<span id="cb11-396"><a href="#cb11-396"></a>            <span class="bu">std::</span>construct_at<span class="op">(</span><span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">,</span> <span class="bu">std::</span>forward<span class="op">&lt;</span>Args<span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb11-397"><a href="#cb11-397"></a>            <span class="op">++</span><span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb11-398"><a href="#cb11-398"></a>            <span class="cf">return</span> back<span class="op">();</span></span>
+<span id="cb11-399"><a href="#cb11-399"></a>        <span class="op">}</span></span>
+<span id="cb11-400"><a href="#cb11-400"></a></span>
+<span id="cb11-401"><a href="#cb11-401"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Args<span class="op">&gt;</span></span>
+<span id="cb11-402"><a href="#cb11-402"></a>        reference emplace_back<span class="op">(</span>Args<span class="op">...</span> args<span class="op">){</span></span>
+<span id="cb11-403"><a href="#cb11-403"></a>            <span class="cf">if</span><span class="op">(</span>is_full<span class="op">())</span></span>
+<span id="cb11-404"><a href="#cb11-404"></a>                <span class="cf">return</span> emplace_back_slow_path<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Args<span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb11-405"><a href="#cb11-405"></a>            <span class="cf">else</span></span>
+<span id="cb11-406"><a href="#cb11-406"></a>                <span class="cf">return</span> emplace_back_fast_path<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Args<span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb11-407"><a href="#cb11-407"></a>        <span class="op">}</span></span>
+<span id="cb11-408"><a href="#cb11-408"></a>    <span class="op">};</span>    </span>
+<span id="cb11-409"><a href="#cb11-409"></a><span class="op">}</span>  <span class="co">// namespace dev</span></span>
+<span id="cb11-410"><a href="#cb11-410"></a></span>
+<span id="cb11-411"><a href="#cb11-411"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> DefaultConstructorTest<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-412"><a href="#cb11-412"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v<span class="op">;</span></span>
+<span id="cb11-413"><a href="#cb11-413"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>empty<span class="op">(),</span> <span class="kw">true</span><span class="op">);</span></span>
+<span id="cb11-414"><a href="#cb11-414"></a><span class="op">}</span></span>
+<span id="cb11-415"><a href="#cb11-415"></a></span>
+<span id="cb11-416"><a href="#cb11-416"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> InitializerListTest<span class="op">){</span></span>
+<span id="cb11-417"><a href="#cb11-417"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v<span class="op">{</span><span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">3</span><span class="op">,</span> <span class="dv">4</span><span class="op">,</span> <span class="dv">5</span><span class="op">};</span></span>
+<span id="cb11-418"><a href="#cb11-418"></a>    EXPECT_EQ<span class="op">(!</span>v<span class="op">.</span>empty<span class="op">(),</span> <span class="kw">true</span><span class="op">);</span></span>
+<span id="cb11-419"><a href="#cb11-419"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>size<span class="op">(),</span> <span class="dv">5</span><span class="op">);</span></span>
+<span id="cb11-420"><a href="#cb11-420"></a>    EXPECT_TRUE<span class="op">(</span>v<span class="op">.</span>capacity<span class="op">()</span> <span class="op">&gt;</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb11-421"><a href="#cb11-421"></a>    <span class="cf">for</span><span class="op">(</span><span class="kw">auto</span> i<span class="op">{</span><span class="dv">0</span><span class="bu">uz</span><span class="op">};</span> i <span class="op">&lt;</span> v<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">){</span></span>
+<span id="cb11-422"><a href="#cb11-422"></a>        EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>at<span class="op">(</span>i<span class="op">),</span> i<span class="op">+</span><span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-423"><a href="#cb11-423"></a>    <span class="op">}</span></span>
+<span id="cb11-424"><a href="#cb11-424"></a><span class="op">}</span></span>
+<span id="cb11-425"><a href="#cb11-425"></a></span>
+<span id="cb11-426"><a href="#cb11-426"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> ParameterizedConstructorTest<span class="op">){</span></span>
+<span id="cb11-427"><a href="#cb11-427"></a>    dev<span class="op">::</span>vector v<span class="op">(</span><span class="dv">10</span><span class="op">,</span> <span class="fl">5.5</span><span class="op">);</span></span>
+<span id="cb11-428"><a href="#cb11-428"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>size<span class="op">(),</span> <span class="dv">10</span><span class="op">);</span></span>
+<span id="cb11-429"><a href="#cb11-429"></a>    <span class="cf">for</span><span class="op">(</span><span class="kw">auto</span> i<span class="op">{</span><span class="dv">0</span><span class="bu">uz</span><span class="op">};</span> i <span class="op">&lt;</span> v<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">){</span></span>
+<span id="cb11-430"><a href="#cb11-430"></a>        EXPECT_EQ<span class="op">(</span>v<span class="op">[</span>i<span class="op">],</span> <span class="fl">5.5</span><span class="op">);</span></span>
+<span id="cb11-431"><a href="#cb11-431"></a>    <span class="op">}</span></span>
+<span id="cb11-432"><a href="#cb11-432"></a><span class="op">}</span></span>
+<span id="cb11-433"><a href="#cb11-433"></a></span>
+<span id="cb11-434"><a href="#cb11-434"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> CopyConstructorTest<span class="op">){</span></span>
+<span id="cb11-435"><a href="#cb11-435"></a>    dev<span class="op">::</span>vector v1<span class="op">{</span> <span class="fl">1.0</span><span class="op">,</span> <span class="fl">2.0</span><span class="op">,</span> <span class="fl">3.0</span><span class="op">,</span> <span class="fl">4.0</span><span class="op">,</span> <span class="fl">5.0</span> <span class="op">};</span></span>
+<span id="cb11-436"><a href="#cb11-436"></a>    dev<span class="op">::</span>vector v2<span class="op">(</span>v1<span class="op">);</span></span>
+<span id="cb11-437"><a href="#cb11-437"></a></span>
+<span id="cb11-438"><a href="#cb11-438"></a>    EXPECT_EQ<span class="op">(</span>v1<span class="op">.</span>size<span class="op">()</span> <span class="op">==</span> v2<span class="op">.</span>size<span class="op">(),</span> <span class="kw">true</span><span class="op">);</span></span>
+<span id="cb11-439"><a href="#cb11-439"></a></span>
+<span id="cb11-440"><a href="#cb11-440"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span> <span class="dv">0</span> <span class="op">};</span> i <span class="op">&lt;</span> v1<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb11-441"><a href="#cb11-441"></a>        EXPECT_EQ<span class="op">(</span>v1<span class="op">[</span>i<span class="op">],</span> v2<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb11-442"><a href="#cb11-442"></a><span class="op">}</span></span>
+<span id="cb11-443"><a href="#cb11-443"></a></span>
+<span id="cb11-444"><a href="#cb11-444"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> MoveConstructorTest<span class="op">){</span></span>
+<span id="cb11-445"><a href="#cb11-445"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v1<span class="op">{</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">3</span> <span class="op">};</span></span>
+<span id="cb11-446"><a href="#cb11-446"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v2<span class="op">(</span><span class="bu">std::</span>move<span class="op">(</span>v1<span class="op">));</span></span>
+<span id="cb11-447"><a href="#cb11-447"></a>    EXPECT_EQ<span class="op">(</span>v1<span class="op">.</span>size<span class="op">(),</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb11-448"><a href="#cb11-448"></a>    EXPECT_EQ<span class="op">(</span>v1<span class="op">.</span>capacity<span class="op">(),</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb11-449"><a href="#cb11-449"></a>    EXPECT_EQ<span class="op">(</span>v2<span class="op">.</span>size<span class="op">(),</span> <span class="dv">3</span><span class="op">);</span></span>
+<span id="cb11-450"><a href="#cb11-450"></a>    <span class="cf">for</span><span class="op">(</span><span class="kw">auto</span> i<span class="op">{</span><span class="dv">0</span><span class="bu">uz</span><span class="op">};</span> i<span class="op">&lt;</span>v2<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span> i<span class="op">)</span></span>
+<span id="cb11-451"><a href="#cb11-451"></a>        EXPECT_EQ<span class="op">(</span>v2<span class="op">[</span>i<span class="op">],</span> i <span class="op">+</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-452"><a href="#cb11-452"></a><span class="op">}</span></span>
+<span id="cb11-453"><a href="#cb11-453"></a></span>
+<span id="cb11-454"><a href="#cb11-454"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> CopyAssignmentTest<span class="op">)</span></span>
+<span id="cb11-455"><a href="#cb11-455"></a><span class="op">{</span></span>
+<span id="cb11-456"><a href="#cb11-456"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v1<span class="op">{</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">3</span> <span class="op">};</span></span>
+<span id="cb11-457"><a href="#cb11-457"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v2<span class="op">;</span></span>
+<span id="cb11-458"><a href="#cb11-458"></a>    v2 <span class="op">=</span> v1<span class="op">;</span></span>
+<span id="cb11-459"><a href="#cb11-459"></a></span>
+<span id="cb11-460"><a href="#cb11-460"></a>    EXPECT_EQ<span class="op">(</span>v1<span class="op">.</span>size<span class="op">(),</span> v2<span class="op">.</span>size<span class="op">());</span></span>
+<span id="cb11-461"><a href="#cb11-461"></a>    EXPECT_EQ<span class="op">(</span>v1<span class="op">.</span>capacity<span class="op">(),</span> v2<span class="op">.</span>capacity<span class="op">());</span></span>
+<span id="cb11-462"><a href="#cb11-462"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> v1<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-463"><a href="#cb11-463"></a>        EXPECT_EQ<span class="op">(</span>v1<span class="op">[</span>i<span class="op">],</span> v2<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb11-464"><a href="#cb11-464"></a>    <span class="op">}</span></span>
+<span id="cb11-465"><a href="#cb11-465"></a><span class="op">}</span></span>
+<span id="cb11-466"><a href="#cb11-466"></a></span>
+<span id="cb11-467"><a href="#cb11-467"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> MoveAssignmentTest<span class="op">)</span></span>
+<span id="cb11-468"><a href="#cb11-468"></a><span class="op">{</span></span>
+<span id="cb11-469"><a href="#cb11-469"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v1<span class="op">{</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">3</span> <span class="op">};</span></span>
+<span id="cb11-470"><a href="#cb11-470"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v2<span class="op">;</span></span>
+<span id="cb11-471"><a href="#cb11-471"></a>    v2 <span class="op">=</span> <span class="bu">std::</span>move<span class="op">(</span>v1<span class="op">);</span></span>
+<span id="cb11-472"><a href="#cb11-472"></a></span>
+<span id="cb11-473"><a href="#cb11-473"></a>    EXPECT_EQ<span class="op">(</span>v1<span class="op">.</span>size<span class="op">(),</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb11-474"><a href="#cb11-474"></a>    EXPECT_EQ<span class="op">(</span>v1<span class="op">.</span>capacity<span class="op">(),</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb11-475"><a href="#cb11-475"></a>    EXPECT_EQ<span class="op">(</span>v2<span class="op">.</span>size<span class="op">(),</span> <span class="dv">3</span><span class="op">);</span></span>
+<span id="cb11-476"><a href="#cb11-476"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> v1<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-477"><a href="#cb11-477"></a>        EXPECT_EQ<span class="op">(</span>v2<span class="op">[</span>i<span class="op">],</span> i<span class="op">+</span><span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-478"><a href="#cb11-478"></a>    <span class="op">}</span></span>
+<span id="cb11-479"><a href="#cb11-479"></a><span class="op">}</span></span>
+<span id="cb11-480"><a href="#cb11-480"></a></span>
+<span id="cb11-481"><a href="#cb11-481"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> AtTest<span class="op">)</span></span>
+<span id="cb11-482"><a href="#cb11-482"></a><span class="op">{</span></span>
+<span id="cb11-483"><a href="#cb11-483"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v<span class="op">{</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">3</span> <span class="op">};</span></span>
+<span id="cb11-484"><a href="#cb11-484"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>at<span class="op">(</span><span class="dv">0</span><span class="op">),</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-485"><a href="#cb11-485"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>at<span class="op">(</span><span class="dv">1</span><span class="op">),</span> <span class="dv">2</span><span class="op">);</span></span>
+<span id="cb11-486"><a href="#cb11-486"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>at<span class="op">(</span><span class="dv">2</span><span class="op">),</span> <span class="dv">3</span><span class="op">);</span></span>
+<span id="cb11-487"><a href="#cb11-487"></a></span>
+<span id="cb11-488"><a href="#cb11-488"></a>    EXPECT_THROW<span class="op">(</span>v<span class="op">.</span>at<span class="op">(</span><span class="dv">3</span><span class="op">),</span> <span class="bu">std::</span>out_of_range<span class="op">);</span></span>
+<span id="cb11-489"><a href="#cb11-489"></a><span class="op">}</span></span>
+<span id="cb11-490"><a href="#cb11-490"></a></span>
+<span id="cb11-491"><a href="#cb11-491"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> SubscriptOperatorTest<span class="op">)</span></span>
+<span id="cb11-492"><a href="#cb11-492"></a><span class="op">{</span></span>
+<span id="cb11-493"><a href="#cb11-493"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v<span class="op">{</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">3</span> <span class="op">};</span></span>
+<span id="cb11-494"><a href="#cb11-494"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i<span class="op">{</span><span class="dv">0</span><span class="bu">uz</span><span class="op">};</span> i <span class="op">&lt;</span> v<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-495"><a href="#cb11-495"></a>        EXPECT_EQ<span class="op">(</span>v<span class="op">[</span>i<span class="op">],</span> i<span class="op">+</span><span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-496"><a href="#cb11-496"></a>    <span class="op">}</span></span>
+<span id="cb11-497"><a href="#cb11-497"></a><span class="op">}</span></span>
+<span id="cb11-498"><a href="#cb11-498"></a></span>
+<span id="cb11-499"><a href="#cb11-499"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> FrontAndBackTest<span class="op">)</span></span>
+<span id="cb11-500"><a href="#cb11-500"></a><span class="op">{</span></span>
+<span id="cb11-501"><a href="#cb11-501"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v<span class="op">{</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">3</span> <span class="op">};</span></span>
+<span id="cb11-502"><a href="#cb11-502"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>front<span class="op">(),</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-503"><a href="#cb11-503"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>back<span class="op">(),</span> <span class="dv">3</span><span class="op">);</span></span>
+<span id="cb11-504"><a href="#cb11-504"></a><span class="op">}</span></span>
+<span id="cb11-505"><a href="#cb11-505"></a></span>
+<span id="cb11-506"><a href="#cb11-506"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> EmptyTest<span class="op">)</span></span>
+<span id="cb11-507"><a href="#cb11-507"></a><span class="op">{</span></span>
+<span id="cb11-508"><a href="#cb11-508"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v<span class="op">;</span></span>
+<span id="cb11-509"><a href="#cb11-509"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>empty<span class="op">(),</span> <span class="kw">true</span><span class="op">);</span></span>
+<span id="cb11-510"><a href="#cb11-510"></a></span>
+<span id="cb11-511"><a href="#cb11-511"></a>    v<span class="op">.</span>push_back<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
+<span id="cb11-512"><a href="#cb11-512"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>empty<span class="op">(),</span> <span class="kw">false</span><span class="op">);</span></span>
+<span id="cb11-513"><a href="#cb11-513"></a><span class="op">}</span></span>
+<span id="cb11-514"><a href="#cb11-514"></a></span>
+<span id="cb11-515"><a href="#cb11-515"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> SizeAndCapacityTest<span class="op">)</span></span>
+<span id="cb11-516"><a href="#cb11-516"></a><span class="op">{</span></span>
+<span id="cb11-517"><a href="#cb11-517"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v<span class="op">;</span></span>
+<span id="cb11-518"><a href="#cb11-518"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>size<span class="op">(),</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb11-519"><a href="#cb11-519"></a>    EXPECT_GE<span class="op">(</span>v<span class="op">.</span>capacity<span class="op">(),</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb11-520"><a href="#cb11-520"></a></span>
+<span id="cb11-521"><a href="#cb11-521"></a>    v<span class="op">.</span>push_back<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
+<span id="cb11-522"><a href="#cb11-522"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>size<span class="op">(),</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-523"><a href="#cb11-523"></a>    EXPECT_GT<span class="op">(</span>v<span class="op">.</span>capacity<span class="op">(),</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb11-524"><a href="#cb11-524"></a></span>
+<span id="cb11-525"><a href="#cb11-525"></a>    v<span class="op">.</span>push_back<span class="op">(</span>v<span class="op">.</span>back<span class="op">());</span></span>
+<span id="cb11-526"><a href="#cb11-526"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>size<span class="op">(),</span> <span class="dv">2</span><span class="op">);</span></span>
+<span id="cb11-527"><a href="#cb11-527"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">[</span><span class="dv">1</span><span class="op">],</span> <span class="dv">42</span><span class="op">);</span></span>
+<span id="cb11-528"><a href="#cb11-528"></a><span class="op">}</span></span>
+<span id="cb11-529"><a href="#cb11-529"></a></span>
+<span id="cb11-530"><a href="#cb11-530"></a></span>
+<span id="cb11-531"><a href="#cb11-531"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> ReserveTest<span class="op">)</span></span>
+<span id="cb11-532"><a href="#cb11-532"></a><span class="op">{</span></span>
+<span id="cb11-533"><a href="#cb11-533"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v1<span class="op">;</span></span>
+<span id="cb11-534"><a href="#cb11-534"></a>    v1<span class="op">.</span>reserve<span class="op">(</span><span class="dv">10</span><span class="op">);</span></span>
+<span id="cb11-535"><a href="#cb11-535"></a>    EXPECT_GE<span class="op">(</span>v1<span class="op">.</span>capacity<span class="op">(),</span> <span class="dv">10</span><span class="op">);</span></span>
+<span id="cb11-536"><a href="#cb11-536"></a>    EXPECT_EQ<span class="op">(</span>v1<span class="op">.</span>size<span class="op">(),</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb11-537"><a href="#cb11-537"></a></span>
+<span id="cb11-538"><a href="#cb11-538"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v2<span class="op">{</span><span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">3</span><span class="op">,</span> <span class="dv">4</span><span class="op">,</span> <span class="dv">5</span><span class="op">,</span> <span class="dv">6</span><span class="op">,</span> <span class="dv">7</span><span class="op">};</span></span>
+<span id="cb11-539"><a href="#cb11-539"></a>    <span class="dt">size_t</span> old_capacity <span class="op">=</span> v2<span class="op">.</span>capacity<span class="op">();</span></span>
+<span id="cb11-540"><a href="#cb11-540"></a>    EXPECT_GE<span class="op">(</span>v2<span class="op">.</span>capacity<span class="op">(),</span> <span class="dv">7</span><span class="op">);</span></span>
+<span id="cb11-541"><a href="#cb11-541"></a>    EXPECT_EQ<span class="op">(</span>v2<span class="op">.</span>size<span class="op">(),</span> <span class="dv">7</span><span class="op">);</span></span>
+<span id="cb11-542"><a href="#cb11-542"></a>    <span class="dt">size_t</span> new_capacity <span class="op">=</span> <span class="dv">2</span> <span class="op">*</span> old_capacity<span class="op">;</span></span>
+<span id="cb11-543"><a href="#cb11-543"></a>    v2<span class="op">.</span>reserve<span class="op">(</span>new_capacity<span class="op">);</span></span>
+<span id="cb11-544"><a href="#cb11-544"></a>    EXPECT_GE<span class="op">(</span>v2<span class="op">.</span>capacity<span class="op">(),</span> new_capacity<span class="op">);</span></span>
+<span id="cb11-545"><a href="#cb11-545"></a>    EXPECT_EQ<span class="op">(</span>v2<span class="op">.</span>size<span class="op">(),</span> <span class="dv">7</span><span class="op">);</span></span>
+<span id="cb11-546"><a href="#cb11-546"></a>    <span class="cf">for</span><span class="op">(</span><span class="kw">auto</span> i<span class="op">{</span><span class="dv">0</span><span class="bu">uz</span><span class="op">};</span> i <span class="op">&lt;</span> v2<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb11-547"><a href="#cb11-547"></a>        EXPECT_EQ<span class="op">(</span>v2<span class="op">[</span>i<span class="op">],</span> i <span class="op">+</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-548"><a href="#cb11-548"></a><span class="op">}</span></span>
+<span id="cb11-549"><a href="#cb11-549"></a></span>
+<span id="cb11-550"><a href="#cb11-550"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> ResizeTest<span class="op">)</span></span>
+<span id="cb11-551"><a href="#cb11-551"></a><span class="op">{</span></span>
+<span id="cb11-552"><a href="#cb11-552"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v<span class="op">{</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">3</span> <span class="op">};</span></span>
+<span id="cb11-553"><a href="#cb11-553"></a>    v<span class="op">.</span>resize<span class="op">(</span><span class="dv">5</span><span class="op">);</span></span>
+<span id="cb11-554"><a href="#cb11-554"></a></span>
+<span id="cb11-555"><a href="#cb11-555"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>size<span class="op">(),</span> <span class="dv">5</span><span class="op">);</span></span>
+<span id="cb11-556"><a href="#cb11-556"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">[</span><span class="dv">3</span><span class="op">],</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb11-557"><a href="#cb11-557"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">[</span><span class="dv">4</span><span class="op">],</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb11-558"><a href="#cb11-558"></a></span>
+<span id="cb11-559"><a href="#cb11-559"></a>    v<span class="op">.</span>resize<span class="op">(</span><span class="dv">2</span><span class="op">);</span></span>
+<span id="cb11-560"><a href="#cb11-560"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>size<span class="op">(),</span> <span class="dv">2</span><span class="op">);</span></span>
+<span id="cb11-561"><a href="#cb11-561"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">[</span><span class="dv">0</span><span class="op">],</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-562"><a href="#cb11-562"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">[</span><span class="dv">1</span><span class="op">],</span> <span class="dv">2</span><span class="op">);</span></span>
+<span id="cb11-563"><a href="#cb11-563"></a><span class="op">}</span></span>
+<span id="cb11-564"><a href="#cb11-564"></a></span>
+<span id="cb11-565"><a href="#cb11-565"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> PushBackTest<span class="op">)</span></span>
+<span id="cb11-566"><a href="#cb11-566"></a><span class="op">{</span></span>
+<span id="cb11-567"><a href="#cb11-567"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> v<span class="op">;</span></span>
+<span id="cb11-568"><a href="#cb11-568"></a>    v<span class="op">.</span>push_back<span class="op">(</span><span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-569"><a href="#cb11-569"></a>    v<span class="op">.</span>push_back<span class="op">(</span><span class="dv">2</span><span class="op">);</span></span>
+<span id="cb11-570"><a href="#cb11-570"></a>    v<span class="op">.</span>push_back<span class="op">(</span><span class="dv">3</span><span class="op">);</span></span>
+<span id="cb11-571"><a href="#cb11-571"></a></span>
+<span id="cb11-572"><a href="#cb11-572"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>size<span class="op">(),</span> <span class="dv">3</span><span class="op">);</span></span>
+<span id="cb11-573"><a href="#cb11-573"></a>    <span class="cf">for</span><span class="op">(</span><span class="kw">auto</span> i<span class="op">{</span><span class="dv">0</span><span class="bu">uz</span><span class="op">};</span> i<span class="op">&lt;</span>v<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb11-574"><a href="#cb11-574"></a>        EXPECT_EQ<span class="op">(</span>v<span class="op">[</span>i<span class="op">],</span> i <span class="op">+</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-575"><a href="#cb11-575"></a><span class="op">}</span></span>
+<span id="cb11-576"><a href="#cb11-576"></a></span>
+<span id="cb11-577"><a href="#cb11-577"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> PushBackSelfReferenceTest<span class="op">)</span></span>
+<span id="cb11-578"><a href="#cb11-578"></a><span class="op">{</span></span>
+<span id="cb11-579"><a href="#cb11-579"></a>    <span class="co">// The design of push_back/insert is slightly hard to get right.</span></span>
+<span id="cb11-580"><a href="#cb11-580"></a>    <span class="co">// If the vector is full, then you reallocate(grow) the vector.</span></span>
+<span id="cb11-581"><a href="#cb11-581"></a>    <span class="co">// If the value to be added is a reference to an existing</span></span>
+<span id="cb11-582"><a href="#cb11-582"></a>    <span class="co">// vector element, then value in vec.push_back(value) may become</span></span>
+<span id="cb11-583"><a href="#cb11-583"></a>    <span class="co">// a dangling reference, if it refers to the old storage (an element of the vector</span></span>
+<span id="cb11-584"><a href="#cb11-584"></a>    <span class="co">// itself e.g. vec.back()). This test is meant for such an edge case.</span></span>
+<span id="cb11-585"><a href="#cb11-585"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> vec<span class="op">{</span> <span class="dv">1</span> <span class="op">};</span></span>
+<span id="cb11-586"><a href="#cb11-586"></a>    <span class="cf">for</span> <span class="op">(</span><span class="kw">auto</span> i<span class="op">{</span><span class="dv">0</span><span class="bu">uz</span><span class="op">};</span> i <span class="op">&lt;</span> <span class="dv">64</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-587"><a href="#cb11-587"></a>        vec<span class="op">.</span>push_back<span class="op">(</span>vec<span class="op">.</span>back<span class="op">());</span></span>
+<span id="cb11-588"><a href="#cb11-588"></a>        EXPECT_EQ<span class="op">(</span>vec<span class="op">.</span>back<span class="op">(),</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-589"><a href="#cb11-589"></a>    <span class="op">}</span></span>
+<span id="cb11-590"><a href="#cb11-590"></a><span class="op">}</span></span>
+<span id="cb11-591"><a href="#cb11-591"></a></span>
+<span id="cb11-592"><a href="#cb11-592"></a>TEST<span class="op">(</span>VectorTest<span class="op">,</span> EmplaceBackTest<span class="op">)</span></span>
+<span id="cb11-593"><a href="#cb11-593"></a><span class="op">{</span></span>
+<span id="cb11-594"><a href="#cb11-594"></a>    <span class="kw">struct</span> Point</span>
+<span id="cb11-595"><a href="#cb11-595"></a>    <span class="op">{</span></span>
+<span id="cb11-596"><a href="#cb11-596"></a>        <span class="dt">int</span> x<span class="op">,</span> y<span class="op">;</span></span>
+<span id="cb11-597"><a href="#cb11-597"></a>        Point<span class="op">(</span><span class="dt">int</span> a<span class="op">,</span> <span class="dt">int</span> b<span class="op">)</span></span>
+<span id="cb11-598"><a href="#cb11-598"></a>          <span class="op">:</span> x<span class="op">(</span>a<span class="op">)</span></span>
+<span id="cb11-599"><a href="#cb11-599"></a>          <span class="op">,</span> y<span class="op">(</span>b<span class="op">)</span></span>
+<span id="cb11-600"><a href="#cb11-600"></a>        <span class="op">{</span></span>
+<span id="cb11-601"><a href="#cb11-601"></a>        <span class="op">}</span></span>
+<span id="cb11-602"><a href="#cb11-602"></a>    <span class="op">};</span></span>
+<span id="cb11-603"><a href="#cb11-603"></a></span>
+<span id="cb11-604"><a href="#cb11-604"></a>    dev<span class="op">::</span>vector<span class="op">&lt;</span>Point<span class="op">&gt;</span> v<span class="op">;</span></span>
+<span id="cb11-605"><a href="#cb11-605"></a>    v<span class="op">.</span>emplace_back<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">);</span></span>
+<span id="cb11-606"><a href="#cb11-606"></a>    v<span class="op">.</span>emplace_back<span class="op">(</span><span class="dv">3</span><span class="op">,</span> <span class="dv">4</span><span class="op">);</span></span>
+<span id="cb11-607"><a href="#cb11-607"></a></span>
+<span id="cb11-608"><a href="#cb11-608"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">.</span>size<span class="op">(),</span> <span class="dv">2</span><span class="op">);</span></span>
+<span id="cb11-609"><a href="#cb11-609"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">[</span><span class="dv">0</span><span class="op">].</span>x<span class="op">,</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-610"><a href="#cb11-610"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">[</span><span class="dv">0</span><span class="op">].</span>y<span class="op">,</span> <span class="dv">2</span><span class="op">);</span></span>
+<span id="cb11-611"><a href="#cb11-611"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">[</span><span class="dv">1</span><span class="op">].</span>x<span class="op">,</span> <span class="dv">3</span><span class="op">);</span></span>
+<span id="cb11-612"><a href="#cb11-612"></a>    EXPECT_EQ<span class="op">(</span>v<span class="op">[</span><span class="dv">1</span><span class="op">].</span>y<span class="op">,</span> <span class="dv">4</span><span class="op">);</span></span>
+<span id="cb11-613"><a href="#cb11-613"></a><span class="op">}</span></span>
+<span id="cb11-614"><a href="#cb11-614"></a></span>
+<span id="cb11-615"><a href="#cb11-615"></a><span class="dt">int</span> main<span class="op">(</span><span class="dt">int</span> argc<span class="op">,</span> <span class="dt">char</span><span class="op">**</span> argv<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-616"><a href="#cb11-616"></a>    <span class="op">::</span>testing<span class="op">::</span>InitGoogleTest<span class="op">(&amp;</span>argc<span class="op">,</span> argv<span class="op">);</span></span>
+<span id="cb11-617"><a href="#cb11-617"></a>    <span class="cf">return</span> RUN_ALL_TESTS<span class="op">();</span></span>
+<span id="cb11-618"><a href="#cb11-618"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/f93ddTjbn">Compiler Explorer</a></p>
+
+
 </section>
 
 </main> <!-- /main -->
