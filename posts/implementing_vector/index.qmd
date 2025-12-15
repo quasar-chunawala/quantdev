@@ -451,7 +451,7 @@ We then add the new value at the index `m_size`. Appending the new element may f
 
 We copy/move construct the existing elements of the container from the old storage to the new block of storage. 
 
-If all three steps were successful, we replace the values in the member variables `m_data`, `m_size` and `m_capacity`.
+If all three steps were successful, we deallocate the old storage and return it back before replacing the values in the member variables `m_data`, `m_size` and `m_capacity`.
 
 If either of the last couple of steps fail, we free the newly obtained block of storage. 
 
@@ -472,4 +472,58 @@ for (int i = 0; i < 10; ++i) {
 ```
 Our design takes care of this edge case.
 
+```cpp
+template<typename U>
+void push_back_slow_path(U&& value){
+    // allocate more memory
+    size_type offset = size();
+    size_type new_size = m_size + 1;
+    size_type new_capacity = growth_factor * capacity();
+    auto ptr_new_blk = allocate_helper(new_capacity);
+
+    try{
+        // Copy-construct the new value at the index m_size
+        std::construct_at(ptr_new_blk + m_size, value);
+    }catch(std::exception& ex){
+        deallocate_helper(ptr_new_blk);
+        throw ex;   // rethrow                
+    }
+    
+    try{
+        // copy/move construct the existing elements 
+        // of the container from the old storage 
+        // to the new block of storage.
+        copy_old_storage_to_new(m_data, m_size, ptr_new_blk);
+    }catch(std::exception& ex){
+        std::destroy_at(ptr_new_blk + m_size);
+        deallocate_helper(ptr_new_blk);
+        throw ex;   // rethrow
+    }
+
+    // deallocate the old storage, if we are here
+    deallocate_helper(m_data);
+
+    m_data = ptr_new_blk;
+    ++m_size;
+    m_capacity = new_capacity;
+}
+
+template<typename U>
+void push_back_fast_path(U&& value){
+    std::construct_at(m_data + m_size, value);
+    ++m_size;
+}        
+
+template<typename U>
+void push_back(U&& value)
+{
+    if(is_full())
+    {
+        push_back_slow_path(std::forward<U>(value));
+    }
+    else{
+        push_back_fast_path(std::forward<U>(value));
+    }
+}
+```        
 

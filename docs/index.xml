@@ -2801,7 +2801,7 @@ font-style: inherit;">}</span>    </span></code></pre></div>
 <p>In this case, we would like to grow our container; we allocate more memory, than what the container currently holds. We leave the memory uninitialized. Memory allocation, can of course, fail.</p>
 <p>We then add the new value at the index <code>m_size</code>. Appending the new element may fail.</p>
 <p>We copy/move construct the existing elements of the container from the old storage to the new block of storage.</p>
-<p>If all three steps were successful, we replace the values in the member variables <code>m_data</code>, <code>m_size</code> and <code>m_capacity</code>.</p>
+<p>If all three steps were successful, we deallocate the old storage and return it back before replacing the values in the member variables <code>m_data</code>, <code>m_size</code> and <code>m_capacity</code>.</p>
 <p>If either of the last couple of steps fail, we free the newly obtained block of storage.</p>
 </section>
 <section id="push_back_fast_pathvalue" class="level3">
@@ -2875,6 +2875,58 @@ font-style: inherit;">);</span></span>
 background-color: null;
 font-style: inherit;">}</span></span></code></pre></div>
 <p>Our design takes care of this edge case.</p>
+<pre><code>template&lt;typename U&gt;
+void push_back_slow_path(U&amp;&amp; value){
+    // allocate more memory
+    size_type offset = size();
+    size_type new_size = m_size + 1;
+    size_type new_capacity = growth_factor * capacity();
+    auto ptr_new_blk = allocate_helper(new_capacity);
+
+    try{
+        // Copy-construct the new value at the index m_size
+        std::construct_at(ptr_new_blk + m_size, value);
+    }catch(std::exception&amp; ex){
+        deallocate_helper(ptr_new_blk);
+        throw ex;   // rethrow                
+    }
+    
+    try{
+        // copy/move construct the existing elements 
+        // of the container from the old storage 
+        // to the new block of storage.
+        copy_old_storage_to_new(m_data, m_size, ptr_new_blk);
+    }catch(std::exception&amp; ex){
+        std::destroy_at(ptr_new_blk + m_size);
+        deallocate_helper(ptr_new_blk);
+        throw ex;   // rethrow
+    }
+
+    // deallocate the old storage, if we are here
+    deallocate_helper(m_data);
+
+    m_data = ptr_new_blk;
+    ++m_size;
+    m_capacity = new_capacity;
+}
+
+template&lt;typename U&gt;
+void push_back_fast_path(U&amp;&amp; value){
+    std::construct_at(m_data + m_size, value);
+    ++m_size;
+}        
+
+template&lt;typename U&gt;
+void push_back(U&amp;&amp; value)
+{
+    if(is_full())
+    {
+        push_back_slow_path(std::forward&lt;U&gt;(value));
+    }
+    else{
+        push_back_fast_path(std::forward&lt;U&gt;(value));
+    }
+}</code></pre>
 
 
 </section>

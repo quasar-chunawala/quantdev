@@ -651,7 +651,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>In this case, we would like to grow our container; we allocate more memory, than what the container currently holds. We leave the memory uninitialized. Memory allocation, can of course, fail.</p>
 <p>We then add the new value at the index <code>m_size</code>. Appending the new element may fail.</p>
 <p>We copy/move construct the existing elements of the container from the old storage to the new block of storage.</p>
-<p>If all three steps were successful, we replace the values in the member variables <code>m_data</code>, <code>m_size</code> and <code>m_capacity</code>.</p>
+<p>If all three steps were successful, we deallocate the old storage and return it back before replacing the values in the member variables <code>m_data</code>, <code>m_size</code> and <code>m_capacity</code>.</p>
 <p>If either of the last couple of steps fail, we free the newly obtained block of storage.</p>
 </section>
 <section id="push_back_fast_pathvalue" class="level3">
@@ -667,6 +667,58 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb7-4"><a href="#cb7-4"></a>    EXPECT_EQ<span class="op">(</span>vec<span class="op">.</span>back<span class="op">(),</span> <span class="dv">1</span><span class="op">);</span></span>
 <span id="cb7-5"><a href="#cb7-5"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Our design takes care of this edge case.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> U<span class="op">&gt;</span></span>
+<span id="cb8-2"><a href="#cb8-2"></a><span class="dt">void</span> push_back_slow_path<span class="op">(</span>U<span class="op">&amp;&amp;</span> value<span class="op">){</span></span>
+<span id="cb8-3"><a href="#cb8-3"></a>    <span class="co">// allocate more memory</span></span>
+<span id="cb8-4"><a href="#cb8-4"></a>    <span class="dt">size_type</span> offset <span class="op">=</span> size<span class="op">();</span></span>
+<span id="cb8-5"><a href="#cb8-5"></a>    <span class="dt">size_type</span> new_size <span class="op">=</span> <span class="va">m_size</span> <span class="op">+</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb8-6"><a href="#cb8-6"></a>    <span class="dt">size_type</span> new_capacity <span class="op">=</span> growth_factor <span class="op">*</span> capacity<span class="op">();</span></span>
+<span id="cb8-7"><a href="#cb8-7"></a>    <span class="kw">auto</span> ptr_new_blk <span class="op">=</span> allocate_helper<span class="op">(</span>new_capacity<span class="op">);</span></span>
+<span id="cb8-8"><a href="#cb8-8"></a></span>
+<span id="cb8-9"><a href="#cb8-9"></a>    <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb8-10"><a href="#cb8-10"></a>        <span class="co">// Copy-construct the new value at the index m_size</span></span>
+<span id="cb8-11"><a href="#cb8-11"></a>        <span class="bu">std::</span>construct_at<span class="op">(</span>ptr_new_blk <span class="op">+</span> <span class="va">m_size</span><span class="op">,</span> value<span class="op">);</span></span>
+<span id="cb8-12"><a href="#cb8-12"></a>    <span class="op">}</span><span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">){</span></span>
+<span id="cb8-13"><a href="#cb8-13"></a>        deallocate_helper<span class="op">(</span>ptr_new_blk<span class="op">);</span></span>
+<span id="cb8-14"><a href="#cb8-14"></a>        <span class="cf">throw</span> ex<span class="op">;</span>   <span class="co">// rethrow                </span></span>
+<span id="cb8-15"><a href="#cb8-15"></a>    <span class="op">}</span></span>
+<span id="cb8-16"><a href="#cb8-16"></a>    </span>
+<span id="cb8-17"><a href="#cb8-17"></a>    <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb8-18"><a href="#cb8-18"></a>        <span class="co">// copy/move construct the existing elements </span></span>
+<span id="cb8-19"><a href="#cb8-19"></a>        <span class="co">// of the container from the old storage </span></span>
+<span id="cb8-20"><a href="#cb8-20"></a>        <span class="co">// to the new block of storage.</span></span>
+<span id="cb8-21"><a href="#cb8-21"></a>        copy_old_storage_to_new<span class="op">(</span><span class="va">m_data</span><span class="op">,</span> <span class="va">m_size</span><span class="op">,</span> ptr_new_blk<span class="op">);</span></span>
+<span id="cb8-22"><a href="#cb8-22"></a>    <span class="op">}</span><span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">){</span></span>
+<span id="cb8-23"><a href="#cb8-23"></a>        <span class="bu">std::</span>destroy_at<span class="op">(</span>ptr_new_blk <span class="op">+</span> <span class="va">m_size</span><span class="op">);</span></span>
+<span id="cb8-24"><a href="#cb8-24"></a>        deallocate_helper<span class="op">(</span>ptr_new_blk<span class="op">);</span></span>
+<span id="cb8-25"><a href="#cb8-25"></a>        <span class="cf">throw</span> ex<span class="op">;</span>   <span class="co">// rethrow</span></span>
+<span id="cb8-26"><a href="#cb8-26"></a>    <span class="op">}</span></span>
+<span id="cb8-27"><a href="#cb8-27"></a></span>
+<span id="cb8-28"><a href="#cb8-28"></a>    <span class="co">// deallocate the old storage, if we are here</span></span>
+<span id="cb8-29"><a href="#cb8-29"></a>    deallocate_helper<span class="op">(</span><span class="va">m_data</span><span class="op">);</span></span>
+<span id="cb8-30"><a href="#cb8-30"></a></span>
+<span id="cb8-31"><a href="#cb8-31"></a>    <span class="va">m_data</span> <span class="op">=</span> ptr_new_blk<span class="op">;</span></span>
+<span id="cb8-32"><a href="#cb8-32"></a>    <span class="op">++</span><span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb8-33"><a href="#cb8-33"></a>    <span class="va">m_capacity</span> <span class="op">=</span> new_capacity<span class="op">;</span></span>
+<span id="cb8-34"><a href="#cb8-34"></a><span class="op">}</span></span>
+<span id="cb8-35"><a href="#cb8-35"></a></span>
+<span id="cb8-36"><a href="#cb8-36"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> U<span class="op">&gt;</span></span>
+<span id="cb8-37"><a href="#cb8-37"></a><span class="dt">void</span> push_back_fast_path<span class="op">(</span>U<span class="op">&amp;&amp;</span> value<span class="op">){</span></span>
+<span id="cb8-38"><a href="#cb8-38"></a>    <span class="bu">std::</span>construct_at<span class="op">(</span><span class="va">m_data</span> <span class="op">+</span> <span class="va">m_size</span><span class="op">,</span> value<span class="op">);</span></span>
+<span id="cb8-39"><a href="#cb8-39"></a>    <span class="op">++</span><span class="va">m_size</span><span class="op">;</span></span>
+<span id="cb8-40"><a href="#cb8-40"></a><span class="op">}</span>        </span>
+<span id="cb8-41"><a href="#cb8-41"></a></span>
+<span id="cb8-42"><a href="#cb8-42"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> U<span class="op">&gt;</span></span>
+<span id="cb8-43"><a href="#cb8-43"></a><span class="dt">void</span> push_back<span class="op">(</span>U<span class="op">&amp;&amp;</span> value<span class="op">)</span></span>
+<span id="cb8-44"><a href="#cb8-44"></a><span class="op">{</span></span>
+<span id="cb8-45"><a href="#cb8-45"></a>    <span class="cf">if</span><span class="op">(</span>is_full<span class="op">())</span></span>
+<span id="cb8-46"><a href="#cb8-46"></a>    <span class="op">{</span></span>
+<span id="cb8-47"><a href="#cb8-47"></a>        push_back_slow_path<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>U<span class="op">&gt;(</span>value<span class="op">));</span></span>
+<span id="cb8-48"><a href="#cb8-48"></a>    <span class="op">}</span></span>
+<span id="cb8-49"><a href="#cb8-49"></a>    <span class="cf">else</span><span class="op">{</span></span>
+<span id="cb8-50"><a href="#cb8-50"></a>        push_back_fast_path<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>U<span class="op">&gt;(</span>value<span class="op">));</span></span>
+<span id="cb8-51"><a href="#cb8-51"></a>    <span class="op">}</span></span>
+<span id="cb8-52"><a href="#cb8-52"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>
