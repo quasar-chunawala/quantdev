@@ -217,6 +217,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#nodes" id="toc-nodes" class="nav-link" data-scroll-target="#nodes">Nodes</a></li>
   <li><a href="#hash-table" id="toc-hash-table" class="nav-link" data-scroll-target="#hash-table">Hash table</a></li>
   </ul></li>
+  <li><a href="#fast-and-slow-hash-functions" id="toc-fast-and-slow-hash-functions" class="nav-link" data-scroll-target="#fast-and-slow-hash-functions">Fast and slow hash functions</a></li>
   </ul>
 </nav>
     </div>
@@ -304,23 +305,23 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb5-8"><a href="#cb5-8"></a>    <span class="op">{</span> <span class="cf">return</span> <span class="kw">static_cast</span><span class="op">&lt;</span>_Hash_node<span class="op">*&gt;(</span><span class="kw">this</span><span class="op">-&gt;</span>_M_nxt<span class="op">);</span> <span class="op">}</span></span>
 <span id="cb5-9"><a href="#cb5-9"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Below is a picture of the <code>_Hash_node</code> struct data layout to better visualize what’s going on.</p>
-<pre><code>┌──────────────────────────────────────────────────────────────┐
-│ _Hash_node&lt;Value&gt;                                            │
-├──────────────────────────────────────────────────────────────┤
-│ inherits from _Hash_node_base                                │
-|--------------------------------------------------------------|
-│       _Hash_node_base*          _M_nxt; // ptr to next node  │
-├──────────────────────────────────────────────────────────────┤
+<pre><code>+==============================================================+
+| _Hash_node&lt;Value&gt;                                            |
++______________________________________________________________+
+| inherits from _Hash_node_base                                |
++--------------------------------------------------------------+
+|       _Hash_node_base*          _M_nxt; // ptr to next node  |
++______________________________________________________________+
 | inherits from _Hash_node_value                               |
-|--------------------------------------------------------------|
++--------------------------------------------------------------+
 |   inherits from _Hash_node_value_base                        |
-|--------------------------------------------------------------|
-│       aligned_buffer&lt;Value&gt;     _M_storage;    // The value  │
-├--------------------------------------------------------------┤
-|   inherits from_Hash_node_code_cache                         |
-|--------------------------------------------------------------|
-│       size_t                    _M_hash_code;  // Cached hash│
-└──────────────────────────────────────────────────────────────┘</code></pre>
++--------------------------------------------------------------+
+|       aligned_buffer&lt;Value&gt;     _M_storage;    // The value  |
++--------------------------------------------------------------+
+|   inherits from _Hash_node_code_cache                        |
++--------------------------------------------------------------+
+|       size_t                    _M_hash_code;  // Cached hash|
++______________________________________________________________+</code></pre>
 <p>Summarizing, _Hash_node (directly or inherited from base structs) contains the following data.</p>
 <ul>
 <li><code>_Hash_node_base* _M_nxt</code> is a pointer to the next element in the linked list of hash table elements.</li>
@@ -370,9 +371,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </figure>
 </div>
 <p>Bucket index <code>3</code> has keys <code>36</code>, <code>25</code> and <code>19</code>, but a <code>_Hash_node_base*</code> from <code>_M_buckets</code> array points to the element with a key <code>19</code>, which is a <strong>previous</strong> element in the hash table iteration order. Same logic is true for the bucket index <code>8</code>. For this bucket, <code>_M_buckets</code> array has a pointer to the <code>_M_before_begin_node</code>.</p>
-
-
 </section>
+</section>
+<section id="fast-and-slow-hash-functions" class="level1">
+<h1>Fast and slow hash functions</h1>
+<p>GCC’s libstdc++ hash table implementation distinguishes between fast and slow hash functions. If the hash function is slow, then the hash code will be cached inside the hash table node.</p>
+<p>Currently, <code>std::hash</code> is fast by default(including user-defined types), except for <code>long double</code> and string-like types (<code>std::string</code>, <code>std::string_view</code> and all other variations of character types).</p>
+<p>Comparison of two strings with lengths <span class="math inline">\(n\)</span>, <span class="math inline">\(m\)</span> has <span class="math inline">\(O(n,m)\)</span> complexity, but if we’ll cache the hash value in the hash table node, we can implement faster negative comparison. If hash codes of two strings do not match, we can instantly conclude they are not equal. Integer comparison just takes one CPU cycle.</p>
+<p>For integer types, <code>std::hash</code> is defined as the identity function.</p>
+<p># Insert</p>
+
+
 </section>
 
 </main> <!-- /main -->
