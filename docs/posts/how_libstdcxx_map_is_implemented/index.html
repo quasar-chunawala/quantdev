@@ -291,6 +291,41 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb4-3"><a href="#cb4-3"></a>  <span class="op">:</span> _Hash_node_value_base<span class="op">&lt;</span>_Value<span class="op">&gt;</span></span>
 <span id="cb4-4"><a href="#cb4-4"></a>  <span class="op">,</span> _Hash_node_code_cache<span class="op">&lt;</span>_Cache_hash_code<span class="op">&gt;</span></span>
 <span id="cb4-5"><a href="#cb4-5"></a>  <span class="op">{</span> <span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The size of the <code>_Hash_node_value</code> will be the same as size of <code>_Hash_node_value_base&lt;_Value&gt;</code> in case template argument <code>_Cache_hash_code</code> is <code>false</code> as <code>_Hash_node_code_cache</code> will be an empty struct.</p>
+<p>The final piece of the puzzle is the <code>_Hash_node</code> that combines everything above together:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a> <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> _Value<span class="op">,</span> <span class="dt">bool</span> _Cache_hash_code<span class="op">&gt;</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a><span class="kw">struct</span> _Hash_node</span>
+<span id="cb5-3"><a href="#cb5-3"></a><span class="op">:</span> _Hash_node_base</span>
+<span id="cb5-4"><a href="#cb5-4"></a><span class="op">,</span> _Hash_node_value<span class="op">&lt;</span>_Value<span class="op">,</span> _Cache_hash_code<span class="op">&gt;</span></span>
+<span id="cb5-5"><a href="#cb5-5"></a><span class="op">{</span></span>
+<span id="cb5-6"><a href="#cb5-6"></a>    _Hash_node<span class="op">*</span></span>
+<span id="cb5-7"><a href="#cb5-7"></a>    _M_next<span class="op">()</span> <span class="at">const</span> <span class="kw">noexcept</span></span>
+<span id="cb5-8"><a href="#cb5-8"></a>    <span class="op">{</span> <span class="cf">return</span> <span class="kw">static_cast</span><span class="op">&lt;</span>_Hash_node<span class="op">*&gt;(</span><span class="kw">this</span><span class="op">-&gt;</span>_M_nxt<span class="op">);</span> <span class="op">}</span></span>
+<span id="cb5-9"><a href="#cb5-9"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Below is a picture of the <code>_Hash_node</code> struct data layout to better visualize what’s going on.</p>
+<pre><code>┌──────────────────────────────────────────────────────────────┐
+│ _Hash_node&lt;Value&gt;                                            │
+├──────────────────────────────────────────────────────────────┤
+│ inherits from _Hash_node_base                                │
+|--------------------------------------------------------------|
+│       _Hash_node_base*          _M_nxt; // ptr to next node  │
+├──────────────────────────────────────────────────────────────┤
+| inherits from _Hash_node_value                               |
+|--------------------------------------------------------------|
+|   inherits from _Hash_node_value_base                        |
+|--------------------------------------------------------------|
+│       aligned_buffer&lt;Value&gt;     _M_storage;    // The value  │
+├--------------------------------------------------------------┤
+|   inherits from_Hash_node_code_cache                         |
+|--------------------------------------------------------------|
+│       size_t                    _M_hash_code;  // Cached hash│
+└──────────────────────────────────────────────────────────────┘</code></pre>
+<p>Summarizing, _Hash_node (directly or inherited from base structs) contains the following data.</p>
+<ul>
+<li><code>_Hash_node_base* _M_nxt</code> is a pointer to the next element in the linked list of hash table elements.</li>
+<li><code>__gnu_cxx::__aligned_buffer&lt;_Value&gt; _M_storage</code> — node data itself. For example for <code>std::unordered_map&lt;std::string, int&gt;</code> container <code>_Value</code> template argument is <code>std::pair&lt;const std::string, int&gt;</code>.</li>
+<li><code>std::size_t _M_hash_code</code> optional cached value of key’s hash.</li>
+</ul>
 
 
 </section>

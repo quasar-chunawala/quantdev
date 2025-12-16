@@ -93,3 +93,46 @@ template<typename _Value, bool _Cache_hash_code>
   { };
 ```
 
+The size of the `_Hash_node_value` will be the same as size of `_Hash_node_value_base<_Value>` in case template argument `_Cache_hash_code` is `false` as `_Hash_node_code_cache` will be an empty struct.
+
+The final piece of the puzzle is the `_Hash_node` that combines everything above together:
+
+```cpp
+ template<typename _Value, bool _Cache_hash_code>
+struct _Hash_node
+: _Hash_node_base
+, _Hash_node_value<_Value, _Cache_hash_code>
+{
+    _Hash_node*
+    _M_next() const noexcept
+    { return static_cast<_Hash_node*>(this->_M_nxt); }
+};
+```
+
+Below is a picture of the `_Hash_node` struct data layout to better visualize what's going on. 
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ _Hash_node<Value>                                            │
+├──────────────────────────────────────────────────────────────┤
+│ inherits from _Hash_node_base                                │
+|--------------------------------------------------------------|
+│       _Hash_node_base*          _M_nxt; // ptr to next node  │
+├──────────────────────────────────────────────────────────────┤
+| inherits from _Hash_node_value                               |
+|--------------------------------------------------------------|
+|   inherits from _Hash_node_value_base                        |
+|--------------------------------------------------------------|
+│       aligned_buffer<Value>     _M_storage;    // The value  │
+├--------------------------------------------------------------┤
+|   inherits from_Hash_node_code_cache                         |
+|--------------------------------------------------------------|
+│       size_t                    _M_hash_code;  // Cached hash│
+└──────────────────────────────────────────────────────────────┘
+```
+
+Summarizing, _Hash_node (directly or inherited from base structs) contains the following data.
+
+- `_Hash_node_base* _M_nxt` is a pointer to the next element in the linked list of hash table elements.
+- `__gnu_cxx::__aligned_buffer<_Value> _M_storage` — node data itself. For example for `std::unordered_map<std::string, int>` container `_Value` template argument is `std::pair<const std::string, int>`.
+- `std::size_t _M_hash_code` optional cached value of key's hash.
