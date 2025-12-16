@@ -22,6 +22,40 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -72,6 +106,8 @@ ul.task-list li input[type="checkbox"] {
 </style>
 <script async="" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9993009899870547" crossorigin="anonymous"></script>
 
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
 
 <link rel="stylesheet" href="../../styles.css">
 </head>
@@ -171,7 +207,17 @@ ul.task-list li input[type="checkbox"] {
 <!-- sidebar -->
 <!-- margin-sidebar -->
     <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
-        
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
+  <li><a href="#data-layout" id="toc-data-layout" class="nav-link" data-scroll-target="#data-layout">Data Layout</a>
+  <ul class="collapse">
+  <li><a href="#nodes" id="toc-nodes" class="nav-link" data-scroll-target="#nodes">Nodes</a></li>
+  </ul></li>
+  </ul>
+</nav>
     </div>
 <!-- main -->
 <main class="content quarto-banner-title-block" id="quarto-document-content">
@@ -179,9 +225,70 @@ ul.task-list li input[type="checkbox"] {
 
 
 
+<section id="introduction" class="level1">
+<h1>Introduction</h1>
 <p>We all love maps. A map is simply a data-structure that allows you to associate a key with some kind of value. They are fast and help to solve a large number of problems. Have you wondered what the internal implementation of a map looks like? In this post, I am going to explore the implementation details of unordered associative containers from the standard library(GCC’s <code>libstdc++</code> implementation).</p>
+<p>Currently there are four types of unordered associative containers:</p>
+<ul>
+<li><code>std::unordered_map</code></li>
+<li><code>std::unordered_set</code></li>
+<li><code>std::unordered_multimap</code></li>
+<li><code>std::unordered_multiset</code></li>
+</ul>
+<p>Usually, they are implemented on top of some kind of container. I am going to jump into the implementation of this <code>HashTable</code> container directly, because that’s where all the interesting stuff is hidden.</p>
+<p>I’ll focus on the key-value containers with a unique set of keys(<code>std::unordered_map</code> and <code>std::unordered_set</code>) which have mostly similar logic.</p>
+<p>GCC’s implementation can be found in the <a href="https://github.com/gcc-mirror/gcc/blob/127cd406/libstdc++-v3/include/bits/hashtable.h"><code>hashtable.h</code> header</a>. There are a lot of names with leading underscores. Not everyone is used to such code, but the standard library implementers have no choice, but to avoid collisions with user-defined names.</p>
+</section>
+<section id="data-layout" class="level1">
+<h1>Data Layout</h1>
+<section id="nodes" class="level2">
+<h2 class="anchored" data-anchor-id="nodes">Nodes</h2>
+<p>One of the basic building blocks of the <code>_Hashtable</code> is a node. Each node is allocated from the heap and stores container data along with metadata information to maintain the hash table data-structure.</p>
+<p>The node itself is a compound entity and contains several parts, some of them, optional. The design of the node <code>structs</code> brings to mind Russian dolls, because they are nested to each other.</p>
+<div class="{text-center}">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="Russian-Matroshka.jpg" class="img-fluid figure-img" data-scale="50%"></p>
+<figcaption class="figure-caption">Russian dolls</figcaption>
+</figure>
+</div>
+</div>
+<p>The more complex node type(with more data) is inherited from the simpler node type(with a little bit less data). Let us walk through the components bottom up(from simpler to complex).</p>
+<p>First, <code>_Hash_node_base</code> is defined in the following way. It has only <code>_M_nxt</code> field, which is a pointer to the next node of the hash table.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">struct</span> _Hash_node_base</span>
+<span id="cb1-2"><a href="#cb1-2"></a><span class="op">{</span></span>
+<span id="cb1-3"><a href="#cb1-3"></a>    _Hash_node_base<span class="op">*</span> _M_nxt<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4"></a></span>
+<span id="cb1-5"><a href="#cb1-5"></a>    _Hash_node_base<span class="op">()</span> <span class="kw">noexcept</span> <span class="op">:</span> _M_nxt<span class="op">()</span> <span class="op">{</span> <span class="op">}</span></span>
+<span id="cb1-6"><a href="#cb1-6"></a></span>
+<span id="cb1-7"><a href="#cb1-7"></a>    _Hash_node_base<span class="op">(</span>_Hash_node_base<span class="op">*</span> __next<span class="op">)</span> <span class="kw">noexcept</span> <span class="op">:</span> _M_nxt<span class="op">(</span>__next<span class="op">)</span> <span class="op">{</span> <span class="op">}</span></span>
+<span id="cb1-8"><a href="#cb1-8"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The next one <code>_Hash_node_value_base</code> is a little bit more interesting(see the actual code <a href="https://github.com/gcc-mirror/gcc/blob/b9b7981f3d6919518372daf4c7e8c40dfc58f49d/libstdc%2B%2B-v3/include/bits/hashtable_policy.h#L318-L345">here</a>). <code>_Hash_node_value_base</code> is responsible for storing the actual element value in the <code>_M_storage</code> member variable. It also provides accessor methods to retrieve the stored value.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> _Value<span class="op">&gt;</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a><span class="kw">struct</span> _Hash_node_value_base</span>
+<span id="cb2-3"><a href="#cb2-3"></a><span class="op">{</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a>    <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> _Value<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5"></a></span>
+<span id="cb2-6"><a href="#cb2-6"></a>    __gnu_cxx<span class="op">::</span>__aligned_buffer<span class="op">&lt;</span>_Value<span class="op">&gt;</span> _M_storage<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7"></a></span>
+<span id="cb2-8"><a href="#cb2-8"></a>    <span class="co">// ...</span></span>
+<span id="cb2-9"><a href="#cb2-9"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>It is a templated class with <code>_Value</code> template parameter that represents the <code>value_type</code>. <code>_Value</code> type is wrapped into <code>__gnu_cxx::__aligned_buffer</code> (thin wrapper around <code>std::aligned_storage</code>) to decouple memory allocation from actual object creation.</p>
+<p>The next struct is <code>_Hash_node_code_cache</code> and it implements hash value caching logic. When searching for a key in an unordered map, (i) we need to compute the hash-code of the search key, <span class="math inline">\(h(k)\)</span>, (ii) find the right bucket <code>idx = h(k) % table_size</code> and then (iii) walk the collision chain comparing each node’s key with you key <span class="math inline">\(k\)</span>. When keys are large or complex like <code>std::string</code>, using the equality predicate and doing full key comparisons for every node in the chain is expensive. So, we can choose the cach the hash code with each node:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> _Value<span class="op">,</span> <span class="dt">bool</span> __cache<span class="op">&gt;</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a><span class="kw">struct</span> _Hash_node_code_cache <span class="op">{</span></span>
+<span id="cb3-3"><a href="#cb3-3"></a>    <span class="dt">size_t</span> _M_hash_code<span class="op">;</span>  <span class="co">// Stored hash value</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a><span class="op">};</span></span>
+<span id="cb3-5"><a href="#cb3-5"></a></span>
+<span id="cb3-6"><a href="#cb3-6"></a><span class="co">// Specialization when caching is disabled</span></span>
+<span id="cb3-7"><a href="#cb3-7"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> _Value<span class="op">&gt;</span></span>
+<span id="cb3-8"><a href="#cb3-8"></a><span class="kw">struct</span> _Hash_node_code_cache<span class="op">&lt;</span>_Value<span class="op">,</span> <span class="kw">false</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb3-9"><a href="#cb3-9"></a>  <span class="co">// Empty - no overhead</span></span>
+<span id="cb3-10"><a href="#cb3-10"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
+</section>
+</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">

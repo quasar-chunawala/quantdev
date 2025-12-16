@@ -8,7 +8,77 @@ toc: true
 toc-depth: 3
 ---
 
+# Introduction
+
 We all love maps. A map is simply a data-structure that allows you to associate a key with some kind of value. They are fast and help to solve a large number of problems. Have you wondered what the internal implementation of a map looks like? In this post, I am going to explore the implementation details of unordered associative containers from the standard library(GCC's `libstdc++` implementation). 
 
+Currently there are four types of unordered associative containers:
 
+- `std::unordered_map`
+- `std::unordered_set`
+- `std::unordered_multimap`
+- `std::unordered_multiset`
 
+Usually, they are implemented on top of some kind of container. I am going to jump into the implementation of this `HashTable` container directly, because that's where all the interesting stuff is hidden.
+
+I'll focus on the key-value containers with a unique set of keys(`std::unordered_map` and `std::unordered_set`) which have mostly similar logic.
+
+GCC's implementation can be found in the [`hashtable.h` header](https://github.com/gcc-mirror/gcc/blob/127cd406/libstdc++-v3/include/bits/hashtable.h). There are a lot of names with leading underscores. Not everyone is used to such code, but the standard library implementers have no choice, but to avoid collisions with user-defined names.
+
+# Data Layout
+
+## Nodes
+
+One of the basic building blocks of the `_Hashtable` is a node. Each node is allocated from the heap and stores container data along with metadata information to maintain the hash table data-structure.
+
+The node itself is a compound entity and contains several parts, some of them, optional. The design of the node `structs` brings to mind Russian dolls, because they are nested to each other. 
+
+:::{text-center}
+![Russian dolls](Russian-Matroshka.jpg){scale=50% fig-align="center"}
+:::
+
+The more complex node type(with more data) is inherited from the simpler node type(with a little bit less data). Let us walk through the components bottom up(from simpler to complex).
+
+First, `_Hash_node_base` is defined in the following way. It has only `_M_nxt` field, which is a pointer to the next node of the hash table.
+
+```cpp
+struct _Hash_node_base
+{
+    _Hash_node_base* _M_nxt;
+
+    _Hash_node_base() noexcept : _M_nxt() { }
+
+    _Hash_node_base(_Hash_node_base* __next) noexcept : _M_nxt(__next) { }
+};
+```
+
+The next one `_Hash_node_value_base` is a little bit more interesting(see the actual code [here](https://github.com/gcc-mirror/gcc/blob/b9b7981f3d6919518372daf4c7e8c40dfc58f49d/libstdc%2B%2B-v3/include/bits/hashtable_policy.h#L318-L345)). `_Hash_node_value_base` is responsible for storing the actual element value in the `_M_storage` member variable. It also provides accessor methods to retrieve the stored value.
+
+```cpp
+template<typename _Value>
+struct _Hash_node_value_base
+{
+    using value_type = _Value;
+
+    __gnu_cxx::__aligned_buffer<_Value> _M_storage;
+
+    // ...
+};
+```
+
+It is a templated class with `_Value` template parameter that represents the `value_type`. `_Value` type is wrapped into `__gnu_cxx::__aligned_buffer` (thin wrapper around `std::aligned_storage`) to decouple memory allocation from actual object creation.
+
+The next struct is `_Hash_node_code_cache` and it implements hash value caching logic. When searching for a key in an unordered map, (i) we need to compute the hash-code of the search key, $h(k)$, (ii) find the right bucket `idx = h(k) % table_size` and then (iii) walk the collision chain comparing each node's key with you key $k$. When keys are large or complex like `std::string`, using the equality predicate and doing full key comparisons for every node in the chain is expensive. So, we can choose the cach the hash code with each node:
+
+```cpp
+template<typename _Value, bool __cache>
+struct _Hash_node_code_cache {
+    size_t _M_hash_code;  // Stored hash value
+};
+
+// Specialization when caching is disabled
+template<typename _Value>
+struct _Hash_node_code_cache<_Value, false> {
+  // Empty - no overhead
+};
+```

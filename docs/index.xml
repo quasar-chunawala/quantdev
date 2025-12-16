@@ -20,9 +20,192 @@
 
 
 
+<section id="introduction" class="level1">
+<h1>Introduction</h1>
 <p>We all love maps. A map is simply a data-structure that allows you to associate a key with some kind of value. They are fast and help to solve a large number of problems. Have you wondered what the internal implementation of a map looks like? In this post, I am going to explore the implementation details of unordered associative containers from the standard library(GCC’s <code>libstdc++</code> implementation).</p>
+<p>Currently there are four types of unordered associative containers:</p>
+<ul>
+<li><code>std::unordered_map</code></li>
+<li><code>std::unordered_set</code></li>
+<li><code>std::unordered_multimap</code></li>
+<li><code>std::unordered_multiset</code></li>
+</ul>
+<p>Usually, they are implemented on top of some kind of container. I am going to jump into the implementation of this <code>HashTable</code> container directly, because that’s where all the interesting stuff is hidden.</p>
+<p>I’ll focus on the key-value containers with a unique set of keys(<code>std::unordered_map</code> and <code>std::unordered_set</code>) which have mostly similar logic.</p>
+<p>GCC’s implementation can be found in the <a href="https://github.com/gcc-mirror/gcc/blob/127cd406/libstdc++-v3/include/bits/hashtable.h"><code>hashtable.h</code> header</a>. There are a lot of names with leading underscores. Not everyone is used to such code, but the standard library implementers have no choice, but to avoid collisions with user-defined names.</p>
+</section>
+<section id="data-layout" class="level1">
+<h1>Data Layout</h1>
+<section id="nodes" class="level2">
+<h2 class="anchored" data-anchor-id="nodes">Nodes</h2>
+<p>One of the basic building blocks of the <code>_Hashtable</code> is a node. Each node is allocated from the heap and stores container data along with metadata information to maintain the hash table data-structure.</p>
+<p>The node itself is a compound entity and contains several parts, some of them, optional. The design of the node <code>structs</code> brings to mind Russian dolls, because they are nested to each other.</p>
+<div class="{text-center}">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="http://quantdev.blog/posts/how_libstdcxx_map_is_implemented/Russian-Matroshka.jpg" class="img-fluid figure-img" data-scale="50%"></p>
+<figcaption class="figure-caption">Russian dolls</figcaption>
+</figure>
+</div>
+</div>
+<p>The more complex node type(with more data) is inherited from the simpler node type(with a little bit less data). Let us walk through the components bottom up(from simpler to complex).</p>
+<p>First, <code>_Hash_node_base</code> is defined in the following way. It has only <code>_M_nxt</code> field, which is a pointer to the next node of the hash table.</p>
+<div class="sourceCode" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> _Hash_node_base</span>
+<span id="cb1-2"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb1-3">    _Hash_node_base<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> _M_nxt<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb1-4"></span>
+<span id="cb1-5">    _Hash_node_base<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span> _M_nxt<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb1-6"></span>
+<span id="cb1-7">    _Hash_node_base<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>_Hash_node_base<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> __next<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">noexcept</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span> _M_nxt<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>__next<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb1-8"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p>The next one <code>_Hash_node_value_base</code> is a little bit more interesting(see the actual code <a href="https://github.com/gcc-mirror/gcc/blob/b9b7981f3d6919518372daf4c7e8c40dfc58f49d/libstdc%2B%2B-v3/include/bits/hashtable_policy.h#L318-L345">here</a>). <code>_Hash_node_value_base</code> is responsible for storing the actual element value in the <code>_M_storage</code> member variable. It also provides accessor methods to retrieve the stored value.</p>
+<div class="sourceCode" id="cb2" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> _Value<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb2-2"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> _Hash_node_value_base</span>
+<span id="cb2-3"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb2-4">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">value_type</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> _Value<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-5"></span>
+<span id="cb2-6">    __gnu_cxx<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>__aligned_buffer<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>_Value<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> _M_storage<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-7"></span>
+<span id="cb2-8">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// ...</span></span>
+<span id="cb2-9"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p>It is a templated class with <code>_Value</code> template parameter that represents the <code>value_type</code>. <code>_Value</code> type is wrapped into <code>__gnu_cxx::__aligned_buffer</code> (thin wrapper around <code>std::aligned_storage</code>) to decouple memory allocation from actual object creation.</p>
+<p>The next struct is <code>_Hash_node_code_cache</code> and it implements hash value caching logic. When searching for a key in an unordered map, (i) we need to compute the hash-code of the search key, <img src="https://latex.codecogs.com/png.latex?h(k)">, (ii) find the right bucket <code>idx = h(k) % table_size</code> and then (iii) walk the collision chain comparing each node’s key with you key <img src="https://latex.codecogs.com/png.latex?k">. When keys are large or complex like <code>std::string</code>, using the equality predicate and doing full key comparisons for every node in the chain is expensive. So, we can choose the cach the hash code with each node:</p>
+<div class="sourceCode" id="cb3" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> _Value<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">bool</span> __cache<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb3-2"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> _Hash_node_code_cache <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb3-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span> _M_hash_code<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>  <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Stored hash value</span></span>
+<span id="cb3-4"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb3-5"></span>
+<span id="cb3-6"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Specialization when caching is disabled</span></span>
+<span id="cb3-7"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> _Value<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb3-8"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> _Hash_node_code_cache<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>_Value<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">false</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb3-9">  <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Empty - no overhead</span></span>
+<span id="cb3-10"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
 
 
+</section>
+</section>
 
  ]]></description>
   <category>C++</category>
