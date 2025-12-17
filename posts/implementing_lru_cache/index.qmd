@@ -1,0 +1,185 @@
+---
+title: "Implementing LRU Cache"
+author: "Quasar"
+date: "2025-12-15"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Introduction
+
+A *least recently used*(LRU) cache is a fixed-size cache that behaves just like a regular lookup table, but remembers the order in which the elements are accessed. Once it's user defined capacity is reached it uses the information to replace the least recently used element with a new one. This is ideal for caching function return values, where fast lookup of complex computations is favorable, but a memory blowup from caching all `(input, output)` pairs is to be avoided. We will first write a basic implementation of `LRUCache`. 
+
+We will then add functionality to connect all our caches to *statistics* objects that keep track of cache hits and misses for all keys and upon request, individual keys (similar to `functools.lrucache` in Python). You can also register arbitrary callbacks for hits, misses and accesses in general.
+
+> #### Task
+
+Design a data structure that follows the constraints of a Least Recently Used (LRU) cache.
+
+Implement the `LRUCache` class:
+
+- `LRUCache(int capacity)` Initialize the LRU cache with positive size `capacity`.
+- `int get(int key)` Return the value of the key if the key exists, otherwise return `-1`.
+- `void put(int key, int value)` Update the value of the key if the key exists. Otherwise, add the key-value pair to the cache. If the number of keys exceeds the capacity from this operation, evict the least recently used key.
+
+The functions `get` and `put` must each run in $O(1)$ average time complexity.
+
+# Basic implementation
+
+We will use a `std::list` to track the usage of the keys and a `std::unordered_map` to provide fast access to the key-value pair in the last.
+
+```cpp
+// Write your solution here
+// C++20 for C++
+#include <gtest/gtest.h>
+#include <cstddef>
+#include <cstdint>
+#include <format>
+#include <print>
+#include <stdexcept>
+#include <utility>
+#include <unordered_map>
+#include <list>
+#include <tuple>
+
+namespace dev {
+    /**
+    * @brief: LRU (Least Recently Used) policy
+    */
+    template<
+        typename Key, 
+        typename Value, 
+        typename Container=std::unordered_map<Key,typename std::list<std::pair<Key,Value>>::iterator>>
+    class LRUCache{
+        using lru_list_iterator = std::list<std::pair<Key,Value>>::iterator;
+
+        private:
+        Container m_dict;
+        std::list<std::pair<Key, Value>> m_lru_list; 
+        size_t m_capacity;
+
+        public:
+        // explicit single-parameter constructor
+        explicit LRUCache(size_t capacity)
+        : m_dict{}
+        , m_lru_list{}
+        , m_capacity{ capacity }
+        {}
+
+        void touch(lru_list_iterator it){
+            m_lru_list.splice(m_lru_list.begin(), m_lru_list, it);
+        }
+
+        std::optional<Value> get(Key key){
+            auto it = m_dict.find(key);
+            std::optional<Value> result;
+            if(it == m_dict.end()){
+                result = std::nullopt;
+            }else{
+                auto [k,value] = *((*it).second);
+                result = value;
+                touch(it->second);
+            }
+            return result;
+        }
+
+        void put(Key key, Value value){
+            auto it = m_dict.find(key);
+            if(it == m_dict.end())
+            {
+                if(m_lru_list.size() == m_capacity)
+                {
+                    //Evict the least recently used (k,v) pair
+                    auto [lru_key, lru_value] = m_lru_list.back();
+                    m_dict.erase(lru_key);
+                    m_lru_list.pop_back();
+                }
+                    
+                // Insert the key-value pair
+                m_lru_list.push_front(std::pair{key, value});
+                m_dict[key] = m_lru_list.begin();
+            }else{
+                // Update the key-value pair
+                m_dict[key]->second = value;
+            }
+        }
+    };
+}  // namespace dev
+
+#include <array>
+
+TEST(CacheTest, SimplePut)
+{
+    dev::LRUCache<std::string, int> cache(1);
+
+    cache.put("test", 666);
+
+    EXPECT_EQ(cache.get("test"), 666);
+}
+
+TEST(CacheTest, PutWithUpdate)
+{
+    constexpr std::size_t TEST_CASE = 4;
+    dev::LRUCache<std::string, std::size_t> cache{TEST_CASE};
+
+    for (size_t i = 0; i < TEST_CASE; ++i)
+    {
+        cache.put(std::to_string(i), i);
+
+        const auto value = cache.get(std::to_string(i));
+        ASSERT_EQ(i, value);
+    }
+
+    for (size_t i {0uz}; i < TEST_CASE; ++i)
+    {
+        ASSERT_TRUE(cache.get(std::to_string(i)));
+        cache.put(std::to_string(i), i * 10);
+
+        const auto value = cache.get(std::to_string(i));
+        ASSERT_EQ(i * 10, value);
+    }
+}
+
+TEST(CacheTest, KeepsAllValuesWithinCapacity)
+{
+    constexpr int CACHE_CAP = 50;
+    const int TEST_RECORDS = 100;
+    dev::LRUCache<int, int> cache(CACHE_CAP);
+
+    for (int i = 0; i < TEST_RECORDS; ++i)
+    {
+        cache.put(i, i);
+    }
+
+    for (int i = 0; i < TEST_RECORDS - CACHE_CAP; ++i)
+    {
+        EXPECT_EQ(cache.get(i), std::nullopt);
+    }
+
+    for (int i = TEST_RECORDS - CACHE_CAP; i < TEST_RECORDS; ++i)
+    {
+        EXPECT_EQ(i, cache.get(i));
+    }
+}
+
+TEST(CacheTest, PutAndGet){
+    dev::LRUCache<int, int> lru_cache(2);
+    lru_cache.put(1, 1); // cache is {1=1}
+    lru_cache.put(2, 2); // cache is {2=2, 1=1}
+    EXPECT_EQ(lru_cache.get(1), 1);    // return 1, cache is {1=1, 2=2} 
+    lru_cache.put(3, 3); // evicts key 2, cache is {3=3, 1=1}
+    EXPECT_EQ(lru_cache.get(2), std::nullopt);    // returns std::nullopt (not found)
+    lru_cache.put(4, 4); // LRU key was 1, evicts key 1, cache is {4=4, 3=3}
+    EXPECT_EQ(lru_cache.get(1), std::nullopt);    // return std::nullopt (not found)
+    EXPECT_EQ(lru_cache.get(3), 3);    // return 3, cache is {3=3, 4=4}
+    EXPECT_EQ(lru_cache.get(4), 4);    // return 4, cache is {4=4, 3=3}
+}
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/snodGh33T)
