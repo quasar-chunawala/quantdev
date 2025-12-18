@@ -1,7 +1,7 @@
 ---
 title: "C++ Type erasure"
 author: "Quasar"
-date: "2025-06-29"
+date: "2025-12-18"
 categories: [C++]      
 image: "cpp.jpg"
 toc: true
@@ -16,198 +16,95 @@ Type erasure is a programming technique by which the explicit type information i
 
 # How does type erasure look like?
 
-Let's see what a program with explicit types looks like. Consider a smart pointer such as [`std::unique_ptr<T,Deleter>`](https://en.cppreference.com/w/cpp/memory/unique_ptr.html) in the standard library that models exclusive ownership of the managed resource. 
+The ultimate type-erased object in C++ is `std::function`. Another one is `std::any`. Consider the following code snip:
 
 ```cpp
-int main(){
-    std::unique_ptr<int> ptr{new int{10}};
-}
-```
-
-Here is a unique pointer. It creates and deletes an `int`. The deletion is not explicitly visible, in fact nothing here tells you how the deletion will take place. But, it's done by calling a callable object `std::default_delete`, which is the default deleter and under the hood, it calls the default `delete ptr`.  
-
-Suppose, however, we are interested to allocate/deallocate memory from our own heap/memory pool. In such case, we'd have to override the global `new` operator and pass the `Heap*` pointer. That's what will be used for allocations.
-
-```cpp
-class Heap{
-    /* ... */
-    void allocate(size_t size);
-    void deallocate(void* ptr_to_block);
-};
-
-void* operator new(size_t n, Heap* heap){
-    return heap->allocate(n);
-}
-```
-Notice that, you don't have `operator delete()` with arguments. You can write one, it will compile, but you can't invoke it. In order to actually release memory on the heap, you have to do something else. You have to write your own custom deleter.
-
-```cpp
-struct MyDeleter{
-    /* ... */
-    Heap* heap_;
-    
-    MyDeleter(Heap* heap) : heap_(heap)
-    {}
-
-    template <typename T>
-    void operator()(T* ptr){
-        ptr->~T();                  // invoke d'tor
-        heap_->deallocate(ptr);     // release memory
-    }
-}
-```
-
-The function call `operator()` is overloaded and it accepts a pointer-to-`T`. It invokes the destructor `~T()` and releases the memory occupied on the heap. The destructor has to be explicitly invoked, because you can't call `operator delete` with arguments. Now, how do you hook this up to the `unique_ptr`? You pass it as a constructor argument. But, we also need to refer to a different type `unique_ptr<int,MyDeleter>`. 
-
-```cpp
-int main(){
-    Heap myHeap;
-
-    std::unique_ptr<int,MyDeleter> ptr{new (&heap) int(10), MyDeleter(&heap)};
-}
-```
-
-This creates and deletes an `int` on the heap. 
-
-Notice that, `unique_ptr`s to the same type, but with different deleters are different types too. So, for example, you can't assign from one to the other. You can actually deduce the `Deleter` type. If you have a `unique_ptr` object, you can actually interrogate it's `deleter_type`. The `deleter_type` is embedded in the `unique_ptr` type.
-
-```cpp
-#include <iostream>
-#include <memory>
-
-int main(){
-    std::unique_ptr<int> p{new int(10)};
-    static_assert(std::is_same_v<decltype(p)::deleter_type,std::default_delete<int>>);
-    return 0;
-}
-```
-[Compiler Explorer](https://compiler-explorer.com/z/GaPsecqGh)
-
-Now, let's look at the [`shared_ptr<T>`](https://en.cppreference.com/w/cpp/memory/shared_ptr.html) and contrast it with `unique_ptr`. If you don't specify any deleters, they look exactly the same:
-
-```cpp
-std::unique_ptr<int> u_ptr{ new int(10) };
-std::shared_ptr<int> s_ptr{ new int(10) };
-```
-
-If you do specify a deleter, there's a big difference. The constructor looks exactly the same.
-
-```cpp
-int main(){
-    Heap myHeap;
-    std::unique_ptr<int,MyDeleter>  u_ptr{ new (&heap) int(10), MyDeleter(&heap) };
-    std::shared_ptr<int>            s_ptr{ new (&heap) int(10), MyDeleter(&heap) };
-}
-```
-
-But, in the `unique_ptr` the type of the deleter is the second template argument, whereas with the `shared_ptr` there is no mention of the deleter with the type. So, if you have an object of type `shared_ptr`, you cannot deduce which deleter was used to construct it. All `shared_ptr` instances with the same pointer type `T*`, are of the same type, even if they have different deleters.
-
-So, the deleter type has been erased. That's what it means to erase a type. Observe that the constructor call site is the last mention of the deleter type. From this point forward, you won't see this type again. 
-
-Since, shared pointers with different deleters have the same type, you can assign one to the other. 
-
-```cpp
-int main(){
-    Heap myHeap;
-    std::shared_ptr<int>    p{ new int(10) };
-    std::shared_ptr<int>    q{ new (&myHeap) int(10), MyDeleter(&myHeap) };
-    q = p;      // Ok, they are the same type
-}// Proper deleters are called
-```
-
-Also, when each shared pointer goes out of scope, the correct deleter is invoked. So, erased types are not explicitly visible in the program; they are hidden somewhere.  
-
-# Type erasure as a design pattern
-
-The ultimate type-erased object in C++ is `std::function`. Another one is `std::any`. 
-
-`std::function<F>` is a type that is instantiated from the signature of a callable.
-
-```cpp
-#include <iostream>
+#include <print>
 #include <functional>
-#include <vector>
-#include <numeric>
-#include <algorithm>
-#include <cmath>
 
-double gravitational_potential(std::vector<double> x){
-    double r_squared = std::accumulate(x.begin(),x.end(),0.0,[](double accum, double element){
-        accum += element * element;
-        return accum;
-    });
-    double r = sqrt(r_squared);
+void print_num(int i){
+    std::println("{}", i);
+}
 
-    const double G = 6.6743e-11;
-    const double M = 5.972e+24;
-    double potential = -G*M/r;
-    return potential;
+auto display_lambda = [](int i){
+    std::println("{}", i);
 };
 
-int main(){
-    std::function<double(std::vector<double>)> scalarValuedFunc;
+struct PrintFunctor{
+    void operator()(int i){
+        std::println("{}", i);
+    }
+};
 
-    // the paraboloid z = x_0^2 + x_1^2 + ... + x_{n-1}^2 
-    scalarValuedFunc = [](std::vector<double> x){
-        return std::accumulate(x.begin(),x.end(),0.0,[](double accum, double element){
-            accum += element * element;
-            return accum;
-        });
-    };
-
-    // Gravitational potential U at the point (x_0,...,x_{n-1}) in space
-    scalarValuedFunc = gravitational_potential;
-    return 0;
+int main()
+{
+    std::function<void(int)> f_print_num = print_num;
+    std::function<void(int)> f_display_lambda = display_lambda;
+    std::function<void(int)> f_print_functor = PrintFunctor{};
 }
 ```
-[Compiler Explorer](https://compiler-explorer.com/z/b8K3Go5nh)
+[Compiler Explorer](https://compiler-explorer.com/z/1Tz7dWqM7)
 
-The lambda and the free-standing function have different types. `scalarValuedFunc` has only one type, but can store any of these callable objects. Our `std::function` has only one type, and somehow, we can stick all these different types into it. 
+The free-standing function `print_num`, the lambda function `diplay_lambda` and the functor `PrintFunctor` are objects with different types. So, the type of object being assigned to the `std::function` changed, but on the left hand side we have the same type. `std::function<void(int)>` can store any of these callable objects. Somehow, we can stick all these different types into it. 
 
-If you look at it from the design point of view, what it does is, it abstracts away all the behavior of the type you erase, except the set of behaviors you consider relevant. It's a very flexible abstraction. In my case, I say, what's relevant is, I can invoke this type with a `vector` of reals and I get back a real. That's the only behavior of this type, that to me, at this moment is relevant. All other behavior is abstracted away. 
-
-Fundamentally, type erasure is an abstraction technique that allows you to separate interface from implementation, and when we talk about the interface, it's actually a subset of the interface. It's a subset of the interface, that we deem relevant for our particular problem.
-
-Inheritance does the same thing. But, inheritance is significantly less flexible. Firstly, with inheritance, the interface you inherit - that has to be the whole interface, you can't pick and choose. You can separate it from the implementation, but you don't get to pick and choose like half of the interface. Second, it is much more intrusive. You can't take an arbitrary class with the same interface and say, I want to use it through inheritance. No, you have to derive it from the base class.
-
-# How does type erasure work?
-
-Consider the following C code.
-
-```c
-void qsort(void* base, size_t nmemb, size_t size,
-int (*compare)(const void*, const void*)        // no mention of specific types
-);
-
-int less(const void* a, const void* b){
-    return *(const int*)a - *(const int*)b;     // type information recovered
-}
-
-int a[10] = [1, 10, 2, 9, 3, 8, 4, 7, 5, 6];
-qsort(a, 10, size(int), less);                  // type of less erased here
-```
-
-`qsort()` comes from the standard C library. It takes `void*` pointer-to-array, `size_t` array count, `size_t` size of types you are trying to sort, and a comparator. The comparison function takes `void*`. It is used to compare whatever types you are actually sorting. Inside `qsort`, there is no mention of the type that you are going to sort. 
-
-The function call site is the last time in your execution flow, where you have the mention of the type `int`. From that moment on, there is no mention of `int` during the sorting process.
-
-When you write the comparison function, the signature `int (*)(void*, void*)` is fixed. But, you know what you are writing this for. You are writing a comparator for `int`s. So, inside the function, I am going to recover the type information. So, the entire type erasure mechanism is seen here. The type is known at the invocation point and its the last time it is known. This is type erasure in C. The general code does not depend on which type we are sorting. All interfaces are completely generic and do not contain any type information. 
-
-I still need to perform a type dependent action at some point. 
-
-```c
-int less(const void* a, const void* b){
-    return *(const int*)a - *(const int*)b;     // type information recovered
-}
-```
-
-So, I have to generate some code that has a type-less or type agnostic interface, but the code itself is aware of the types. This act of recovering the types from typeless information is called reification (recovery). The comparator `int less(void*, void*)` performs the reification and executes type dependent code. Type reification in C is manual. From an understanding point of view, the only thing C++ adds to this, is that C++ automatically generates type reification functions.
-
-The general code does not depend on the erased type. The call site is the last place where the actual type is known. Type is reified when type dependent action is performed. The type is hidden in the code of the function that performs this action. The function is invoked through a type-agnostic interface. The type dependent code converts from the abstract to the concrete type. In C++, we can have the compiler generate the type dependent code. 
+If you look at it from the design point of view, what it does is, it abstracts away all the behavior of the type you erase, except the set of behaviors you consider relevant. It's a very flexible abstraction. In my case, I say, what's relevant is, I can invoke this type with a `int` and I get back a `void`. 
 
 # Type erasure - the basic mechanics 
 
-The classic type erasure pattern can be realized by first coding up a *type-agnostic interface* (a `Concept` class). Then we use an `Impl` class that wraps up the concrete type & provides the *type-dependent implementation*. Finally, we use dynamic polymorphism via virtual functions, but the caller only sees the interface. Finally, we use dynamic polymorphism via virtual functions, but the caller only sees the interface.
+## Step 1 - How to write a container that holds unrelated types?
+
+On cppreference.com, `std::function` is defined as follows:
+
+:::{.callout}
+```cpp
+template< class R, class... Args >
+class function<R(Args...)>;
+```
+
+*The class template `std::function` is a general-purpose polymorphic function wrapper.*
+:::
+
+`std::function` has to be polymorphic, meaning it has to be able to hold completely unrelated types. They don't have to be bound by an inheritance-hierarchy or any other sort of thing. 
+
+Our end-goal looks something like this:
+
+```cpp
+struct MagicFunctionContainer
+{};
+
+MagicFunctionContainer f1 = print_num;
+MagicFunctionContainer f2 = [](int i){ std::println({}, i); };
+MagicFunctionContainer f3 = PrintFunctor{};
+```
+
+We should be able to assign different objects of types like a free-standing function, a lambda expression or a functor to this `MagicFunctionContainer`. 
+
+Let's start with designing a container, which is constructible from completely unrelated types:
+
+```cpp
+struct MagicFunctionContainer{
+    template<typename Func>
+    MagicFunctionContainer(Func&& func)
+    : m_func{std::forward<Func>(func)} 
+    {}
+
+    void operator()(int i){
+        m_func(i);
+    }
+
+    private:
+    //void(*)(int) m_func;   // we need to think
+                             // of m_func's type
+};
+```
+
+We see that, there's this container called `MagicFunctionContainer`. The most important thing to note is that, its constructor is now a templated constructor, so you can pass any type into the `MaginFunctionContainer` constructor, and it simply forwards the object `func` into `m_func`. We need to think, what the type of `m_func` is. We see that this function container also implements a function call operator `operator()`, which accepts an integer and returns type `void`. So, when this function container object is invoked with an integer `i`, it simply calls `m_func(i)` under the hood. 
+
+As long as we have defined the type of `m_func`, and its the correct type, this code satisfies our requirements. We now have a container, that can be constructed from completely unrelated types. How do we store these unrelated types? How do we now define what the type of `m_func` should be? The answer to this puzzle is step-2 of our design.
+
+## Step 2 - Can `m_func` be a polymorphic pointer to a place on the heap that will hold these unrelated types?
+
+The classic type erasure pattern can be realized by first coding up a *type-agnostic interface* (a `Concept` class). Then we use an `Impl` class that wraps up the concrete type & provides the *type-dependent implementation*. Finally, we use dynamic polymorphism via virtual functions, but the caller only sees the interface. 
 
 ```cpp
 // Type erasure 101
@@ -215,71 +112,55 @@ The classic type erasure pattern can be realized by first coding up a *type-agno
 #include <memory>
 
 namespace dev{
-    class function{
-        public:
+    struct Concept{
+        virtual void operator()(int i) = 0;
+        ~virtual Concept(){}
+    };
 
-        function()
-        : ptr{nullptr}
+    template<typename Callable>
+    struct Impl{
+
+        Impl(const Callable& callable) 
+        : m_callable{callable}
         {}
 
-        template<typename Callable>
-        function(Callable callable)
-        : ptr{std::make_unique<Impl<Callable>>(callable)}
-        {}
-
-        void operator()(){
-            (*ptr)();
+        void operator()(int i){
+            m_callable(i);
         }
-        // Type-agnostic interface
-        struct Concept{
-            virtual void operator()() = 0;
-            virtual ~Concept(){}
-        };
-
-        // Type-dependent implementation
-        template<typename Callable>
-        struct Impl : public Concept{
-
-            Impl(Callable callable)
-            : m_callable(callable)
-            {}
-
-            void operator()() override{
-                m_callable();
-            }
-            Callable m_callable;
-        };
-
-        std::unique_ptr<Concept> ptr;
+        
+        Callable m_callable;
     };
 };
-
-void foo(){
-    std::cout << "\n" << "foo()";
-}
-
-void bar(){
-    std::cout << "\n" << "bar()";
-}
-
-int main(){
-    dev::function f;
-    f = [](){
-        std::cout << "\n" << "Anonymous lambda";
-    };
-    f();
-
-    f = foo;
-    f();
-
-    void(*func_ptr)();
-    func_ptr = bar;
-    f = func_ptr;
-    f();
-    return 0;
-}
 ```
-[Compiler Explorer](https://godbolt.org/z/EfdTKc4hz)
+
+Each time I get any new type `Callable`, I am creating an implementation `Impl<Callable>`, and passing that object into this new type.
+
+Any type `Callable` that implements `operator()(int)` can be stored in `Impl<Callable>`. And `Impl<Callable>` inherits from `Concept`. 
+
+Now, what we've achieved so far is, that any `Impl<Callable>` object, as long as `Callable` implements the function call operator `operator()`, accepts an `int`, returns `void` can be assigned to a pointer to `Concept`, `Concept*`. Remember, all types `Impl<Callable_1>`, `Impl<Callable_2>`, ..., `Impl<Callable_n>` inherit from `Concept`.
+
+We can now finish the revisit the definition of `MagicFunctionContainer`. 
+
+```cpp
+struct MagicFunctionContainer{
+    template<typename Func>
+    MagicFunctionContainer(Func&& func)
+    : m_func{new Impl<Func>(func)} 
+    {}
+
+    void operator()(int i){
+        if(m_func == nullptr)
+            throw std::bad_function_call();
+
+        (*m_func)(i);
+    }
+
+    private:
+    Concept* m_func{nullptr};   
+};
+```
+
+In the `MagicFunctionContainer`, I have still got the templated constructor. I have still got the function call operator. But, now I have type for `m_func`. `m_func` is a pointer to `Concept`. In the templated constructor, now what I'm doing is, each time I get any type `Func` 
 
 # Type erasure - Adding support for a custom deleter to the `shared_ptr`
 
