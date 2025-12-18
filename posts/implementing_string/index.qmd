@@ -1,0 +1,469 @@
+---
+title: "Implementing `string`"
+author: "Quasar"
+date: "2025-12-18"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Implementing a basic `string` class 
+
+```cpp
+// Write your solution here
+// C++20 for C++
+#include <gtest/gtest.h>
+#include <cstddef>
+#include <cstdint>
+#include <format>
+#include <print>
+#include <iostream>
+#include <stdexcept>
+#include <utility>
+#include <unordered_map>
+#include <list>
+#include <tuple>
+#include <bit>
+#include <bitset>
+
+namespace dev {
+    /**
+    * @brief: A string class
+    * The capacity is usually a power of 2, so the 
+    * least significant bit of the m_capacity field
+    * is set to 0, to indicate string_long format. And
+    * if set to 1, it implies SSO. 
+    */
+    template<typename CharType>
+    struct string_long{
+        using value_type = CharType;
+        using pointer = CharType*;
+        using reference = CharType&;
+
+        CharType*   m_buffer_ptr;     // 8 bytes
+        std::size_t m_size;     // 8 bytes
+        std::size_t m_capacity; // 8 bytes
+    };
+
+    template<typename CharType>
+    struct string_short{
+        using value_type = CharType;
+        using pointer = CharType*;
+        using reference = CharType&;
+        
+        static constexpr size_t m_capacity{23uz};
+
+        value_type  m_buffer[m_capacity]; // 23 bytes
+        unsigned char m_size;   // 1 byte
+    };
+
+    enum{ string_short_mask = 0x01 };
+    enum{ string_long_mask = 1uz };
+
+    template<typename CharType=char>
+    class string{
+        using value_type = CharType;
+        using pointer = CharType*;
+        using const_pointer = const CharType*;
+        using reference = CharType&;
+        using const_reference = const CharType&;
+        using size_type = std::size_t;
+
+        union {
+            string_long<CharType> l;
+            string_short<CharType> s;
+        } m_data;
+
+        public:
+
+        bool is_small() const{
+            return (m_data.s.m_size & string_short_mask);
+        }
+
+        bool is_long() const{
+            return !is_small();
+        }
+
+        pointer get_buffer(){
+            return is_long() ? m_data.l.m_buffer_ptr : m_data.s.m_buffer;
+        }
+
+        const_pointer get_buffer() const{
+            return is_long() ? m_data.l.m_buffer_ptr : m_data.s.m_buffer;
+        }        
+
+        void set_short_size(size_type size){
+            m_data.s.m_size = (size << 1) | string_short_mask;
+            //std::println("m_data.s.m_size = {}", m_data.s.m_size);
+        }
+
+        size_type get_short_size() const{
+            //std::println("get_short_size()");
+            //std::println("m_data.s.m_size >> 1 = {}", m_data.s.m_size >> 1);
+            return m_data.s.m_size >> 1;
+        }
+
+        size_type get_long_size() const{
+            //std::println("get_long_size()");
+            return m_data.l.m_size;
+        }
+
+        void set_long_size(size_type size){
+            m_data.l.m_size = size;
+        }
+
+        size_type get_long_capacity() const{
+            return m_data.l.m_capacity & size_type(~(string_long_mask));
+        }
+
+        void set_long_capacity(size_t capacity){
+            m_data.l.m_capacity = capacity & ~(string_long_mask);
+        }
+
+        size_type get_short_capacity() const{
+            return 23;
+        }
+
+        size_t size() const{
+            return is_long() ? get_long_size() : get_short_size();
+        }
+
+        size_t capacity() const{
+            return is_long() ? get_long_capacity() : get_short_capacity();
+        }
+
+        pointer allocate_helper(size_t new_capacity){
+            return static_cast<CharType*>(operator new(new_capacity));
+        }
+
+        void deallocate_helper(pointer ptr)
+        {
+            operator delete(ptr);
+        }
+
+        string()
+        {
+            // Initialize as short string (empty)
+            m_data.s.m_buffer[0] = '\0';
+            set_short_size(0);  // This sets bit 0 to mark as short
+        }
+
+        void construct_fast_path(const_pointer chars_array, size_t len){
+            for(auto i{0uz}; i < len; ++i)
+                    m_data.s.m_buffer[i] = chars_array[i];
+
+            m_data.s.m_buffer[len] = '\0';
+            set_short_size(len);
+        }
+
+        void construct_slow_path(const_pointer chars_array, size_t len){
+            size_t capacity = std::bit_ceil(len + 1); // +1 for '\0'
+            m_data.l.m_buffer_ptr = allocate_helper(capacity);
+
+            for(auto i{0uz}; i<len; ++i) 
+            {
+                m_data.l.m_buffer_ptr[i] = chars_array[i];
+            }
+            m_data.l.m_buffer_ptr[len] = '\0';
+            set_long_size(len);
+            set_long_capacity(capacity);
+        }
+
+        // constructors
+        string(const_pointer chars_array)
+        {
+            size_t len = strlen(chars_array);
+            if(len == 0)
+            {
+                m_data.s.m_buffer[0] = '\0';
+                set_short_size(0);  // This sets bit 0 to mark as short
+                return;
+            }
+            if(len < 23){
+                construct_fast_path(chars_array, len);
+            }
+            else{
+                construct_slow_path(chars_array, len);
+            }
+        }
+
+        //copy constructor
+        string(const dev::string<CharType>& other){
+            size_t len = other.size();
+            if(len == 0)
+            {
+                m_data.s.m_buffer[0] = '\0';
+                set_short_size(0);  // This sets bit 0 to mark as short
+                return;
+            }
+
+            const_pointer other_ptr = other.get_buffer();
+            if(len > 0 && len < 23)
+                construct_fast_path(other_ptr, len);
+            else
+                construct_slow_path(other_ptr, len);
+        }
+
+        // move constructor
+        string(string&& other){
+            if(other.is_small()) // other is short string format
+            {
+                // copy the buffer 
+                std::uninitialized_copy(
+                    other.m_data.s.m_buffer, 
+                    other.m_data.s.m_buffer+other.size(),
+                    m_data.s.m_buffer
+                );
+
+                // zero out other's buffer
+                std::fill_n(
+                    other.m_data.s.m_buffer,
+                    other.size(),
+                    0
+                );
+
+                m_data.s.m_buffer[other.size()] = '\0';
+                set_short_size(other.size());
+                other.set_short_size(0);
+            }
+            else{ //other is long string format
+                m_data.l.m_buffer_ptr = std::exchange(other.m_data.l.m_buffer_ptr, nullptr);
+                set_long_size(other.get_long_size());
+                set_long_capacity(other.get_long_capacity());
+                other.set_long_capacity(0);
+            }
+        }
+
+        // swap
+        void swap(dev::string<CharType>& other){
+            std::swap(m_data, other.m_data);
+        }
+
+        // copy assignment
+        string& operator=(const string& other)
+        {
+            string(other).swap(*this);
+            return *this;
+        }
+
+        // move assignment
+        string& operator=(string&& other){
+            string(std::move(other)).swap(*this);
+            return *this;
+        }
+
+        CharType& operator[](size_t index){
+            pointer buffer = get_buffer();
+            return buffer[index];
+        }
+
+        const_reference at(size_t index) const{
+            if(index < 0 || index >= size())
+                throw std::out_of_range("Index out of bounds!");
+
+            const_pointer buffer = get_buffer();
+            return buffer[index];
+        }
+
+        bool operator==(const dev::string<CharType>& other) const{
+            if(size() != other.size())
+                return false;
+
+            for(auto i{0uz}; i < size(); ++i)
+            {
+                if(at(i) != other.at(i))
+                    return false;
+            }
+            return true;
+        }
+
+        bool operator==(const_pointer other) const{
+            size_t other_len = strlen(other);
+            size_t my_len = size();
+
+            if(my_len != other_len)
+                return false;
+
+            if(my_len != 0)
+            {
+                for(auto i{0uz}; i < my_len; ++i){
+                    if(at(i) != other[i])
+                        return false;
+                }
+            }
+            return true;
+        }
+
+        size_t empty() const{
+            return size() == 0;
+        }
+
+        // Append a character to the end
+        void push_back(CharType ch){
+            if(is_small())
+            {
+                
+            }
+        }
+
+        ~string() {
+            if (is_long()) {
+                operator delete(m_data.l.m_buffer_ptr);
+                m_data.l.m_buffer_ptr = nullptr;
+            }
+        }
+
+        CharType front(){
+            return at(0);
+        }
+
+        CharType back(){
+            return at(size() - 1);
+        }
+    };
+
+}  // namespace dev
+
+TEST(StringTest, DefaultCtorTest){
+    dev::string s1;
+    EXPECT_EQ(s1.size(), 0);
+    EXPECT_EQ(s1, "");
+
+    dev::string s2{};
+    EXPECT_EQ(s2.size(), 0);
+    EXPECT_EQ(s2, "");  
+}
+
+TEST(StringTest, CtorStringStackAllocationTest){
+    dev::string s1("Hello");
+    EXPECT_EQ(s1.size(), 5);
+    EXPECT_EQ(s1, "Hello");
+
+    const char chars_array[] = "World";
+    dev::string s2(chars_array);
+    EXPECT_EQ(s2.size(), 5);
+    EXPECT_EQ(s2, "World");
+}
+
+TEST(StringTest, CtorStringHeapAllocationTest){
+    dev::string s1("C++ is a general-purpose and multi-paradigm programming language!");
+    EXPECT_EQ(s1.size(), 65);
+    EXPECT_EQ(s1, "C++ is a general-purpose and multi-paradigm programming language!");
+}
+
+TEST(StringTest, CopyConstructSmallStringTest){
+    dev::string s1("Hello");
+    dev::string s2(s1);
+    EXPECT_EQ(s1, "Hello");
+    EXPECT_EQ(s2.size(), 5);
+    for(auto i{0uz}; i<s1.size(); ++i)
+        EXPECT_EQ(s2[i], s1[i]);
+}
+
+TEST(StringTest, CopyConstructLongStringTest){
+    dev::string s1("C++ is a general-purpose and multi-paradigm programming language!");
+    dev::string s2(s1);
+    EXPECT_EQ(s1.size(), 65);
+    EXPECT_EQ(s2.size(), s1.size());
+    for(auto i{0uz}; i<s1.size(); ++i)
+        EXPECT_EQ(s2[i], s1[i]);
+}
+
+TEST(StringTest, EmptyTest){
+    dev::string s1{};
+    EXPECT_EQ(s1.empty(), true);
+
+    dev::string s2("");
+    EXPECT_EQ(s2.size(), 0);
+    EXPECT_EQ(s2.empty(), true);
+
+    dev::string s3;
+    EXPECT_EQ(s3.size(), 0);
+    EXPECT_EQ(s3.empty(), true);
+
+    dev::string s4{""};
+    EXPECT_EQ(s4.size(), 0);
+    EXPECT_EQ(s4.empty(), true);
+}
+
+TEST(StringTest, SwapTest){
+    dev::string s1{"Hello"};
+    dev::string s2{"World!"};
+    s1.swap(s2);
+    EXPECT_EQ(s2, "Hello");
+    EXPECT_EQ(s2.size(), 5);
+    EXPECT_EQ(s1, "World!");
+    EXPECT_EQ(s1.size(), 6);
+}
+
+TEST(StringTest, MoveConstructorTest){
+    dev::string s1{dev::string{"Hello"}};
+    EXPECT_EQ(s1, "Hello");
+    EXPECT_EQ(s1.size(), 5);
+
+    dev::string s2{"World!"};
+    dev::string s3{std::move(s2)};
+    EXPECT_EQ(s3, "World!");
+    EXPECT_EQ(s3.size(), 6);
+    EXPECT_EQ(s2, "");
+    EXPECT_EQ(s2.size(), 0);
+}
+
+TEST(StringTest, CopyAssignmentTest)
+{
+    dev::string s1;
+    dev::string s2{"Hello"};
+    s1 = s2;
+    EXPECT_EQ(s2, "Hello");
+    EXPECT_EQ(s1, s2);
+
+    dev::string s3{"Ouroboros"};
+    s1 = s3;
+    EXPECT_EQ(s3, "Ouroboros");
+    EXPECT_EQ(s1, s3);
+    EXPECT_NE(s1, s2);
+}
+
+TEST(StringTest, MoveAssignmentTest){
+    dev::string s1{"GNU is not Unix!"};
+    s1 = dev::string{"WINE is not an emulator!"};
+    EXPECT_EQ(s1, "WINE is not an emulator!");
+    EXPECT_EQ(s1.size(), strlen("WINE is not an emulator!"));
+
+    dev::string s2{"pip installs packages"};
+    size_t expected_len = s2.size();
+    s1 = std::move(s2);
+    EXPECT_EQ(s1, "pip installs packages");
+    EXPECT_EQ(s1.size(), expected_len);
+    EXPECT_EQ(s2, "");
+    EXPECT_EQ(s2.size(), 0);
+
+    // a moved from string can be moved to again
+    s2 = dev::string{"Emacs makes a computer sing"};
+    EXPECT_EQ(s2, "Emacs makes a computer sing");
+}
+
+TEST(StringTest, FrontTest)
+{
+    dev::string s{"Small string optimization(SSO) is awesome!"};
+    EXPECT_EQ(s.front(), 'S');
+}
+
+TEST(StringTest, BackTest)
+{
+    dev::string s{"Small string optimization(SSO) is awesome!"};
+    EXPECT_EQ(s.back(), '!');
+}
+
+TEST(StringTest, PushBackTest){
+    dev::string s{"Brownian motion"};
+
+}
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/cc5aGPc9G)
