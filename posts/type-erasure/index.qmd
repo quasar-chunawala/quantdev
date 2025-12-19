@@ -160,7 +160,86 @@ struct MagicFunctionContainer{
 };
 ```
 
-In the `MagicFunctionContainer`, I have still got the templated constructor. I have still got the function call operator. But, now I have type for `m_func`. `m_func` is a pointer to `Concept`. In the templated constructor, now what I'm doing is, each time I get any type `Func` 
+In the `MagicFunctionContainer`, I have still got the templated constructor. I have still got the function call operator. But, now I have type for `m_func`. `m_func` is a pointer to `Concept`. In the templated constructor, now what I'm doing is, each time I get any type `Func`, I am passing that object into this new type `Impl<Func>`. So, essentially a `Concept*` pointer is always pointing to an `Impl<Func>`. 
+
+As a result what happens is, although the `MagicFunctionContainer` is not templated itself, its constructor is templated and it's `m_func` member variable is able to store different unrelated types. 
+
+## Polishing our design for `std::function` like container
+
+We can add some template magic and use concepts to constrain our template type parameter `Func`.
+
+```cpp
+#include <print>
+#include <functional>
+#include <memory>
+#include <concepts>
+
+namespace dev{
+    template<typename R, typename... Args>
+    struct Concept{
+        virtual R operator()(Args... args) = 0;
+        virtual ~Concept(){}
+    };
+
+    template<typename Func, typename R, typename... Args>
+    struct Impl : Concept<R, Args...>{
+        Impl(Func func)
+        : m_func{ func }
+        {}
+
+        R operator()(Args... args) override{
+            return m_func(args...);
+        }
+
+        Func m_func;
+    };
+
+    template<typename R, typename... Args>
+    class function{
+        public:
+        template<typename Func>
+        requires std::invocable<Func, Args...>
+        function(Func func) 
+        : m_func{ std::make_unique<Impl<Func,R,Args...>>(func)}
+        {}
+
+        R operator()(Args... args){
+            return (*m_func)(args...);
+        }
+
+        private:
+        std::unique_ptr<Concept<R, Args...>> m_func;
+    };
+}
+
+
+void print_num(int i){
+    std::println("{}", i);
+}
+
+auto display_lambda = [](int i){
+    std::println("{}", i);
+};
+
+struct PrintFunctor{
+    void operator()(int i){
+        std::println("{}", i);
+    }
+};
+
+int main()
+{
+    dev::function<void, int> f_print_num = print_num;
+    dev::function<void, int> f_display_lambda = display_lambda;
+    dev::function<void, int> f_print_functor = PrintFunctor{};
+
+    f_print_num(42);
+    f_display_lambda(5);
+    f_print_functor(17);
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/e8rKhPzYK)
 
 # Type erasure - Adding support for a custom deleter to the `shared_ptr`
 
