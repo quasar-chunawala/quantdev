@@ -1072,16 +1072,205 @@ font-style: inherit;">}</span></span></code></pre></div>
 <p><a href="https://compiler-explorer.com/z/e8rKhPzYK">Compiler Explorer</a></p>
 </section>
 </section>
+<section id="type-safety-in-type-erasure" class="level1">
+<h1>Type safety in type erasure</h1>
+<p>The type erased container should have the ability to hold unrelated types. In addition to this, there is one other requirement. <em>The type erased container should retain the type information of the assigned object</em>.</p>
+<p>Consider the following example:</p>
+<div class="sourceCode" id="cb8" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> Foo<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb8-2">    Foo<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Constructed Foo()"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb8-3">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">~</span>Foo<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"Destructed ~Foo()"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb8-4"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb8-5"></span>
+<span id="cb8-6"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> foo_ptr <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> Foo<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="cb8-7"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">delete</span> foo_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span></code></pre></div>
+<p>I have a type agnostic <code>foo_ptr</code> and I am assigning it an object of type <code>Foo</code>. When a <code>Foo</code> object is constructed, it prints the text <code>Constructed Foo()</code> to the console, when it is destructed, it prints <code>Destructed ~Foo()</code> to the console. Do you think this code compiles?</p>
+<p><code>gcc</code> issues the following warning:</p>
+<div class="sourceCode" id="cb9" style="background: #f1f3f5;"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb9-1">&lt;source&gt;: In function 'int main()':</span>
+<span id="cb9-2">&lt;source&gt;:11:12: warning: deleting 'void*' is undefined [-Wdelete-incomplete]</span>
+<span id="cb9-3">   11 |     delete foo_ptr;</span>
+<span id="cb9-4">      |            ^~~~~~~</span></code></pre></div>
+<p>Let’s try something else:</p>
+<div class="sourceCode" id="cb10" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>unique_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> uptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> Foo<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p>Do you think this code builds?</p>
+<p>It’s the same thing. As per the standard, deleteing a <code>void*</code> pointer is undefined behavior. In this particular case, <code>unique_ptr</code> has a static assertion built in to ensure that we don’t use a type-agnostic pointer.</p>
+<div class="sourceCode" id="cb11" style="background: #f1f3f5;"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb11-1">&lt;source&gt;:11:43:   </span>
+<span id="cb11-2">   11 |     std::unique_ptr&lt;void&gt; uptr{ new Foo() };</span>
+<span id="cb11-3">      |                                           ^</span>
+<span id="cb11-4">/cefs/e6/e6c9babfba5a70d326be2358_gcc-trunk-20251219/include/c++/16.0.0/bits/unique_ptr.h:88:38: error: static assertion failed: can't delete pointer to incomplete type</span>
+<span id="cb11-5">   88 |         static_assert(!is_void&lt;_Tp&gt;::value,</span>
+<span id="cb11-6">      |                                      ^~~~~</span>
+<span id="cb11-7">  '!(bool)std::integral_constant&lt;bool, true&gt;::value' evaluates to false</span></code></pre></div>
+<p>We’ve seen that raw-pointers and <code>unique_ptr</code> don’t work. How about a <code>shared_ptr</code>? Do you think this builds?</p>
+<div class="sourceCode" id="cb12" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>shared_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> sptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">new</span> Foo<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span></code></pre></div>
+<p>In this case, we see the following output:</p>
+<div class="sourceCode" id="cb13" style="background: #f1f3f5;"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb13-1">Constructed Foo()</span>
+<span id="cb13-2">Destructed ~Foo()</span></code></pre></div>
+<p>This is suprising! Is the <code>shared_ptr</code> not storing a raw pointer of <code>void*</code>, whilst the <code>unique_ptr</code> is? How does <code>shared_ptr</code> even able to delete the object correctly? Usually, once you assign a typed address <code>T*</code> to a pointer-to-void <code>void*</code>, you have lost the type information. How is <code>shared_ptr</code> still able to store the original type <code>Foo</code> in order to be able to destruct it correctly?</p>
+<p>This is what we mean by type-safety in type erasure. From cppreference.com, if you look at the declarations for the <code>unique_ptr</code> and <code>shared_ptr</code>, they look something like this:</p>
+<div class="sourceCode" id="cb14" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> T <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> shared_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb14-2"></span>
+<span id="cb14-3"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span></span>
+<span id="cb14-4">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span></span>
+<span id="cb14-5">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> Deleter <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>default_delete<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;&gt;</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">class</span> unique_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span></code></pre></div>
+<p><code>shared_ptr</code> only has a template type parameter <code>T</code>. But, magically it also stores the object type information and called the correct destructor. <code>unique_ptr&lt;T&gt;</code> only stores the template type information.</p>
+<p>The signature of the <code>shared_ptr</code> templated class kind of gives this away. It doesn’t have a deleter as a template type parameter. The deleter type is erased. In <code>shared_ptr</code> the deleter is based on the object type being passed during construction(and not the template type).</p>
+</section>
 <section id="type-erasure---adding-support-for-a-custom-deleter-to-the-shared_ptr" class="level1">
 <h1>Type erasure - Adding support for a custom deleter to the <code>shared_ptr</code></h1>
-<p>Suppose we’d like to add support for a custom deleter to the <code>shared_ptr</code>.</p>
-<div class="sourceCode" id="cb8" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><span class="pp" style="color: #AD0000;
+<p>Let’s use our learnings above to add support for a custom deleter to the <code>shared_ptr</code>. The <code>shared_ptr</code> needs to be aware of the actual type being passed during construction in order to delete the object correctly. Let’s see how we can achieve that.</p>
+<p>A <code>shared_ptr&lt;T1&gt;</code> can store objects of any type <code>T2</code> as long as <code>T2*</code> is convertible to <code>T1*</code>. It type erases <code>T2</code>. Upon destruction, the <code>shared_ptr</code> will call the correct destructor of type <code>T2</code>, that is the destructor of the actual object stored, instead of type <code>T1</code>.</p>
+<p>Here is a quick overview of the <code>shared_ptr</code>. Typical implementations of <code>shared_ptr</code> look like as follows:</p>
+<div class="sourceCode" id="cb15" style="background: #f1f3f5;"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb15-1">+-------------------+</span>
+<span id="cb15-2">|    shared_ptr&lt;T&gt;  |</span>
+<span id="cb15-3">+-------------------+</span>
+<span id="cb15-4">|                   |</span>
+<span id="cb15-5">|  +--------------+ |        +------------+</span>
+<span id="cb15-6">|  |   T* ptr     |-|-------&gt;|  T object  | </span>
+<span id="cb15-7">|  +--------------+ |        |   (heap)   | </span>
+<span id="cb15-8">|                   |        +------------+ </span>
+<span id="cb15-9">|  +--------------+ |                       </span>
+<span id="cb15-10">|  | ControlBlock*| |        +------------------------------------------+               </span>
+<span id="cb15-11">|  |    cb_ptr    |-|-------&gt;|         Control Block (heap)             |</span>
+<span id="cb15-12">|  +--------------+ |        +------------------------------------------+</span>
+<span id="cb15-13">|                   |        |                                          |</span>
+<span id="cb15-14">+------------------+|        |  +------------------------------------+  |</span>
+<span id="cb15-15">                             |  |  size_t reference_count            |  |</span>
+<span id="cb15-16">                             |  +------------------------------------+  |</span>
+<span id="cb15-17">                             |                                          |</span>
+<span id="cb15-18">                             |  +------------------------------------+  |</span>
+<span id="cb15-19">                             |  |  size_t weak_count                 |  |</span>
+<span id="cb15-20">                             |  +------------------------------------+  |</span>
+<span id="cb15-21">                             |                                          |</span>
+<span id="cb15-22">                             |  +------------------------------------+  |</span>
+<span id="cb15-23">                             |  |  Deleter (custom or                |  |</span>
+<span id="cb15-24">                             |  |  default delete)                   |  |</span>
+<span id="cb15-25">                             |  +------------------------------------+  |</span>
+<span id="cb15-26">                             |                                          |</span>
+<span id="cb15-27">                             |  +------------------------------------+  |</span>
+<span id="cb15-28">                             |  |  Allocator (optional)              |  |</span>
+<span id="cb15-29">                             |  +------------------------------------+  |</span>
+<span id="cb15-30">                             |                                          |</span>
+<span id="cb15-31">                             +------------------------------------------+</span></code></pre></div>
+<p>You have a <code>shared_ptr</code> of type <code>T</code>. It stores a raw underlying pointer-to-<code>T</code> and a pointer to a control block. The <code>control_block</code> is a different from the managed object. It stores the reference count, the weak count and some additional data. The custom deleter is going to delete the object type passed during <code>shared_ptr</code> construction and not the type <code>T</code>.</p>
+<div class="sourceCode" id="cb16" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb16-1"><span class="pp" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">#include </span><span class="im" style="color: #00769E;
 background-color: null;
 font-style: inherit;">&lt;iostream&gt;</span></span>
-<span id="cb8-2"></span>
-<span id="cb8-3"><span class="kw" style="color: #003B4F;
+<span id="cb16-2"></span>
+<span id="cb16-3"><span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1090,70 +1279,42 @@ background-color: null;
 font-style: inherit;">typename</span> T<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;</span></span>
-<span id="cb8-4"><span class="kw" style="color: #003B4F;
+<span id="cb16-4"><span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">class</span> shared_ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb8-5"></span>
-<span id="cb8-6">    <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">private</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">:</span></span>
-<span id="cb8-7">    T<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">*</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">m_underlying_ptr</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb8-8">    <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>atomic<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">unsigned</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">long</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;*</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">m_ref_count</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb8-9">    <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// something about the deleter</span></span>
-<span id="cb8-10"></span>
-<span id="cb8-11">    <span class="kw" style="color: #003B4F;
+<span id="cb16-5">    <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">public</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span></span>
-<span id="cb8-12">    <span class="co" style="color: #5E5E5E;
+<span id="cb16-6">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Templated constructor</span></span>
-<span id="cb8-13">    <span class="kw" style="color: #003B4F;
+<span id="cb16-7">    <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
 background-color: null;
+font-style: inherit;">typename</span> Y<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
+background-color: null;
 font-style: inherit;">typename</span> Deleter<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;</span></span>
-<span id="cb8-14">    shared_ptr<span class="op" style="color: #5E5E5E;
+<span id="cb16-8">    shared_ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">(</span>T<span class="op" style="color: #5E5E5E;
+font-style: inherit;">(</span>Y<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*</span> ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">,</span> Deleter deleter<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">)</span></span>
-<span id="cb8-15">    <span class="op" style="color: #5E5E5E;
+<span id="cb16-9">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span> <span class="va" style="color: #111111;
 background-color: null;
@@ -1162,35 +1323,35 @@ background-color: null;
 font-style: inherit;">{</span>ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb8-16">    <span class="co" style="color: #5E5E5E;
+<span id="cb16-10">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// ???  </span></span>
-<span id="cb8-17">    <span class="op" style="color: #5E5E5E;
+<span id="cb16-11">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{}</span></span>
-<span id="cb8-18"></span>
-<span id="cb8-19">    <span class="co" style="color: #5E5E5E;
+<span id="cb16-12"></span>
+<span id="cb16-13">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Destructor</span></span>
-<span id="cb8-20">    <span class="op" style="color: #5E5E5E;
+<span id="cb16-14">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">~</span>shared_ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(){</span></span>
-<span id="cb8-21">        <span class="co" style="color: #5E5E5E;
+<span id="cb16-15">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Decrement the ref-count. If m_ref_count == 0, </span></span>
-<span id="cb8-22">        <span class="co" style="color: #5E5E5E;
+<span id="cb16-16">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// delete m_underlying_ptr using deleter </span></span>
-<span id="cb8-23">    <span class="op" style="color: #5E5E5E;
+<span id="cb16-17">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb8-24"></span>
-<span id="cb8-25">    <span class="co" style="color: #5E5E5E;
+<span id="cb16-18"></span>
+<span id="cb16-19">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Pointer like functions</span></span>
-<span id="cb8-26">    <span class="at" style="color: #657422;
+<span id="cb16-20">    <span class="at" style="color: #657422;
 background-color: null;
 font-style: inherit;">const</span> T<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1203,189 +1364,54 @@ background-color: null;
 font-style: inherit;">const</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb8-27">        <span class="cf" style="color: #003B4F;
+<span id="cb16-21">        <span class="cf" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">return</span> <span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_underlying_ptr</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb8-28">    <span class="op" style="color: #5E5E5E;
+<span id="cb16-22">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb8-29"><span class="op" style="color: #5E5E5E;
+<span id="cb16-23"></span>
+<span id="cb16-24">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">private</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span></span>
+<span id="cb16-25">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">private</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span></span>
+<span id="cb16-26">    T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_underlying_ptr</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb16-27">    control_block_base<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">m_control_block_base_ptr</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Concept* pointer</span></span>
+<span id="cb16-28"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span></code></pre></div>
 <p><a href="https://compiler-explorer.com/z/8oq3Kf361">Compiler Explorer</a></p>
 <p>We add a templated constructor <code>shared_ptr(T*, Deleter )</code> that accepts a raw pointer and a custom deleter as the second argument to the design of our <code>shared_ptr</code>.</p>
 <p>Let’s now write a <code>Concept</code> and <code>Impl</code> class that support destruction using an instance of the custom <code>Deleter</code> type.</p>
-<div class="sourceCode" id="cb9" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1">    <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">struct</span> destroy_wrapper <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// RAII class</span></span>
-<span id="cb9-2">    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb9-3">        <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">/* ... */</span></span>
-<span id="cb9-4"></span>
-<span id="cb9-5">        <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// Concept class</span></span>
-<span id="cb9-6">        <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">struct</span> destroyer_base</span>
-<span id="cb9-7">        <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb9-8">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">virtual</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">()(</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">*</span> ptr<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb9-9">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">virtual</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">~</span>destroyer_base<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">()</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">default</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb9-10">        <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb9-11"></span>
-<span id="cb9-12">        <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// Impl class</span></span>
-<span id="cb9-13">        <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">typename</span> Deleter<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span></span>
-<span id="cb9-14">        <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">struct</span> destroyer <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">:</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">public</span> destroyer_base</span>
-<span id="cb9-15">        <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb9-16">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">explicit</span> destroyer<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>Deleter deleter<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span></span>
-<span id="cb9-17">              <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">:</span> destroyer_base<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">()</span></span>
-<span id="cb9-18">              <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">m_deleter</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span> deleter <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb9-19">            <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb9-20">            <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb9-21"></span>
-<span id="cb9-22">            <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">()(</span>T<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">*</span> ptr<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">override</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">m_deleter</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>ptr<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb9-23"></span>
-<span id="cb9-24">            Deleter <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">m_deleter</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb9-25">        <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb9-26"></span>
-<span id="cb9-27">        <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">~</span>destroy_wrapper<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">()</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{}</span></span>
-<span id="cb9-28">        <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>unique_ptr<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>destroyer_base<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">m_destroyer_ptr</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb9-29">    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span></code></pre></div>
+<div class="sourceCode" id="cb17" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"></code></pre></div>
 <p>The <code>destroyer_base</code> is the <em>Concept</em> class and the <code>destroyer</code> is its type-dependent <em>implementation</em>.</p>
 <p>The wrapper class <code>destroyer_wrapper</code> wraps objects of different types (<code>destoyer&lt;Deleter&gt;</code>) into a common wrapper and treats them as though they are the same unified interface.</p>
 <p>THe updated design of the <code>shared_ptr&lt;T&gt;</code> class would look something like this:</p>
-<div class="sourceCode" id="cb10" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><span class="kw" style="color: #003B4F;
+<div class="sourceCode" id="cb18" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb18-1"><span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1394,25 +1420,25 @@ background-color: null;
 font-style: inherit;">typename</span> T<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;</span></span>
-<span id="cb10-2"><span class="kw" style="color: #003B4F;
+<span id="cb18-2"><span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">class</span> shared_ptr</span>
-<span id="cb10-3"><span class="op" style="color: #5E5E5E;
+<span id="cb18-3"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb10-4">    <span class="kw" style="color: #003B4F;
+<span id="cb18-4">    <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">private</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span></span>
-<span id="cb10-5">    T<span class="op" style="color: #5E5E5E;
+<span id="cb18-5">    T<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*</span> <span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_underlying_ptr</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb10-6">    <span class="bu" style="color: null;
+<span id="cb18-6">    <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>atomic<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1427,23 +1453,23 @@ background-color: null;
 font-style: inherit;">m_ref_count_ptr</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb10-7">    destroyer_wrapper<span class="op" style="color: #5E5E5E;
+<span id="cb18-7">    destroyer_wrapper<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*</span> <span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_destroyer_ptr</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb10-8"></span>
-<span id="cb10-9">    <span class="kw" style="color: #003B4F;
+<span id="cb18-8"></span>
+<span id="cb18-9">    <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">public</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span></span>
-<span id="cb10-10">    <span class="co" style="color: #5E5E5E;
+<span id="cb18-10">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Templated constructor</span></span>
-<span id="cb10-11">    <span class="kw" style="color: #003B4F;
+<span id="cb18-11">    <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1452,7 +1478,7 @@ background-color: null;
 font-style: inherit;">typename</span> Deleter<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;</span></span>
-<span id="cb10-12">    shared_ptr<span class="op" style="color: #5E5E5E;
+<span id="cb18-12">    shared_ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span>T<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1463,7 +1489,7 @@ background-color: null;
 font-style: inherit;">&amp;&amp;</span> deleter<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">)</span></span>
-<span id="cb10-13">    <span class="op" style="color: #5E5E5E;
+<span id="cb18-13">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span> <span class="va" style="color: #111111;
 background-color: null;
@@ -1472,7 +1498,7 @@ background-color: null;
 font-style: inherit;">{</span> ptr <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-14">    <span class="op" style="color: #5E5E5E;
+<span id="cb18-14">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">,</span> <span class="va" style="color: #111111;
 background-color: null;
@@ -1483,7 +1509,7 @@ background-color: null;
 font-style: inherit;">nullptr</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-15">    <span class="op" style="color: #5E5E5E;
+<span id="cb18-15">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">,</span> <span class="va" style="color: #111111;
 background-color: null;
@@ -1494,15 +1520,15 @@ background-color: null;
 font-style: inherit;">nullptr</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-16">    <span class="op" style="color: #5E5E5E;
+<span id="cb18-16">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb10-17">        <span class="cf" style="color: #003B4F;
+<span id="cb18-17">        <span class="cf" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">try</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb10-18">            <span class="va" style="color: #111111;
+<span id="cb18-18">            <span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_destroyer_ptr</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1519,7 +1545,7 @@ background-color: null;
 font-style: inherit;">&gt;(</span>deleter<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">));</span></span>
-<span id="cb10-19">            <span class="va" style="color: #111111;
+<span id="cb18-19">            <span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_ref_count_ptr</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1532,7 +1558,7 @@ background-color: null;
 font-style: inherit;">u</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="cb10-20">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-20">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span> <span class="cf" style="color: #003B4F;
 background-color: null;
@@ -1547,36 +1573,36 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb10-21">            <span class="kw" style="color: #003B4F;
+<span id="cb18-21">            <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">delete</span> ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb10-22">            <span class="cf" style="color: #003B4F;
+<span id="cb18-22">            <span class="cf" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">throw</span> ex<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb10-23">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-23">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-24">    <span class="op" style="color: #5E5E5E;
+<span id="cb18-24">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-25"></span>
-<span id="cb10-26">    <span class="co" style="color: #5E5E5E;
+<span id="cb18-25"></span>
+<span id="cb18-26">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">/* ... */</span></span>
-<span id="cb10-27"></span>
-<span id="cb10-28">    <span class="kw" style="color: #003B4F;
+<span id="cb18-27"></span>
+<span id="cb18-28">    <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">struct</span> destroy_wrapper <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// RAII class</span></span>
-<span id="cb10-29">    <span class="op" style="color: #5E5E5E;
+<span id="cb18-29">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb10-30">        <span class="kw" style="color: #003B4F;
+<span id="cb18-30">        <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1585,7 +1611,7 @@ background-color: null;
 font-style: inherit;">typename</span> Deleter<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;</span></span>
-<span id="cb10-31">        <span class="kw" style="color: #003B4F;
+<span id="cb18-31">        <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">explicit</span> destroy_wrapper<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1594,7 +1620,7 @@ background-color: null;
 font-style: inherit;">&amp;&amp;</span> deleter<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">)</span></span>
-<span id="cb10-32">          <span class="op" style="color: #5E5E5E;
+<span id="cb18-32">          <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span> <span class="va" style="color: #111111;
 background-color: null;
@@ -1617,19 +1643,19 @@ background-color: null;
 font-style: inherit;">))</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-33">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-33">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb10-34">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-34">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-35">        <span class="co" style="color: #5E5E5E;
+<span id="cb18-35">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// destroy_wrapper is a wrapper over a unique_ptr&lt;destroyer_base&gt;.</span></span>
-<span id="cb10-36">        <span class="co" style="color: #5E5E5E;
+<span id="cb18-36">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// It is intended to be move-constructible ONLY.</span></span>
-<span id="cb10-37">        destroy_wrapper<span class="op" style="color: #5E5E5E;
+<span id="cb18-37">        destroy_wrapper<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span>destroy_wrapper<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1638,7 +1664,7 @@ background-color: null;
 font-style: inherit;">)</span> <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">noexcept</span></span>
-<span id="cb10-38">          <span class="op" style="color: #5E5E5E;
+<span id="cb18-38">          <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span> <span class="va" style="color: #111111;
 background-color: null;
@@ -1661,14 +1687,14 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-39">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-39">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb10-40">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-40">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-41"></span>
-<span id="cb10-42">        <span class="dt" style="color: #AD0000;
+<span id="cb18-41"></span>
+<span id="cb18-42">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
 background-color: null;
@@ -1677,10 +1703,10 @@ background-color: null;
 font-style: inherit;">()(</span>pointer ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">)</span></span>
-<span id="cb10-43">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-43">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb10-44">            <span class="op" style="color: #5E5E5E;
+<span id="cb18-44">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(*</span><span class="va" style="color: #111111;
 background-color: null;
@@ -1691,17 +1717,17 @@ background-color: null;
 font-style: inherit;">);</span> <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Virtual polymorphism</span></span>
-<span id="cb10-45">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-45">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-46"></span>
-<span id="cb10-47">        <span class="kw" style="color: #003B4F;
+<span id="cb18-46"></span>
+<span id="cb18-47">        <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">struct</span> destroyer_base</span>
-<span id="cb10-48">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-48">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb10-49">            <span class="kw" style="color: #003B4F;
+<span id="cb18-49">            <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">virtual</span> <span class="dt" style="color: #AD0000;
 background-color: null;
@@ -1718,7 +1744,7 @@ background-color: null;
 font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb10-50">            <span class="kw" style="color: #003B4F;
+<span id="cb18-50">            <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">virtual</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1731,11 +1757,11 @@ background-color: null;
 font-style: inherit;">default</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb10-51">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-51">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span>
-<span id="cb10-52"></span>
-<span id="cb10-53">        <span class="kw" style="color: #003B4F;
+<span id="cb18-52"></span>
+<span id="cb18-53">        <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1744,29 +1770,29 @@ background-color: null;
 font-style: inherit;">typename</span> Deleter<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;</span></span>
-<span id="cb10-54">        <span class="kw" style="color: #003B4F;
+<span id="cb18-54">        <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">struct</span> destroyer <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span> <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">public</span> destroyer_base</span>
-<span id="cb10-55">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-55">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb10-56">            <span class="kw" style="color: #003B4F;
+<span id="cb18-56">            <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">explicit</span> destroyer<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span>Deleter deleter<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">)</span></span>
-<span id="cb10-57">              <span class="op" style="color: #5E5E5E;
+<span id="cb18-57">              <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span> destroyer_base<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">()</span></span>
-<span id="cb10-58">              <span class="op" style="color: #5E5E5E;
+<span id="cb18-58">              <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">,</span> <span class="va" style="color: #111111;
 background-color: null;
@@ -1775,14 +1801,14 @@ background-color: null;
 font-style: inherit;">{</span> deleter <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-59">            <span class="op" style="color: #5E5E5E;
+<span id="cb18-59">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb10-60">            <span class="op" style="color: #5E5E5E;
+<span id="cb18-60">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-61"></span>
-<span id="cb10-62">            <span class="dt" style="color: #AD0000;
+<span id="cb18-61"></span>
+<span id="cb18-62">            <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
 background-color: null;
@@ -1803,24 +1829,24 @@ background-color: null;
 font-style: inherit;">);</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb10-63"></span>
-<span id="cb10-64">            Deleter <span class="va" style="color: #111111;
+<span id="cb18-63"></span>
+<span id="cb18-64">            Deleter <span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_deleter</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb10-65">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-65">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span>
-<span id="cb10-66"></span>
-<span id="cb10-67">        <span class="op" style="color: #5E5E5E;
+<span id="cb18-66"></span>
+<span id="cb18-67">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">~</span>destroy_wrapper<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">()</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{}</span></span>
-<span id="cb10-68">        <span class="bu" style="color: null;
+<span id="cb18-68">        <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>unique_ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1831,10 +1857,10 @@ background-color: null;
 font-style: inherit;">m_destroyer_ptr</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb10-69">    <span class="op" style="color: #5E5E5E;
+<span id="cb18-69">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span>
-<span id="cb10-70"><span class="op" style="color: #5E5E5E;
+<span id="cb18-70"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span></code></pre></div>
 

@@ -241,25 +241,135 @@ int main()
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/e8rKhPzYK)
 
+# Type safety in type erasure
+
+The type erased container should have the ability to hold unrelated types. In addition to this, there is one other requirement. *The type erased container should retain the type information of the assigned object*.
+
+Consider the following example:
+
+```cpp
+struct Foo{
+    Foo(){ std::println("Constructed Foo()"); }
+    ~Foo(){ std::println("Destructed ~Foo()"); }
+};
+
+void* foo_ptr = new Foo();
+delete foo_ptr;
+```
+
+I have a type agnostic `foo_ptr` and I am assigning it an object of type `Foo`. When a `Foo` object is constructed, it prints the text `Constructed Foo()` to the console, when it is destructed, it prints `Destructed ~Foo()` to the console. Do you think this code compiles?
+
+`gcc` issues the following warning:
+
+```shell
+<source>: In function 'int main()':
+<source>:11:12: warning: deleting 'void*' is undefined [-Wdelete-incomplete]
+   11 |     delete foo_ptr;
+      |            ^~~~~~~
+```
+
+Let's try something else:
+
+```cpp
+std::unique_ptr<void> uptr{ new Foo() };
+```
+
+Do you think this code builds? 
+
+It's the same thing. As per the standard, deleteing a `void*` pointer is undefined behavior. In this particular case, `unique_ptr` has a static assertion built in to ensure that we don't use a type-agnostic pointer. 
+
+```shell
+<source>:11:43:   
+   11 |     std::unique_ptr<void> uptr{ new Foo() };
+      |                                           ^
+/cefs/e6/e6c9babfba5a70d326be2358_gcc-trunk-20251219/include/c++/16.0.0/bits/unique_ptr.h:88:38: error: static assertion failed: can't delete pointer to incomplete type
+   88 |         static_assert(!is_void<_Tp>::value,
+      |                                      ^~~~~
+  '!(bool)std::integral_constant<bool, true>::value' evaluates to false
+```
+
+We've seen that raw-pointers and `unique_ptr` don't work. How about a `shared_ptr`? Do you think this builds?
+
+```cpp
+std::shared_ptr<void> sptr{ new Foo() };
+```
+
+In this case, we see the following output:
+
+```shell
+Constructed Foo()
+Destructed ~Foo()
+```
+
+This is suprising! Is the `shared_ptr` not storing a raw pointer of `void*`, whilst the `unique_ptr` is? How does `shared_ptr` even able to delete the object correctly? Usually, once you assign a typed address `T*` to a pointer-to-void `void*`, you have lost the type information. How is `shared_ptr` still able to store the original type `Foo` in order to be able to destruct it correctly?
+
+This is what we mean by type-safety in type erasure. From cppreference.com, if you look at the declarations for the `unique_ptr` and `shared_ptr`, they look something like this:
+
+```cpp
+template< class T > class shared_ptr;
+
+template<
+    class T,
+    class Deleter = std::default_delete<T>> class unique_ptr;
+```
+
+`shared_ptr` only has a template type parameter `T`. But, magically it also stores the object type information and called the correct destructor. `unique_ptr<T>` only stores the template type information.
+
+The signature of the `shared_ptr` templated class kind of gives this away. It doesn't have a deleter as a template type parameter. The deleter type is erased. In `shared_ptr` the deleter is based on the object type being passed during construction(and not the template type). 
+
 # Type erasure - Adding support for a custom deleter to the `shared_ptr`
 
-Suppose we'd like to add support for a custom deleter to the `shared_ptr`. 
+Let's use our learnings above to add support for a custom deleter to the `shared_ptr`. The `shared_ptr` needs to be aware of the actual type being passed during construction in order to delete the object correctly. Let's see how we can achieve that.
+
+A `shared_ptr<T1>` can store objects of any type `T2` as long as `T2*` is convertible to `T1*`. It type erases `T2`. Upon destruction, the `shared_ptr` will call the correct destructor of type `T2`, that is the destructor of the actual object stored, instead of type `T1`.
+
+Here is a quick overview of the `shared_ptr`. Typical implementations of `shared_ptr` look like as follows:
+
+```shell
++-------------------+
+|    shared_ptr<T>  |
++-------------------+
+|                   |
+|  +--------------+ |        +------------+
+|  |   T* ptr     |-|------->|  T object  | 
+|  +--------------+ |        |   (heap)   | 
+|                   |        +------------+ 
+|  +--------------+ |                       
+|  | ControlBlock*| |        +------------------------------------------+               
+|  |    cb_ptr    |-|------->|         Control Block (heap)             |
+|  +--------------+ |        +------------------------------------------+
+|                   |        |                                          |
++------------------+|        |  +------------------------------------+  |
+                             |  |  size_t reference_count            |  |
+                             |  +------------------------------------+  |
+                             |                                          |
+                             |  +------------------------------------+  |
+                             |  |  size_t weak_count                 |  |
+                             |  +------------------------------------+  |
+                             |                                          |
+                             |  +------------------------------------+  |
+                             |  |  Deleter (custom or                |  |
+                             |  |  default delete)                   |  |
+                             |  +------------------------------------+  |
+                             |                                          |
+                             |  +------------------------------------+  |
+                             |  |  Allocator (optional)              |  |
+                             |  +------------------------------------+  |
+                             |                                          |
+                             +------------------------------------------+
+```    
+
+You have a `shared_ptr` of type `T`. It stores a raw underlying pointer-to-`T` and a pointer to a control block. The `control_block` is a different from the managed object. It stores the reference count, the weak count and some additional data. The custom deleter is going to delete the object type passed during `shared_ptr` construction and not the type `T`. 
 
 ```cpp
 #include <iostream>
 
 template<typename T>
 class shared_ptr{
-
-    private:
-    T* m_underlying_ptr;
-    std::atomic<unsigned long>* m_ref_count;
-    // something about the deleter
-
     public:
     // Templated constructor
-    template<typename Deleter>
-    shared_ptr(T* ptr, Deleter deleter)
+    template<typename Y, typename Deleter>
+    shared_ptr(Y* ptr, Deleter deleter)
     : m_underlying_ptr{ptr}
     // ???  
     {}
@@ -274,6 +384,11 @@ class shared_ptr{
     const T* operator->() const{
         return m_underlying_ptr;
     }
+
+    private:
+    private:
+    T* m_underlying_ptr;
+    control_block_base* m_control_block_base_ptr;   // Concept* pointer
 };
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/8oq3Kf361)
@@ -283,35 +398,7 @@ We add a templated constructor `shared_ptr(T*, Deleter )` that accepts a raw poi
 Let's now write a `Concept` and `Impl` class that support destruction using an instance of the custom `Deleter` type.
 
 ```cpp
-    struct destroy_wrapper // RAII class
-    {
-        /* ... */
 
-        // Concept class
-        struct destroyer_base
-        {
-            virtual void operator()(void* ptr) = 0;
-            virtual ~destroyer_base() = default;
-        };
-
-        // Impl class
-        template<typename Deleter>
-        struct destroyer : public destroyer_base
-        {
-            explicit destroyer(Deleter deleter)
-              : destroyer_base()
-              , m_deleter{ deleter }
-            {
-            }
-
-            void operator()(T* ptr) override { m_deleter(ptr); }
-
-            Deleter m_deleter;
-        };
-
-        ~destroy_wrapper() {}
-        std::unique_ptr<destroyer_base> m_destroyer_ptr;
-    };
 ```
 
 The `destroyer_base` is the *Concept* class and the `destroyer` is its type-dependent *implementation*.
