@@ -361,12 +361,27 @@ Here is a quick overview of the `shared_ptr`. Typical implementations of `shared
 
 You have a `shared_ptr` of type `T`. It stores a raw underlying pointer-to-`T` and a pointer to a control block. The `control_block` is a different from the managed object. It stores the reference count, the weak count and some additional data. The custom deleter is going to delete the object type passed during `shared_ptr` construction and not the type `T`. 
 
+## Step 1 - Code up a container that can hold unrelated different types
+
+We start with thinking about our `shared_ptr` class. So, we write a templated constructor `shared_ptr(Y* ptr)`. You should be used to this by now - I can pass in any object to this. I later constrain this using the `std::is_convertible<Y*, T*>` type trait, to enforce that `Y*` is indeed convertible to `T*`. 
+
+We have another constructor that takes two parameters : a pointer to `Y` and a custom deleter. 
+
+Now, the pointer to `Y`, `Y*` is convertible to pointer to `T`, `T*`. So, the pointer(address) itself is simply stored in the class as a `T*` member variable. So, I have a member variable `T* m_underlying_ptr` at the bottom. The question is how do we store the original object type `Y*` and the deleter type `Deleter`. As soon as I assign `Y* ptr` to `T* m_underlying_ptr`, I have lost information about the original object type `Y*`.  How do we store the deleter and the true object type `Y`?
+
 ```cpp
 #include <iostream>
 
 template<typename T>
 class shared_ptr{
     public:
+
+    template<typename Y>
+    requires std::is_convertible<Y*, T*>
+    shared_ptr(Y* ptr)
+    : shared_ptr(ptr, std::default_delete<Y>{})
+    {}
+
     // Templated constructor
     template<typename Y, typename Deleter>
     shared_ptr(Y* ptr, Deleter deleter)
@@ -386,26 +401,42 @@ class shared_ptr{
     }
 
     private:
-    private:
     T* m_underlying_ptr;
-    control_block_base* m_control_block_base_ptr;   // Concept* pointer
 };
 ```
-[Compiler Explorer](https://compiler-explorer.com/z/8oq3Kf361)
 
-We add a templated constructor `shared_ptr(T*, Deleter )` that accepts a raw pointer and a custom deleter as the second argument to the design of our `shared_ptr`.
+## Step 2 - Coding up a type-agnostic interface and a type-dependent implementation
 
-Let's now write a `Concept` and `Impl` class that support destruction using an instance of the custom `Deleter` type.
+Let's now write a `Concept` and `Impl` class that supports destruction using an instance of the custom `Impl<ObjType, Deleter>` type. We can actually define a `ControlBlockBase` and `ControlBlockImpl<ObjType, Deleter>` classes.
 
 ```cpp
+// Type-agnostic Concept class
+struct ControlBlockBase{
+    std::atomic<std::size_t> m_ref_count{1uz};
 
+    virtual ~control_back_base() = default;
+}
+
+// Type dependent Impl<ObjType,Deleter> implementation
+template<typename ObjType, typename Deleter>
+struct ControlBlock : ControlBlockBase<ObjType,Deleter>{
+    control_block( ObjType* object_ptr, Deleter deleter)
+    : m_object_ptr{ object_ptr }
+    , m_deleter{ deleter }
+    {}
+
+    ~control_block()
+    {
+        m_deleter(m_object_ptr);
+    }
+
+    private:
+    ObjType* m_object_ptr;
+    Deleter m_deleter;
+}
 ```
 
-The `destroyer_base` is the *Concept* class and the `destroyer` is its type-dependent *implementation*.
-
-The wrapper class `destroyer_wrapper` wraps objects of different  types (`destoyer<Deleter>`) into a common wrapper and treats them as though they are the same unified interface. 
-
-THe updated design of the `shared_ptr<T>` class would look something like this:
+The `ControlBlock` inherits from `ControlBlockBase` and it is templated. `Concept` itself is not templated, but the implementation `control_block` class is. In this case, it is templated on the `ObjectType` and the `Deleter` type. The constructor `control_block(ObjectType*, Deleter)` takes two parameters - the object type and the deleter. 
 
 ```cpp
 template<typename T>
@@ -413,8 +444,7 @@ class shared_ptr
 {
     private:
     T* m_underlying_ptr;
-    std::atomic<unsigned long>* m_ref_count_ptr;
-    destroyer_wrapper* m_destroyer_ptr;
+    control_blk
 
     public:
     // Templated constructor

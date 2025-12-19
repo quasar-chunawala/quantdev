@@ -218,7 +218,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#polishing-our-design-for-stdfunction-like-container" id="toc-polishing-our-design-for-stdfunction-like-container" class="nav-link" data-scroll-target="#polishing-our-design-for-stdfunction-like-container">Polishing our design for <code>std::function</code> like container</a></li>
   </ul></li>
   <li><a href="#type-safety-in-type-erasure" id="toc-type-safety-in-type-erasure" class="nav-link" data-scroll-target="#type-safety-in-type-erasure">Type safety in type erasure</a></li>
-  <li><a href="#type-erasure---adding-support-for-a-custom-deleter-to-the-shared_ptr" id="toc-type-erasure---adding-support-for-a-custom-deleter-to-the-shared_ptr" class="nav-link" data-scroll-target="#type-erasure---adding-support-for-a-custom-deleter-to-the-shared_ptr">Type erasure - Adding support for a custom deleter to the <code>shared_ptr</code></a></li>
+  <li><a href="#type-erasure---adding-support-for-a-custom-deleter-to-the-shared_ptr" id="toc-type-erasure---adding-support-for-a-custom-deleter-to-the-shared_ptr" class="nav-link" data-scroll-target="#type-erasure---adding-support-for-a-custom-deleter-to-the-shared_ptr">Type erasure - Adding support for a custom deleter to the <code>shared_ptr</code></a>
+  <ul class="collapse">
+  <li><a href="#step-1---code-up-a-container-that-can-hold-unrelated-different-types" id="toc-step-1---code-up-a-container-that-can-hold-unrelated-different-types" class="nav-link" data-scroll-target="#step-1---code-up-a-container-that-can-hold-unrelated-different-types">Step 1 - Code up a container that can hold unrelated different types</a></li>
+  <li><a href="#step-2---coding-up-a-type-agnostic-interface-and-a-type-dependent-implementation" id="toc-step-2---coding-up-a-type-agnostic-interface-and-a-type-dependent-implementation" class="nav-link" data-scroll-target="#step-2---coding-up-a-type-agnostic-interface-and-a-type-dependent-implementation">Step 2 - Coding up a type-agnostic interface and a type-dependent implementation</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -512,113 +516,145 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb15-30"><a href="#cb15-30"></a>                             |                                          |</span>
 <span id="cb15-31"><a href="#cb15-31"></a>                             +------------------------------------------+</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>You have a <code>shared_ptr</code> of type <code>T</code>. It stores a raw underlying pointer-to-<code>T</code> and a pointer to a control block. The <code>control_block</code> is a different from the managed object. It stores the reference count, the weak count and some additional data. The custom deleter is going to delete the object type passed during <code>shared_ptr</code> construction and not the type <code>T</code>.</p>
+<section id="step-1---code-up-a-container-that-can-hold-unrelated-different-types" class="level2">
+<h2 class="anchored" data-anchor-id="step-1---code-up-a-container-that-can-hold-unrelated-different-types">Step 1 - Code up a container that can hold unrelated different types</h2>
+<p>We start with thinking about our <code>shared_ptr</code> class. So, we write a templated constructor <code>shared_ptr(Y* ptr)</code>. You should be used to this by now - I can pass in any object to this. I later constrain this using the <code>std::is_convertible&lt;Y*, T*&gt;</code> type trait, to enforce that <code>Y*</code> is indeed convertible to <code>T*</code>.</p>
+<p>We have another constructor that takes two parameters : a pointer to <code>Y</code> and a custom deleter.</p>
+<p>Now, the pointer to <code>Y</code>, <code>Y*</code> is convertible to pointer to <code>T</code>, <code>T*</code>. So, the pointer(address) itself is simply stored in the class as a <code>T*</code> member variable. So, I have a member variable <code>T* m_underlying_ptr</code> at the bottom. The question is how do we store the original object type <code>Y*</code> and the deleter type <code>Deleter</code>. As soon as I assign <code>Y* ptr</code> to <code>T* m_underlying_ptr</code>, I have lost information about the original object type <code>Y*</code>. How do we store the deleter and the true object type <code>Y</code>?</p>
 <div class="sourceCode" id="cb16"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb16-1"><a href="#cb16-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
 <span id="cb16-2"><a href="#cb16-2"></a></span>
 <span id="cb16-3"><a href="#cb16-3"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
 <span id="cb16-4"><a href="#cb16-4"></a><span class="kw">class</span> shared_ptr<span class="op">{</span></span>
 <span id="cb16-5"><a href="#cb16-5"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb16-6"><a href="#cb16-6"></a>    <span class="co">// Templated constructor</span></span>
-<span id="cb16-7"><a href="#cb16-7"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Y<span class="op">,</span> <span class="kw">typename</span> Deleter<span class="op">&gt;</span></span>
-<span id="cb16-8"><a href="#cb16-8"></a>    shared_ptr<span class="op">(</span>Y<span class="op">*</span> ptr<span class="op">,</span> Deleter deleter<span class="op">)</span></span>
-<span id="cb16-9"><a href="#cb16-9"></a>    <span class="op">:</span> <span class="va">m_underlying_ptr</span><span class="op">{</span>ptr<span class="op">}</span></span>
-<span id="cb16-10"><a href="#cb16-10"></a>    <span class="co">// ???  </span></span>
+<span id="cb16-6"><a href="#cb16-6"></a></span>
+<span id="cb16-7"><a href="#cb16-7"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Y<span class="op">&gt;</span></span>
+<span id="cb16-8"><a href="#cb16-8"></a>    <span class="kw">requires</span> <span class="bu">std::</span>is_convertible<span class="op">&lt;</span>Y<span class="op">*,</span> T<span class="op">*&gt;</span></span>
+<span id="cb16-9"><a href="#cb16-9"></a>    shared_ptr<span class="op">(</span>Y<span class="op">*</span> ptr<span class="op">)</span></span>
+<span id="cb16-10"><a href="#cb16-10"></a>    <span class="op">:</span> shared_ptr<span class="op">(</span>ptr<span class="op">,</span> <span class="bu">std::</span>default_delete<span class="op">&lt;</span>Y<span class="op">&gt;{})</span></span>
 <span id="cb16-11"><a href="#cb16-11"></a>    <span class="op">{}</span></span>
 <span id="cb16-12"><a href="#cb16-12"></a></span>
-<span id="cb16-13"><a href="#cb16-13"></a>    <span class="co">// Destructor</span></span>
-<span id="cb16-14"><a href="#cb16-14"></a>    <span class="op">~</span>shared_ptr<span class="op">(){</span></span>
-<span id="cb16-15"><a href="#cb16-15"></a>        <span class="co">// Decrement the ref-count. If m_ref_count == 0, </span></span>
-<span id="cb16-16"><a href="#cb16-16"></a>        <span class="co">// delete m_underlying_ptr using deleter </span></span>
-<span id="cb16-17"><a href="#cb16-17"></a>    <span class="op">}</span></span>
-<span id="cb16-18"><a href="#cb16-18"></a></span>
-<span id="cb16-19"><a href="#cb16-19"></a>    <span class="co">// Pointer like functions</span></span>
-<span id="cb16-20"><a href="#cb16-20"></a>    <span class="at">const</span> T<span class="op">*</span> <span class="kw">operator</span><span class="op">-&gt;()</span> <span class="at">const</span><span class="op">{</span></span>
-<span id="cb16-21"><a href="#cb16-21"></a>        <span class="cf">return</span> <span class="va">m_underlying_ptr</span><span class="op">;</span></span>
-<span id="cb16-22"><a href="#cb16-22"></a>    <span class="op">}</span></span>
-<span id="cb16-23"><a href="#cb16-23"></a></span>
-<span id="cb16-24"><a href="#cb16-24"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb16-25"><a href="#cb16-25"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb16-26"><a href="#cb16-26"></a>    T<span class="op">*</span> <span class="va">m_underlying_ptr</span><span class="op">;</span></span>
-<span id="cb16-27"><a href="#cb16-27"></a>    control_block_base<span class="op">*</span> <span class="va">m_control_block_base_ptr</span><span class="op">;</span>   <span class="co">// Concept* pointer</span></span>
-<span id="cb16-28"><a href="#cb16-28"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p><a href="https://compiler-explorer.com/z/8oq3Kf361">Compiler Explorer</a></p>
-<p>We add a templated constructor <code>shared_ptr(T*, Deleter )</code> that accepts a raw pointer and a custom deleter as the second argument to the design of our <code>shared_ptr</code>.</p>
-<p>Let’s now write a <code>Concept</code> and <code>Impl</code> class that support destruction using an instance of the custom <code>Deleter</code> type.</p>
-<div class="sourceCode" id="cb17"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>The <code>destroyer_base</code> is the <em>Concept</em> class and the <code>destroyer</code> is its type-dependent <em>implementation</em>.</p>
-<p>The wrapper class <code>destroyer_wrapper</code> wraps objects of different types (<code>destoyer&lt;Deleter&gt;</code>) into a common wrapper and treats them as though they are the same unified interface.</p>
-<p>THe updated design of the <code>shared_ptr&lt;T&gt;</code> class would look something like this:</p>
+<span id="cb16-13"><a href="#cb16-13"></a>    <span class="co">// Templated constructor</span></span>
+<span id="cb16-14"><a href="#cb16-14"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Y<span class="op">,</span> <span class="kw">typename</span> Deleter<span class="op">&gt;</span></span>
+<span id="cb16-15"><a href="#cb16-15"></a>    shared_ptr<span class="op">(</span>Y<span class="op">*</span> ptr<span class="op">,</span> Deleter deleter<span class="op">)</span></span>
+<span id="cb16-16"><a href="#cb16-16"></a>    <span class="op">:</span> <span class="va">m_underlying_ptr</span><span class="op">{</span>ptr<span class="op">}</span></span>
+<span id="cb16-17"><a href="#cb16-17"></a>    <span class="co">// ???  </span></span>
+<span id="cb16-18"><a href="#cb16-18"></a>    <span class="op">{}</span></span>
+<span id="cb16-19"><a href="#cb16-19"></a></span>
+<span id="cb16-20"><a href="#cb16-20"></a>    <span class="co">// Destructor</span></span>
+<span id="cb16-21"><a href="#cb16-21"></a>    <span class="op">~</span>shared_ptr<span class="op">(){</span></span>
+<span id="cb16-22"><a href="#cb16-22"></a>        <span class="co">// Decrement the ref-count. If m_ref_count == 0, </span></span>
+<span id="cb16-23"><a href="#cb16-23"></a>        <span class="co">// delete m_underlying_ptr using deleter </span></span>
+<span id="cb16-24"><a href="#cb16-24"></a>    <span class="op">}</span></span>
+<span id="cb16-25"><a href="#cb16-25"></a></span>
+<span id="cb16-26"><a href="#cb16-26"></a>    <span class="co">// Pointer like functions</span></span>
+<span id="cb16-27"><a href="#cb16-27"></a>    <span class="at">const</span> T<span class="op">*</span> <span class="kw">operator</span><span class="op">-&gt;()</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb16-28"><a href="#cb16-28"></a>        <span class="cf">return</span> <span class="va">m_underlying_ptr</span><span class="op">;</span></span>
+<span id="cb16-29"><a href="#cb16-29"></a>    <span class="op">}</span></span>
+<span id="cb16-30"><a href="#cb16-30"></a></span>
+<span id="cb16-31"><a href="#cb16-31"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb16-32"><a href="#cb16-32"></a>    T<span class="op">*</span> <span class="va">m_underlying_ptr</span><span class="op">;</span></span>
+<span id="cb16-33"><a href="#cb16-33"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="step-2---coding-up-a-type-agnostic-interface-and-a-type-dependent-implementation" class="level2">
+<h2 class="anchored" data-anchor-id="step-2---coding-up-a-type-agnostic-interface-and-a-type-dependent-implementation">Step 2 - Coding up a type-agnostic interface and a type-dependent implementation</h2>
+<p>Let’s now write a <code>Concept</code> and <code>Impl</code> class that supports destruction using an instance of the custom <code>Impl&lt;ObjType, Deleter&gt;</code> type. We can actually define a <code>ControlBlockBase</code> and <code>ControlBlockImpl&lt;ObjType, Deleter&gt;</code> classes.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb17-1"><a href="#cb17-1"></a><span class="co">// Type-agnostic Concept class</span></span>
+<span id="cb17-2"><a href="#cb17-2"></a><span class="kw">struct</span> ControlBlockBase<span class="op">{</span></span>
+<span id="cb17-3"><a href="#cb17-3"></a>    <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">&gt;</span> <span class="va">m_ref_count</span><span class="op">{</span><span class="dv">1</span><span class="bu">uz</span><span class="op">};</span></span>
+<span id="cb17-4"><a href="#cb17-4"></a></span>
+<span id="cb17-5"><a href="#cb17-5"></a>    <span class="kw">virtual</span> <span class="op">~</span>control_back_base<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb17-6"><a href="#cb17-6"></a><span class="op">}</span></span>
+<span id="cb17-7"><a href="#cb17-7"></a></span>
+<span id="cb17-8"><a href="#cb17-8"></a><span class="co">// Type dependent Impl&lt;ObjType,Deleter&gt; implementation</span></span>
+<span id="cb17-9"><a href="#cb17-9"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> ObjType<span class="op">,</span> <span class="kw">typename</span> Deleter<span class="op">&gt;</span></span>
+<span id="cb17-10"><a href="#cb17-10"></a><span class="kw">struct</span> ControlBlock <span class="op">:</span> ControlBlockBase<span class="op">&lt;</span>ObjType<span class="op">,</span>Deleter<span class="op">&gt;{</span></span>
+<span id="cb17-11"><a href="#cb17-11"></a>    control_block<span class="op">(</span> ObjType<span class="op">*</span> object_ptr<span class="op">,</span> Deleter deleter<span class="op">)</span></span>
+<span id="cb17-12"><a href="#cb17-12"></a>    <span class="op">:</span> <span class="va">m_object_ptr</span><span class="op">{</span> object_ptr <span class="op">}</span></span>
+<span id="cb17-13"><a href="#cb17-13"></a>    <span class="op">,</span> <span class="va">m_deleter</span><span class="op">{</span> deleter <span class="op">}</span></span>
+<span id="cb17-14"><a href="#cb17-14"></a>    <span class="op">{}</span></span>
+<span id="cb17-15"><a href="#cb17-15"></a></span>
+<span id="cb17-16"><a href="#cb17-16"></a>    <span class="op">~</span>control_block<span class="op">()</span></span>
+<span id="cb17-17"><a href="#cb17-17"></a>    <span class="op">{</span></span>
+<span id="cb17-18"><a href="#cb17-18"></a>        <span class="va">m_deleter</span><span class="op">(</span><span class="va">m_object_ptr</span><span class="op">);</span></span>
+<span id="cb17-19"><a href="#cb17-19"></a>    <span class="op">}</span></span>
+<span id="cb17-20"><a href="#cb17-20"></a></span>
+<span id="cb17-21"><a href="#cb17-21"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb17-22"><a href="#cb17-22"></a>    ObjType<span class="op">*</span> <span class="va">m_object_ptr</span><span class="op">;</span></span>
+<span id="cb17-23"><a href="#cb17-23"></a>    Deleter <span class="va">m_deleter</span><span class="op">;</span></span>
+<span id="cb17-24"><a href="#cb17-24"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The <code>ControlBlock</code> inherits from <code>ControlBlockBase</code> and it is templated. <code>Concept</code> itself is not templated, but the implementation <code>control_block</code> class is. In this case, it is templated on the <code>ObjectType</code> and the <code>Deleter</code> type. The constructor <code>control_block(ObjectType*, Deleter)</code> takes two parameters - the object type and the deleter.</p>
 <div class="sourceCode" id="cb18"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb18-1"><a href="#cb18-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
 <span id="cb18-2"><a href="#cb18-2"></a><span class="kw">class</span> shared_ptr</span>
 <span id="cb18-3"><a href="#cb18-3"></a><span class="op">{</span></span>
 <span id="cb18-4"><a href="#cb18-4"></a>    <span class="kw">private</span><span class="op">:</span></span>
 <span id="cb18-5"><a href="#cb18-5"></a>    T<span class="op">*</span> <span class="va">m_underlying_ptr</span><span class="op">;</span></span>
-<span id="cb18-6"><a href="#cb18-6"></a>    <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">unsigned</span> <span class="dt">long</span><span class="op">&gt;*</span> <span class="va">m_ref_count_ptr</span><span class="op">;</span></span>
-<span id="cb18-7"><a href="#cb18-7"></a>    destroyer_wrapper<span class="op">*</span> <span class="va">m_destroyer_ptr</span><span class="op">;</span></span>
-<span id="cb18-8"><a href="#cb18-8"></a></span>
-<span id="cb18-9"><a href="#cb18-9"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb18-10"><a href="#cb18-10"></a>    <span class="co">// Templated constructor</span></span>
-<span id="cb18-11"><a href="#cb18-11"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Deleter<span class="op">&gt;</span></span>
-<span id="cb18-12"><a href="#cb18-12"></a>    shared_ptr<span class="op">(</span>T<span class="op">*</span> ptr<span class="op">,</span> Deleter<span class="op">&amp;&amp;</span> deleter<span class="op">)</span></span>
-<span id="cb18-13"><a href="#cb18-13"></a>    <span class="op">:</span> <span class="va">m_underlying_ptr</span><span class="op">{</span> ptr <span class="op">}</span></span>
-<span id="cb18-14"><a href="#cb18-14"></a>    <span class="op">,</span> <span class="va">m_ref_count_ptr</span><span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
-<span id="cb18-15"><a href="#cb18-15"></a>    <span class="op">,</span> <span class="va">m_destroyer_ptr</span><span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
-<span id="cb18-16"><a href="#cb18-16"></a>    <span class="op">{</span></span>
-<span id="cb18-17"><a href="#cb18-17"></a>        <span class="cf">try</span><span class="op">{</span></span>
-<span id="cb18-18"><a href="#cb18-18"></a>            <span class="va">m_destroyer_ptr</span> <span class="op">=</span> <span class="kw">new</span> destroy_wrapper<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Deleter<span class="op">&gt;(</span>deleter<span class="op">));</span></span>
-<span id="cb18-19"><a href="#cb18-19"></a>            <span class="va">m_ref_count_ptr</span><span class="op">-&gt;</span>store<span class="op">(</span><span class="dv">1</span><span class="bu">u</span><span class="op">);</span></span>
-<span id="cb18-20"><a href="#cb18-20"></a>        <span class="op">}</span> <span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb18-21"><a href="#cb18-21"></a>            <span class="kw">delete</span> ptr<span class="op">;</span></span>
-<span id="cb18-22"><a href="#cb18-22"></a>            <span class="cf">throw</span> ex<span class="op">;</span></span>
-<span id="cb18-23"><a href="#cb18-23"></a>        <span class="op">}</span></span>
-<span id="cb18-24"><a href="#cb18-24"></a>    <span class="op">}</span></span>
-<span id="cb18-25"><a href="#cb18-25"></a></span>
-<span id="cb18-26"><a href="#cb18-26"></a>    <span class="co">/* ... */</span></span>
-<span id="cb18-27"><a href="#cb18-27"></a></span>
-<span id="cb18-28"><a href="#cb18-28"></a>    <span class="kw">struct</span> destroy_wrapper <span class="co">// RAII class</span></span>
-<span id="cb18-29"><a href="#cb18-29"></a>    <span class="op">{</span></span>
-<span id="cb18-30"><a href="#cb18-30"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Deleter<span class="op">&gt;</span></span>
-<span id="cb18-31"><a href="#cb18-31"></a>        <span class="kw">explicit</span> destroy_wrapper<span class="op">(</span>Deleter<span class="op">&amp;&amp;</span> deleter<span class="op">)</span></span>
-<span id="cb18-32"><a href="#cb18-32"></a>          <span class="op">:</span> <span class="va">m_destroyer_ptr</span><span class="op">{</span> <span class="bu">std::</span>make_unique<span class="op">&lt;</span>destroyer<span class="op">&gt;(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Deleter<span class="op">&gt;(</span>deleter<span class="op">))</span> <span class="op">}</span></span>
-<span id="cb18-33"><a href="#cb18-33"></a>        <span class="op">{</span></span>
-<span id="cb18-34"><a href="#cb18-34"></a>        <span class="op">}</span></span>
-<span id="cb18-35"><a href="#cb18-35"></a>        <span class="co">// destroy_wrapper is a wrapper over a unique_ptr&lt;destroyer_base&gt;.</span></span>
-<span id="cb18-36"><a href="#cb18-36"></a>        <span class="co">// It is intended to be move-constructible ONLY.</span></span>
-<span id="cb18-37"><a href="#cb18-37"></a>        destroy_wrapper<span class="op">(</span>destroy_wrapper<span class="op">&amp;&amp;</span> other<span class="op">)</span> <span class="kw">noexcept</span></span>
-<span id="cb18-38"><a href="#cb18-38"></a>          <span class="op">:</span> <span class="va">m_destroyer_ptr</span><span class="op">{</span> <span class="bu">std::</span>exchange<span class="op">(</span>other<span class="op">.</span><span class="va">m_destroyer_ptr</span><span class="op">,</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="op">}</span></span>
-<span id="cb18-39"><a href="#cb18-39"></a>        <span class="op">{</span></span>
-<span id="cb18-40"><a href="#cb18-40"></a>        <span class="op">}</span></span>
-<span id="cb18-41"><a href="#cb18-41"></a></span>
-<span id="cb18-42"><a href="#cb18-42"></a>        <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span>pointer ptr<span class="op">)</span></span>
-<span id="cb18-43"><a href="#cb18-43"></a>        <span class="op">{</span></span>
-<span id="cb18-44"><a href="#cb18-44"></a>            <span class="op">(*</span><span class="va">m_destroyer_ptr</span><span class="op">)(</span>ptr<span class="op">);</span> <span class="co">// Virtual polymorphism</span></span>
-<span id="cb18-45"><a href="#cb18-45"></a>        <span class="op">}</span></span>
-<span id="cb18-46"><a href="#cb18-46"></a></span>
-<span id="cb18-47"><a href="#cb18-47"></a>        <span class="kw">struct</span> destroyer_base</span>
-<span id="cb18-48"><a href="#cb18-48"></a>        <span class="op">{</span></span>
-<span id="cb18-49"><a href="#cb18-49"></a>            <span class="kw">virtual</span> <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span>pointer ptr<span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb18-50"><a href="#cb18-50"></a>            <span class="kw">virtual</span> <span class="op">~</span>destroyer_base<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
-<span id="cb18-51"><a href="#cb18-51"></a>        <span class="op">};</span></span>
-<span id="cb18-52"><a href="#cb18-52"></a></span>
-<span id="cb18-53"><a href="#cb18-53"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Deleter<span class="op">&gt;</span></span>
-<span id="cb18-54"><a href="#cb18-54"></a>        <span class="kw">struct</span> destroyer <span class="op">:</span> <span class="kw">public</span> destroyer_base</span>
-<span id="cb18-55"><a href="#cb18-55"></a>        <span class="op">{</span></span>
-<span id="cb18-56"><a href="#cb18-56"></a>            <span class="kw">explicit</span> destroyer<span class="op">(</span>Deleter deleter<span class="op">)</span></span>
-<span id="cb18-57"><a href="#cb18-57"></a>              <span class="op">:</span> destroyer_base<span class="op">()</span></span>
-<span id="cb18-58"><a href="#cb18-58"></a>              <span class="op">,</span> <span class="va">m_deleter</span><span class="op">{</span> deleter <span class="op">}</span></span>
-<span id="cb18-59"><a href="#cb18-59"></a>            <span class="op">{</span></span>
-<span id="cb18-60"><a href="#cb18-60"></a>            <span class="op">}</span></span>
-<span id="cb18-61"><a href="#cb18-61"></a></span>
-<span id="cb18-62"><a href="#cb18-62"></a>            <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span>pointer ptr<span class="op">)</span> <span class="kw">override</span> <span class="op">{</span> <span class="va">m_deleter</span><span class="op">(</span>ptr<span class="op">);</span> <span class="op">}</span></span>
-<span id="cb18-63"><a href="#cb18-63"></a></span>
-<span id="cb18-64"><a href="#cb18-64"></a>            Deleter <span class="va">m_deleter</span><span class="op">;</span></span>
-<span id="cb18-65"><a href="#cb18-65"></a>        <span class="op">};</span></span>
-<span id="cb18-66"><a href="#cb18-66"></a></span>
-<span id="cb18-67"><a href="#cb18-67"></a>        <span class="op">~</span>destroy_wrapper<span class="op">()</span> <span class="op">{}</span></span>
-<span id="cb18-68"><a href="#cb18-68"></a>        <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>destroyer_base<span class="op">&gt;</span> <span class="va">m_destroyer_ptr</span><span class="op">;</span></span>
-<span id="cb18-69"><a href="#cb18-69"></a>    <span class="op">};</span></span>
-<span id="cb18-70"><a href="#cb18-70"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb18-6"><a href="#cb18-6"></a>    control_blk</span>
+<span id="cb18-7"><a href="#cb18-7"></a></span>
+<span id="cb18-8"><a href="#cb18-8"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb18-9"><a href="#cb18-9"></a>    <span class="co">// Templated constructor</span></span>
+<span id="cb18-10"><a href="#cb18-10"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Deleter<span class="op">&gt;</span></span>
+<span id="cb18-11"><a href="#cb18-11"></a>    shared_ptr<span class="op">(</span>T<span class="op">*</span> ptr<span class="op">,</span> Deleter<span class="op">&amp;&amp;</span> deleter<span class="op">)</span></span>
+<span id="cb18-12"><a href="#cb18-12"></a>    <span class="op">:</span> <span class="va">m_underlying_ptr</span><span class="op">{</span> ptr <span class="op">}</span></span>
+<span id="cb18-13"><a href="#cb18-13"></a>    <span class="op">,</span> <span class="va">m_ref_count_ptr</span><span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
+<span id="cb18-14"><a href="#cb18-14"></a>    <span class="op">,</span> <span class="va">m_destroyer_ptr</span><span class="op">{</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
+<span id="cb18-15"><a href="#cb18-15"></a>    <span class="op">{</span></span>
+<span id="cb18-16"><a href="#cb18-16"></a>        <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb18-17"><a href="#cb18-17"></a>            <span class="va">m_destroyer_ptr</span> <span class="op">=</span> <span class="kw">new</span> destroy_wrapper<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Deleter<span class="op">&gt;(</span>deleter<span class="op">));</span></span>
+<span id="cb18-18"><a href="#cb18-18"></a>            <span class="va">m_ref_count_ptr</span><span class="op">-&gt;</span>store<span class="op">(</span><span class="dv">1</span><span class="bu">u</span><span class="op">);</span></span>
+<span id="cb18-19"><a href="#cb18-19"></a>        <span class="op">}</span> <span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>exception<span class="op">&amp;</span> ex<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb18-20"><a href="#cb18-20"></a>            <span class="kw">delete</span> ptr<span class="op">;</span></span>
+<span id="cb18-21"><a href="#cb18-21"></a>            <span class="cf">throw</span> ex<span class="op">;</span></span>
+<span id="cb18-22"><a href="#cb18-22"></a>        <span class="op">}</span></span>
+<span id="cb18-23"><a href="#cb18-23"></a>    <span class="op">}</span></span>
+<span id="cb18-24"><a href="#cb18-24"></a></span>
+<span id="cb18-25"><a href="#cb18-25"></a>    <span class="co">/* ... */</span></span>
+<span id="cb18-26"><a href="#cb18-26"></a></span>
+<span id="cb18-27"><a href="#cb18-27"></a>    <span class="kw">struct</span> destroy_wrapper <span class="co">// RAII class</span></span>
+<span id="cb18-28"><a href="#cb18-28"></a>    <span class="op">{</span></span>
+<span id="cb18-29"><a href="#cb18-29"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Deleter<span class="op">&gt;</span></span>
+<span id="cb18-30"><a href="#cb18-30"></a>        <span class="kw">explicit</span> destroy_wrapper<span class="op">(</span>Deleter<span class="op">&amp;&amp;</span> deleter<span class="op">)</span></span>
+<span id="cb18-31"><a href="#cb18-31"></a>          <span class="op">:</span> <span class="va">m_destroyer_ptr</span><span class="op">{</span> <span class="bu">std::</span>make_unique<span class="op">&lt;</span>destroyer<span class="op">&gt;(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Deleter<span class="op">&gt;(</span>deleter<span class="op">))</span> <span class="op">}</span></span>
+<span id="cb18-32"><a href="#cb18-32"></a>        <span class="op">{</span></span>
+<span id="cb18-33"><a href="#cb18-33"></a>        <span class="op">}</span></span>
+<span id="cb18-34"><a href="#cb18-34"></a>        <span class="co">// destroy_wrapper is a wrapper over a unique_ptr&lt;destroyer_base&gt;.</span></span>
+<span id="cb18-35"><a href="#cb18-35"></a>        <span class="co">// It is intended to be move-constructible ONLY.</span></span>
+<span id="cb18-36"><a href="#cb18-36"></a>        destroy_wrapper<span class="op">(</span>destroy_wrapper<span class="op">&amp;&amp;</span> other<span class="op">)</span> <span class="kw">noexcept</span></span>
+<span id="cb18-37"><a href="#cb18-37"></a>          <span class="op">:</span> <span class="va">m_destroyer_ptr</span><span class="op">{</span> <span class="bu">std::</span>exchange<span class="op">(</span>other<span class="op">.</span><span class="va">m_destroyer_ptr</span><span class="op">,</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="op">}</span></span>
+<span id="cb18-38"><a href="#cb18-38"></a>        <span class="op">{</span></span>
+<span id="cb18-39"><a href="#cb18-39"></a>        <span class="op">}</span></span>
+<span id="cb18-40"><a href="#cb18-40"></a></span>
+<span id="cb18-41"><a href="#cb18-41"></a>        <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span>pointer ptr<span class="op">)</span></span>
+<span id="cb18-42"><a href="#cb18-42"></a>        <span class="op">{</span></span>
+<span id="cb18-43"><a href="#cb18-43"></a>            <span class="op">(*</span><span class="va">m_destroyer_ptr</span><span class="op">)(</span>ptr<span class="op">);</span> <span class="co">// Virtual polymorphism</span></span>
+<span id="cb18-44"><a href="#cb18-44"></a>        <span class="op">}</span></span>
+<span id="cb18-45"><a href="#cb18-45"></a></span>
+<span id="cb18-46"><a href="#cb18-46"></a>        <span class="kw">struct</span> destroyer_base</span>
+<span id="cb18-47"><a href="#cb18-47"></a>        <span class="op">{</span></span>
+<span id="cb18-48"><a href="#cb18-48"></a>            <span class="kw">virtual</span> <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span>pointer ptr<span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb18-49"><a href="#cb18-49"></a>            <span class="kw">virtual</span> <span class="op">~</span>destroyer_base<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb18-50"><a href="#cb18-50"></a>        <span class="op">};</span></span>
+<span id="cb18-51"><a href="#cb18-51"></a></span>
+<span id="cb18-52"><a href="#cb18-52"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Deleter<span class="op">&gt;</span></span>
+<span id="cb18-53"><a href="#cb18-53"></a>        <span class="kw">struct</span> destroyer <span class="op">:</span> <span class="kw">public</span> destroyer_base</span>
+<span id="cb18-54"><a href="#cb18-54"></a>        <span class="op">{</span></span>
+<span id="cb18-55"><a href="#cb18-55"></a>            <span class="kw">explicit</span> destroyer<span class="op">(</span>Deleter deleter<span class="op">)</span></span>
+<span id="cb18-56"><a href="#cb18-56"></a>              <span class="op">:</span> destroyer_base<span class="op">()</span></span>
+<span id="cb18-57"><a href="#cb18-57"></a>              <span class="op">,</span> <span class="va">m_deleter</span><span class="op">{</span> deleter <span class="op">}</span></span>
+<span id="cb18-58"><a href="#cb18-58"></a>            <span class="op">{</span></span>
+<span id="cb18-59"><a href="#cb18-59"></a>            <span class="op">}</span></span>
+<span id="cb18-60"><a href="#cb18-60"></a></span>
+<span id="cb18-61"><a href="#cb18-61"></a>            <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span>pointer ptr<span class="op">)</span> <span class="kw">override</span> <span class="op">{</span> <span class="va">m_deleter</span><span class="op">(</span>ptr<span class="op">);</span> <span class="op">}</span></span>
+<span id="cb18-62"><a href="#cb18-62"></a></span>
+<span id="cb18-63"><a href="#cb18-63"></a>            Deleter <span class="va">m_deleter</span><span class="op">;</span></span>
+<span id="cb18-64"><a href="#cb18-64"></a>        <span class="op">};</span></span>
+<span id="cb18-65"><a href="#cb18-65"></a></span>
+<span id="cb18-66"><a href="#cb18-66"></a>        <span class="op">~</span>destroy_wrapper<span class="op">()</span> <span class="op">{}</span></span>
+<span id="cb18-67"><a href="#cb18-67"></a>        <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>destroyer_base<span class="op">&gt;</span> <span class="va">m_destroyer_ptr</span><span class="op">;</span></span>
+<span id="cb18-68"><a href="#cb18-68"></a>    <span class="op">};</span></span>
+<span id="cb18-69"><a href="#cb18-69"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->
