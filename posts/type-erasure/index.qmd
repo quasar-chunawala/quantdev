@@ -436,80 +436,92 @@ struct ControlBlock : ControlBlockBase<ObjType,Deleter>{
 }
 ```
 
-The `ControlBlock` inherits from `ControlBlockBase` and it is templated. `Concept` itself is not templated, but the implementation `control_block` class is. In this case, it is templated on the `ObjectType` and the `Deleter` type. The constructor `control_block(ObjectType*, Deleter)` takes two parameters - the object type and the deleter. 
+The `ControlBlock` inherits from `ControlBlockBase` and it is templated. `Concept` itself is not templated, but the implementation `control_block` class is. In this case, it is templated on the `ObjectType` and the `Deleter` type. The constructor `control_block(ObjectType*, Deleter)` takes two parameters - the object type and the deleter. `ObjectType` is not the type parameter of the `shared_ptr`, which is `T`, but the type of the object passed to the `shared_ptr()` during construction. 
+
+On destruction of the control block, it calls the deleter on a pointer to `ObjType` - the correct type. It's not going to call the deleter on the template type. We can now, finish up with our definition of the `shared_ptr`. 
 
 ```cpp
-template<typename T>
-class shared_ptr
-{
-    private:
-    T* m_underlying_ptr;
-    control_blk
+#include <iostream>
 
+template<typename T>
+class shared_ptr{
     public:
+
+    template<typename Y>
+    requires std::is_convertible<Y*, T*>
+    shared_ptr(Y* ptr)
+    : shared_ptr(ptr, std::default_delete<Y>{})
+    {}
+
     // Templated constructor
-    template<typename Deleter>
-    shared_ptr(T* ptr, Deleter&& deleter)
-    : m_underlying_ptr{ ptr }
-    , m_ref_count_ptr{ nullptr }
-    , m_destroyer_ptr{ nullptr }
-    {
-        try{
-            m_destroyer_ptr = new destroy_wrapper(std::forward<Deleter>(deleter));
-            m_ref_count_ptr->store(1u);
-        } catch(std::exception& ex) {
-            delete ptr;
-            throw ex;
-        }
+    template<typename Y, typename Deleter>
+    shared_ptr(Y* ptr, Deleter deleter)
+    : m_underlying_ptr{ptr}
+    , m_control_block_ptr{ new ControlBlock<Y,Deleter>(deleter) }
+    {}
+
+    // Destructor
+    ~shared_ptr(){
+        // Decrement the ref-count. If m_ref_count == 0, 
+        // delete the control_block_ptr which will destroy the managed object 
+        delete m_control_block_ptr;
     }
 
-    /* ... */
+    // Pointer like functions
+    const T* operator->() const{
+        return m_underlying_ptr;
+    }
 
-    struct destroy_wrapper // RAII class
-    {
-        template<typename Deleter>
-        explicit destroy_wrapper(Deleter&& deleter)
-          : m_destroyer_ptr{ std::make_unique<destroyer>(std::forward<Deleter>(deleter)) }
-        {
-        }
-        // destroy_wrapper is a wrapper over a unique_ptr<destroyer_base>.
-        // It is intended to be move-constructible ONLY.
-        destroy_wrapper(destroy_wrapper&& other) noexcept
-          : m_destroyer_ptr{ std::exchange(other.m_destroyer_ptr, nullptr) }
-        {
-        }
-
-        void operator()(pointer ptr)
-        {
-            (*m_destroyer_ptr)(ptr); // Virtual polymorphism
-        }
-
-        struct destroyer_base
-        {
-            virtual void operator()(pointer ptr) = 0;
-            virtual ~destroyer_base() = default;
-        };
-
-        template<typename Deleter>
-        struct destroyer : public destroyer_base
-        {
-            explicit destroyer(Deleter deleter)
-              : destroyer_base()
-              , m_deleter{ deleter }
-            {
-            }
-
-            void operator()(pointer ptr) override { m_deleter(ptr); }
-
-            Deleter m_deleter;
-        };
-
-        ~destroy_wrapper() {}
-        std::unique_ptr<destroyer_base> m_destroyer_ptr;
-    };
+    private:
+    T* m_underlying_ptr;
+    ControlBlockBase* m_control_block_ptr;  // Concept* pointer
 };
 ```
 
+Observe that, as long as the two `shared_ptr` types share the same signature, they can be assigned to each other and the destruction is going to be correct.
 
+```cpp
+#include <memory>
 
+struct Foo{};
+struct Bar{};
+int main()
+{
+    std::shared_ptr<void> ptr1{ new Foo() };
+    std::shared_ptr<void> ptr2{ new Bar() };
+    ptr1 = ptr2;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/xboYxMsYd)
 
+I was explaining earlier why a `shared_ptr<void>` is allowed whereas a `unique_ptr<void>` won't compile.
+
+You can see that, what the `shared_ptr` design does is, in the single parameter constructor, when you don't pass a deleter, it uses a default deleter of the actual object type. It retains the information of the actual object type. It does not use a default deleter of template type parameter `T`. 
+
+```cpp
+#include <iostream>
+
+template<typename T>
+class shared_ptr{
+    public:
+
+    template<typename Y>
+    requires std::is_convertible<Y*, T*>
+    shared_ptr(Y* ptr)
+    : shared_ptr(ptr, std::default_delete<Y>{}) // default deleter of ObjType
+    {}
+
+    // Templated constructor
+    template<typename Y, typename Deleter>
+    shared_ptr(Y* ptr, Deleter deleter)
+    : m_underlying_ptr{ptr}
+    , m_control_block_ptr{ new ControlBlock<Y,Deleter>(deleter) }
+    {}
+
+    // ...
+
+    private:
+    T* m_underlying_ptr;
+    ControlBlockBase* m_control_block_ptr;  // Concept* pointer
+};
+```
