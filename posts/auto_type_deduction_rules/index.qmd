@@ -1,0 +1,115 @@
+---
+title: "`auto` type deduction rules"
+author: "Quasar"
+date: "2025-12-21"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Introduction
+
+This weekend, I tried to solve a fun puzzle - [the C++ `auto` type deduction gauntlet](https://www.volatileint.dev/posts/auto-type-deduction-gauntlet/) and thought of creating a quick cheatsheet on `auto` type deduction rules. I encourage you to give it a shot.
+
+`auto` is a placeholder type that gets replaced typically by deduction from an initializer.
+
+Whenever you have: 
+
+```cpp
+auto [some_modifiers] x = expression;
+```
+
+the type of `x` is deduced approximately as follows. We strip the RHS `expression` of all modifiers such as `const`, `&`(ref) and allow the expression to decay. The resulting type is used to deduce `auto`. Finally, modifiers on the LHS are applied back to determine the type of `x`. 
+
+# Exercises to flex your understanding of `auto` deduction rules
+
+Let's determine for each of the problems:
+
+- The deduced type
+- The value category
+- What CV qualifiers are applicable
+
+As the author of the puzzles states, let's note that these are meant to test your understanding and some examples won't compile.
+
+## Basics
+
+```cpp
+auto v = 5;
+```
+
+This is fairly straight-forward. The deduced type is `int`. The value category of `v` is *lvalue*. 
+
+```cpp
+auto v = 0.1
+```
+
+Floating-point values default to the larger `double`, rather than `float`. The value category of `v` is *lvalue*. 
+
+```cpp
+int x;
+auto v = x;
+```
+
+The deduced type is `int` and the value category of `v` is *lvalue*.
+
+```cpp
+auto i{0uz};
+```
+
+The `u` suffix is used for unsigned integer literals and the `z` suffix is used for the signed version of `std::size_t`. The suffix `uz` deduces to `std::size_t`. 
+
+The type `size_t` is an implementation-defined unsigned integer type that is large enough to contain the size in bytes of any object.
+
+```cpp
+auto v=5, w=0.1
+```
+
+I didn't get this puzzle. But, this will fail to compile. All types in an expression defined with `auto` have be the same.
+
+```cpp
+int x;
+auto v = &x;
+```
+
+`&` is the address-of operator. So, the type of `v` is deduced as pointer-to-int `int*`. The value category of `v` is *lvalue*.
+
+```cpp
+int x[5];
+auto v = x;
+```
+
+`x` is an array of $5$ `int`s, its type is `int [5]`. C-style arrays decay to a pointer. So, the type of `v` is `int*`. `v` is an *lvalue*.
+
+```cpp
+auto v = nullptr;
+```
+
+`nullptr` is a value of type `std::nullptr_t`.
+
+```cpp
+auto v = {1, 2, 3};
+```
+
+$1$, $2$ and $3$ are `int`s. So, the type of `v` is deduced as `std::initializer_list<int>`. If the curly-braced initializer list were `{1, 2.5, 4}`, type deduction would fail, because we require all types in an initializer list to be the same.
+
+```cpp
+auto v{1, 2, 3};
+```
+
+Curly braced direct initialization only works with a single scalar value e.g. `auto v{1}`. 
+
+```cpp
+int foo(int x){
+    return x;
+}
+
+auto v = foo;
+```
+
+`v` is deduced as a function pointer, `int (*) int`. According to the C++ standard, a function is an object that occupies memory storage and has a lifetime. Hence, `foo` is an *lvalue* expression. 
+
+## Intermediate
+
+We now explore how references and CV-qualifiers are handled.
+
