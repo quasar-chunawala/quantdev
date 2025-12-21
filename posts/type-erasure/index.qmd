@@ -363,7 +363,7 @@ You have a `shared_ptr` of type `T`. It stores a raw underlying pointer-to-`T` a
 
 ## Step 1 - Code up a container that can hold unrelated different types
 
-We start with thinking about our `shared_ptr` class. So, we write a templated constructor `shared_ptr(Y* ptr)`. You should be used to this by now - I can pass in any object to this. I later constrain this using the `std::is_convertible<Y*, T*>` type trait, to enforce that `Y*` is indeed convertible to `T*`. 
+We start with thinking about our `shared_ptr` class. So, we write a templated constructor `shared_ptr(Y* ptr)`. You should be used to this by now - I can pass in any object to this. I later constrain this using the `std::is_convertible_v<Y*, T*>` type trait, to enforce that `Y*` is indeed convertible to `T*`. 
 
 We have another constructor that takes two parameters : a pointer to `Y` and a custom deleter. 
 
@@ -377,7 +377,7 @@ class shared_ptr{
     public:
 
     template<typename Y>
-    requires std::is_convertible<Y*, T*>
+    requires std::is_convertible_v<Y*, T*>
     shared_ptr(Y* ptr)
     : shared_ptr(ptr, std::default_delete<Y>{})
     {}
@@ -410,30 +410,31 @@ class shared_ptr{
 Let's now write a `Concept` and `Impl` class that supports destruction using an instance of the custom `Impl<ObjType, Deleter>` type. We can actually define a `ControlBlockBase` and `ControlBlockImpl<ObjType, Deleter>` classes.
 
 ```cpp
-// Type-agnostic Concept class
-struct ControlBlockBase{
-    std::atomic<std::size_t> m_ref_count{1uz};
+namespace dev {
+    // Type-agnostic Concept class
+    struct ControlBlockBase{
+        std::atomic<std::size_t> m_ref_count{1uz};
+        virtual ~ControlBlockBase() = default;
+    };
 
-    virtual ~control_back_base() = default;
-}
+    // Type dependent Impl<ObjType,Deleter> implementation
+    template<typename ObjType, typename Deleter>
+    struct ControlBlock : ControlBlockBase{
+        ControlBlock( ObjType* object_ptr, Deleter deleter)
+        : m_object_ptr{ object_ptr }
+        , m_deleter{ deleter }
+        {}
 
-// Type dependent Impl<ObjType,Deleter> implementation
-template<typename ObjType, typename Deleter>
-struct ControlBlock : ControlBlockBase<ObjType,Deleter>{
-    control_block( ObjType* object_ptr, Deleter deleter)
-    : m_object_ptr{ object_ptr }
-    , m_deleter{ deleter }
-    {}
+        ~ControlBlock()
+        {
+            m_deleter(m_object_ptr);
+        }
 
-    ~control_block()
-    {
-        m_deleter(m_object_ptr);
-    }
-
-    private:
-    ObjType* m_object_ptr;
-    Deleter m_deleter;
-}
+        private:
+        ObjType* m_object_ptr;
+        Deleter m_deleter;
+    };
+}  // namespace dev
 ```
 
 The `ControlBlock` inherits from `ControlBlockBase` and it is templated. `Concept` itself is not templated, but the implementation `control_block` class is. In this case, it is templated on the `ObjectType` and the `Deleter` type. The constructor `control_block(ObjectType*, Deleter)` takes two parameters - the object type and the deleter. `ObjectType` is not the type parameter of the `shared_ptr`, which is `T`, but the type of the object passed to the `shared_ptr()` during construction. 
@@ -448,7 +449,7 @@ class shared_ptr{
     public:
 
     template<typename Y>
-    requires std::is_convertible<Y*, T*>
+    requires std::is_convertible_v<Y*, T*>
     shared_ptr(Y* ptr)
     : shared_ptr(ptr, std::default_delete<Y>{})
     {}
@@ -506,7 +507,7 @@ class shared_ptr{
     public:
 
     template<typename Y>
-    requires std::is_convertible<Y*, T*>
+    requires std::is_convertible_v<Y*, T*>
     shared_ptr(Y* ptr)
     : shared_ptr(ptr, std::default_delete<Y>{}) // default deleter of ObjType
     {}

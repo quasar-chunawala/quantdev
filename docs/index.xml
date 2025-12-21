@@ -1266,7 +1266,7 @@ font-style: inherit;">;</span></span></code></pre></div>
 <p>You have a <code>shared_ptr</code> of type <code>T</code>. It stores a raw underlying pointer-to-<code>T</code> and a pointer to a control block. The <code>control_block</code> is a different from the managed object. It stores the reference count, the weak count and some additional data. The custom deleter is going to delete the object type passed during <code>shared_ptr</code> construction and not the type <code>T</code>.</p>
 <section id="step-1---code-up-a-container-that-can-hold-unrelated-different-types" class="level2">
 <h2 class="anchored" data-anchor-id="step-1---code-up-a-container-that-can-hold-unrelated-different-types">Step 1 - Code up a container that can hold unrelated different types</h2>
-<p>We start with thinking about our <code>shared_ptr</code> class. So, we write a templated constructor <code>shared_ptr(Y* ptr)</code>. You should be used to this by now - I can pass in any object to this. I later constrain this using the <code>std::is_convertible&lt;Y*, T*&gt;</code> type trait, to enforce that <code>Y*</code> is indeed convertible to <code>T*</code>.</p>
+<p>We start with thinking about our <code>shared_ptr</code> class. So, we write a templated constructor <code>shared_ptr(Y* ptr)</code>. You should be used to this by now - I can pass in any object to this. I later constrain this using the <code>std::is_convertible_v&lt;Y*, T*&gt;</code> type trait, to enforce that <code>Y*</code> is indeed convertible to <code>T*</code>.</p>
 <p>We have another constructor that takes two parameters : a pointer to <code>Y</code> and a custom deleter.</p>
 <p>Now, the pointer to <code>Y</code>, <code>Y*</code> is convertible to pointer to <code>T</code>, <code>T*</code>. So, the pointer(address) itself is simply stored in the class as a <code>T*</code> member variable. So, I have a member variable <code>T* m_underlying_ptr</code> at the bottom. The question is how do we store the original object type <code>Y*</code> and the deleter type <code>Deleter</code>. As soon as I assign <code>Y* ptr</code> to <code>T* m_underlying_ptr</code>, I have lost information about the original object type <code>Y*</code>. How do we store the deleter and the true object type <code>Y</code>?</p>
 <div class="sourceCode" id="cb16" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb16-1"><span class="pp" style="color: #AD0000;
@@ -1308,7 +1308,7 @@ font-style: inherit;">&gt;</span></span>
 background-color: null;
 font-style: inherit;">requires</span> <span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">std::</span>is_convertible<span class="op" style="color: #5E5E5E;
+font-style: inherit;">std::</span>is_convertible_v<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;</span>Y<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1444,15 +1444,20 @@ font-style: inherit;">};</span></span></code></pre></div>
 <section id="step-2---coding-up-a-type-agnostic-interface-and-a-type-dependent-implementation" class="level2">
 <h2 class="anchored" data-anchor-id="step-2---coding-up-a-type-agnostic-interface-and-a-type-dependent-implementation">Step 2 - Coding up a type-agnostic interface and a type-dependent implementation</h2>
 <p>Let’s now write a <code>Concept</code> and <code>Impl</code> class that supports destruction using an instance of the custom <code>Impl&lt;ObjType, Deleter&gt;</code> type. We can actually define a <code>ControlBlockBase</code> and <code>ControlBlockImpl&lt;ObjType, Deleter&gt;</code> classes.</p>
-<div class="sourceCode" id="cb17" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb17-1"><span class="co" style="color: #5E5E5E;
+<div class="sourceCode" id="cb17" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb17-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">namespace</span> dev <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb17-2">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Type-agnostic Concept class</span></span>
-<span id="cb17-2"><span class="kw" style="color: #003B4F;
+<span id="cb17-3">    <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">struct</span> ControlBlockBase<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb17-3">    <span class="bu" style="color: null;
+<span id="cb17-4">        <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>atomic<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1471,12 +1476,11 @@ background-color: null;
 font-style: inherit;">uz</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span>
-<span id="cb17-4"></span>
-<span id="cb17-5">    <span class="kw" style="color: #003B4F;
+<span id="cb17-5">        <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">virtual</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">~</span>control_back_base<span class="op" style="color: #5E5E5E;
+font-style: inherit;">~</span>ControlBlockBase<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">()</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1485,14 +1489,14 @@ background-color: null;
 font-style: inherit;">default</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb17-6"><span class="op" style="color: #5E5E5E;
+<span id="cb17-6">    <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">}</span></span>
+font-style: inherit;">};</span></span>
 <span id="cb17-7"></span>
-<span id="cb17-8"><span class="co" style="color: #5E5E5E;
+<span id="cb17-8">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Type dependent Impl&lt;ObjType,Deleter&gt; implementation</span></span>
-<span id="cb17-9"><span class="kw" style="color: #003B4F;
+<span id="cb17-9">    <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1505,18 +1509,14 @@ background-color: null;
 font-style: inherit;">typename</span> Deleter<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;</span></span>
-<span id="cb17-10"><span class="kw" style="color: #003B4F;
+<span id="cb17-10">    <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">struct</span> ControlBlock <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span> ControlBlockBase<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&lt;</span>ObjType<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span>Deleter<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;{</span></span>
-<span id="cb17-11">    control_block<span class="op" style="color: #5E5E5E;
+font-style: inherit;">{</span></span>
+<span id="cb17-11">        ControlBlock<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span> ObjType<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1525,7 +1525,7 @@ background-color: null;
 font-style: inherit;">,</span> Deleter deleter<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">)</span></span>
-<span id="cb17-12">    <span class="op" style="color: #5E5E5E;
+<span id="cb17-12">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span> <span class="va" style="color: #111111;
 background-color: null;
@@ -1534,7 +1534,7 @@ background-color: null;
 font-style: inherit;">{</span> object_ptr <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb17-13">    <span class="op" style="color: #5E5E5E;
+<span id="cb17-13">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">,</span> <span class="va" style="color: #111111;
 background-color: null;
@@ -1543,19 +1543,19 @@ background-color: null;
 font-style: inherit;">{</span> deleter <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb17-14">    <span class="op" style="color: #5E5E5E;
+<span id="cb17-14">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{}</span></span>
 <span id="cb17-15"></span>
-<span id="cb17-16">    <span class="op" style="color: #5E5E5E;
+<span id="cb17-16">        <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">~</span>control_block<span class="op" style="color: #5E5E5E;
+font-style: inherit;">~</span>ControlBlock<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">()</span></span>
-<span id="cb17-17">    <span class="op" style="color: #5E5E5E;
+<span id="cb17-17">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb17-18">        <span class="va" style="color: #111111;
+<span id="cb17-18">            <span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_deleter</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1564,30 +1564,35 @@ background-color: null;
 font-style: inherit;">m_object_ptr</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="cb17-19">    <span class="op" style="color: #5E5E5E;
+<span id="cb17-19">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
 <span id="cb17-20"></span>
-<span id="cb17-21">    <span class="kw" style="color: #003B4F;
+<span id="cb17-21">        <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">private</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">:</span></span>
-<span id="cb17-22">    ObjType<span class="op" style="color: #5E5E5E;
+<span id="cb17-22">        ObjType<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*</span> <span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_object_ptr</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb17-23">    Deleter <span class="va" style="color: #111111;
+<span id="cb17-23">        Deleter <span class="va" style="color: #111111;
 background-color: null;
 font-style: inherit;">m_deleter</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb17-24"><span class="op" style="color: #5E5E5E;
+<span id="cb17-24">    <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">}</span></span></code></pre></div>
+font-style: inherit;">};</span></span>
+<span id="cb17-25"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span>  <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// namespace dev</span></span></code></pre></div>
 <p>The <code>ControlBlock</code> inherits from <code>ControlBlockBase</code> and it is templated. <code>Concept</code> itself is not templated, but the implementation <code>control_block</code> class is. In this case, it is templated on the <code>ObjectType</code> and the <code>Deleter</code> type. The constructor <code>control_block(ObjectType*, Deleter)</code> takes two parameters - the object type and the deleter. <code>ObjectType</code> is not the type parameter of the <code>shared_ptr</code>, which is <code>T</code>, but the type of the object passed to the <code>shared_ptr()</code> during construction.</p>
 <p>On destruction of the control block, it calls the deleter on a pointer to <code>ObjType</code> - the correct type. It’s not going to call the deleter on the template type. We can now, finish up with our definition of the <code>shared_ptr</code>.</p>
 <div class="sourceCode" id="cb18" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb18-1"><span class="pp" style="color: #AD0000;
@@ -1629,7 +1634,7 @@ font-style: inherit;">&gt;</span></span>
 background-color: null;
 font-style: inherit;">requires</span> <span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">std::</span>is_convertible<span class="op" style="color: #5E5E5E;
+font-style: inherit;">std::</span>is_convertible_v<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;</span>Y<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1902,7 +1907,7 @@ font-style: inherit;">&gt;</span></span>
 background-color: null;
 font-style: inherit;">requires</span> <span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">std::</span>is_convertible<span class="op" style="color: #5E5E5E;
+font-style: inherit;">std::</span>is_convertible_v<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;</span>Y<span class="op" style="color: #5E5E5E;
 background-color: null;
