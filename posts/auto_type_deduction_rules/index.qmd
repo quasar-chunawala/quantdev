@@ -347,18 +347,70 @@ First, the function `createVec()` returns a `vector<Widget>` by value. `auto` de
 
 ## `decltype` type deduction 
 
-If you apply `decltype` to a name, it will give you the declared type of that name. It's not the same as `auto`, because in `auto` deduction, top-level CV-qualifiers are dropped.
+- If you apply `decltype` to a (unparenthesized) name, it will give you the declared type of that name. It's not the same as `auto`, because in `auto` deduction, top-level CV-qualifiers are dropped.
+- If the argument is any other expression of type `T`:
+    - If the value category of the expression is *xvalue*, then `decltype` yields `T&&`.
+    - If the value category of the expression is a *prvalue*, then `decltype` yield `T`.
+    - If the value category of the expression is a *lvalue*, then `decltype` yields `T&`. 
+
+Let's try and solve a few more puzzles.
+
 
 ```cpp
-int x = 10;             // decltype(x) = int
-const auto& rx = x;     // decltype(rx) = const int&
+int x;
+decltype(auto) v = (x);
 ```
 
-Unlike `auto`, `decltype(name)` never strips `const`/`volatile`/references. 
+The expression `(x)` is an *lvalue*, so `decltype(auto)` deduces to an lvalue reference of type `int&`.
 
-If you have an expression, which is an *lvalue*, `decltype` will figure out its type and will slap an *lvalue reference* on it.
+```cpp
+struct Foo {};
+decltype(auto) v = Foo{};
+```
 
+The expression `Foo{}` is a *prvalue*. For any prvalue expression `e`, `decltype(e)` evaluates to the type of `e`. 
 
+```cpp
+int x;
+decltype(auto) v = std::move(x);
+```
+
+The expression `std::move(x)` is an *xvalue*. The type of `v` is deduced as `int&&`.
+
+```cpp
+int foo(int x) {
+    return x;
+}
+decltype(auto) v = foo;
+```
+
+`foo` is an *lvalue* of type `int (*) (int)`. So, the type of `v` is deduced as `int (*)(int)`. 
+
+```cpp
+int foo(int x) {
+    return x;
+}
+decltype(auto) v = (foo);
+```
+
+`(foo)` is an *lvalue* expression of type `int (*) (int)`. So, the type of `v` is deduced to be `int (*) (int) &`.
+
+```cpp
+class Base {
+    public:
+        auto foo() {
+            return this;
+        };
+};
+
+class Derived : public Base {
+};
+
+Derived d;
+auto v = d.foo();
+```
+
+`Derived` inherits `foo()` from `Base`, so you can access `Base::foo()` using a `Derived` object. Further, `this` in `Base::foo()` returns a `Base*`, so the type of `v` is deduced as `Base*`. 
 
 # References
 
