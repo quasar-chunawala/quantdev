@@ -20,7 +20,12 @@ Whenever you have:
 auto [some_modifiers] x = expression;
 ```
 
-the type of `x` is deduced approximately as follows. We strip the RHS `expression` of all modifiers such as `const`, `&`(ref) and allow the expression to decay. The resulting type is used to deduce `auto`. Finally, modifiers on the LHS are applied back to determine the type of `x`. 
+you have three general cases:
+
+- `auto x` : The object being assigned is allowed to decay. We strip the RHS `expression` of all CV-qualifiers such as `const` and reference modifiers to deduce the *by-value* type of `x`. CV qualifiers applied to pointed-to types are maintained.
+- `auto& x` or `auto&& x` : It preserves references and CV-qualifiers. 
+- `const auto& x` : We specify the qualifiers, `auto` simply deduces the base type. 
+
 
 # Exercises to flex your understanding of `auto` deduction rules
 
@@ -38,10 +43,9 @@ As the author of the puzzles states, let's note that these are meant to test you
 auto v = 5;
 ```
 
-This is fairly straight-forward. The deduced type is `int`. The value category of `v` is *lvalue*. 
-
+This is fairly straight-forward. The deduced type is `int`. The value category of `v` is *lvalue*.                                                                                                                                                                                                                                           
 ```cpp
-auto v = 0.1
+auto v = 0.1;
 ```
 
 Floating-point values default to the larger `double`, rather than `float`. The value category of `v` is *lvalue*. 
@@ -109,7 +113,109 @@ auto v = foo;
 
 `v` is deduced as a function pointer, `int (*) int`. According to the C++ standard, a function is an object that occupies memory storage and has a lifetime. Hence, `foo` is an *lvalue* expression. 
 
+```cpp
+int x{22};
+const int* pcx = &x;
+auto ppcx = &pcx;
+```
+
+CV-qualifiers applied to pointed-to are maintained. So, the type of `ppcx` is deduced as `const int**`. 
+
 ## Intermediate
 
 We now explore how references and CV-qualifiers are handled.
+
+```cpp
+volatile const int x = 1;
+auto v = x;
+```
+
+We strip all modifiers off `x`, so that results in an `int`. Thus, `auto` is deduced as `int`. `auto` always drops top-level CV qualifiers.
+
+```cpp
+volatile const int x = 1;
+auto v = &x;
+```
+
+I didn't quite get this one. It turns out that CV qualifiers applied to pointed-to. So, type of `x` is deduced as `volatile const int*`. The next code snip also shows the same:
+
+```cpp
+#include <cassert>
+#include <type_traits>
+
+int main(){
+    const int& x{42};
+    auto& y = x;
+    static_assert(std::is_same_v<decltype(y), const int&>);
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/hb39vqYeE)
+
+```cpp
+int x;
+int& y = x;
+auto v = y;
+```
+
+`y` is an *lvalue reference* to `x`. The type of `y` decays to `int`. 
+
+```cpp
+int x;
+auto& v = x;
+```
+
+The type of `v` is deduced as `int&`. `v` is an *lvalue reference*.
+
+```cpp
+int x[5];
+auto& v = x;
+```
+
+`auto` is deduced as `int [5]`. The type of `v` is a reference to an array of $5$ `int`s.
+
+```cpp
+int foo(const int x) {
+    return x;
+}
+auto v = foo;
+```
+
+Functions are *lvalues* and the function name is a pointer to function object in memory. CV-qualifiers on parameters are thrown away during function resolution. Hence, `auto` is deduced as `int (*)(int)`.
+
+## Advanced
+
+```cpp
+int x;
+auto&& v = x;
+```
+
+`auto&& v` is a forwarding reference. `x` is an *lvalue* and *lvalues* bind to *lvalue* references. Here, we get an *lvalue reference*. 
+
+```cpp
+auto x = [] () -> int { 
+    return 1;
+};
+auto&& v = x();
+```
+
+The return value of the function call is a *prvalue*. It will bind to an *rvalue reference*. So, the type of `v` is deduced as `int&&`.
+
+```cpp
+int x;
+auto y = [&] () -> int& { 
+    return x;
+};
+auto&& v = y();
+```
+
+The result of the function call `y()` is an *lvalue*, so the type of `v` is deduced to be `int&`.
+
+```cpp
+struct Foo {};
+auto&& v = Foo{};
+```
+
+The call to the constructor `Foo{}` creates a temporary `Foo` instance - a *prvalue*. Hence, the type of `v` is deduced as `Foo&&`.
+
 
