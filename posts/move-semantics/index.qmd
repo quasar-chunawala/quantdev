@@ -1,5 +1,5 @@
 ---
-title: "A hitchhiker's guide to move semantics and perfect forwarding"
+title: "Move semantics and perfect forwarding"
 author: "Quasar"
 date: "2024-10-26"
 categories: [C++]      
@@ -8,319 +8,19 @@ toc: true
 toc-depth: 3
 ---
 
-## Motivation for Move Semantics
+## Value Categories
 
-To understand the basic principles of move semantics, let's look at the execution of a small piece of code. I've written a toy `Vector` class. I choose to manage the memory myself, so I will follow the [rule of three](https://en.wikipedia.org/wiki/Rule_of_three_%28C++_programming%29). I will supply a copy-constructor, copy-assignment operator and a destructor. I have also overloaded `operator+()` to support element-wise addition of two vectors. 
+In C++, every expression is either an *lvalue* or an *rvalue*. 
 
-### Value Semantics
+An *lvalue* denotes an object whose resources cannot be reused. The object is an *lvalue*, if you can't take the guts(resources) out of this object and donate it to someone else. *lvalue*s include expressions that designate objects by their name. For example, in the expression `double y = f(x)`, `y` is an *lvalue*. Moreover, *lvalue*s have persistent storage and an identifiable memory address. For instance, if I declare `std::vector<double> v{1.0,2.0,3.0,4.0,5.0};`, then `v[0]` is an *lvalue*.
 
-Assume that we have the following program:
+An *rvalue* denotes an object whose resources can be reused. The object is an *rvalue*, if you can take the guts(resources) out of it and donate it to another object. *rvalue*s typically include temporary objects as they can't manipulated at the place they are created and are likely to be destroyed soon. For instance, if declare `int x = 5;`, `5` is an *rvalue*. Moreover, in the statement `double y = f(x);`, the expression `f(x)` is an *rvalue*. 
 
-```cpp
-//basics/copy_semantics.cpp
-#include <iostream>
-#include <stdexcept>
-#include <initializer_list>
+C++ defines the following value categories:
 
-
-template <typename T>
-class Vector {
-private:
-    int capacity_;
-    int size_;
-    T* ptr_;
-
-public:
-    Vector() :capacity_{ 0 }, size_{ 0 }, ptr_{ nullptr } {}
-    Vector(int size) : capacity_{ size }, ptr_{ new T[size] }, size_{ size } {}
-    Vector(int size, T data) : Vector(size) {
-        for (int i{ 0 }; i < size; ++i)
-            ptr_[i] = data;
-    }
-
-    Vector(std::initializer_list<T> list) {
-        clear();
-        for (const T& elem : list)
-            push_back(elem);
-    }
-
-    //Destructor
-    ~Vector()
-    {
-        clear();
-    }
-
-    //Copy constructor
-    Vector(const Vector& v)
-    {
-        if (this == &v)
-            return;
-
-        capacity_ = v.capacity_;
-        size_ = v.size_;
-        ptr_ = new T[v.size_];
-
-        for (int i{ 0 }; i < v.size_; ++i)
-            ptr_[i] = v.ptr_[i];
-    }
-
-    //Copy assignment operator
-    Vector<T>& operator=(const Vector<T>& v)
-    {
-        if (this != &v)
-        {
-            delete[] ptr_;
-            ptr_ = nullptr;
-
-            capacity_ = v.capacity_;
-            size_ = v.size_;
-            ptr_ = new T[capacity_];
-
-            for (int i{ 0 }; i < v.size_; ++i)
-                ptr_[i] = v.ptr_[i];
-        }
-
-        return *this;
-    }
-
-    T& operator[](int i)
-    {
-        if (i >= 0 && i < size_)
-            return ptr_[i];
-        else
-            throw std::out_of_range("Index out of bounds.");
-    }
-
-    T& operator[](int i) const
-    {
-        if (i >= 0 && i < size_)
-            return ptr_[i];
-        else
-            throw std::out_of_range("Index out of bounds.");
-    }
-
-    void reserve(int size)
-    {
-        if (size_ < capacity_) return;
-
-        if (ptr_ == nullptr)
-        {
-            size_ = 0;
-            capacity_ = 0;
-        }
-
-        T* bufferNew = new T[size];
-        unsigned int l_size = std::min(capacity_, size);
-        for (int i{ 0 }; i < l_size; ++i)
-        {
-            bufferNew[i] = ptr_[i];
-        }
-
-        if (ptr_ != nullptr)
-            delete[] ptr_;
-
-        ptr_ = bufferNew;
-        capacity_ = size;
-    }
-
-    void clear()
-    {
-        if (ptr_ != nullptr)
-            delete[] ptr_;
-        ptr_ = nullptr;
-        size_ = 0;
-        capacity_ = 0;
-    }
-
-    int size() const
-    {
-        return size_;
-    }
-
-    int capacity()
-    {
-        return capacity_;
-    }
-
-    void push_back(const T& elem)
-    {
-        if (size_ >= capacity_) {
-            reserve(capacity_ + 5); // Double the capacity
-        }
-
-        ptr_[size_++] = elem;
-    }
-
-    void pop_back()
-    {
-        --size_;
-    }
-
-    T front()
-    {
-        if (size_ > 0)
-            return ptr_[0];
-        else
-            throw std::out_of_range("Index out of bounds.");
-    }
-
-    T back()
-    {
-        if (size_ > 0)
-            return ptr_[size_ - 1];
-        else
-            throw std::out_of_range("Index out of bounds.");
-    }
-
-    T* getRawPointer()
-    {
-        return ptr_;
-    }
-};
-
-template <typename T>
-Vector<T> operator+(const Vector<T>& v1, const Vector<T>& v2)
-{
-    if (v1.size() != v2.size())
-        throw std::logic_error("Vector lengths must be equal.");
-    Vector<T> result;
-    for (int i{ 0 }; i < v1.size(); ++i)
-        result.push_back(v1[i] + v2[i]);
-
-    return result;
-}
-
-Vector<Vector<double>> createAndInsert()
-{
-    Vector<Vector<double>> pts;
-    pts.reserve(3);
-    Vector<double> x{ 1.0, 1.0 };
-    pts.push_back(x);
-    pts.push_back(x + x);
-    pts.push_back(x);
-    return pts;
-}
-
-int main()
-{
-    Vector<Vector<double>> result = createAndInsert();
-    return 0;
-}
-```
-
-[Compiler Explorer](https://godbolt.org/z/hEMKd99s5)
-
-Let us look at the individual steps of the program (inspecting both stack and the heap) when we compile this program with a C++ compiler.
-
-First in `main`, we create the empty vector `pts` which will be used to store points in the euclidean space $\mathbf{R}^2$:
-
-```cpp
-Vector<Vector<double>> pts;
-```
-
-which is placed on the stack as an object that has `size_ = 0`, `capacity_ = 0` and no memory allocated for elements.
-
-Then, we call 
-
-```cpp
-pts.reserve(3);
-```
-
-This allocates memory for `3` elements on the heap. The member `pts_->capacity_` equals `3`, `pts->size_` equals `0` and `pts_->ptr_` contains the address to heap block. The allocated memory is not initialized, because the number of elements is still `0`.
-
-Then, we create a $2$-tuple to hold the cartesian coordinates of a point $(1.0,1.0)$. We create a `Vector<double>` initialized to `{1.0,1.0}`. Essentially, we create an object `x` on the stack with its members `x->size_ = 2`, `x->capacity_ = 5` and a pointer `x->ptr_` containing the address of newly allocated memory on the heap for `5` elements. Further, `x->ptr_[0]=1.0`, `x->ptr_[1]=1.0`. 
-
-```cpp
-Vector<double> x{1.0, 1.0};
-```
-
-After this statement, the program has the following state: we have two objects on the stack : `pts` and `x`. Both of them have memory allocated on the heap. 
-
-![Checkpoint #1](move_semantics_00.png)
-
-The next step is the command to insert `x` into the `pts` vector. 
-
-```cpp
-pts.push_back(x);
-```
-
-My toy `Vector` class is said to have value semantics, which means it creates copies of the values passed to it. As a result, we get a first element in the vector, which is a full(deep) copy of the passed value/object `x`:
-
-![Checkpoint #2](move_semantics_01.png)
-
-The current state is that we have a vector `pts` and two copies of `x={1.0,1.0}`, one of which is the first element in `pts`. 
-
-Let's now look at the next statement, which creates a new temporary vector and again inserts it into the `pts` vector:
-
-```cpp
-pts.push_back(x + x);
-```
-
-This statement is performed in three steps:
-
-*Step 1*. We create a temporary `Vector<double>` object `x + x`. 
-
-![Step #1](move_semantics_02.png)
-
-*Step 2*.  `x+x` is a temporary.  The `Vector<T>::push_back(const T&)` function accepts a reference-to-`const` as an argument. Since `x+x` is a temporary, it cannot be modified and binds to a reference-to-`const`. Moreover, being a temporary object, it is likely to die soon. Referencing it extends the lifetime of the temporary `x + x={2.0,2.0}`. 
-
-Now, the statement `pts_[size++] = elem` will invoke the copy-assignment operator on the yet uninitialized second element  `pts[1]` which is of type `Vector<double>`. This will force a full (deep) copy of `x + x={2.0,2.0}`. At this time, two copies of `{2.0,2.0}`  exist on the heap. One of these is assigned to `pts[1]`. 
-
-![Step #2](move_semantics_03.png)
-
-*Step 3*. When `push_back(const T&)` returns, the temporary `x + x` will die and its destructor is called and the memory allocated on the heap is freed. You can see this on [cppinsights](https://cppinsights.io/s/3f814c34).
-
-Our code is clearly not performing well: we create a copy of the temporary `x + x` and destroy the source of the copy immediately afterwards, which means we unnecessarily allocate and free memory that we could have just moved from source to the copy.
-
-![Step #3](move_semantics_04.png)
-
-With the next statement, again we insert `x` into `pts`:
-
-```cpp
-pts.push_back(x)
-```
-
-Again, `pts` copies `x`.
-
-![Checkpoint #3](move_semantics_05.png)
-
-This is also something to improve. Because the value of `x` is no longer needed, some optimization could use the memory of `x` as the memory for the new element instead. 
-
-At the end of `createAndInsert()` we come to the return statement:
-
-```cpp
-return pts;
-```
-
-Here, the behaviour of the program is a bit more complicated. We return by value (the return type is not a reference), which should be a copy of the value in the `return` statement. Creating a copy of `pts` means that we have create a deep copy of the whole vector with all of its elements. Thus, we have to allocate heap memory for the array of elements in the `pts` and heap memory for the value of each 2-tuple. Here, we would have to allocate memory 4 times.
-
-However, since at the same time `pts` is destroyed because we leave the scope where it is declared, the compiler is allowed to perform *named return value optimization (NRVO)*. This means that the compiler can generate code so that `pts` is used as the return value.  
-
-Let us assume that we have the named return value optimization. In that case, at the end of the `return` statement, `pts` simply becomes the return value and the destructor of `x` is called, which frees the memory allocated when it was declared.
-
-![Return statement](move_semantics_06.png)
-
-Finally, we come to the assignment of the return value to `result`:
-
-```
-result = createAndInsert()
-```
-
-Here, we really get behavior that can be improved: the usual assignment operator has the goal of giving `result` the same value as the source value that is assigned. In general, any source(assigned) value should not be modified and should independent from the object that the value was assigned to. So, the assignment operator will create a deep-copy of the whole return value:
-
-![Return statement](move_semantics_07.png)
-
-However, right after that we no longer need the temporary return value and we destroy it:
-
-Again, we create a copy of a temporary object and destroy the source of the copy immediately afterwards, which means that we again unnecessarily allocate and free memory. This time it applies to four allocations
-
-For the state of the program after this assignment in `main()`, we allocated memory numerous times and released it. Unnecessary memory allocations were caused by:
-
-- Inserting a temporary object into `pts`.
-- Inserting an object into `pts` where we no longer need the value.
-- Assigning a temporary vector with all its elements.
-
-We can more or less avoid these performance pennalties. 
+- *lvalues*: expressions for locations of long-living objects or functions. These objects have identity, persist in memory and are addressable.
+- *prvalues*: expressions for short-living values for initializations. *prvalues* themselves do not exist somewhere in memory, they do not denote objects. They are an abstract recipee for initializing an object of type `T`. 
+- *xvalue*: A special location, representing a (long-living) object, whose resources/values are no longer needed. The guts of this object can be stolen. 
 
 ## Copy elison
 
@@ -378,13 +78,6 @@ void g()
 
 This is how it actually works. We are going to create our temporary - the string `"A"` in the place, where we would have actually copied it, that is, in the local variable `a` in the stack frame of `f(std::string)`. 
 
-## Value Categories
-
-In C++, every expression is either an *lvalue* or an *rvalue*. Consider an object that owns some resources(file-descriptors, sockets, memory buffer).
-
-- An *lvalue* denotes an object whose resources cannot be reused. The object is an *lvalue*, if you can't take the guts(resources) out of this object and donate it to someone else. *lvalue*s include expressions that designate objects by their name. For example, in the expression `double y = f(x)`, `y` is an *lvalue*. Moreover, *lvalue*s have persistent storage and an identifiable memory address. For instance, if I declare `std::vector<double> v{1.0,2.0,3.0,4.0,5.0};`, then `v[0]` is an *lvalue*.
-
-- An *rvalue* denotes an object whose resources can be reused. The object is an *rvalue*, if you can take the guts(resources) out of it and donate it to another object. *rvalue*s typically include temporary objects as they can't manipulated at the place they are created and are likely to be destroyed soon. For instance, if declare `int x = 5;`, `5` is an *rvalue*. Moreover, in the statement `double y = f(x);`, the expression `f(x)` is an *rvalue*. 
 
 ## Moving data
 
@@ -896,12 +589,7 @@ C++17 has the same value categories but clarified the semantic meaning of the va
 
 The key approach for explaining value categories now is that in general, we have two major kinds of expressions:
 
-- *glvalues*: expressions for locations of long-living objects or functions.
-- *prvalues*: expressions for short-living values for initializations.
 
-An *xvalue* is then considered a special location, representing a (long-living) object, whose resources/values are no longer needed. 
-
-Loosely speaking, *prvalues* themselves do not exist somewhere in memory, they do not denote objects. They are used for initialization. In C++17, *prvalues* are not moved from. It doesn't make sense to talk about whether you can steal it's resources. 
 
 
 ## Perfect Forwarding
