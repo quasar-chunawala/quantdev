@@ -277,6 +277,75 @@ auto ppcx = &pcx;
 
 The expression `&pcx` contains `const`. So, the type of `ppcx` is deduced as `const int**`. 
 
+## Lambda capture type deduction
+
+The captures of a [lambda expression](https://quantdev.blog/posts/lambda_functions/) defines the outside variables that are accessible from within the lambda function body. There are three kinds of lambda capture:
+
+- *By reference*: Uses type deduction rules for reference parameters.
+- *Init capture*: Uses `auto` type deduction rules.
+- *By value*: CV qualifiers are retained.
+
+Recall that, C++14 allows [init-captures](https://quantdev.blog/posts/lambda_functions/#captures-with-an-initialiser). You can create new data members in the closure type on the fly. Then, we can access those variables inside the lambda.
+
+The key takeaway is that the simple *by-value* capture $\neq$ by-value init capture. Observe the following code snip:
+
+```cpp
+{
+    const int cx{0};
+    auto func = [cx](){};   // by-value capture
+                            // The type of `cx` is `const int`
+}
+
+{
+    const int cx{0};
+    auto func = [cx = cx](){};   // init-capture
+                                 // The type of `cx` is `int`
+}
+```
+
+This is an interesting wrinkle that exists for *by-value* lambda captures.
+
+Observe the following code snip:
+
+```cpp
+{
+    int cx{0};
+    auto func = [cx]{ cx = 10; };   // error
+    func();
+}
+```
+
+In this lambda expression, `cx` is captured by value. The type `cx` is deduced as `int`. Recall, that the function call operator is `const`. You can't modify a non-`const` member variable inside a `const` member function. So, this would be a compile error.
+
+If you declare your lambda as `mutable`, it means that the function call operator is not `const`. Observe the next code snip. If we have a local variable which is `const` and we capture it by value, then it will be copied into the class as a `const`. 
+
+```cpp
+{
+    const int cx{0};
+    auto func = [cx] mutable { cx = 10; };  // still error
+}
+```
+
+My next example, is a real mind-bender borrowed from slide 31 of Scott Meyer's talk. Observe the code snip below. What is the deduced type of `param`?
+
+```cpp
+template<typename T>
+void f(const T& param);
+
+struct Widget{};
+
+std::vector<Widget> createVec();
+
+const auto vw = createVec();
+
+if(!vw.empty()){
+    f(&vw[0]);
+}
+```
+
+First, the function `createVec()` returns a `vector<Widget>` by value. `auto` deduction rules apply. So, the type of `vw` is deduced as `const std::vector<Widget>`. So, all elements of the vector are considered immutable and are of type `const Widget`. If the vector is not empty, `f` receives the address of the element of the vector. This is a pointer-to-`const` `Widget`, it contains `const`. Thus, the base type `T` is deduced as `Widget* const`. `param` is a `const` reference to `T`, so the type of `param` is deduced as `const Widget* const &`.
+
+## `decltype` type deduction 
 
 
 

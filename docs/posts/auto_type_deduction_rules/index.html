@@ -217,6 +217,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#basics" id="toc-basics" class="nav-link" data-scroll-target="#basics">Basics</a></li>
   <li><a href="#intermediate" id="toc-intermediate" class="nav-link" data-scroll-target="#intermediate">Intermediate</a></li>
   <li><a href="#advanced" id="toc-advanced" class="nav-link" data-scroll-target="#advanced">Advanced</a></li>
+  <li><a href="#lambda-capture-type-deduction" id="toc-lambda-capture-type-deduction" class="nav-link" data-scroll-target="#lambda-capture-type-deduction">Lambda capture type deduction</a></li>
+  <li><a href="#decltype-type-deduction" id="toc-decltype-type-deduction" class="nav-link" data-scroll-target="#decltype-type-deduction"><code>decltype</code> type deduction</a></li>
   </ul></li>
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
   </ul>
@@ -388,6 +390,58 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb27-2"><a href="#cb27-2"></a><span class="at">const</span> <span class="dt">int</span><span class="op">*</span> pcx <span class="op">=</span> <span class="op">&amp;</span>x<span class="op">;</span></span>
 <span id="cb27-3"><a href="#cb27-3"></a><span class="kw">auto</span> ppcx <span class="op">=</span> <span class="op">&amp;</span>pcx<span class="op">;</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>The expression <code>&amp;pcx</code> contains <code>const</code>. So, the type of <code>ppcx</code> is deduced as <code>const int**</code>.</p>
+</section>
+<section id="lambda-capture-type-deduction" class="level2">
+<h2 class="anchored" data-anchor-id="lambda-capture-type-deduction">Lambda capture type deduction</h2>
+<p>The captures of a <a href="https://quantdev.blog/posts/lambda_functions/">lambda expression</a> defines the outside variables that are accessible from within the lambda function body. There are three kinds of lambda capture:</p>
+<ul>
+<li><em>By reference</em>: Uses type deduction rules for reference parameters.</li>
+<li><em>Init capture</em>: Uses <code>auto</code> type deduction rules.</li>
+<li><em>By value</em>: CV qualifiers are retained.</li>
+</ul>
+<p>Recall that, C++14 allows <a href="https://quantdev.blog/posts/lambda_functions/#captures-with-an-initialiser">init-captures</a>. You can create new data members in the closure type on the fly. Then, we can access those variables inside the lambda.</p>
+<p>The key takeaway is that the simple <em>by-value</em> capture <span class="math inline">\(\neq\)</span> by-value init capture. Observe the following code snip:</p>
+<div class="sourceCode" id="cb28"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb28-1"><a href="#cb28-1"></a><span class="op">{</span></span>
+<span id="cb28-2"><a href="#cb28-2"></a>    <span class="at">const</span> <span class="dt">int</span> cx<span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
+<span id="cb28-3"><a href="#cb28-3"></a>    <span class="kw">auto</span> func <span class="op">=</span> <span class="op">[</span>cx<span class="op">](){};</span>   <span class="co">// by-value capture</span></span>
+<span id="cb28-4"><a href="#cb28-4"></a>                            <span class="co">// The type of `cx` is `const int`</span></span>
+<span id="cb28-5"><a href="#cb28-5"></a><span class="op">}</span></span>
+<span id="cb28-6"><a href="#cb28-6"></a></span>
+<span id="cb28-7"><a href="#cb28-7"></a><span class="op">{</span></span>
+<span id="cb28-8"><a href="#cb28-8"></a>    <span class="at">const</span> <span class="dt">int</span> cx<span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
+<span id="cb28-9"><a href="#cb28-9"></a>    <span class="kw">auto</span> func <span class="op">=</span> <span class="op">[</span>cx <span class="op">=</span> cx<span class="op">](){};</span>   <span class="co">// init-capture</span></span>
+<span id="cb28-10"><a href="#cb28-10"></a>                                 <span class="co">// The type of `cx` is `int`</span></span>
+<span id="cb28-11"><a href="#cb28-11"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This is an interesting wrinkle that exists for <em>by-value</em> lambda captures.</p>
+<p>Observe the following code snip:</p>
+<div class="sourceCode" id="cb29"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb29-1"><a href="#cb29-1"></a><span class="op">{</span></span>
+<span id="cb29-2"><a href="#cb29-2"></a>    <span class="dt">int</span> cx<span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
+<span id="cb29-3"><a href="#cb29-3"></a>    <span class="kw">auto</span> func <span class="op">=</span> <span class="op">[</span>cx<span class="op">]{</span> cx <span class="op">=</span> <span class="dv">10</span><span class="op">;</span> <span class="op">};</span>   <span class="co">// error</span></span>
+<span id="cb29-4"><a href="#cb29-4"></a>    func<span class="op">();</span></span>
+<span id="cb29-5"><a href="#cb29-5"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>In this lambda expression, <code>cx</code> is captured by value. The type <code>cx</code> is deduced as <code>int</code>. Recall, that the function call operator is <code>const</code>. You can’t modify a non-<code>const</code> member variable inside a <code>const</code> member function. So, this would be a compile error.</p>
+<p>If you declare your lambda as <code>mutable</code>, it means that the function call operator is not <code>const</code>. Observe the next code snip. If we have a local variable which is <code>const</code> and we capture it by value, then it will be copied into the class as a <code>const</code>.</p>
+<div class="sourceCode" id="cb30"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb30-1"><a href="#cb30-1"></a><span class="op">{</span></span>
+<span id="cb30-2"><a href="#cb30-2"></a>    <span class="at">const</span> <span class="dt">int</span> cx<span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
+<span id="cb30-3"><a href="#cb30-3"></a>    <span class="kw">auto</span> func <span class="op">=</span> <span class="op">[</span>cx<span class="op">]</span> <span class="at">mutable</span> <span class="op">{</span> cx <span class="op">=</span> <span class="dv">10</span><span class="op">;</span> <span class="op">};</span>  <span class="co">// still error</span></span>
+<span id="cb30-4"><a href="#cb30-4"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>My next example, is a real mind-bender borrowed from slide 31 of Scott Meyer’s talk. Observe the code snip below. What is the deduced type of <code>param</code>?</p>
+<div class="sourceCode" id="cb31"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb31-1"><a href="#cb31-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb31-2"><a href="#cb31-2"></a><span class="dt">void</span> f<span class="op">(</span><span class="at">const</span> T<span class="op">&amp;</span> param<span class="op">);</span></span>
+<span id="cb31-3"><a href="#cb31-3"></a></span>
+<span id="cb31-4"><a href="#cb31-4"></a><span class="kw">struct</span> Widget<span class="op">{};</span></span>
+<span id="cb31-5"><a href="#cb31-5"></a></span>
+<span id="cb31-6"><a href="#cb31-6"></a><span class="bu">std::</span>vector<span class="op">&lt;</span>Widget<span class="op">&gt;</span> createVec<span class="op">();</span></span>
+<span id="cb31-7"><a href="#cb31-7"></a></span>
+<span id="cb31-8"><a href="#cb31-8"></a><span class="at">const</span> <span class="kw">auto</span> vw <span class="op">=</span> createVec<span class="op">();</span></span>
+<span id="cb31-9"><a href="#cb31-9"></a></span>
+<span id="cb31-10"><a href="#cb31-10"></a><span class="cf">if</span><span class="op">(!</span>vw<span class="op">.</span>empty<span class="op">()){</span></span>
+<span id="cb31-11"><a href="#cb31-11"></a>    f<span class="op">(&amp;</span>vw<span class="op">[</span><span class="dv">0</span><span class="op">]);</span></span>
+<span id="cb31-12"><a href="#cb31-12"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>First, the function <code>createVec()</code> returns a <code>vector&lt;Widget&gt;</code> by value. <code>auto</code> deduction rules apply. So, the type of <code>vw</code> is deduced as <code>const std::vector&lt;Widget&gt;</code>. So, all elements of the vector are considered immutable and are of type <code>const Widget</code>. If the vector is not empty, <code>f</code> receives the address of the element of the vector. This is a pointer-to-<code>const</code> <code>Widget</code>, it contains <code>const</code>. Thus, the base type <code>T</code> is deduced as <code>Widget* const</code>. <code>param</code> is a <code>const</code> reference to <code>T</code>, so the type of <code>param</code> is deduced as <code>const Widget* const &amp;</code>.</p>
+</section>
+<section id="decltype-type-deduction" class="level2">
+<h2 class="anchored" data-anchor-id="decltype-type-deduction"><code>decltype</code> type deduction</h2>
 </section>
 </section>
 <section id="references" class="level1">
