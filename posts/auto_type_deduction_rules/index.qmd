@@ -22,10 +22,14 @@ auto [some_modifiers] x = expression;
 
 you have three general cases:
 
-- `auto x` : The object being assigned is allowed to decay. We strip the RHS `expression` of all CV-qualifiers such as `const` and reference modifiers to deduce the *by-value* type of `x`. CV qualifiers applied to pointed-to types are maintained.
+- `auto x` : The object being assigned is allowed to decay. We strip the RHS `expression` of all CV-qualifiers such as `const` and reference modifiers `&` to deduce the *by-value* type of `x`.
 - `auto& x` or `auto&& x` : It preserves references and CV-qualifiers. 
 - `const auto& x` : We specify the qualifiers, `auto` simply deduces the base type. 
 
+There is special treatment for expressions that are functions or arrays:
+
+- When initializing a reference(`auto&`), array/function types are preserved. 
+- Otherwise, it *decays* to a pointer before type deduction.
 
 # Exercises to flex your understanding of `auto` deduction rules
 
@@ -104,6 +108,19 @@ auto v{1, 2, 3};
 Curly braced direct initialization only works with a single scalar value e.g. `auto v{1}`. 
 
 ```cpp
+auto x = {17};
+```
+
+The type of `x` is deduced as `std::initializer_list<int>`. 
+
+To summarize:
+
+- `auto` + copy list initialization : If all elements are of type `T`, `auto` is deduced as `std::initializer_list<T>`.
+- `auto` + direct list initialization : 
+    - $1$ element in braces $\implies$ `auto` deduces the type of element by-value.
+    - $>1$ element $\implies$ error(ill-formed).
+
+```cpp
 int foo(int x){
     return x;
 }
@@ -113,13 +130,6 @@ auto v = foo;
 
 `v` is deduced as a function pointer, `int (*) int`. According to the C++ standard, a function is an object that occupies memory storage and has a lifetime. Hence, `foo` is an *lvalue* expression. 
 
-```cpp
-int x{22};
-const int* pcx = &x;
-auto ppcx = &pcx;
-```
-
-CV-qualifiers applied to pointed-to are maintained. So, the type of `ppcx` is deduced as `const int**`. 
 
 ## Intermediate
 
@@ -249,7 +259,26 @@ const int* const cpci;
 auto p3 = cpci;
 ```
 
-You can have a constant pointer-to-`int`, in which case the expression is a constant. Or you can have a pointer-to-`const`, in which case you have a expression containing `const`.
+You can have a constant pointer-to-`int`, in which case the expression is a constant. Or you can have a pointer-to-`const`, in which case you have a expression containing `const`. And you can have a constant pointer to `const`, which is a constant expression that contains a `const`.
+
+When deducing `auto`, we are deducing *by-value*. The top-level `const/volatile` is dropped. Applying this rule, we have the following:
+
+- The type of `p1` is deduced as `int*`.
+- The type of `p2` is deduced as `const int*`.
+- The type of `p3` is deduced as `const int*`.
+
+THe fact that `p3` is `const` is ignored. The fact that `p3` contains `const` is not ignored.
+
+```cpp
+int x{22};
+const int* pcx = &x;
+auto ppcx = &pcx;
+```
+
+The expression `&pcx` contains `const`. So, the type of `ppcx` is deduced as `const int**`. 
+
+
+
 
 # References
 
