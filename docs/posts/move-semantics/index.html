@@ -210,9 +210,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
    
   <ul>
   <li><a href="#value-categories" id="toc-value-categories" class="nav-link active" data-scroll-target="#value-categories">Value Categories</a></li>
+  <li><a href="#rules-for-binding-references" id="toc-rules-for-binding-references" class="nav-link" data-scroll-target="#rules-for-binding-references">Rules for binding references</a>
+  <ul class="collapse">
   <li><a href="#copy-elison" id="toc-copy-elison" class="nav-link" data-scroll-target="#copy-elison">Copy elison</a>
   <ul class="collapse">
   <li><a href="#mechanics" id="toc-mechanics" class="nav-link" data-scroll-target="#mechanics">Mechanics</a></li>
+  </ul></li>
+  <li><a href="#challenge-puzzle" id="toc-challenge-puzzle" class="nav-link" data-scroll-target="#challenge-puzzle">Challenge puzzle</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -223,18 +227,36 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 
-<section id="value-categories" class="level2">
-<h2 class="anchored" data-anchor-id="value-categories">Value Categories</h2>
-<p>In C++, every expression is either an <em>lvalue</em> or an <em>rvalue</em>.</p>
-<p>An <em>lvalue</em> denotes an object whose resources cannot be reused. The object is an <em>lvalue</em>, if you can’t take the guts(resources) out of this object and donate it to someone else. <em>lvalue</em>s include expressions that designate objects by their name. For example, in the expression <code>double y = f(x)</code>, <code>y</code> is an <em>lvalue</em>. Moreover, <em>lvalue</em>s have persistent storage and an identifiable memory address. For instance, if I declare <code>std::vector&lt;double&gt; v{1.0,2.0,3.0,4.0,5.0};</code>, then <code>v[0]</code> is an <em>lvalue</em>.</p>
-<p>An <em>rvalue</em> denotes an object whose resources can be reused. The object is an <em>rvalue</em>, if you can take the guts(resources) out of it and donate it to another object. <em>rvalue</em>s typically include temporary objects as they can’t manipulated at the place they are created and are likely to be destroyed soon. For instance, if declare <code>int x = 5;</code>, <code>5</code> is an <em>rvalue</em>. Moreover, in the statement <code>double y = f(x);</code>, the expression <code>f(x)</code> is an <em>rvalue</em>.</p>
+<section id="value-categories" class="level1">
+<h1>Value Categories</h1>
 <p>C++ defines the following value categories:</p>
 <ul>
 <li><em>lvalues</em>: expressions for locations of long-living objects or functions. These objects have identity, persist in memory and are addressable.</li>
-<li><em>prvalues</em>: expressions for short-living values for initializations. <em>prvalues</em> themselves do not exist somewhere in memory, they do not denote objects. They are an abstract recipee for initializing an object of type <code>T</code>.</li>
-<li><em>xvalue</em>: A special location, representing a (long-living) object, whose resources/values are no longer needed. The guts of this object can be stolen.</li>
+<li><em>prvalues</em>: expressions for short-living values for initializations. <em>prvalues</em> themselves do not exist somewhere in memory, they do not denote objects. They are unmaterialized entities meant for initialization.</li>
+<li><em>xvalue</em>: A special location, representing a (long-living) object, whose resources/values are no longer needed and can be reused. The guts of this object can be stolen.</li>
 </ul>
+<p>The moment a <em>prvalue</em> (conceptual temporary) becomes an <em>xvalue</em>(temporary object), it is called <em>materialization</em>. The temporary materialization conversion is usually an implicit <em>prvalue-to-xvalue</em> conversion.</p>
+<p>Anytime a <em>prvalue</em> is used where a <em>lvalue</em> or <em>xvalue</em> is expected, a temporary object is created and initialized with the <em>prvalue</em>.</p>
 </section>
+<section id="rules-for-binding-references" class="level1">
+<h1>Rules for binding references</h1>
+<p>Define:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">struct</span> X<span class="op">{};</span></span>
+<span id="cb1-2"><a href="#cb1-2"></a>X v<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3"></a><span class="at">const</span> X c<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4"></a></span>
+<span id="cb1-5"><a href="#cb1-5"></a><span class="dt">void</span> f<span class="op">(</span>X<span class="op">);</span></span>
+<span id="cb1-6"><a href="#cb1-6"></a><span class="dt">void</span> f<span class="op">(</span>X<span class="op">&amp;);</span></span>
+<span id="cb1-7"><a href="#cb1-7"></a><span class="dt">void</span> f<span class="op">(</span><span class="at">const</span> X<span class="op">&amp;);</span></span>
+<span id="cb1-8"><a href="#cb1-8"></a><span class="dt">void</span> f<span class="op">(</span>X<span class="op">&amp;&amp;);</span></span>
+<span id="cb1-9"><a href="#cb1-9"></a><span class="dt">void</span> f<span class="op">(</span><span class="at">const</span> X<span class="op">&amp;&amp;);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<ul>
+<li><p>A non-<code>const</code> <em>lvalue</em> reference <code>X&amp;</code> takes only non-<code>const</code> <em>lvalues</em>.</p></li>
+<li><p>A <em>rvalue</em> reference <code>X&amp;&amp;</code> takes only non-<code>const</code> <em>rvalues</em>.</p></li>
+<li><p>A <code>const</code> <em>lvalue</em> reference <code>const X&amp;</code> can take everything and serves as a fallback mechanism for move semantics.</p></li>
+<li><p>A <code>const</code> <em>rvalue</em> reference takes both modifiable and <code>const</code> <em>rvalues</em> (e.g.&nbsp;<code>std::move(c)</code>).</p></li>
+<li><p>A universal reference binds to all value categories and are usually used to forward arguments.</p></li>
+</ul>
 <section id="copy-elison" class="level2">
 <h2 class="anchored" data-anchor-id="copy-elison">Copy elison</h2>
 <p>Copy elison omits copy and move constructors, resulting in zero-copy pass-by-value semantics.</p>
@@ -246,45 +268,84 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li>The callee constructs the result directly in that space.</li>
 </ul>
 <p>In the below code snip,</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
-<span id="cb1-2"><a href="#cb1-2"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb1-3"><a href="#cb1-3"></a></span>
-<span id="cb1-4"><a href="#cb1-4"></a><span class="kw">struct</span> X<span class="op">{</span></span>
-<span id="cb1-5"><a href="#cb1-5"></a>    X<span class="op">(</span><span class="dt">double</span> val<span class="op">)</span> <span class="op">:</span> <span class="va">m_val</span><span class="op">{</span>val<span class="op">}</span> <span class="op">{</span> <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"constructed at "</span> <span class="op">&lt;&lt;</span> <span class="kw">this</span><span class="op">;</span> <span class="op">}</span></span>
-<span id="cb1-6"><a href="#cb1-6"></a>    X<span class="op">(</span><span class="at">const</span> X<span class="op">&amp;){</span> <span class="bu">std::</span>println<span class="op">(</span><span class="st">"X(const X&amp;)"</span><span class="op">);</span> <span class="op">}</span></span>
-<span id="cb1-7"><a href="#cb1-7"></a>    X<span class="op">(</span>X<span class="op">&amp;&amp;){</span> <span class="bu">std::</span>println<span class="op">(</span><span class="st">"X(X&amp;&amp;)"</span><span class="op">);</span> <span class="op">}</span></span>
-<span id="cb1-8"><a href="#cb1-8"></a>    <span class="op">~</span>X<span class="op">(){</span> <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"destructed at "</span> <span class="op">&lt;&lt;</span> <span class="kw">this</span><span class="op">;</span> <span class="op">}</span></span>
-<span id="cb1-9"><a href="#cb1-9"></a>    <span class="dt">double</span> <span class="va">m_val</span><span class="op">;</span></span>
-<span id="cb1-10"><a href="#cb1-10"></a><span class="op">};</span></span>
-<span id="cb1-11"><a href="#cb1-11"></a></span>
-<span id="cb1-12"><a href="#cb1-12"></a><span class="dt">void</span> f<span class="op">(</span>X arg<span class="op">){</span></span>
-<span id="cb1-13"><a href="#cb1-13"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"&amp;arg = "</span> <span class="op">&lt;&lt;</span> <span class="op">&amp;</span>arg<span class="op">;</span></span>
-<span id="cb1-14"><a href="#cb1-14"></a><span class="op">}</span></span>
-<span id="cb1-15"><a href="#cb1-15"></a></span>
-<span id="cb1-16"><a href="#cb1-16"></a>X g<span class="op">(){</span></span>
-<span id="cb1-17"><a href="#cb1-17"></a>    X obj <span class="op">=</span> X<span class="op">(</span><span class="dv">10</span><span class="op">);</span>  <span class="co">// copy elison initializing obj</span></span>
-<span id="cb1-18"><a href="#cb1-18"></a>                    <span class="co">// from temporary</span></span>
-<span id="cb1-19"><a href="#cb1-19"></a>    <span class="cf">return</span> obj<span class="op">;</span>     <span class="co">// NRVO</span></span>
-<span id="cb1-20"><a href="#cb1-20"></a><span class="op">}</span></span>
-<span id="cb1-21"><a href="#cb1-21"></a></span>
-<span id="cb1-22"><a href="#cb1-22"></a>X h<span class="op">(){</span></span>
-<span id="cb1-23"><a href="#cb1-23"></a>    <span class="cf">return</span> X<span class="op">(</span><span class="dv">15</span><span class="op">);</span>   <span class="co">// URVO</span></span>
-<span id="cb1-24"><a href="#cb1-24"></a><span class="op">}</span></span>
-<span id="cb1-25"><a href="#cb1-25"></a></span>
-<span id="cb1-26"><a href="#cb1-26"></a><span class="dt">int</span> main<span class="op">(){</span></span>
-<span id="cb1-27"><a href="#cb1-27"></a>    f<span class="op">(</span>X<span class="op">(</span><span class="dv">42</span><span class="op">));</span></span>
-<span id="cb1-28"><a href="#cb1-28"></a>    X v1<span class="op">{</span>g<span class="op">()};</span>  <span class="co">// Copy elison initializing v1 from the result of g()</span></span>
-<span id="cb1-29"><a href="#cb1-29"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"&amp;v1 = "</span> <span class="op">&lt;&lt;</span> <span class="op">&amp;</span>v1<span class="op">;</span></span>
-<span id="cb1-30"><a href="#cb1-30"></a>    X v2<span class="op">{</span>h<span class="op">()};</span>  <span class="co">// Copy elison initializing v2 from the result of h()</span></span>
-<span id="cb1-31"><a href="#cb1-31"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"&amp;v2 = "</span> <span class="op">&lt;&lt;</span> <span class="op">&amp;</span>v2<span class="op">;</span></span>
-<span id="cb1-32"><a href="#cb1-32"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb1-33"><a href="#cb1-33"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a></span>
+<span id="cb2-4"><a href="#cb2-4"></a><span class="kw">struct</span> X<span class="op">{</span></span>
+<span id="cb2-5"><a href="#cb2-5"></a>    X<span class="op">(</span><span class="dt">double</span> val<span class="op">)</span> <span class="op">:</span> <span class="va">m_val</span><span class="op">{</span>val<span class="op">}</span> <span class="op">{</span> <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"constructed at "</span> <span class="op">&lt;&lt;</span> <span class="kw">this</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb2-6"><a href="#cb2-6"></a>    X<span class="op">(</span><span class="at">const</span> X<span class="op">&amp;){</span> <span class="bu">std::</span>println<span class="op">(</span><span class="st">"X(const X&amp;)"</span><span class="op">);</span> <span class="op">}</span></span>
+<span id="cb2-7"><a href="#cb2-7"></a>    X<span class="op">(</span>X<span class="op">&amp;&amp;){</span> <span class="bu">std::</span>println<span class="op">(</span><span class="st">"X(X&amp;&amp;)"</span><span class="op">);</span> <span class="op">}</span></span>
+<span id="cb2-8"><a href="#cb2-8"></a>    <span class="op">~</span>X<span class="op">(){</span> <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"destructed at "</span> <span class="op">&lt;&lt;</span> <span class="kw">this</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb2-9"><a href="#cb2-9"></a>    <span class="dt">double</span> <span class="va">m_val</span><span class="op">;</span></span>
+<span id="cb2-10"><a href="#cb2-10"></a><span class="op">};</span></span>
+<span id="cb2-11"><a href="#cb2-11"></a></span>
+<span id="cb2-12"><a href="#cb2-12"></a><span class="dt">void</span> f<span class="op">(</span>X arg<span class="op">){</span></span>
+<span id="cb2-13"><a href="#cb2-13"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"&amp;arg = "</span> <span class="op">&lt;&lt;</span> <span class="op">&amp;</span>arg<span class="op">;</span></span>
+<span id="cb2-14"><a href="#cb2-14"></a><span class="op">}</span></span>
+<span id="cb2-15"><a href="#cb2-15"></a></span>
+<span id="cb2-16"><a href="#cb2-16"></a>X g<span class="op">(){</span></span>
+<span id="cb2-17"><a href="#cb2-17"></a>    X obj <span class="op">=</span> X<span class="op">(</span><span class="dv">10</span><span class="op">);</span>  <span class="co">// copy elison initializing obj</span></span>
+<span id="cb2-18"><a href="#cb2-18"></a>                    <span class="co">// from temporary</span></span>
+<span id="cb2-19"><a href="#cb2-19"></a>    <span class="cf">return</span> obj<span class="op">;</span>     <span class="co">// NRVO</span></span>
+<span id="cb2-20"><a href="#cb2-20"></a><span class="op">}</span></span>
+<span id="cb2-21"><a href="#cb2-21"></a></span>
+<span id="cb2-22"><a href="#cb2-22"></a>X h<span class="op">(){</span></span>
+<span id="cb2-23"><a href="#cb2-23"></a>    <span class="cf">return</span> X<span class="op">(</span><span class="dv">15</span><span class="op">);</span>   <span class="co">// URVO</span></span>
+<span id="cb2-24"><a href="#cb2-24"></a><span class="op">}</span></span>
+<span id="cb2-25"><a href="#cb2-25"></a></span>
+<span id="cb2-26"><a href="#cb2-26"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb2-27"><a href="#cb2-27"></a>    f<span class="op">(</span>X<span class="op">(</span><span class="dv">42</span><span class="op">));</span></span>
+<span id="cb2-28"><a href="#cb2-28"></a>    X v1<span class="op">{</span>g<span class="op">()};</span>  <span class="co">// Copy elison initializing v1 from the result of g()</span></span>
+<span id="cb2-29"><a href="#cb2-29"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"&amp;v1 = "</span> <span class="op">&lt;&lt;</span> <span class="op">&amp;</span>v1<span class="op">;</span></span>
+<span id="cb2-30"><a href="#cb2-30"></a>    X v2<span class="op">{</span>h<span class="op">()};</span>  <span class="co">// Copy elison initializing v2 from the result of h()</span></span>
+<span id="cb2-31"><a href="#cb2-31"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"&amp;v2 = "</span> <span class="op">&lt;&lt;</span> <span class="op">&amp;</span>v2<span class="op">;</span></span>
+<span id="cb2-32"><a href="#cb2-32"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb2-33"><a href="#cb2-33"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p><a href="https://compiler-explorer.com/z/oMr16KTof">Compiler Explorer</a></p>
 <p>It is important to note that:</p>
 <ul>
-<li>A <em>prvalue</em> is an expression that is not materialized until it is needed. It has no identity and is not an object. It is not addressable. URVO applies to <em>prvalues</em>.</li>
-<li>An <em>lvalue</em> is an expression that has an identity.</li>
+<li>A <em>prvalue</em> is an expression that is not materialized until it is needed. It has no identity and is not an object. It is not addressable. Copy-elison is mandatory, when initializing a function parameter from a <em>prvalue</em>. URVO also applies to <em>prvalues</em>.</li>
+<li>An <em>lvalue</em> is an expression that has an identity. NRVO applies to <em>lvalues</em>.</li>
 </ul>
+</section>
+</section>
+<section id="challenge-puzzle" class="level2">
+<h2 class="anchored" data-anchor-id="challenge-puzzle">Challenge puzzle</h2>
+<p>Observe the below code snip. What is the output printed?</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="kw">struct</span> A <span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a>    A<span class="op">(</span><span class="dt">int</span> x<span class="op">)</span> <span class="op">:</span> x<span class="op">(</span>x<span class="op">)</span> <span class="op">{}</span></span>
+<span id="cb3-3"><a href="#cb3-3"></a>    A<span class="op">(</span><span class="at">const</span> A<span class="op">&amp;</span> a<span class="op">)</span> <span class="op">{</span> x <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a>    A<span class="op">(</span>A<span class="op">&amp;&amp;</span> a<span class="op">)</span> <span class="op">{</span> x <span class="op">=</span> <span class="dv">2</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb3-5"><a href="#cb3-5"></a>    <span class="dt">int</span> x<span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6"></a><span class="op">};</span></span>
+<span id="cb3-7"><a href="#cb3-7"></a></span>
+<span id="cb3-8"><a href="#cb3-8"></a><span class="dt">void</span> foo<span class="op">(</span>A t<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-9"><a href="#cb3-9"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> t<span class="op">.</span>x<span class="op">;</span></span>
+<span id="cb3-10"><a href="#cb3-10"></a><span class="op">}</span></span>
+<span id="cb3-11"><a href="#cb3-11"></a></span>
+<span id="cb3-12"><a href="#cb3-12"></a>A bar<span class="op">(){</span></span>
+<span id="cb3-13"><a href="#cb3-13"></a>    A a<span class="op">(</span><span class="dv">5</span><span class="op">);</span></span>
+<span id="cb3-14"><a href="#cb3-14"></a>    <span class="cf">return</span> a<span class="op">;</span></span>
+<span id="cb3-15"><a href="#cb3-15"></a><span class="op">}</span></span>
+<span id="cb3-16"><a href="#cb3-16"></a></span>
+<span id="cb3-17"><a href="#cb3-17"></a>A foobar<span class="op">(){</span></span>
+<span id="cb3-18"><a href="#cb3-18"></a>    <span class="cf">return</span> A<span class="op">(</span><span class="dv">6</span><span class="op">);</span></span>
+<span id="cb3-19"><a href="#cb3-19"></a><span class="op">}</span></span>
+<span id="cb3-20"><a href="#cb3-20"></a></span>
+<span id="cb3-21"><a href="#cb3-21"></a>A<span class="op">&amp;&amp;</span> baz<span class="op">(){</span></span>
+<span id="cb3-22"><a href="#cb3-22"></a>    <span class="cf">return</span> A<span class="op">(</span><span class="dv">7</span><span class="op">);</span></span>
+<span id="cb3-23"><a href="#cb3-23"></a><span class="op">}</span></span>
+<span id="cb3-24"><a href="#cb3-24"></a></span>
+<span id="cb3-25"><a href="#cb3-25"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-26"><a href="#cb3-26"></a>    A a<span class="op">(</span><span class="dv">3</span><span class="op">);</span></span>
+<span id="cb3-27"><a href="#cb3-27"></a>    foo<span class="op">(</span>a<span class="op">);</span></span>
+<span id="cb3-28"><a href="#cb3-28"></a>    foo<span class="op">(</span>A<span class="op">(</span><span class="dv">4</span><span class="op">));</span></span>
+<span id="cb3-29"><a href="#cb3-29"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> bar<span class="op">().</span>x<span class="op">;</span></span>
+<span id="cb3-30"><a href="#cb3-30"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> foobar<span class="op">().</span>x<span class="op">;</span></span>
+<span id="cb3-31"><a href="#cb3-31"></a>    A<span class="op">&amp;&amp;</span> result<span class="op">{</span> baz<span class="op">()</span> <span class="op">};</span></span>
+<span id="cb3-32"><a href="#cb3-32"></a>    stc<span class="op">::</span>cout <span class="op">&lt;&lt;</span> result<span class="op">;</span></span>
+<span id="cb3-33"><a href="#cb3-33"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>For more such puzzles, visit <a href="https://getcracked.io/">getcracked.io</a></p>
 
 
 </section>

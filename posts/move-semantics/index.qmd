@@ -8,19 +8,45 @@ toc: true
 toc-depth: 3
 ---
 
-## Value Categories
-
-In C++, every expression is either an *lvalue* or an *rvalue*. 
-
-An *lvalue* denotes an object whose resources cannot be reused. The object is an *lvalue*, if you can't take the guts(resources) out of this object and donate it to someone else. *lvalue*s include expressions that designate objects by their name. For example, in the expression `double y = f(x)`, `y` is an *lvalue*. Moreover, *lvalue*s have persistent storage and an identifiable memory address. For instance, if I declare `std::vector<double> v{1.0,2.0,3.0,4.0,5.0};`, then `v[0]` is an *lvalue*.
-
-An *rvalue* denotes an object whose resources can be reused. The object is an *rvalue*, if you can take the guts(resources) out of it and donate it to another object. *rvalue*s typically include temporary objects as they can't manipulated at the place they are created and are likely to be destroyed soon. For instance, if declare `int x = 5;`, `5` is an *rvalue*. Moreover, in the statement `double y = f(x);`, the expression `f(x)` is an *rvalue*. 
+# Value Categories
 
 C++ defines the following value categories:
 
 - *lvalues*: expressions for locations of long-living objects or functions. These objects have identity, persist in memory and are addressable.
-- *prvalues*: expressions for short-living values for initializations. *prvalues* themselves do not exist somewhere in memory, they do not denote objects. They are an abstract recipee for initializing an object of type `T`. 
-- *xvalue*: A special location, representing a (long-living) object, whose resources/values are no longer needed. The guts of this object can be stolen. 
+- *prvalues*: expressions for short-living values for initializations. *prvalues* themselves do not exist somewhere in memory, they do not denote objects. They are unmaterialized entities meant for initialization. 
+- *xvalue*: A special location, representing a (long-living) object, whose resources/values are no longer needed and can be reused. The guts of this object can be stolen. 
+
+The moment a *prvalue* (conceptual temporary) becomes an *xvalue*(temporary object), it is called *materialization*. The temporary materialization conversion is usually an implicit *prvalue-to-xvalue* conversion.
+
+Anytime a *prvalue* is used where a *lvalue* or *xvalue* is expected, a temporary object is created and initialized with the *prvalue*.
+
+# Rules for binding references
+
+Define:
+
+```cpp
+struct X{};
+X v;
+const X c;
+
+void f(X);
+void f(X&);
+void f(const X&);
+void f(X&&);
+void f(const X&&);
+```
+
+- A non-`const` *lvalue* reference `X&` takes only non-`const` *lvalues*.
+
+- A *rvalue* reference `X&&` takes only non-`const` *rvalues*.
+
+- A `const` *lvalue* reference `const X&` can take everything and serves as a fallback mechanism for move semantics.
+
+- A `const` *rvalue* reference takes both modifiable and `const` *rvalues* (e.g. `std::move(c)`).
+
+- A universal reference binds to all value categories and are usually used to forward arguments. 
+
+
 
 ## Copy elison
 
@@ -74,6 +100,47 @@ int main(){
 
 It is important to note that:
 
-- A *prvalue* is an expression that is not materialized until it is needed. It has no identity and is not an object. It is not addressable. URVO applies to *prvalues*.
-- An *lvalue* is an expression that has an identity. 
+- A *prvalue* is an expression that is not materialized until it is needed. It has no identity and is not an object. It is not addressable. Copy-elison is mandatory, when initializing a function parameter from a *prvalue*. URVO also applies to *prvalues*.
+- An *lvalue* is an expression that has an identity. NRVO applies to *lvalues*. 
 
+## Challenge puzzle
+
+Observe the below code snip. What is the output printed?
+
+```cpp
+struct A {
+    A(int x) : x(x) {}
+    A(const A& a) { x = 1; }
+    A(A&& a) { x = 2; }
+    int x;
+};
+
+void foo(A t) {
+    std::cout << t.x;
+}
+
+A bar(){
+    A a(5);
+    return a;
+}
+
+A foobar(){
+    return A(6);
+}
+
+A&& baz(){
+    return A(7);
+}
+
+int main() {
+    A a(3);
+    foo(a);
+    foo(A(4));
+    std::cout << bar().x;
+    std::cout << foobar().x;
+    A&& result{ baz() };
+    stc::cout << result;
+}
+```
+
+For more such puzzles, visit [getcracked.io](https://getcracked.io/)
