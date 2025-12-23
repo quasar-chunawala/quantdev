@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Quasar">
-<meta name="dcterms.date" content="2024-10-26">
+<meta name="dcterms.date" content="2025-12-23">
 
 <title>quantdev.blog - Move semantics and perfect forwarding</title>
 <style>
@@ -193,7 +193,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <div>
       <div class="quarto-title-meta-heading">Published</div>
       <div class="quarto-title-meta-contents">
-        <p class="date">October 26, 2024</p>
+        <p class="date">December 23, 2025</p>
       </div>
     </div>
     
@@ -381,6 +381,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 </tbody>
 </table>
+<ul>
+<li><code>X&amp; &amp;</code> becomes <code>X&amp;</code>.</li>
+<li><code>X&amp; &amp;&amp;</code> becomes <code>X&amp;</code>.</li>
+<li><code>X&amp;&amp; &amp;</code> becomes <code>X&amp;</code>.</li>
+<li><code>X&amp;&amp; &amp;&amp;</code> becomes <code>X&amp;&amp;</code>.</li>
+</ul>
 </section>
 </section>
 <section id="copy-elison" class="level2">
@@ -430,47 +436,50 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><a href="https://compiler-explorer.com/z/oMr16KTof">Compiler Explorer</a></p>
 <p>It is important to note that:</p>
 <ul>
-<li>A <em>prvalue</em> is an expression that is not materialized until it is needed. It has no identity and is not an object. It is not addressable. Copy-elison is mandatory, when initializing a function parameter from a <em>prvalue</em>. URVO also applies to <em>prvalues</em>.</li>
-<li>An <em>lvalue</em> is an expression that has an identity. NRVO applies to <em>lvalues</em>.</li>
+<li>When a temporary(<em>prvalue</em>) is used to initialize an object, or function parameter, a copy is elided.</li>
+<li>Inside a function, when a <em>prvalue</em> is returned by value, URVO(unnamed return value optimization) is performed.</li>
+<li>Inside a function, when a <em>lvalue</em> is returned by value, NRVO(named return value optimization) is performed.</li>
 </ul>
 </section>
 </section>
 <section id="challenge-puzzle" class="level2">
 <h2 class="anchored" data-anchor-id="challenge-puzzle">Challenge puzzle</h2>
 <p>Observe the below code snip. What is the output printed?</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="kw">struct</span> A <span class="op">{</span></span>
-<span id="cb4-2"><a href="#cb4-2"></a>    A<span class="op">(</span><span class="dt">int</span> x<span class="op">)</span> <span class="op">:</span> x<span class="op">(</span>x<span class="op">)</span> <span class="op">{}</span></span>
-<span id="cb4-3"><a href="#cb4-3"></a>    A<span class="op">(</span><span class="at">const</span> A<span class="op">&amp;</span> a<span class="op">)</span> <span class="op">{</span> x <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> <span class="op">}</span></span>
-<span id="cb4-4"><a href="#cb4-4"></a>    A<span class="op">(</span>A<span class="op">&amp;&amp;</span> a<span class="op">)</span> <span class="op">{</span> x <span class="op">=</span> <span class="dv">2</span><span class="op">;</span> <span class="op">}</span></span>
-<span id="cb4-5"><a href="#cb4-5"></a>    <span class="dt">int</span> x<span class="op">;</span></span>
-<span id="cb4-6"><a href="#cb4-6"></a><span class="op">};</span></span>
-<span id="cb4-7"><a href="#cb4-7"></a></span>
-<span id="cb4-8"><a href="#cb4-8"></a><span class="dt">void</span> foo<span class="op">(</span>A t<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb4-9"><a href="#cb4-9"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> t<span class="op">.</span>x<span class="op">;</span></span>
-<span id="cb4-10"><a href="#cb4-10"></a><span class="op">}</span></span>
-<span id="cb4-11"><a href="#cb4-11"></a></span>
-<span id="cb4-12"><a href="#cb4-12"></a>A bar<span class="op">(){</span></span>
-<span id="cb4-13"><a href="#cb4-13"></a>    A a<span class="op">(</span><span class="dv">5</span><span class="op">);</span></span>
-<span id="cb4-14"><a href="#cb4-14"></a>    <span class="cf">return</span> a<span class="op">;</span></span>
-<span id="cb4-15"><a href="#cb4-15"></a><span class="op">}</span></span>
-<span id="cb4-16"><a href="#cb4-16"></a></span>
-<span id="cb4-17"><a href="#cb4-17"></a>A foobar<span class="op">(){</span></span>
-<span id="cb4-18"><a href="#cb4-18"></a>    <span class="cf">return</span> A<span class="op">(</span><span class="dv">6</span><span class="op">);</span></span>
-<span id="cb4-19"><a href="#cb4-19"></a><span class="op">}</span></span>
-<span id="cb4-20"><a href="#cb4-20"></a></span>
-<span id="cb4-21"><a href="#cb4-21"></a>A<span class="op">&amp;&amp;</span> baz<span class="op">(){</span></span>
-<span id="cb4-22"><a href="#cb4-22"></a>    <span class="cf">return</span> A<span class="op">(</span><span class="dv">7</span><span class="op">);</span></span>
-<span id="cb4-23"><a href="#cb4-23"></a><span class="op">}</span></span>
-<span id="cb4-24"><a href="#cb4-24"></a></span>
-<span id="cb4-25"><a href="#cb4-25"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb4-26"><a href="#cb4-26"></a>    A a<span class="op">(</span><span class="dv">3</span><span class="op">);</span></span>
-<span id="cb4-27"><a href="#cb4-27"></a>    foo<span class="op">(</span>a<span class="op">);</span></span>
-<span id="cb4-28"><a href="#cb4-28"></a>    foo<span class="op">(</span>A<span class="op">(</span><span class="dv">4</span><span class="op">));</span></span>
-<span id="cb4-29"><a href="#cb4-29"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> bar<span class="op">().</span>x<span class="op">;</span></span>
-<span id="cb4-30"><a href="#cb4-30"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> foobar<span class="op">().</span>x<span class="op">;</span></span>
-<span id="cb4-31"><a href="#cb4-31"></a>    A<span class="op">&amp;&amp;</span> result<span class="op">{</span> baz<span class="op">()</span> <span class="op">};</span></span>
-<span id="cb4-32"><a href="#cb4-32"></a>    stc<span class="op">::</span>cout <span class="op">&lt;&lt;</span> result<span class="op">;</span></span>
-<span id="cb4-33"><a href="#cb4-33"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb4-2"><a href="#cb4-2"></a><span class="kw">struct</span> A <span class="op">{</span></span>
+<span id="cb4-3"><a href="#cb4-3"></a>    A<span class="op">(</span><span class="dt">int</span> x<span class="op">)</span> <span class="op">:</span> x<span class="op">(</span>x<span class="op">)</span> <span class="op">{}</span></span>
+<span id="cb4-4"><a href="#cb4-4"></a>    A<span class="op">(</span><span class="at">const</span> A<span class="op">&amp;</span> a<span class="op">)</span> <span class="op">{</span> x <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb4-5"><a href="#cb4-5"></a>    A<span class="op">(</span>A<span class="op">&amp;&amp;</span> a<span class="op">)</span> <span class="op">{</span> x <span class="op">=</span> <span class="dv">2</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb4-6"><a href="#cb4-6"></a>    <span class="dt">int</span> x<span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7"></a><span class="op">};</span></span>
+<span id="cb4-8"><a href="#cb4-8"></a></span>
+<span id="cb4-9"><a href="#cb4-9"></a><span class="dt">void</span> foo<span class="op">(</span>A t<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-10"><a href="#cb4-10"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> t<span class="op">.</span>x<span class="op">;</span></span>
+<span id="cb4-11"><a href="#cb4-11"></a><span class="op">}</span></span>
+<span id="cb4-12"><a href="#cb4-12"></a></span>
+<span id="cb4-13"><a href="#cb4-13"></a>A bar<span class="op">(){</span></span>
+<span id="cb4-14"><a href="#cb4-14"></a>    A a<span class="op">(</span><span class="dv">5</span><span class="op">);</span></span>
+<span id="cb4-15"><a href="#cb4-15"></a>    <span class="cf">return</span> a<span class="op">;</span></span>
+<span id="cb4-16"><a href="#cb4-16"></a><span class="op">}</span></span>
+<span id="cb4-17"><a href="#cb4-17"></a></span>
+<span id="cb4-18"><a href="#cb4-18"></a>A foobar<span class="op">(){</span></span>
+<span id="cb4-19"><a href="#cb4-19"></a>    <span class="cf">return</span> A<span class="op">(</span><span class="dv">6</span><span class="op">);</span></span>
+<span id="cb4-20"><a href="#cb4-20"></a><span class="op">}</span></span>
+<span id="cb4-21"><a href="#cb4-21"></a></span>
+<span id="cb4-22"><a href="#cb4-22"></a>A<span class="op">&amp;&amp;</span> baz<span class="op">(</span>A<span class="op">&amp;&amp;</span> arg<span class="op">){</span></span>
+<span id="cb4-23"><a href="#cb4-23"></a>    <span class="cf">return</span> <span class="bu">std::</span>move<span class="op">(</span>arg<span class="op">);</span></span>
+<span id="cb4-24"><a href="#cb4-24"></a><span class="op">}</span></span>
+<span id="cb4-25"><a href="#cb4-25"></a></span>
+<span id="cb4-26"><a href="#cb4-26"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-27"><a href="#cb4-27"></a>    A a<span class="op">(</span><span class="dv">3</span><span class="op">);</span></span>
+<span id="cb4-28"><a href="#cb4-28"></a>    foo<span class="op">(</span>a<span class="op">);</span></span>
+<span id="cb4-29"><a href="#cb4-29"></a>    foo<span class="op">(</span>A<span class="op">(</span><span class="dv">4</span><span class="op">));</span></span>
+<span id="cb4-30"><a href="#cb4-30"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> bar<span class="op">().</span>x<span class="op">;</span></span>
+<span id="cb4-31"><a href="#cb4-31"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> foobar<span class="op">().</span>x<span class="op">;</span></span>
+<span id="cb4-32"><a href="#cb4-32"></a>    A result<span class="op">{</span> baz<span class="op">(</span>A<span class="op">(</span><span class="dv">7</span><span class="op">))</span> <span class="op">};</span></span>
+<span id="cb4-33"><a href="#cb4-33"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> result<span class="op">.</span>x<span class="op">;</span></span>
+<span id="cb4-34"><a href="#cb4-34"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://godbolt.org/z/zh91h7fr6">Compiler Explorer</a></p>
 <p>For more such puzzles, visit <a href="https://getcracked.io/">getcracked.io</a></p>
 
 

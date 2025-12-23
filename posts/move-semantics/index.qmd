@@ -1,7 +1,7 @@
 ---
 title: "Move semantics and perfect forwarding"
 author: "Quasar"
-date: "2024-10-26"
+date: "2025-12-23 "
 categories: [C++]      
 image: "cpp.jpg"
 toc: true
@@ -79,7 +79,10 @@ For a non-const object `v` and a const object `c` the type `T` and the type of `
 |`foo(std::move(v))`    | `X&&`         | `X&& &&`      | `X&&`         |
 |`foo(std::move(c))`    | `const X&&`   | `const X&& &&`| `const X&&`   |
 
-
+- `X& &` becomes `X&`.
+- `X& &&` becomes `X&`.
+- `X&& &` becomes `X&`.
+- `X&& &&` becomes `X&&`.
 
 ## Copy elison
 
@@ -133,14 +136,16 @@ int main(){
 
 It is important to note that:
 
-- A *prvalue* is an expression that is not materialized until it is needed. It has no identity and is not an object. It is not addressable. Copy-elison is mandatory, when initializing a function parameter from a *prvalue*. URVO also applies to *prvalues*.
-- An *lvalue* is an expression that has an identity. NRVO applies to *lvalues*. 
+- When a temporary(*prvalue*) is used to initialize an object, or function parameter, a copy is elided.
+- Inside a function, when a *prvalue* is returned by value, URVO(unnamed return value optimization) is performed. 
+- Inside a function, when a *lvalue* is returned by value, NRVO(named return value optimization) is performed.
 
 ## Challenge puzzle
 
 Observe the below code snip. What is the output printed?
 
 ```cpp
+#include <iostream>
 struct A {
     A(int x) : x(x) {}
     A(const A& a) { x = 1; }
@@ -161,8 +166,8 @@ A foobar(){
     return A(6);
 }
 
-A&& baz(){
-    return A(7);
+A&& baz(A&& arg){
+    return std::move(arg);
 }
 
 int main() {
@@ -171,9 +176,10 @@ int main() {
     foo(A(4));
     std::cout << bar().x;
     std::cout << foobar().x;
-    A&& result{ baz() };
-    stc::cout << result;
+    A result{ baz(A(7)) };
+    std::cout << result.x;
 }
 ```
+[Compiler Explorer](https://godbolt.org/z/zh91h7fr6)
 
 For more such puzzles, visit [getcracked.io](https://getcracked.io/)
