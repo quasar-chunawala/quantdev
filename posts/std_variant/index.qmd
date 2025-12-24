@@ -1,5 +1,5 @@
 ---
-title: "`std::variant`"
+title: "Using `std::variant`"
 author: "Quasar"
 date: "2025-12-23"
 categories: [C++]      
@@ -77,6 +77,9 @@ int main(){
     if(std::holds_alternative<std::monostate>(v)){
         std::println("has monostate");
     }
+    // get_if accepts a pointer to a variant and returns
+    // a `T*` if the alternative is T, else return
+    // nullptr
     if(std::get_if<0>(&v)){
         std::println("has monostate");
     }
@@ -88,4 +91,128 @@ int main(){
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/GbrEYWh7h)
 
+You can assign any other alternative and even assign `std::monostate` to the variant again.
 
+## `std::variant` types and operations
+
+### Construction 
+
+```cpp
+#include <variant>
+#include <print>
+#include <complex>
+#include <set>
+#include <initializer_list>
+#include <vector>
+
+struct NoCopyConstr{
+    NoCopyConstr(const NoCopyConstr&) = delete;
+};
+
+int main(){
+    // construction
+    // sets first int to 0, index() == 0
+    std::variant<int, int, std::string> v1; 
+
+    // if a value is passed for initialization,
+    // the best matching type is used
+    std::variant<long,int> v2{42};
+    std::println("v2.index() = {}", v2.index());
+
+    // the call is ambiguous, if two types match equally well
+    //std::variant<long, long> v3{42};    // error
+
+    // 42.3 is a double and requires narrowing conversion
+    // when assigned to int or float.
+    // Neither is better.
+    //std::variant<int, float> v4{42.3};  // error
+
+
+    //std::variant<std::string, std::string_view> v5{"hello"};  //error
+    
+    // std::in_place_type or std::in_place_index
+    // is used to pass more than one value for initialization
+    std::variant<std::complex<double>> v6{
+        std::in_place_type<std::complex<double>>, 3.0, 4.0
+    };
+
+    std::variant<std::complex<double>> v7{
+        std::in_place_index<0>, 1.0, -1.0
+    };
+
+    // in_place_index tags can be used to resolve
+    // ambiguities or overrule priorities during 
+    // initialization
+    std::variant<int, int> v8{std::in_place_index<1>, 77};
+    std::println("v8.index() = {}", v8.index());
+    
+    // pass an initializer list followed by additional
+    // arguments
+    auto sc = [](int x, int y){
+        return std::abs(x) < std::abs(y);
+    };
+
+    std::variant<std::vector<int>, 
+                 std::set<int,decltype(sc)>> v9{
+        std::in_place_index<1>, {4, 8, -7, -2, 0, 5}, sc
+    };
+
+    // there is no make_variant convenience function
+
+    // you can copy variants provided all alternatives
+    // support copying.
+    std::variant<int, double> v10{42.3};
+    std::variant<int, double> v11{v10};
+
+    std::variant<int, NoCopyConstr> v12;
+    // std::variant<int, NoCopyConstr> v13{v12};
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/Kb4zGb5dx)
+
+### Accessing the value
+
+```cpp
+#include <iostream>
+#include <variant>
+#include <string>
+
+int main(){
+    // initialized with string alternative
+    std::variant<int, std::string> var{"hi"};   
+    std::cout << var.index() << "\n";
+
+    // now holds int alternative
+    var = 42;
+    std::cout << var.index() << "\n";
+
+    try{
+        int i = std::get<0>(var);  // access by index
+        int j = std::get<int>(var); //access by type
+        std::string s = std::get<std::string>(var); //error
+    }catch(const std::bad_variant_access& e){
+        std::cerr << "Exception: " << e.what() << "\n";
+    }
+
+    // Changing the value
+    // assignment and emplace() operations can be used to
+    // modify the value in the variant. 
+    // operator=() directly assigns the new value, 
+    // if the variant currently holds the alternative.
+    // emplace() first destroys the old value and then assigns
+    // the new value.
+
+    //sets first int to 0, index() == 0
+    std::variant<int, int, std::string> var2;
+    var2 = "hello";
+    var2.emplace<1>(42);
+
+    // get<>() or get_if<>() can also be used to assign
+    // a new value to the current alternative.
+    std::get<0>(var2) = 77;
+    std::get<1>(var2) = 99;
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/6WP6bGzPj)
