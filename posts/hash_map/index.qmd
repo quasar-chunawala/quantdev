@@ -10,7 +10,7 @@ toc-depth: 3
 
 # Introduction
 
-`std::unordered_map` is C++'s hash table container, providing $O(1)$ constant-time search, insertion and deletion operations with unique keys. In this blog post, I explore the basic API of `unordered_map`.
+`std::unordered_map` is C++'s hash table container, providing amortized $O(1)$ constant-time search, insertion and deletion operations with unique keys on average. In this blog post, I explore the basic API of `unordered_map`.
 
 # Construction
 
@@ -29,7 +29,323 @@ namespace pmr {
 }
 ```
 
-It allows you specify a custom hash function and comparator at compile-time. 
+It allows you specify a custom hash function `hash`, `equal` function to compare keys and `alloc` as a custom allocator. 
 
+```cpp
+#include <unordered_map>
+#include <print>
+#include <cstddef>
+#include <vector>
 
+int main(){
+    // Default construction
+    std::unordered_map<std::string, uint32_t> word_count;
 
+    // Initializer list construction
+    std::unordered_map<std::string, std::vector<double>> symbol_to_price_levels_map 
+    {
+        {"AAPL", {100.0, 101.0, 102.0}},
+        {"GOOG", {1500.0, 1505.0, 1510.0}}
+    };
+
+    // with bucket count hint
+    // atleast 100 buckets
+    std::unordered_map<std::string, uint32_t> map(100);
+
+    // Range construction (accepts a pair of iterators)
+    std::unordered_map<std::string, std::vector<double>> word_count_copy(
+        word_count.begin(), word_count.end()
+    );
+
+    // copy construction
+    std::unordered_map<std::string, std::string> cache{
+        {"Fedor Pikus", "Performance GOAT"},
+        {"Herb Sutter", "C++ Visionary"},
+        {"John Carmack", "Legendary programmer"}
+    };
+
+    std::unordered_map<std::string, std::string> cache_copy(cache);
+
+    // move construction
+    std::unordered_map<std::string, uint32_t> word_count2{std::move(word_count)};
+
+    // with a custom hash function
+    // Knuth's multiplicative hash
+    struct CustomHash{
+        size_t operator()(int key) const{
+            return key * 2654435761;
+        }
+    };
+
+    std::unordered_map<std::string, uint32_t, CustomHash> map_with_custom_hash;
+
+    // with a custom hash and custom equality
+    struct Point{
+        double x;
+        double y;
+
+        bool operator==(const Point& other) const{
+            return x == other.x && y == other.y;
+        }
+    };
+
+    auto point_equal = [](const Point& a, const Point&b) -> bool{
+        return a.x == b.x && a.y == b.y;
+    };
+
+    auto point_hash = [](double x, double y){
+        std::size_t h1 = std::hash<double>{}(x);
+        std::size_t h2 = std::hash<double>{}(y);
+        return h1 ^ (h2 << 1);
+    };
+
+    std::unordered_map<Point, std::size_t, 
+        decltype(point_hash), decltype(point_equal)> points_map;
+
+    // from a vector of pairs
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/Ys83asq47)
+
+# Insertion
+
+```cpp
+#include <unordered_map>
+#include <print>
+#include <cstddef>
+#include <vector>
+#include <utility>
+
+int main(){
+    std::unordered_map<int, std::string> map;
+
+    // array index operator
+    map[1] = "Carl Gauss";
+    map[2] = "Augustin Louis Cauchy";
+
+    // insert(pair(k,v))
+    // returns pair<iterator,bool>. bool is true
+    // if the insert succeeds, else false
+    auto [it1, success1] = map.insert(std::make_pair( 3, "Joseph Fourier" ));
+    auto [it2, success2] = map.insert(std::make_pair( 4, "Josepph Lagrange"));
+    
+    // void insert(initializer_list)
+    // insert from an initializer list
+    map.insert(
+    {
+        {5, "Riemann"},
+        {6, "Ada Lovelace"}
+    });
+    
+    // emplace(Args&& ...)
+    // inserts a new element into the container constructed
+    // in-place with the given args, if there is no element
+    // with the key in the container
+    auto [it3, success3] = map.emplace(7, "Leonard Euler");
+
+    // The new element may be constructed even if there already
+    // is an element with the key in the container, in which case
+    // the newly constructed element will be destroyed immediately
+    int k {7};
+    std::string v { "David Hilbert" };
+    std::println("emplace({}, {}) called", k, v);
+
+    auto [it4, success4] = map.emplace(k, v);
+    std::println("success flag : {}", success4);
+
+    // try_emplace(Key&&, Args&&)
+    // if the key k already exists in the container, do nothing
+    // Otherwise, insert a new element into the container
+    // with key k and value constructed with args
+    auto [it5, success5] = map.try_emplace(8, "David Hilbert");
+
+    // range insert - takes a pair of iterators
+    std::vector<std::pair<int, std::string>> vec{
+        {9, "Andrew Kolmogorov"},
+        {10, "Emile Borel"}
+    };
+
+    map.insert(vec.begin(), vec.end());
+
+    // insert_range(R&& rg)
+    // Inserts a copyn of each element in the range rg 
+    // if and only if each of the keys are not 
+    // already present in the map
+    const auto rg = {std::pair{11, "Guido Cantelli"}, {12, "Terrence Tao"}};
+    map.insert_range(rg);
+
+    // insert_or_assign(key, obj)
+    // If a key k already exists in the container, assigns
+    // obj to the key k. If the key k does not exist, 
+    // it inserts the new value as if by insert.
+    auto [it6, success6] = map.insert_or_assign(12, "William Feller");
+    auto [it7, success7] = map.insert_or_assign(13, "Andrew Wiles");
+    
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/bhW3rz653)
+
+# Search
+
+```cpp
+#include <unordered_map>
+#include <print>
+#include <cstddef>
+#include <vector>
+#include <utility>
+
+struct PhoneRecord{
+    std::string full_name;
+    std::string address;
+    std::string phone;
+    std::string pin;
+};
+int main(){
+    std::unordered_map<std::string, PhoneRecord> phone_book;
+    phone_book.insert({
+        {"John Smith", {"John Smith", "123 Main Street, New York, NY 10001", "(212) 555-1234", "1234"}},
+        {"Mary Johnson", {"Mary Johnson", "456 Oak Avenue, Los Angeles, CA 90001", "(213) 555-2345", "2345"}},
+        {"Robert Williams", {"Robert Williams", "789 Pine Road, Chicago, IL 60601", "(312) 555-3456", "3456"}},
+        {"Patricia Brown", {"Patricia Brown", "321 Maple Drive, Houston, TX 77001", "(713) 555-4567", "4567"}},
+        {"Michael Jones", {"Michael Jones", "654 Cedar Lane, Phoenix, AZ 85001", "(602) 555-5678", "5678"}},
+        {"Linda Garcia", {"Linda Garcia", "987 Elm Court, Philadelphia, PA 19101", "(215) 555-6789", "6789"}},
+        {"David Miller", {"David Miller", "147 Birch Place, San Antonio, TX 78201", "(210) 555-7890", "7890"}},
+        {"Barbara Davis", {"Barbara Davis", "258 Walnut Boulevard, San Diego, CA 92101", "(619) 555-8901", "8901"}},
+        {"Richard Rodriguez", {"Richard Rodriguez", "369 Cherry Way, Dallas, TX 75201", "(214) 555-9012", "9012"}},
+        {"Susan Martinez", {"Susan Martinez", "741 Hickory Circle, San Jose, CA 95101", "(408) 555-0123", "0123"}},
+        {"Joseph Hernandez", {"Joseph Hernandez", "852 Willow Terrace, Austin, TX 78701", "(512) 555-1235", "1235"}},
+        {"Jessica Lopez", {"Jessica Lopez", "963 Poplar Parkway, Jacksonville, FL 32099", "(904) 555-2346", "2346"}},
+        {"Thomas Gonzalez", {"Thomas Gonzalez", "159 Sycamore Trail, Fort Worth, TX 76101", "(817) 555-3457", "3457"}},
+        {"Sarah Wilson", {"Sarah Wilson", "357 Ash Street, Columbus, OH 43085", "(614) 555-4568", "4568"}},
+        {"Charles Anderson", {"Charles Anderson", "486 Magnolia Avenue, Charlotte, NC 28201", "(704) 555-5679", "5679"}},
+        {"Karen Thomas", {"Karen Thomas", "753 Dogwood Road, San Francisco, CA 94101", "(415) 555-6780", "6780"}},
+        {"Christopher Taylor", {"Christopher Taylor", "951 Redwood Drive, Indianapolis, IN 46201", "(317) 555-7891", "7891"}},
+        {"Nancy Moore", {"Nancy Moore", "246 Sequoia Lane, Seattle, WA 98101", "(206) 555-8902", "8902"}},
+        {"Daniel Jackson", {"Daniel Jackson", "135 Fir Court, Denver, CO 80201", "(303) 555-9013", "9013"}},        
+    });
+
+    // iter = find(const Key& key);
+    auto it = phone_book.find("Robert Williams");
+    if(it != phone_book.end()){
+        auto [name, record] = *it;
+        std::println("Key = {}", name);
+        std::println("Full name = {}", record.full_name);
+        std::println("Address = {}", record.address);
+        std::println("Phone = {}", record.phone);
+    }
+
+    // contains(), at()
+    std::string key {"Robert Williams"};
+    if(phone_book.contains(key))
+    {
+        std::println("Key exists: {}", key);
+        auto record = phone_book.at(key);
+    }
+
+    // Array index operator
+    // operator[]() returns a reference to the value that
+    // is mapped to the key k, performing an insertion if
+    // such a key does not exist.
+    std::unordered_map<char, int> letter_counts{{'a', 27}, {'b', 3}, {'c', 1}};
+    println("letter_counts initially contains: {}", letter_counts);
+    int result1 = letter_counts['a'];   // ok
+    int result2 = letter_counts['d'];   // just inserts the pair ('d', 0)
+    println("letter_counts now contains: {}", letter_counts);
+
+    // at(Key& key)
+    // Returns a reference to the mapped value of the element
+    // with specified key. If no such element exists, an
+    // exception of the type std::out_of_range is thrown.
+    int result3 = letter_counts.at('a');   
+    try{
+        int result4 = letter_counts.at('e');
+    }catch(std::out_of_range& ex){
+        std::println("Out of range exception occured!");
+    }
+    
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/9E4d78n4E)
+
+# Deletion
+
+```cpp
+#include <unordered_map>
+#include <print>
+#include <cstddef>
+#include <vector>
+#include <utility>
+
+struct PhoneRecord{
+    std::string full_name;
+    std::string address;
+    std::string phone;
+    std::string pin;
+};
+int main(){
+    std::unordered_map<int, std::string> map{
+        {1, "one"}, {2, "two"}, {3, "three"},
+        {4, "four"}, {5, "five"}, {6, "six"}
+    };
+
+    // erase(pos) by iterator
+    // It removes the specified element from the container
+    // and returns an iterator following the last modified
+    // element.
+
+    // The order of the remaining elements is preserved.
+    // This makes it possible to erase individual elements
+    // while iterating the container.
+
+    // pos is an iterator to the element to be removed.
+    // Any references and iterators to erased elements 
+    // are invalidated. 
+    for(auto it{map.begin()}; it!=map.end();){
+        if(it->first % 2 != 0)
+            it = map.erase(it);
+        else
+            ++it;
+    }
+
+    // erase(key) by key
+    // It removes the element (if one exists) with the key.
+    // It returns the number of elements removed (0 or 1).
+    std::size_t num_elements_removed = map.erase(4);
+
+    // clear
+    // clear() removes all elements
+    map.clear();
+
+    // node_type extract(pos)
+    // unlinks the node that contains the element pointed to 
+    // by pos and returns a node handle that owns it.
+    
+    // node_type extract(key)
+    // unlinks the node corresponding to key and returns
+    // a node_handle to it, else returns an empty node_handle
+    
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/6TdzxM7Px)
+
+# How to choose a good hash function?
+
+- Input data often has patterns and is *not random*. So, good hash functions should generate hash values that are uniformly distributed.
+- Avalanche effect. A small change in the hash function (e.g. flipping a single bit) should change the output significantly.
+- Hash functions should be fast. Cryptographic hash functions like SHA-1, SHA-256, SHA-512, MD-5 are extremely secure, and we use them everyday for encryption, checksumming etc. but they are slow to compute. They are designed such that it is maximally difficult to produce collisions.
+- Sometimes you are tracking large datasets e.g. a genetic dataset and you just want to know, if you have seen it before. You don't want to keep the whole thing in a `std::set`, because your memory usage is going to skyrocket. Instead, you want to just keep a number that represents it. 
+
+At it's core, a hash function can simply be described as follows:
+
+```python
+def hash_function(data: bytes) -> int:
+    for chunk in data:
+        hash = cleverness(hash, chunk)
+
+    return hash
+```
+
+Basically, you have a rolling hash value, we can think of it as a context or a state and we have a block of input data `chunk` (perhaps $4$ bytes or $8$ bytes)

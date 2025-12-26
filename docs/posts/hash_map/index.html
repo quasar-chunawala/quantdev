@@ -213,6 +213,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul>
   <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
   <li><a href="#construction" id="toc-construction" class="nav-link" data-scroll-target="#construction">Construction</a></li>
+  <li><a href="#insertion" id="toc-insertion" class="nav-link" data-scroll-target="#insertion">Insertion</a></li>
+  <li><a href="#search" id="toc-search" class="nav-link" data-scroll-target="#search">Search</a></li>
+  <li><a href="#deletion" id="toc-deletion" class="nav-link" data-scroll-target="#deletion">Deletion</a></li>
+  <li><a href="#how-to-choose-a-good-hash-function" id="toc-how-to-choose-a-good-hash-function" class="nav-link" data-scroll-target="#how-to-choose-a-good-hash-function">How to choose a good hash function?</a></li>
   </ul>
 </nav>
     </div>
@@ -224,22 +228,329 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 <section id="introduction" class="level1">
 <h1>Introduction</h1>
-<p><code>std::unordered_map</code> is C++’s hash table container, providing <span class="math inline">\(O(1)\)</span> constant-time insertion, loopkup and delete operations on average. In this blog post, I explore the basic API of <code>unordered_map</code>.</p>
+<p><code>std::unordered_map</code> is C++’s hash table container, providing amortized <span class="math inline">\(O(1)\)</span> constant-time search, insertion and deletion operations with unique keys on average. In this blog post, I explore the basic API of <code>unordered_map</code>.</p>
 </section>
 <section id="construction" class="level1">
 <h1>Construction</h1>
 <p><code>std::unordered_map</code> is a class template in the header <code>&lt;unordered_map&gt;</code>.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">namespace</span> pmr <span class="op">{</span></span>
-<span id="cb1-2"><a href="#cb1-2"></a></span>
-<span id="cb1-3"><a href="#cb1-3"></a>    <span class="kw">template</span><span class="op">&lt;</span></span>
-<span id="cb1-4"><a href="#cb1-4"></a>        <span class="kw">class</span> Key<span class="op">,</span></span>
-<span id="cb1-5"><a href="#cb1-5"></a>        <span class="kw">class</span> T<span class="op">,</span></span>
-<span id="cb1-6"><a href="#cb1-6"></a>        <span class="kw">class</span> Hash <span class="op">=</span> <span class="bu">std::</span>hash<span class="op">&lt;</span>Key<span class="op">&gt;,</span></span>
-<span id="cb1-7"><a href="#cb1-7"></a>        <span class="kw">class</span> KeyEqual <span class="op">=</span> <span class="bu">std::</span>equal_to<span class="op">&lt;</span>Key<span class="op">&gt;</span></span>
-<span id="cb1-8"><a href="#cb1-8"></a>    <span class="op">&gt;</span> <span class="kw">using</span> unordered_map <span class="op">=</span></span>
-<span id="cb1-9"><a href="#cb1-9"></a>          <span class="bu">std::</span>unordered_map<span class="op">&lt;</span>Key<span class="op">,</span> T<span class="op">,</span> Hash<span class="op">,</span> KeyEqual<span class="op">,</span></span>
-<span id="cb1-10"><a href="#cb1-10"></a>              <span class="bu">std::</span>pmr<span class="bu">::</span>polymorphic_allocator<span class="op">&lt;</span><span class="bu">std::</span>pair<span class="op">&lt;</span><span class="at">const</span> Key<span class="op">,</span> T<span class="op">&gt;&gt;&gt;;</span></span>
-<span id="cb1-11"><a href="#cb1-11"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-2"><a href="#cb1-2"></a>    <span class="kw">template</span><span class="op">&lt;</span></span>
+<span id="cb1-3"><a href="#cb1-3"></a>        <span class="kw">class</span> Key<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4"></a>        <span class="kw">class</span> T<span class="op">,</span></span>
+<span id="cb1-5"><a href="#cb1-5"></a>        <span class="kw">class</span> Hash <span class="op">=</span> <span class="bu">std::</span>hash<span class="op">&lt;</span>Key<span class="op">&gt;,</span></span>
+<span id="cb1-6"><a href="#cb1-6"></a>        <span class="kw">class</span> KeyEqual <span class="op">=</span> <span class="bu">std::</span>equal_to<span class="op">&lt;</span>Key<span class="op">&gt;</span></span>
+<span id="cb1-7"><a href="#cb1-7"></a>    <span class="op">&gt;</span> <span class="kw">using</span> unordered_map <span class="op">=</span></span>
+<span id="cb1-8"><a href="#cb1-8"></a>          <span class="bu">std::</span>unordered_map<span class="op">&lt;</span>Key<span class="op">,</span> T<span class="op">,</span> Hash<span class="op">,</span> KeyEqual<span class="op">,</span></span>
+<span id="cb1-9"><a href="#cb1-9"></a>              <span class="bu">std::</span>pmr<span class="bu">::</span>polymorphic_allocator<span class="op">&lt;</span><span class="bu">std::</span>pair<span class="op">&lt;</span><span class="at">const</span> Key<span class="op">,</span> T<span class="op">&gt;&gt;&gt;;</span></span>
+<span id="cb1-10"><a href="#cb1-10"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>It allows you specify a custom hash function <code>hash</code>, <code>equal</code> function to compare keys and <code>alloc</code> as a custom allocator.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="pp">#include </span><span class="im">&lt;unordered_map&gt;</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a><span class="pp">#include </span><span class="im">&lt;cstddef&gt;</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb2-5"><a href="#cb2-5"></a></span>
+<span id="cb2-6"><a href="#cb2-6"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb2-7"><a href="#cb2-7"></a>    <span class="co">// Default construction</span></span>
+<span id="cb2-8"><a href="#cb2-8"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">,</span> <span class="dt">uint32_t</span><span class="op">&gt;</span> word_count<span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9"></a></span>
+<span id="cb2-10"><a href="#cb2-10"></a>    <span class="co">// Initializer list construction</span></span>
+<span id="cb2-11"><a href="#cb2-11"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;&gt;</span> symbol_to_price_levels_map </span>
+<span id="cb2-12"><a href="#cb2-12"></a>    <span class="op">{</span></span>
+<span id="cb2-13"><a href="#cb2-13"></a>        <span class="op">{</span><span class="st">"AAPL"</span><span class="op">,</span> <span class="op">{</span><span class="fl">100.0</span><span class="op">,</span> <span class="fl">101.0</span><span class="op">,</span> <span class="fl">102.0</span><span class="op">}},</span></span>
+<span id="cb2-14"><a href="#cb2-14"></a>        <span class="op">{</span><span class="st">"GOOG"</span><span class="op">,</span> <span class="op">{</span><span class="fl">1500.0</span><span class="op">,</span> <span class="fl">1505.0</span><span class="op">,</span> <span class="fl">1510.0</span><span class="op">}}</span></span>
+<span id="cb2-15"><a href="#cb2-15"></a>    <span class="op">};</span></span>
+<span id="cb2-16"><a href="#cb2-16"></a></span>
+<span id="cb2-17"><a href="#cb2-17"></a>    <span class="co">// with bucket count hint</span></span>
+<span id="cb2-18"><a href="#cb2-18"></a>    <span class="co">// atleast 100 buckets</span></span>
+<span id="cb2-19"><a href="#cb2-19"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">,</span> <span class="dt">uint32_t</span><span class="op">&gt;</span> map<span class="op">(</span><span class="dv">100</span><span class="op">);</span></span>
+<span id="cb2-20"><a href="#cb2-20"></a></span>
+<span id="cb2-21"><a href="#cb2-21"></a>    <span class="co">// Range construction (accepts a pair of iterators)</span></span>
+<span id="cb2-22"><a href="#cb2-22"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;&gt;</span> word_count_copy<span class="op">(</span></span>
+<span id="cb2-23"><a href="#cb2-23"></a>        word_count<span class="op">.</span>begin<span class="op">(),</span> word_count<span class="op">.</span>end<span class="op">()</span></span>
+<span id="cb2-24"><a href="#cb2-24"></a>    <span class="op">);</span></span>
+<span id="cb2-25"><a href="#cb2-25"></a></span>
+<span id="cb2-26"><a href="#cb2-26"></a>    <span class="co">// copy construction</span></span>
+<span id="cb2-27"><a href="#cb2-27"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;</span> cache<span class="op">{</span></span>
+<span id="cb2-28"><a href="#cb2-28"></a>        <span class="op">{</span><span class="st">"Fedor Pikus"</span><span class="op">,</span> <span class="st">"Performance GOAT"</span><span class="op">},</span></span>
+<span id="cb2-29"><a href="#cb2-29"></a>        <span class="op">{</span><span class="st">"Herb Sutter"</span><span class="op">,</span> <span class="st">"C++ Visionary"</span><span class="op">},</span></span>
+<span id="cb2-30"><a href="#cb2-30"></a>        <span class="op">{</span><span class="st">"John Carmack"</span><span class="op">,</span> <span class="st">"Legendary programmer"</span><span class="op">}</span></span>
+<span id="cb2-31"><a href="#cb2-31"></a>    <span class="op">};</span></span>
+<span id="cb2-32"><a href="#cb2-32"></a></span>
+<span id="cb2-33"><a href="#cb2-33"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;</span> cache_copy<span class="op">(</span>cache<span class="op">);</span></span>
+<span id="cb2-34"><a href="#cb2-34"></a></span>
+<span id="cb2-35"><a href="#cb2-35"></a>    <span class="co">// move construction</span></span>
+<span id="cb2-36"><a href="#cb2-36"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">,</span> <span class="dt">uint32_t</span><span class="op">&gt;</span> word_count2<span class="op">{</span><span class="bu">std::</span>move<span class="op">(</span>word_count<span class="op">)};</span></span>
+<span id="cb2-37"><a href="#cb2-37"></a></span>
+<span id="cb2-38"><a href="#cb2-38"></a>    <span class="co">// with a custom hash function</span></span>
+<span id="cb2-39"><a href="#cb2-39"></a>    <span class="co">// Knuth's multiplicative hash</span></span>
+<span id="cb2-40"><a href="#cb2-40"></a>    <span class="kw">struct</span> CustomHash<span class="op">{</span></span>
+<span id="cb2-41"><a href="#cb2-41"></a>        <span class="dt">size_t</span> <span class="kw">operator</span><span class="op">()(</span><span class="dt">int</span> key<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb2-42"><a href="#cb2-42"></a>            <span class="cf">return</span> key <span class="op">*</span> <span class="dv">2654435761</span><span class="op">;</span></span>
+<span id="cb2-43"><a href="#cb2-43"></a>        <span class="op">}</span></span>
+<span id="cb2-44"><a href="#cb2-44"></a>    <span class="op">};</span></span>
+<span id="cb2-45"><a href="#cb2-45"></a></span>
+<span id="cb2-46"><a href="#cb2-46"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">,</span> <span class="dt">uint32_t</span><span class="op">,</span> CustomHash<span class="op">&gt;</span> map_with_custom_hash<span class="op">;</span></span>
+<span id="cb2-47"><a href="#cb2-47"></a></span>
+<span id="cb2-48"><a href="#cb2-48"></a>    <span class="co">// with a custom hash and custom equality</span></span>
+<span id="cb2-49"><a href="#cb2-49"></a>    <span class="kw">struct</span> Point<span class="op">{</span></span>
+<span id="cb2-50"><a href="#cb2-50"></a>        <span class="dt">double</span> x<span class="op">;</span></span>
+<span id="cb2-51"><a href="#cb2-51"></a>        <span class="dt">double</span> y<span class="op">;</span></span>
+<span id="cb2-52"><a href="#cb2-52"></a></span>
+<span id="cb2-53"><a href="#cb2-53"></a>        <span class="dt">bool</span> <span class="kw">operator</span><span class="op">==(</span><span class="at">const</span> Point<span class="op">&amp;</span> other<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb2-54"><a href="#cb2-54"></a>            <span class="cf">return</span> x <span class="op">==</span> other<span class="op">.</span>x <span class="op">&amp;&amp;</span> y <span class="op">==</span> other<span class="op">.</span>y<span class="op">;</span></span>
+<span id="cb2-55"><a href="#cb2-55"></a>        <span class="op">}</span></span>
+<span id="cb2-56"><a href="#cb2-56"></a>    <span class="op">};</span></span>
+<span id="cb2-57"><a href="#cb2-57"></a></span>
+<span id="cb2-58"><a href="#cb2-58"></a>    <span class="kw">auto</span> point_equal <span class="op">=</span> <span class="op">[](</span><span class="at">const</span> Point<span class="op">&amp;</span> a<span class="op">,</span> <span class="at">const</span> Point<span class="op">&amp;</span>b<span class="op">)</span> <span class="op">-&gt;</span> <span class="dt">bool</span><span class="op">{</span></span>
+<span id="cb2-59"><a href="#cb2-59"></a>        <span class="cf">return</span> a<span class="op">.</span>x <span class="op">==</span> b<span class="op">.</span>x <span class="op">&amp;&amp;</span> a<span class="op">.</span>y <span class="op">==</span> b<span class="op">.</span>y<span class="op">;</span></span>
+<span id="cb2-60"><a href="#cb2-60"></a>    <span class="op">};</span></span>
+<span id="cb2-61"><a href="#cb2-61"></a></span>
+<span id="cb2-62"><a href="#cb2-62"></a>    <span class="kw">auto</span> point_hash <span class="op">=</span> <span class="op">[](</span><span class="dt">double</span> x<span class="op">,</span> <span class="dt">double</span> y<span class="op">){</span></span>
+<span id="cb2-63"><a href="#cb2-63"></a>        <span class="bu">std::</span>size_t<span class="op"> </span>h1 <span class="op">=</span> <span class="bu">std::</span>hash<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;{}(</span>x<span class="op">);</span></span>
+<span id="cb2-64"><a href="#cb2-64"></a>        <span class="bu">std::</span>size_t<span class="op"> </span>h2 <span class="op">=</span> <span class="bu">std::</span>hash<span class="op">&lt;</span><span class="dt">double</span><span class="op">&gt;{}(</span>y<span class="op">);</span></span>
+<span id="cb2-65"><a href="#cb2-65"></a>        <span class="cf">return</span> h1 <span class="op">^</span> <span class="op">(</span>h2 <span class="op">&lt;&lt;</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb2-66"><a href="#cb2-66"></a>    <span class="op">};</span></span>
+<span id="cb2-67"><a href="#cb2-67"></a></span>
+<span id="cb2-68"><a href="#cb2-68"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span>Point<span class="op">,</span> <span class="bu">std::</span>size_t<span class="op">,</span> </span>
+<span id="cb2-69"><a href="#cb2-69"></a>        <span class="kw">decltype</span><span class="op">(</span>point_hash<span class="op">),</span> <span class="kw">decltype</span><span class="op">(</span>point_equal<span class="op">)&gt;</span> points_map<span class="op">;</span></span>
+<span id="cb2-70"><a href="#cb2-70"></a></span>
+<span id="cb2-71"><a href="#cb2-71"></a>    <span class="co">// from a vector of pairs</span></span>
+<span id="cb2-72"><a href="#cb2-72"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb2-73"><a href="#cb2-73"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/Ys83asq47">Compiler Explorer</a></p>
+</section>
+<section id="insertion" class="level1">
+<h1>Insertion</h1>
+<div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="pp">#include </span><span class="im">&lt;unordered_map&gt;</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb3-3"><a href="#cb3-3"></a><span class="pp">#include </span><span class="im">&lt;cstddef&gt;</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb3-5"><a href="#cb3-5"></a><span class="pp">#include </span><span class="im">&lt;utility&gt;</span></span>
+<span id="cb3-6"><a href="#cb3-6"></a></span>
+<span id="cb3-7"><a href="#cb3-7"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb3-8"><a href="#cb3-8"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;</span> map<span class="op">;</span></span>
+<span id="cb3-9"><a href="#cb3-9"></a></span>
+<span id="cb3-10"><a href="#cb3-10"></a>    <span class="co">// array index operator</span></span>
+<span id="cb3-11"><a href="#cb3-11"></a>    map<span class="op">[</span><span class="dv">1</span><span class="op">]</span> <span class="op">=</span> <span class="st">"Carl Gauss"</span><span class="op">;</span></span>
+<span id="cb3-12"><a href="#cb3-12"></a>    map<span class="op">[</span><span class="dv">2</span><span class="op">]</span> <span class="op">=</span> <span class="st">"Augustin Louis Cauchy"</span><span class="op">;</span></span>
+<span id="cb3-13"><a href="#cb3-13"></a></span>
+<span id="cb3-14"><a href="#cb3-14"></a>    <span class="co">// insert(pair(k,v))</span></span>
+<span id="cb3-15"><a href="#cb3-15"></a>    <span class="co">// returns pair&lt;iterator,bool&gt;. bool is true</span></span>
+<span id="cb3-16"><a href="#cb3-16"></a>    <span class="co">// if the insert succeeds, else false</span></span>
+<span id="cb3-17"><a href="#cb3-17"></a>    <span class="kw">auto</span> <span class="op">[</span>it1<span class="op">,</span> success1<span class="op">]</span> <span class="op">=</span> map<span class="op">.</span>insert<span class="op">(</span><span class="bu">std::</span>make_pair<span class="op">(</span> <span class="dv">3</span><span class="op">,</span> <span class="st">"Joseph Fourier"</span> <span class="op">));</span></span>
+<span id="cb3-18"><a href="#cb3-18"></a>    <span class="kw">auto</span> <span class="op">[</span>it2<span class="op">,</span> success2<span class="op">]</span> <span class="op">=</span> map<span class="op">.</span>insert<span class="op">(</span><span class="bu">std::</span>make_pair<span class="op">(</span> <span class="dv">4</span><span class="op">,</span> <span class="st">"Josepph Lagrange"</span><span class="op">));</span></span>
+<span id="cb3-19"><a href="#cb3-19"></a>    </span>
+<span id="cb3-20"><a href="#cb3-20"></a>    <span class="co">// void insert(initializer_list)</span></span>
+<span id="cb3-21"><a href="#cb3-21"></a>    <span class="co">// insert from an initializer list</span></span>
+<span id="cb3-22"><a href="#cb3-22"></a>    map<span class="op">.</span>insert<span class="op">(</span></span>
+<span id="cb3-23"><a href="#cb3-23"></a>    <span class="op">{</span></span>
+<span id="cb3-24"><a href="#cb3-24"></a>        <span class="op">{</span><span class="dv">5</span><span class="op">,</span> <span class="st">"Riemann"</span><span class="op">},</span></span>
+<span id="cb3-25"><a href="#cb3-25"></a>        <span class="op">{</span><span class="dv">6</span><span class="op">,</span> <span class="st">"Ada Lovelace"</span><span class="op">}</span></span>
+<span id="cb3-26"><a href="#cb3-26"></a>    <span class="op">});</span></span>
+<span id="cb3-27"><a href="#cb3-27"></a>    </span>
+<span id="cb3-28"><a href="#cb3-28"></a>    <span class="co">// emplace(Args&amp;&amp; ...)</span></span>
+<span id="cb3-29"><a href="#cb3-29"></a>    <span class="co">// inserts a new element into the container constructed</span></span>
+<span id="cb3-30"><a href="#cb3-30"></a>    <span class="co">// in-place with the given args, if there is no element</span></span>
+<span id="cb3-31"><a href="#cb3-31"></a>    <span class="co">// with the key in the container</span></span>
+<span id="cb3-32"><a href="#cb3-32"></a>    <span class="kw">auto</span> <span class="op">[</span>it3<span class="op">,</span> success3<span class="op">]</span> <span class="op">=</span> map<span class="op">.</span>emplace<span class="op">(</span><span class="dv">7</span><span class="op">,</span> <span class="st">"Leonard Euler"</span><span class="op">);</span></span>
+<span id="cb3-33"><a href="#cb3-33"></a></span>
+<span id="cb3-34"><a href="#cb3-34"></a>    <span class="co">// The new element may be constructed even if there already</span></span>
+<span id="cb3-35"><a href="#cb3-35"></a>    <span class="co">// is an element with the key in the container, in which case</span></span>
+<span id="cb3-36"><a href="#cb3-36"></a>    <span class="co">// the newly constructed element will be destroyed immediately</span></span>
+<span id="cb3-37"><a href="#cb3-37"></a>    <span class="dt">int</span> k <span class="op">{</span><span class="dv">7</span><span class="op">};</span></span>
+<span id="cb3-38"><a href="#cb3-38"></a>    <span class="bu">std::</span>string<span class="op"> </span>v <span class="op">{</span> <span class="st">"David Hilbert"</span> <span class="op">};</span></span>
+<span id="cb3-39"><a href="#cb3-39"></a>    <span class="bu">std::</span>println<span class="op">(</span><span class="st">"emplace(</span><span class="sc">{}</span><span class="st">, </span><span class="sc">{}</span><span class="st">) called"</span><span class="op">,</span> k<span class="op">,</span> v<span class="op">);</span></span>
+<span id="cb3-40"><a href="#cb3-40"></a></span>
+<span id="cb3-41"><a href="#cb3-41"></a>    <span class="kw">auto</span> <span class="op">[</span>it4<span class="op">,</span> success4<span class="op">]</span> <span class="op">=</span> map<span class="op">.</span>emplace<span class="op">(</span>k<span class="op">,</span> v<span class="op">);</span></span>
+<span id="cb3-42"><a href="#cb3-42"></a>    <span class="bu">std::</span>println<span class="op">(</span><span class="st">"success flag : </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> success4<span class="op">);</span></span>
+<span id="cb3-43"><a href="#cb3-43"></a></span>
+<span id="cb3-44"><a href="#cb3-44"></a>    <span class="co">// try_emplace(Key&amp;&amp;, Args&amp;&amp;)</span></span>
+<span id="cb3-45"><a href="#cb3-45"></a>    <span class="co">// if the key k already exists in the container, do nothing</span></span>
+<span id="cb3-46"><a href="#cb3-46"></a>    <span class="co">// Otherwise, insert a new element into the container</span></span>
+<span id="cb3-47"><a href="#cb3-47"></a>    <span class="co">// with key k and value constructed with args</span></span>
+<span id="cb3-48"><a href="#cb3-48"></a>    <span class="kw">auto</span> <span class="op">[</span>it5<span class="op">,</span> success5<span class="op">]</span> <span class="op">=</span> map<span class="op">.</span>try_emplace<span class="op">(</span><span class="dv">8</span><span class="op">,</span> <span class="st">"David Hilbert"</span><span class="op">);</span></span>
+<span id="cb3-49"><a href="#cb3-49"></a></span>
+<span id="cb3-50"><a href="#cb3-50"></a>    <span class="co">// range insert - takes a pair of iterators</span></span>
+<span id="cb3-51"><a href="#cb3-51"></a>    <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="bu">std::</span>pair<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;&gt;</span> vec<span class="op">{</span></span>
+<span id="cb3-52"><a href="#cb3-52"></a>        <span class="op">{</span><span class="dv">9</span><span class="op">,</span> <span class="st">"Andrew Kolmogorov"</span><span class="op">},</span></span>
+<span id="cb3-53"><a href="#cb3-53"></a>        <span class="op">{</span><span class="dv">10</span><span class="op">,</span> <span class="st">"Emile Borel"</span><span class="op">}</span></span>
+<span id="cb3-54"><a href="#cb3-54"></a>    <span class="op">};</span></span>
+<span id="cb3-55"><a href="#cb3-55"></a></span>
+<span id="cb3-56"><a href="#cb3-56"></a>    map<span class="op">.</span>insert<span class="op">(</span>vec<span class="op">.</span>begin<span class="op">(),</span> vec<span class="op">.</span>end<span class="op">());</span></span>
+<span id="cb3-57"><a href="#cb3-57"></a></span>
+<span id="cb3-58"><a href="#cb3-58"></a>    <span class="co">// insert_range(R&amp;&amp; rg)</span></span>
+<span id="cb3-59"><a href="#cb3-59"></a>    <span class="co">// Inserts a copyn of each element in the range rg </span></span>
+<span id="cb3-60"><a href="#cb3-60"></a>    <span class="co">// if and only if each of the keys are not </span></span>
+<span id="cb3-61"><a href="#cb3-61"></a>    <span class="co">// already present in the map</span></span>
+<span id="cb3-62"><a href="#cb3-62"></a>    <span class="at">const</span> <span class="kw">auto</span> rg <span class="op">=</span> <span class="op">{</span><span class="bu">std::</span>pair<span class="op">{</span><span class="dv">11</span><span class="op">,</span> <span class="st">"Guido Cantelli"</span><span class="op">},</span> <span class="op">{</span><span class="dv">12</span><span class="op">,</span> <span class="st">"Terrence Tao"</span><span class="op">}};</span></span>
+<span id="cb3-63"><a href="#cb3-63"></a>    map<span class="op">.</span>insert_range<span class="op">(</span>rg<span class="op">);</span></span>
+<span id="cb3-64"><a href="#cb3-64"></a></span>
+<span id="cb3-65"><a href="#cb3-65"></a>    <span class="co">// insert_or_assign(key, obj)</span></span>
+<span id="cb3-66"><a href="#cb3-66"></a>    <span class="co">// If a key k already exists in the container, assigns</span></span>
+<span id="cb3-67"><a href="#cb3-67"></a>    <span class="co">// obj to the key k. If the key k does not exist, </span></span>
+<span id="cb3-68"><a href="#cb3-68"></a>    <span class="co">// it inserts the new value as if by insert.</span></span>
+<span id="cb3-69"><a href="#cb3-69"></a>    <span class="kw">auto</span> <span class="op">[</span>it6<span class="op">,</span> success6<span class="op">]</span> <span class="op">=</span> map<span class="op">.</span>insert_or_assign<span class="op">(</span><span class="dv">12</span><span class="op">,</span> <span class="st">"William Feller"</span><span class="op">);</span></span>
+<span id="cb3-70"><a href="#cb3-70"></a>    <span class="kw">auto</span> <span class="op">[</span>it7<span class="op">,</span> success7<span class="op">]</span> <span class="op">=</span> map<span class="op">.</span>insert_or_assign<span class="op">(</span><span class="dv">13</span><span class="op">,</span> <span class="st">"Andrew Wiles"</span><span class="op">);</span></span>
+<span id="cb3-71"><a href="#cb3-71"></a>    </span>
+<span id="cb3-72"><a href="#cb3-72"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-73"><a href="#cb3-73"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/bhW3rz653">Compiler Explorer</a></p>
+</section>
+<section id="search" class="level1">
+<h1>Search</h1>
+<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="pp">#include </span><span class="im">&lt;unordered_map&gt;</span></span>
+<span id="cb4-2"><a href="#cb4-2"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb4-3"><a href="#cb4-3"></a><span class="pp">#include </span><span class="im">&lt;cstddef&gt;</span></span>
+<span id="cb4-4"><a href="#cb4-4"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb4-5"><a href="#cb4-5"></a><span class="pp">#include </span><span class="im">&lt;utility&gt;</span></span>
+<span id="cb4-6"><a href="#cb4-6"></a></span>
+<span id="cb4-7"><a href="#cb4-7"></a><span class="kw">struct</span> PhoneRecord<span class="op">{</span></span>
+<span id="cb4-8"><a href="#cb4-8"></a>    <span class="bu">std::</span>string<span class="op"> </span>full_name<span class="op">;</span></span>
+<span id="cb4-9"><a href="#cb4-9"></a>    <span class="bu">std::</span>string<span class="op"> </span>address<span class="op">;</span></span>
+<span id="cb4-10"><a href="#cb4-10"></a>    <span class="bu">std::</span>string<span class="op"> </span>phone<span class="op">;</span></span>
+<span id="cb4-11"><a href="#cb4-11"></a>    <span class="bu">std::</span>string<span class="op"> </span>pin<span class="op">;</span></span>
+<span id="cb4-12"><a href="#cb4-12"></a><span class="op">};</span></span>
+<span id="cb4-13"><a href="#cb4-13"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb4-14"><a href="#cb4-14"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">,</span> PhoneRecord<span class="op">&gt;</span> phone_book<span class="op">;</span></span>
+<span id="cb4-15"><a href="#cb4-15"></a>    phone_book<span class="op">.</span>insert<span class="op">({</span></span>
+<span id="cb4-16"><a href="#cb4-16"></a>        <span class="op">{</span><span class="st">"John Smith"</span><span class="op">,</span> <span class="op">{</span><span class="st">"John Smith"</span><span class="op">,</span> <span class="st">"123 Main Street, New York, NY 10001"</span><span class="op">,</span> <span class="st">"(212) 555-1234"</span><span class="op">,</span> <span class="st">"1234"</span><span class="op">}},</span></span>
+<span id="cb4-17"><a href="#cb4-17"></a>        <span class="op">{</span><span class="st">"Mary Johnson"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Mary Johnson"</span><span class="op">,</span> <span class="st">"456 Oak Avenue, Los Angeles, CA 90001"</span><span class="op">,</span> <span class="st">"(213) 555-2345"</span><span class="op">,</span> <span class="st">"2345"</span><span class="op">}},</span></span>
+<span id="cb4-18"><a href="#cb4-18"></a>        <span class="op">{</span><span class="st">"Robert Williams"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Robert Williams"</span><span class="op">,</span> <span class="st">"789 Pine Road, Chicago, IL 60601"</span><span class="op">,</span> <span class="st">"(312) 555-3456"</span><span class="op">,</span> <span class="st">"3456"</span><span class="op">}},</span></span>
+<span id="cb4-19"><a href="#cb4-19"></a>        <span class="op">{</span><span class="st">"Patricia Brown"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Patricia Brown"</span><span class="op">,</span> <span class="st">"321 Maple Drive, Houston, TX 77001"</span><span class="op">,</span> <span class="st">"(713) 555-4567"</span><span class="op">,</span> <span class="st">"4567"</span><span class="op">}},</span></span>
+<span id="cb4-20"><a href="#cb4-20"></a>        <span class="op">{</span><span class="st">"Michael Jones"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Michael Jones"</span><span class="op">,</span> <span class="st">"654 Cedar Lane, Phoenix, AZ 85001"</span><span class="op">,</span> <span class="st">"(602) 555-5678"</span><span class="op">,</span> <span class="st">"5678"</span><span class="op">}},</span></span>
+<span id="cb4-21"><a href="#cb4-21"></a>        <span class="op">{</span><span class="st">"Linda Garcia"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Linda Garcia"</span><span class="op">,</span> <span class="st">"987 Elm Court, Philadelphia, PA 19101"</span><span class="op">,</span> <span class="st">"(215) 555-6789"</span><span class="op">,</span> <span class="st">"6789"</span><span class="op">}},</span></span>
+<span id="cb4-22"><a href="#cb4-22"></a>        <span class="op">{</span><span class="st">"David Miller"</span><span class="op">,</span> <span class="op">{</span><span class="st">"David Miller"</span><span class="op">,</span> <span class="st">"147 Birch Place, San Antonio, TX 78201"</span><span class="op">,</span> <span class="st">"(210) 555-7890"</span><span class="op">,</span> <span class="st">"7890"</span><span class="op">}},</span></span>
+<span id="cb4-23"><a href="#cb4-23"></a>        <span class="op">{</span><span class="st">"Barbara Davis"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Barbara Davis"</span><span class="op">,</span> <span class="st">"258 Walnut Boulevard, San Diego, CA 92101"</span><span class="op">,</span> <span class="st">"(619) 555-8901"</span><span class="op">,</span> <span class="st">"8901"</span><span class="op">}},</span></span>
+<span id="cb4-24"><a href="#cb4-24"></a>        <span class="op">{</span><span class="st">"Richard Rodriguez"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Richard Rodriguez"</span><span class="op">,</span> <span class="st">"369 Cherry Way, Dallas, TX 75201"</span><span class="op">,</span> <span class="st">"(214) 555-9012"</span><span class="op">,</span> <span class="st">"9012"</span><span class="op">}},</span></span>
+<span id="cb4-25"><a href="#cb4-25"></a>        <span class="op">{</span><span class="st">"Susan Martinez"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Susan Martinez"</span><span class="op">,</span> <span class="st">"741 Hickory Circle, San Jose, CA 95101"</span><span class="op">,</span> <span class="st">"(408) 555-0123"</span><span class="op">,</span> <span class="st">"0123"</span><span class="op">}},</span></span>
+<span id="cb4-26"><a href="#cb4-26"></a>        <span class="op">{</span><span class="st">"Joseph Hernandez"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Joseph Hernandez"</span><span class="op">,</span> <span class="st">"852 Willow Terrace, Austin, TX 78701"</span><span class="op">,</span> <span class="st">"(512) 555-1235"</span><span class="op">,</span> <span class="st">"1235"</span><span class="op">}},</span></span>
+<span id="cb4-27"><a href="#cb4-27"></a>        <span class="op">{</span><span class="st">"Jessica Lopez"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Jessica Lopez"</span><span class="op">,</span> <span class="st">"963 Poplar Parkway, Jacksonville, FL 32099"</span><span class="op">,</span> <span class="st">"(904) 555-2346"</span><span class="op">,</span> <span class="st">"2346"</span><span class="op">}},</span></span>
+<span id="cb4-28"><a href="#cb4-28"></a>        <span class="op">{</span><span class="st">"Thomas Gonzalez"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Thomas Gonzalez"</span><span class="op">,</span> <span class="st">"159 Sycamore Trail, Fort Worth, TX 76101"</span><span class="op">,</span> <span class="st">"(817) 555-3457"</span><span class="op">,</span> <span class="st">"3457"</span><span class="op">}},</span></span>
+<span id="cb4-29"><a href="#cb4-29"></a>        <span class="op">{</span><span class="st">"Sarah Wilson"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Sarah Wilson"</span><span class="op">,</span> <span class="st">"357 Ash Street, Columbus, OH 43085"</span><span class="op">,</span> <span class="st">"(614) 555-4568"</span><span class="op">,</span> <span class="st">"4568"</span><span class="op">}},</span></span>
+<span id="cb4-30"><a href="#cb4-30"></a>        <span class="op">{</span><span class="st">"Charles Anderson"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Charles Anderson"</span><span class="op">,</span> <span class="st">"486 Magnolia Avenue, Charlotte, NC 28201"</span><span class="op">,</span> <span class="st">"(704) 555-5679"</span><span class="op">,</span> <span class="st">"5679"</span><span class="op">}},</span></span>
+<span id="cb4-31"><a href="#cb4-31"></a>        <span class="op">{</span><span class="st">"Karen Thomas"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Karen Thomas"</span><span class="op">,</span> <span class="st">"753 Dogwood Road, San Francisco, CA 94101"</span><span class="op">,</span> <span class="st">"(415) 555-6780"</span><span class="op">,</span> <span class="st">"6780"</span><span class="op">}},</span></span>
+<span id="cb4-32"><a href="#cb4-32"></a>        <span class="op">{</span><span class="st">"Christopher Taylor"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Christopher Taylor"</span><span class="op">,</span> <span class="st">"951 Redwood Drive, Indianapolis, IN 46201"</span><span class="op">,</span> <span class="st">"(317) 555-7891"</span><span class="op">,</span> <span class="st">"7891"</span><span class="op">}},</span></span>
+<span id="cb4-33"><a href="#cb4-33"></a>        <span class="op">{</span><span class="st">"Nancy Moore"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Nancy Moore"</span><span class="op">,</span> <span class="st">"246 Sequoia Lane, Seattle, WA 98101"</span><span class="op">,</span> <span class="st">"(206) 555-8902"</span><span class="op">,</span> <span class="st">"8902"</span><span class="op">}},</span></span>
+<span id="cb4-34"><a href="#cb4-34"></a>        <span class="op">{</span><span class="st">"Daniel Jackson"</span><span class="op">,</span> <span class="op">{</span><span class="st">"Daniel Jackson"</span><span class="op">,</span> <span class="st">"135 Fir Court, Denver, CO 80201"</span><span class="op">,</span> <span class="st">"(303) 555-9013"</span><span class="op">,</span> <span class="st">"9013"</span><span class="op">}},</span>        </span>
+<span id="cb4-35"><a href="#cb4-35"></a>    <span class="op">});</span></span>
+<span id="cb4-36"><a href="#cb4-36"></a></span>
+<span id="cb4-37"><a href="#cb4-37"></a>    <span class="co">// iter = find(const Key&amp; key);</span></span>
+<span id="cb4-38"><a href="#cb4-38"></a>    <span class="kw">auto</span> it <span class="op">=</span> phone_book<span class="op">.</span>find<span class="op">(</span><span class="st">"Robert Williams"</span><span class="op">);</span></span>
+<span id="cb4-39"><a href="#cb4-39"></a>    <span class="cf">if</span><span class="op">(</span>it <span class="op">!=</span> phone_book<span class="op">.</span>end<span class="op">()){</span></span>
+<span id="cb4-40"><a href="#cb4-40"></a>        <span class="kw">auto</span> <span class="op">[</span>name<span class="op">,</span> record<span class="op">]</span> <span class="op">=</span> <span class="op">*</span>it<span class="op">;</span></span>
+<span id="cb4-41"><a href="#cb4-41"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Key = </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> name<span class="op">);</span></span>
+<span id="cb4-42"><a href="#cb4-42"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Full name = </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> record<span class="op">.</span>full_name<span class="op">);</span></span>
+<span id="cb4-43"><a href="#cb4-43"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Address = </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> record<span class="op">.</span>address<span class="op">);</span></span>
+<span id="cb4-44"><a href="#cb4-44"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Phone = </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> record<span class="op">.</span>phone<span class="op">);</span></span>
+<span id="cb4-45"><a href="#cb4-45"></a>    <span class="op">}</span></span>
+<span id="cb4-46"><a href="#cb4-46"></a></span>
+<span id="cb4-47"><a href="#cb4-47"></a>    <span class="co">// contains(), at()</span></span>
+<span id="cb4-48"><a href="#cb4-48"></a>    <span class="bu">std::</span>string<span class="op"> </span>key <span class="op">{</span><span class="st">"Robert Williams"</span><span class="op">};</span></span>
+<span id="cb4-49"><a href="#cb4-49"></a>    <span class="cf">if</span><span class="op">(</span>phone_book<span class="op">.</span>contains<span class="op">(</span>key<span class="op">))</span></span>
+<span id="cb4-50"><a href="#cb4-50"></a>    <span class="op">{</span></span>
+<span id="cb4-51"><a href="#cb4-51"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Key exists: </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> key<span class="op">);</span></span>
+<span id="cb4-52"><a href="#cb4-52"></a>        <span class="kw">auto</span> record <span class="op">=</span> phone_book<span class="op">.</span>at<span class="op">(</span>key<span class="op">);</span></span>
+<span id="cb4-53"><a href="#cb4-53"></a>    <span class="op">}</span></span>
+<span id="cb4-54"><a href="#cb4-54"></a></span>
+<span id="cb4-55"><a href="#cb4-55"></a>    <span class="co">// Array index operator</span></span>
+<span id="cb4-56"><a href="#cb4-56"></a>    <span class="co">// operator[]() returns a reference to the value that</span></span>
+<span id="cb4-57"><a href="#cb4-57"></a>    <span class="co">// is mapped to the key k, performing an insertion if</span></span>
+<span id="cb4-58"><a href="#cb4-58"></a>    <span class="co">// such a key does not exist.</span></span>
+<span id="cb4-59"><a href="#cb4-59"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="dt">char</span><span class="op">,</span> <span class="dt">int</span><span class="op">&gt;</span> letter_counts<span class="op">{{</span><span class="ch">'a'</span><span class="op">,</span> <span class="dv">27</span><span class="op">},</span> <span class="op">{</span><span class="ch">'b'</span><span class="op">,</span> <span class="dv">3</span><span class="op">},</span> <span class="op">{</span><span class="ch">'c'</span><span class="op">,</span> <span class="dv">1</span><span class="op">}};</span></span>
+<span id="cb4-60"><a href="#cb4-60"></a>    println<span class="op">(</span><span class="st">"letter_counts initially contains: </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> letter_counts<span class="op">);</span></span>
+<span id="cb4-61"><a href="#cb4-61"></a>    <span class="dt">int</span> result1 <span class="op">=</span> letter_counts<span class="op">[</span><span class="ch">'a'</span><span class="op">];</span>   <span class="co">// ok</span></span>
+<span id="cb4-62"><a href="#cb4-62"></a>    <span class="dt">int</span> result2 <span class="op">=</span> letter_counts<span class="op">[</span><span class="ch">'d'</span><span class="op">];</span>   <span class="co">// just inserts the pair ('d', 0)</span></span>
+<span id="cb4-63"><a href="#cb4-63"></a>    println<span class="op">(</span><span class="st">"letter_counts now contains: </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> letter_counts<span class="op">);</span></span>
+<span id="cb4-64"><a href="#cb4-64"></a></span>
+<span id="cb4-65"><a href="#cb4-65"></a>    <span class="co">// at(Key&amp; key)</span></span>
+<span id="cb4-66"><a href="#cb4-66"></a>    <span class="co">// Returns a reference to the mapped value of the element</span></span>
+<span id="cb4-67"><a href="#cb4-67"></a>    <span class="co">// with specified key. If no such element exists, an</span></span>
+<span id="cb4-68"><a href="#cb4-68"></a>    <span class="co">// exception of the type std::out_of_range is thrown.</span></span>
+<span id="cb4-69"><a href="#cb4-69"></a>    <span class="dt">int</span> result3 <span class="op">=</span> letter_counts<span class="op">.</span>at<span class="op">(</span><span class="ch">'a'</span><span class="op">);</span>   </span>
+<span id="cb4-70"><a href="#cb4-70"></a>    <span class="cf">try</span><span class="op">{</span></span>
+<span id="cb4-71"><a href="#cb4-71"></a>        <span class="dt">int</span> result4 <span class="op">=</span> letter_counts<span class="op">.</span>at<span class="op">(</span><span class="ch">'e'</span><span class="op">);</span></span>
+<span id="cb4-72"><a href="#cb4-72"></a>    <span class="op">}</span><span class="cf">catch</span><span class="op">(</span><span class="bu">std::</span>out_of_range<span class="op">&amp;</span> ex<span class="op">){</span></span>
+<span id="cb4-73"><a href="#cb4-73"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Out of range exception occured!"</span><span class="op">);</span></span>
+<span id="cb4-74"><a href="#cb4-74"></a>    <span class="op">}</span></span>
+<span id="cb4-75"><a href="#cb4-75"></a>    </span>
+<span id="cb4-76"><a href="#cb4-76"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb4-77"><a href="#cb4-77"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/9E4d78n4E">Compiler Explorer</a></p>
+</section>
+<section id="deletion" class="level1">
+<h1>Deletion</h1>
+<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="pp">#include </span><span class="im">&lt;unordered_map&gt;</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb5-3"><a href="#cb5-3"></a><span class="pp">#include </span><span class="im">&lt;cstddef&gt;</span></span>
+<span id="cb5-4"><a href="#cb5-4"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb5-5"><a href="#cb5-5"></a><span class="pp">#include </span><span class="im">&lt;utility&gt;</span></span>
+<span id="cb5-6"><a href="#cb5-6"></a></span>
+<span id="cb5-7"><a href="#cb5-7"></a><span class="kw">struct</span> PhoneRecord<span class="op">{</span></span>
+<span id="cb5-8"><a href="#cb5-8"></a>    <span class="bu">std::</span>string<span class="op"> </span>full_name<span class="op">;</span></span>
+<span id="cb5-9"><a href="#cb5-9"></a>    <span class="bu">std::</span>string<span class="op"> </span>address<span class="op">;</span></span>
+<span id="cb5-10"><a href="#cb5-10"></a>    <span class="bu">std::</span>string<span class="op"> </span>phone<span class="op">;</span></span>
+<span id="cb5-11"><a href="#cb5-11"></a>    <span class="bu">std::</span>string<span class="op"> </span>pin<span class="op">;</span></span>
+<span id="cb5-12"><a href="#cb5-12"></a><span class="op">};</span></span>
+<span id="cb5-13"><a href="#cb5-13"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb5-14"><a href="#cb5-14"></a>    <span class="bu">std::</span>unordered_map<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;</span> map<span class="op">{</span></span>
+<span id="cb5-15"><a href="#cb5-15"></a>        <span class="op">{</span><span class="dv">1</span><span class="op">,</span> <span class="st">"one"</span><span class="op">},</span> <span class="op">{</span><span class="dv">2</span><span class="op">,</span> <span class="st">"two"</span><span class="op">},</span> <span class="op">{</span><span class="dv">3</span><span class="op">,</span> <span class="st">"three"</span><span class="op">},</span></span>
+<span id="cb5-16"><a href="#cb5-16"></a>        <span class="op">{</span><span class="dv">4</span><span class="op">,</span> <span class="st">"four"</span><span class="op">},</span> <span class="op">{</span><span class="dv">5</span><span class="op">,</span> <span class="st">"five"</span><span class="op">},</span> <span class="op">{</span><span class="dv">6</span><span class="op">,</span> <span class="st">"six"</span><span class="op">}</span></span>
+<span id="cb5-17"><a href="#cb5-17"></a>    <span class="op">};</span></span>
+<span id="cb5-18"><a href="#cb5-18"></a></span>
+<span id="cb5-19"><a href="#cb5-19"></a>    <span class="co">// erase(pos) by iterator</span></span>
+<span id="cb5-20"><a href="#cb5-20"></a>    <span class="co">// It removes the specified element from the container</span></span>
+<span id="cb5-21"><a href="#cb5-21"></a>    <span class="co">// and returns an iterator following the last modified</span></span>
+<span id="cb5-22"><a href="#cb5-22"></a>    <span class="co">// element.</span></span>
+<span id="cb5-23"><a href="#cb5-23"></a></span>
+<span id="cb5-24"><a href="#cb5-24"></a>    <span class="co">// The order of the remaining elements is preserved.</span></span>
+<span id="cb5-25"><a href="#cb5-25"></a>    <span class="co">// This makes it possible to erase individual elements</span></span>
+<span id="cb5-26"><a href="#cb5-26"></a>    <span class="co">// while iterating the container.</span></span>
+<span id="cb5-27"><a href="#cb5-27"></a></span>
+<span id="cb5-28"><a href="#cb5-28"></a>    <span class="co">// pos is an iterator to the element to be removed.</span></span>
+<span id="cb5-29"><a href="#cb5-29"></a>    <span class="co">// Any references and iterators to erased elements </span></span>
+<span id="cb5-30"><a href="#cb5-30"></a>    <span class="co">// are invalidated. </span></span>
+<span id="cb5-31"><a href="#cb5-31"></a>    <span class="cf">for</span><span class="op">(</span><span class="kw">auto</span> it<span class="op">{</span>map<span class="op">.</span>begin<span class="op">()};</span> it<span class="op">!=</span>map<span class="op">.</span>end<span class="op">();){</span></span>
+<span id="cb5-32"><a href="#cb5-32"></a>        <span class="cf">if</span><span class="op">(</span>it<span class="op">-&gt;</span>first <span class="op">%</span> <span class="dv">2</span> <span class="op">!=</span> <span class="dv">0</span><span class="op">)</span></span>
+<span id="cb5-33"><a href="#cb5-33"></a>            it <span class="op">=</span> map<span class="op">.</span>erase<span class="op">(</span>it<span class="op">);</span></span>
+<span id="cb5-34"><a href="#cb5-34"></a>        <span class="cf">else</span></span>
+<span id="cb5-35"><a href="#cb5-35"></a>            <span class="op">++</span>it<span class="op">;</span></span>
+<span id="cb5-36"><a href="#cb5-36"></a>    <span class="op">}</span></span>
+<span id="cb5-37"><a href="#cb5-37"></a></span>
+<span id="cb5-38"><a href="#cb5-38"></a>    <span class="co">// erase(key) by key</span></span>
+<span id="cb5-39"><a href="#cb5-39"></a>    <span class="co">// It removes the element (if one exists) with the key.</span></span>
+<span id="cb5-40"><a href="#cb5-40"></a>    <span class="co">// It returns the number of elements removed (0 or 1).</span></span>
+<span id="cb5-41"><a href="#cb5-41"></a>    <span class="bu">std::</span>size_t<span class="op"> </span>num_elements_removed <span class="op">=</span> map<span class="op">.</span>erase<span class="op">(</span><span class="dv">4</span><span class="op">);</span></span>
+<span id="cb5-42"><a href="#cb5-42"></a></span>
+<span id="cb5-43"><a href="#cb5-43"></a>    <span class="co">// clear</span></span>
+<span id="cb5-44"><a href="#cb5-44"></a>    <span class="co">// clear() removes all elements</span></span>
+<span id="cb5-45"><a href="#cb5-45"></a>    map<span class="op">.</span>clear<span class="op">();</span></span>
+<span id="cb5-46"><a href="#cb5-46"></a></span>
+<span id="cb5-47"><a href="#cb5-47"></a>    <span class="co">// node_type extract(pos)</span></span>
+<span id="cb5-48"><a href="#cb5-48"></a>    <span class="co">// unlinks the node that contains the element pointed to </span></span>
+<span id="cb5-49"><a href="#cb5-49"></a>    <span class="co">// by pos and returns a node handle that owns it.</span></span>
+<span id="cb5-50"><a href="#cb5-50"></a>    </span>
+<span id="cb5-51"><a href="#cb5-51"></a>    <span class="co">// node_type extract(key)</span></span>
+<span id="cb5-52"><a href="#cb5-52"></a>    <span class="co">// unlinks the node corresponding to key and returns</span></span>
+<span id="cb5-53"><a href="#cb5-53"></a>    <span class="co">// a node_handle to it, else returns an empty node_handle</span></span>
+<span id="cb5-54"><a href="#cb5-54"></a>    </span>
+<span id="cb5-55"><a href="#cb5-55"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/6TdzxM7Px">Compiler Explorer</a></p>
+</section>
+<section id="how-to-choose-a-good-hash-function" class="level1">
+<h1>How to choose a good hash function?</h1>
+<ul>
+<li>Input data often has patterns and is <em>not random</em>. So, good hash functions should generate hash values that are uniformly distributed.</li>
+<li>Avalanche effect. A small change in the hash function (e.g.&nbsp;flipping a single bit) should change the output significantly.</li>
+<li>Hash functions should be fast. Cryptographic hash functions like SHA-1, SHA-256, SHA-512, MD-5 are extremely secure, and we use them everyday for encryption, checksumming etc. but they are slow to compute. They are designed such that it is maximally difficult to produce collisions.</li>
+<li>Sometimes you are tracking large datasets e.g.&nbsp;a genetic dataset and you just want to know, if you have seen it before. You don’t want to keep the whole thing in a <code>std::set</code>, because your memory usage is going to skyrocket. Instead, you want to just keep a number that represents it.</li>
+</ul>
+<p>At it’s core, a hash function can simply be described as follows:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1"></a><span class="kw">def</span> hash_function(data: <span class="bu">bytes</span>) <span class="op">-&gt;</span> <span class="bu">int</span>:</span>
+<span id="cb6-2"><a href="#cb6-2"></a>    <span class="cf">for</span> chunk <span class="kw">in</span> data:</span>
+<span id="cb6-3"><a href="#cb6-3"></a>        <span class="bu">hash</span> <span class="op">=</span> cleverness(<span class="bu">hash</span>, chunk)</span>
+<span id="cb6-4"><a href="#cb6-4"></a></span>
+<span id="cb6-5"><a href="#cb6-5"></a>    <span class="cf">return</span> <span class="bu">hash</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Basically, you have a rolling hash value, we can think of it as a context or a state and we have a block of input data <code>chunk</code> (perhaps <span class="math inline">\(4\)</span> bytes or <span class="math inline">\(8\)</span> bytes)</p>
 
 
 </section>
