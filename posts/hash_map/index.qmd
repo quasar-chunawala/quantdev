@@ -426,3 +426,48 @@ So, the first byte `a = 0b0110 0001` has a hash value of `0b1110 0100 0000 1100 
 ```
 
 You can see how well distributed are two similar bytes. Every nibble has $1$ or $2$ bits that are being changed. So, we are already seeing a real avalanche behavior here. Things are getting moved, things are getting mutated, it all looks cool.
+
+Let us look at few hash functions that are considered to be reasonably state-of-the-art.
+
+### Murmur Hash
+
+```cpp
+uint32_t murmur3_32(const uint8_t* key, size_t len, uint32_t seed)
+{
+    const uint32_t c1 = 0xcc9e2d51;
+    const uint32_t c2 = 0x1b873593;
+    const uint32_t n = 0xe6546b64;
+    
+	uint32_t hash = seed;
+    uint32_t k;
+    /* Read in groups of 4. */
+    for (size_t i = len >> 2; i; i--) {
+        // Here is a source of differing results across endiannesses.
+        // A swap here has no effects on hash properties though.
+        memcpy(&k, key, sizeof(uint32_t));
+        key += sizeof(uint32_t);
+        hash ^= murmur_32_scramble(k);
+        hash = (h << 13) | (h >> 19);
+        hash = hash * 5 + 0xe6546b64;
+    }
+    /* Read the rest. */
+    k = 0;
+    for (size_t i = len & 3; i; i--) {
+        k <<= 8;
+        k |= key[i - 1];
+    }
+    // A swap is *not* necessary here because the preceding loop already
+    // places the low bytes in the low places according to whatever endianness
+    // we use. Swaps only apply when the memory is copied in a chunk.
+    hash ^= murmur_32_scramble(k);
+    /* Finalize. */
+	hash ^= len;
+	hash ^= hash >> 16;
+	hash *= 0x85ebca6b;
+	hash ^= hash >> 13;
+	hash *= 0xc2b2ae35;
+	hash ^= hash >> 16;
+	return hash;
+}
+```
+
