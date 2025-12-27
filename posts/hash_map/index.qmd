@@ -348,4 +348,81 @@ def hash_function(data: bytes) -> int:
     return hash
 ```
 
-Basically, you have a rolling hash value, we can think of it as a context or a state and we have a block of input data `chunk` (perhaps $4$ bytes or $8$ bytes) 
+Basically, you have a rolling hash value, we can think of it as a context or a state, but its ultimately just a number and we have a block of input data `chunk` (perhaps $1$ byte or $4$ bytes), and you mix those and then you will generate another number. Now, you may have some pre- and post- processing depending on the function, but that's pretty much how it works. The `cleverness` thing is actually what's called a *mixing* function. If you ever see the word *mixing* function on the wikipedia page, this is what it refers to. 
+
+## How do you implement this cleverness function?
+
+In general you do it with unsigned, fixed length integers. You use:
+
+- Bitwise operations (xor, rotation, unsigned bit shifts)
+- Multiplication 
+- Usually, there is atleast one magic number e.g. a prime number. 
+
+In hash table implementations, buckets are often a power of $2$ e.g. you might have $128$ buckets or $256$. If you have the same factorization of the number of buckets as some of the constants to manipulate the state of the hash function, you can end up bucketing everything actually into the same thing. 
+
+### FNV-1A
+
+FNV1-A is venerable hash function created by Fowler, Knoll and Vo in 1991 and has been improved a couple of times since. It's still in wide use today.
+
+```cpp
+#include <cstddef>
+#include <cstdint>
+
+uint32_t fnv1a32(std::byte* bytes, std::size_t num_bytes){
+    // This is actually the hash of the email 
+    // signatures of one of the creators of FNV.
+    uint32_t hash = 2166136261;
+    for(auto i{0uz}; i<num_bytes; ++i){
+        hash ^= static_cast<int>(bytes[i]);
+        hash *= 16777619;
+
+    }
+    return hash;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/z4a9nsPez)
+Suppose that the input string is `"ab"`. We get the following hash code from the FNV algorithm:
+
+```shell
+hash(0) = 10000001000111001001110111000101
+byte[0] =                          1100001
+XOR     = 10000001000111001001110110100100
+hash(1) = 11100100000011000010100100101100
+byte[1] =                          1100010
+XOR     = 11100100000011000010100101001110
+hash(2) =  1001101001001010000010111001010
+```
+ 
+The XOR changes only a few bits, so that's why the multiplier is there. Actually, $16777619$ is the prime closest to $2^24$. It gives you bit-shifting behavior as well. FNV1a kind of hides this bit-shifting, but every other algorithm uses bit shifts heavily to get this avalanche behavior. So, what this is doing is, it's going to shift everything and then its going add some noise to the lower end of the number.  
+
+`16'777'619` in binary is `0b0000 0001 0000 0000 0000 0001 1001 0011`. When you multiply this number, you are essentially doing:
+
+$$
+hash \times 16777619 = hash \times (2^24 + 2^8 + 2^7 + 2^4 + 2^1 + 2^0)
+$$
+
+To keep things simple, consider the value `5 = 0b0101`. Assume we multiply $5 \times 8 = 5 \times 2^3$. Using the rules of binary multiplication, we get: 
+
+```shell
+ 0b0000 0101
+x0b0000 1000
+------------
+           0
+          00
+         000
+ 0b 010 1000
+------------
+ 0b 010 1000
+```
+
+Hence, `x * 2^3` is like `x << 3`. 
+
+So, the first byte `a = 0b0110 0001` has a hash value of `0b1110 0100 0000 1100 0010 1001 0010 1100`. If we look at the next byte `b = 0b0110 0010`, it has just 2 bits different from the first byte, but the hash value is `0b0100 1101 0010 0101 0000 0101 1100 1010`.
+
+```shell
+0b1110 0100 0000 1100 0010 1001 0010 1100
+0b0100 1101 0010 0101 0000 0101 1100 1010
+  ^ ^  ^  ^   ^  ^  ^   ^  ^^   ^^^   ^^
+```
+
+You can see how well distributed are two similar bytes. Every nibble has $1$ or $2$ bits that are being changed. So, we are already seeing a real avalanche behavior here. Things are getting moved, things are getting mutated, it all looks cool.

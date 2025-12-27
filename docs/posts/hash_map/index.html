@@ -216,7 +216,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#insertion" id="toc-insertion" class="nav-link" data-scroll-target="#insertion">Insertion</a></li>
   <li><a href="#search" id="toc-search" class="nav-link" data-scroll-target="#search">Search</a></li>
   <li><a href="#deletion" id="toc-deletion" class="nav-link" data-scroll-target="#deletion">Deletion</a></li>
-  <li><a href="#how-to-choose-a-good-hash-function" id="toc-how-to-choose-a-good-hash-function" class="nav-link" data-scroll-target="#how-to-choose-a-good-hash-function">How to choose a good hash function?</a></li>
+  <li><a href="#how-to-choose-a-good-hash-function" id="toc-how-to-choose-a-good-hash-function" class="nav-link" data-scroll-target="#how-to-choose-a-good-hash-function">How to choose a good hash function?</a>
+  <ul class="collapse">
+  <li><a href="#how-do-you-implement-this-cleverness-function" id="toc-how-do-you-implement-this-cleverness-function" class="nav-link" data-scroll-target="#how-do-you-implement-this-cleverness-function">How do you implement this cleverness function?</a>
+  <ul class="collapse">
+  <li><a href="#fnv-1a" id="toc-fnv-1a" class="nav-link" data-scroll-target="#fnv-1a">FNV-1A</a></li>
+  </ul></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -550,9 +556,66 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb6-3"><a href="#cb6-3"></a>        <span class="bu">hash</span> <span class="op">=</span> cleverness(<span class="bu">hash</span>, chunk)</span>
 <span id="cb6-4"><a href="#cb6-4"></a></span>
 <span id="cb6-5"><a href="#cb6-5"></a>    <span class="cf">return</span> <span class="bu">hash</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Basically, you have a rolling hash value, we can think of it as a context or a state and we have a block of input data <code>chunk</code> (perhaps <span class="math inline">\(4\)</span> bytes or <span class="math inline">\(8\)</span> bytes)</p>
+<p>Basically, you have a rolling hash value, we can think of it as a context or a state, but its ultimately just a number and we have a block of input data <code>chunk</code> (perhaps <span class="math inline">\(1\)</span> byte or <span class="math inline">\(4\)</span> bytes), and you mix those and then you will generate another number. Now, you may have some pre- and post- processing depending on the function, but that’s pretty much how it works. The <code>cleverness</code> thing is actually what’s called a <em>mixing</em> function. If you ever see the word <em>mixing</em> function on the wikipedia page, this is what it refers to.</p>
+<section id="how-do-you-implement-this-cleverness-function" class="level2">
+<h2 class="anchored" data-anchor-id="how-do-you-implement-this-cleverness-function">How do you implement this cleverness function?</h2>
+<p>In general you do it with unsigned, fixed length integers. You use:</p>
+<ul>
+<li>Bitwise operations (xor, rotation, unsigned bit shifts)</li>
+<li>Multiplication</li>
+<li>Usually, there is atleast one magic number e.g.&nbsp;a prime number.</li>
+</ul>
+<p>In hash table implementations, buckets are often a power of <span class="math inline">\(2\)</span> e.g.&nbsp;you might have <span class="math inline">\(128\)</span> buckets or <span class="math inline">\(256\)</span>. If you have the same factorization of the number of buckets as some of the constants to manipulate the state of the hash function, you can end up bucketing everything actually into the same thing.</p>
+<section id="fnv-1a" class="level3">
+<h3 class="anchored" data-anchor-id="fnv-1a">FNV-1A</h3>
+<p>FNV1-A is venerable hash function created by Fowler, Knoll and Vo in 1991 and has been improved a couple of times since. It’s still in wide use today.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="pp">#include </span><span class="im">&lt;cstddef&gt;</span></span>
+<span id="cb7-2"><a href="#cb7-2"></a><span class="pp">#include </span><span class="im">&lt;cstdint&gt;</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a></span>
+<span id="cb7-4"><a href="#cb7-4"></a><span class="dt">uint32_t</span> fnv1a32<span class="op">(</span><span class="bu">std::</span>byte<span class="op">*</span> bytes<span class="op">,</span> <span class="bu">std::</span>size_t<span class="op"> </span>num_bytes<span class="op">){</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a>    <span class="co">// This is actually the hash of the email </span></span>
+<span id="cb7-6"><a href="#cb7-6"></a>    <span class="co">// signatures of one of the creators of FNV.</span></span>
+<span id="cb7-7"><a href="#cb7-7"></a>    <span class="dt">uint32_t</span> hash <span class="op">=</span> <span class="dv">2166136261</span><span class="op">;</span></span>
+<span id="cb7-8"><a href="#cb7-8"></a>    <span class="cf">for</span><span class="op">(</span><span class="kw">auto</span> i<span class="op">{</span><span class="dv">0</span><span class="bu">uz</span><span class="op">};</span> i<span class="op">&lt;</span>num_bytes<span class="op">;</span> <span class="op">++</span>i<span class="op">){</span></span>
+<span id="cb7-9"><a href="#cb7-9"></a>        hash <span class="op">^=</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;(</span>bytes<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb7-10"><a href="#cb7-10"></a>        hash <span class="op">*=</span> <span class="dv">16777619</span><span class="op">;</span></span>
+<span id="cb7-11"><a href="#cb7-11"></a></span>
+<span id="cb7-12"><a href="#cb7-12"></a>    <span class="op">}</span></span>
+<span id="cb7-13"><a href="#cb7-13"></a>    <span class="cf">return</span> hash<span class="op">;</span></span>
+<span id="cb7-14"><a href="#cb7-14"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/z4a9nsPez">Compiler Explorer</a> Suppose that the input string is <code>"ab"</code>. We get the following hash code from the FNV algorithm:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb8-1"><a href="#cb8-1"></a>hash(0) = 10000001000111001001110111000101</span>
+<span id="cb8-2"><a href="#cb8-2"></a>byte[0] =                          1100001</span>
+<span id="cb8-3"><a href="#cb8-3"></a>XOR     = 10000001000111001001110110100100</span>
+<span id="cb8-4"><a href="#cb8-4"></a>hash(1) = 11100100000011000010100100101100</span>
+<span id="cb8-5"><a href="#cb8-5"></a>byte[1] =                          1100010</span>
+<span id="cb8-6"><a href="#cb8-6"></a>XOR     = 11100100000011000010100101001110</span>
+<span id="cb8-7"><a href="#cb8-7"></a>hash(2) =  1001101001001010000010111001010</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The XOR changes only a few bits, so that’s why the multiplier is there. Actually, <span class="math inline">\(16777619\)</span> is the prime closest to <span class="math inline">\(2^24\)</span>. It gives you bit-shifting behavior as well. FNV1a kind of hides this bit-shifting, but every other algorithm uses bit shifts heavily to get this avalanche behavior. So, what this is doing is, it’s going to shift everything and then its going add some noise to the lower end of the number.</p>
+<p><code>16'777'619</code> in binary is <code>0b0000 0001 0000 0000 0000 0001 1001 0011</code>. When you multiply this number, you are essentially doing:</p>
+<p><span class="math display">\[
+hash \times 16777619 = hash \times (2^24 + 2^8 + 2^7 + 2^4 + 2^1 + 2^0)
+\]</span></p>
+<p>To keep things simple, consider the value <code>5 = 0b0101</code>. Assume we multiply <span class="math inline">\(5 \times 8 = 5 \times 2^3\)</span>. Using the rules of binary multiplication, we get:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb9-1"><a href="#cb9-1"></a> 0b0000 0101</span>
+<span id="cb9-2"><a href="#cb9-2"></a>x0b0000 1000</span>
+<span id="cb9-3"><a href="#cb9-3"></a>------------</span>
+<span id="cb9-4"><a href="#cb9-4"></a>           0</span>
+<span id="cb9-5"><a href="#cb9-5"></a>          00</span>
+<span id="cb9-6"><a href="#cb9-6"></a>         000</span>
+<span id="cb9-7"><a href="#cb9-7"></a> 0b 010 1000</span>
+<span id="cb9-8"><a href="#cb9-8"></a>------------</span>
+<span id="cb9-9"><a href="#cb9-9"></a> 0b 010 1000</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Hence, <code>x * 2^3</code> is like <code>x &lt;&lt; 3</code>.</p>
+<p>So, the first byte <code>a = 0b0110 0001</code> has a hash value of <code>0b1110 0100 0000 1100 0010 1001 0010 1100</code>. If we look at the next byte <code>b = 0b0110 0010</code>, it has just 2 bits different from the first byte, but the hash value is <code>0b0100 1101 0010 0101 0000 0101 1100 1010</code>.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb10-1"><a href="#cb10-1"></a>0b1110 0100 0000 1100 0010 1001 0010 1100</span>
+<span id="cb10-2"><a href="#cb10-2"></a>0b0100 1101 0010 0101 0000 0101 1100 1010</span>
+<span id="cb10-3"><a href="#cb10-3"></a>  ^ ^  ^  ^   ^  ^  ^   ^  ^^   ^^^   ^^</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>You can see how well distributed are two similar bytes. Every nibble has <span class="math inline">\(1\)</span> or <span class="math inline">\(2\)</span> bits that are being changed. So, we are already seeing a real avalanche behavior here. Things are getting moved, things are getting mutated, it all looks cool.</p>
 
 
+</section>
+</section>
 </section>
 
 </main> <!-- /main -->
