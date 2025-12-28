@@ -2588,41 +2588,65 @@ font-style: inherit;">}</span></span></code></pre></div>
 </section>
 <section id="murmur-hash" class="level3">
 <h3 class="anchored" data-anchor-id="murmur-hash">Murmur Hash</h3>
-<p>```cpp uint32_t murmur3_32(const uint8_t* key, size_t len, uint32_t seed) { const uint32_t c1 = 0xcc9e2d51; const uint32_t c2 = 0x1b873593; const uint32_t n = 0xe6546b64;</p>
-<pre><code>uint32_t hash = seed;
-uint32_t k;
+<pre><code>algorithm Murmur3_32 is
+    // Note: In this version, all arithmetic is performed with unsigned 32-bit integers.
+    //       In the case of overflow, the result is reduced modulo 232.
+    input: data, len, seed
 
-/* Read in groups of 4. */
-for (size_t i = len &gt;&gt; 2; i; i--) {
-    // Here is a source of differing results across endiannesses.
-    // A swap here has no effects on hash properties though.
-    memcpy(&amp;k, key, sizeof(uint32_t));
-    key += sizeof(uint32_t);
-    hash ^= murmur_32_scramble(k);
-    hash = (h &lt;&lt; 13) | (h &gt;&gt; 19);
-    hash = hash * 5 + 0xe6546b64;
-}
-/* Read the rest. */
-k = 0;
-for (size_t i = len &amp; 3; i; i--) {
-    k &lt;&lt;= 8;
-    k |= key[i - 1];
-}
-// A swap is *not* necessary here because the preceding loop already
-// places the low bytes in the low places according to whatever endianness
-// we use. Swaps only apply when the memory is copied in a chunk.
-hash ^= murmur_32_scramble(k);
-/* Finalize. */
-hash ^= len;
-hash ^= hash &gt;&gt; 16;
-hash *= 0x85ebca6b;
-hash ^= hash &gt;&gt; 13;
-hash *= 0xc2b2ae35;
-hash ^= hash &gt;&gt; 16;
-return hash;</code></pre>
-<p>}</p>
-<p>Murmur3 hash has a few constants. Quite a few of those are primes. There is also a seed value that somettimes the user provides or is hardcoded at times. It also means that, if you want to generate different hash values for different users, you have a way to do it.</p>
-<p>Then we start the mixing function.</p>
+    c1 ← 0xcc9e2d51
+    c2 ← 0x1b873593
+    r1 ← 15
+    r2 ← 13
+    m ← 5
+    n ← 0xe6546b64
+
+    hash ← seed
+
+    for each fourByteChunk of data do
+        k ← fourByteChunk
+
+        k ← k × c1
+        k ← (k &lt;&lt; r1) | (k &gt;&gt; (32 - r1))
+        k ← k × c2
+
+        hash ← hash XOR k
+        hash ← (hash &lt;&lt; r2) | (hash &gt;&gt; (32 - r2))
+        hash ← (hash × m) + n
+
+    with any remainingBytesInKey do
+        remainingBytes ← SwapToLittleEndian(remainingBytesInKey)
+        // Note: Endian swapping is only necessary on big-endian machines.
+        //       The purpose is to place the meaningful digits towards the low end of the value,
+        //       so that these digits have the greatest potential to affect the low range digits
+        //       in the subsequent multiplication.  Consider that locating the meaningful digits
+        //       in the high range would produce a greater effect upon the high digits of the
+        //       multiplication, and notably, that such high digits are likely to be discarded
+        //       by the modulo arithmetic under overflow.  We don't want that.
+
+        remainingBytes ← remainingBytes × c1
+        remainingBytes ← (remainingBytes &lt;&lt; r1) | (remainingBytes &gt;&gt; (32 - r1))
+        remainingBytes ← remainingBytes × c2
+
+        hash ← hash XOR remainingBytes
+
+    hash ← hash XOR len
+
+    hash ← hash XOR (hash &gt;&gt; 16)
+    hash ← hash × 0x85ebca6b
+    hash ← hash XOR (hash &gt;&gt; 13)
+    hash ← hash × 0xc2b2ae35
+    hash ← hash XOR (hash &gt;&gt; 16)</code></pre>
+<p>Murmur3 hash has a few constants. Quite a few of those are primes. There is also a seed value that sometimes the user provides or is hardcoded at times. It also means that, if you want to generate different hash values for different users, you have a way to do it.</p>
+<p>Then we start the mixing function. Murmur hash operates on <img src="https://latex.codecogs.com/png.latex?4"> bytes at a time, rather than <img src="https://latex.codecogs.com/png.latex?1"> byte. We multiply, do some bit shifting to try and get the values distributed more evenly, then again multiply, exclusive OR and then more stuff and it gets mutated.</p>
+<p>If there are less than <img src="https://latex.codecogs.com/png.latex?4"> bytes, remaining then there is an alternative mixing function.</p>
+<p>Finally, at the end we have, we have a series of post-processing steps to try and introduce more randomness into the whole thing. Again, we have multiplication with some constants and bit shifting to maximize distributing the hash.</p>
+<div class="sourceCode" id="cb12" style="background: #f1f3f5;"><pre class="sourceCode numberSource shell number-lines code-with-copy"><code class="sourceCode"><span id="cb12-1">hash ← hash XOR len</span>
+<span id="cb12-2"></span>
+<span id="cb12-3">hash ← hash XOR (hash &gt;&gt; 16)</span>
+<span id="cb12-4">hash ← hash × 0x85ebca6b</span>
+<span id="cb12-5">hash ← hash XOR (hash &gt;&gt; 13)</span>
+<span id="cb12-6">hash ← hash × 0xc2b2ae35</span>
+<span id="cb12-7">hash ← hash XOR (hash &gt;&gt; 16)</span></code></pre></div>
 
 
 </section>

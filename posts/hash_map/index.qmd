@@ -431,46 +431,72 @@ Let us look at few hash functions that are considered to be reasonably state-of-
 
 ### Murmur Hash
 
-```cpp
-uint32_t murmur3_32(const uint8_t* key, size_t len, uint32_t seed)
-{
-    const uint32_t c1 = 0xcc9e2d51;
-    const uint32_t c2 = 0x1b873593;
-    const uint32_t n = 0xe6546b64;
+```
+algorithm Murmur3_32 is
+    // Note: In this version, all arithmetic is performed with unsigned 32-bit integers.
+    //       In the case of overflow, the result is reduced modulo 232.
+    input: data, len, seed
 
-	uint32_t hash = seed;
-    uint32_t k;
+    c1 ← 0xcc9e2d51
+    c2 ← 0x1b873593
+    r1 ← 15
+    r2 ← 13
+    m ← 5
+    n ← 0xe6546b64
 
-    /* Read in groups of 4. */
-    for (size_t i = len >> 2; i; i--) {
-        // Here is a source of differing results across endiannesses.
-        // A swap here has no effects on hash properties though.
-        memcpy(&k, key, sizeof(uint32_t));
-        key += sizeof(uint32_t);
-        hash ^= murmur_32_scramble(k);
-        hash = (h << 13) | (h >> 19);
-        hash = hash * 5 + 0xe6546b64;
-    }
-    /* Read the rest. */
-    k = 0;
-    for (size_t i = len & 3; i; i--) {
-        k <<= 8;
-        k |= key[i - 1];
-    }
-    // A swap is *not* necessary here because the preceding loop already
-    // places the low bytes in the low places according to whatever endianness
-    // we use. Swaps only apply when the memory is copied in a chunk.
-    hash ^= murmur_32_scramble(k);
-    /* Finalize. */
-	hash ^= len;
-	hash ^= hash >> 16;
-	hash *= 0x85ebca6b;
-	hash ^= hash >> 13;
-	hash *= 0xc2b2ae35;
-	hash ^= hash >> 16;
-	return hash;
-}
+    hash ← seed
 
-Murmur3 hash has a few constants. Quite a few of those are primes. There is also a seed value that somettimes the user provides or is hardcoded at times. It also means that, if you want to generate different hash values for different users, you have a way to do it. 
+    for each fourByteChunk of data do
+        k ← fourByteChunk
 
-Then we start the mixing function.
+        k ← k × c1
+        k ← (k << r1) | (k >> (32 - r1))
+        k ← k × c2
+
+        hash ← hash XOR k
+        hash ← (hash << r2) | (hash >> (32 - r2))
+        hash ← (hash × m) + n
+
+    with any remainingBytesInKey do
+        remainingBytes ← SwapToLittleEndian(remainingBytesInKey)
+        // Note: Endian swapping is only necessary on big-endian machines.
+        //       The purpose is to place the meaningful digits towards the low end of the value,
+        //       so that these digits have the greatest potential to affect the low range digits
+        //       in the subsequent multiplication.  Consider that locating the meaningful digits
+        //       in the high range would produce a greater effect upon the high digits of the
+        //       multiplication, and notably, that such high digits are likely to be discarded
+        //       by the modulo arithmetic under overflow.  We don't want that.
+
+        remainingBytes ← remainingBytes × c1
+        remainingBytes ← (remainingBytes << r1) | (remainingBytes >> (32 - r1))
+        remainingBytes ← remainingBytes × c2
+
+        hash ← hash XOR remainingBytes
+
+    hash ← hash XOR len
+
+    hash ← hash XOR (hash >> 16)
+    hash ← hash × 0x85ebca6b
+    hash ← hash XOR (hash >> 13)
+    hash ← hash × 0xc2b2ae35
+    hash ← hash XOR (hash >> 16)
+```
+
+Murmur3 hash has a few constants. Quite a few of those are primes. There is also a seed value that sometimes the user provides or is hardcoded at times. It also means that, if you want to generate different hash values for different users, you have a way to do it. 
+
+Then we start the mixing function. Murmur hash operates on $4$ bytes at a time, rather than $1$ byte. We multiply, do some bit shifting to try and get the values distributed more evenly, then again multiply, exclusive OR and then more stuff and it gets mutated.  
+
+If there are less than $4$ bytes, remaining then there is an alternative mixing function.
+
+Finally, at the end we have, we have a series of post-processing steps to try and introduce more randomness into the whole thing. Again, we have multiplication with some constants and bit shifting to maximize distributing the hash.
+
+```shell
+hash ← hash XOR len
+
+hash ← hash XOR (hash >> 16)
+hash ← hash × 0x85ebca6b
+hash ← hash XOR (hash >> 13)
+hash ← hash × 0xc2b2ae35
+hash ← hash XOR (hash >> 16)
+```
+
