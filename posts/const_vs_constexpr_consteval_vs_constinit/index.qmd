@@ -152,6 +152,93 @@ Not all `const` qualifications in function declarations are ignored. To quote fr
 
 > *`const` type-specifiers buried within a parameter type specification are significant and can be used to distinguish overloaded function declarations.*
 
+```cpp
+void f(const int* x);                  // 1
+void f(const int& x);                  // 2
+void f(std::unique_ptr<const int> x);  // 3
+void f(int* x);                        // 4
+```
+
+In all of the above examples, the parameter `x` itself is never declared `const`. `const` is buried inside the parameter type, hence each has a declaration has a different parameter type, forming an overload set. 
+
+# `constexpr` 
+
+## `constexpr` variables 
+
+Let's review the definition of a literal type. According to the [standard](https://eel.is/c++draft/basic.types.general#10):
+
+A literal type is one whose layout can be determined at compile time. The following are the literal types:
+
+- `void`
+- Scalar types
+- References
+- Arrays of void, scalar types or references
+- A class that has a `constexpr` destructor, and one or more constexpr constructors that are not move or copy constructors. Additionally, all its non-static data members and base classes must be literal types and not volatile.
+
+The primary difference between `const` and `constexpr` variable is that the initialization of a `const` variable can be deferred to compile-time. A `constexpr` variable must be initialized at compile time. All `constexpr` variables are `const`, but the converse is not true. 
+
+- A variable can be declared with `constexpr`, when it has a literal type and is initialized. If the initialization is performed by a constructor, the constructor must be declared as `constexpr`.
+
+-  A reference may be declared as `constexpr` if and only if the referenced object is initialized by a constant expression. 
+
+- All declarations of a `constexpr` variable or function must have `constexpr` specifier.
+
+```cpp
+constexpr float c = 3.0e8;
+constexpr float G = 6.67430e-11;
+```
+
+## `constexpr` functions
+
+A `constexpr` function is one whose return value is computable at compile time. The caller(consuming code) requires the return value at compile-time to initialize a `constexpr` variable, or to provide a non-type template argument. When the arguments of a `constexpr` function are `constexpr` values, a `constexpr` function produces a compile-time constant. When called with non-`constexpr` arguments, or when its value isn't required at compile-time, it produces a value at run time like a regular function. This dual behavior saves you from having to write `constexpr` and non-`constexpr` versions of the same function. 
+
+A `constexpr` function or constructor is implicitly `inline`. The `inline` keyword suggests to the compiler to substitute the code within the function definition in place of each call to the function.
+
+The following rules apply to `constexpr` functions:
+
+- A `constexpr` function must accept and return only literal types.
+- The body can be defined as `=default` or `=delete`. This also applies to constructors and destructors.
+- The body cannot contain `try` blocks.
+
+```cpp
+#include <iostream>
+#include <print>
+#include <array>
+#include <cstdlib>
+#include <cmath>
+
+// Point is a literal type
+struct Point {
+    double x { 0 };
+    double y { 0 };
+
+    constexpr int distance(const Point& other) const { 
+        return sqrt(pow(x - other.x,2) + pow((y-other.y),2)); 
+    }
+};
+
+// Line is not a literal type. 
+// Its destructor is not constexpr.
+struct Line{
+    Point m_head;
+    Point m_tail;
+
+    ~Line(){}
+};
+
+int main(){
+    constexpr Point p(3.0, 4.0);
+    constexpr Point o(0.0, 0.0);
+    constexpr double d = p.distance(o);
+    std::cout << "Distance from origin to (3.0,4.0) = "
+              << d << "\n";
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/5GvPWaazd)
+
+
+
 # References
 
 - *[`const` correctness](https://isocpp.org/wiki/faq/const-correctness#const-ref-alt)
