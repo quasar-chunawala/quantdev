@@ -1,0 +1,158 @@
+---
+title: "`const`, `constexpr`, `consteval` and `constinit`"
+author: "Quasar"
+date: "2025-12-29"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# `const`-ness
+
+Constants, by their simplest definition are values that do not change. `const` correctness is the practice of using the `const` keyword to prevent `const` objects from getting mutated.
+
+> ### Just make everything `const` that you can!
+
+We should add `const` early and often. Back-patching `const` correctness results in a snowball effect: every `const` over here requires four more to be added over there.
+
+## `const` functions
+
+You can declare a non-static member function `const` if it doesn't change the value of the underlying object. 
+
+In case a function has two overloaded versions where one is `const` and the other is not, the compiler will choose which one to call based on whether the object itself is `const` or not.
+
+```cpp
+#include <iostream>
+#include <initializer_list>
+#include <print>
+
+struct Point{
+    double m_x;
+    double m_y;
+
+    explicit Point(double x, double y)
+    : m_x{ x }
+    , m_y{ y }
+    {}
+
+    double& x(){ 
+        std::println("double& x()");
+        std::println("x = {}", m_x);
+        return m_x; 
+    }
+    const double& x() const{ 
+        std::println("const double& x() const"); 
+        std::println("x = {}", m_x);
+        return m_x; 
+    }
+    double& y(){ 
+        std::println("double& y()");
+        std::println("y = {}", m_y);
+        return m_y; 
+    }
+    const double& y() const{ 
+        std::println("const double& y() const");
+        std::println("y = {}", m_y);
+        return m_y; 
+    }
+};
+
+void print(const Point& p){
+
+}
+int main(){
+    Point p(3.0, 4.0);
+    p.x();
+    p.y();
+
+    const Point p2(1.0, -1.0);
+    p2.x();
+    p2.y();
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/sbbff5nYY)
+
+Output:
+
+```shell
+double& x()
+x = 3
+double& y()
+y = 4
+const double& x() const
+x = 1
+const double& y() const
+y = -1
+```
+
+## `const` variables
+
+If you add the `const` qualifier to the type of a local variable, the local variable is immutable. Declaring variables as `const` also helps the compiler to perform some optimizations. 
+
+A member of a `const`-qualified `struct` or `union` type acquires the qualification of the type it belongs to. 
+
+```cpp
+struct S{
+    int i; 
+    const int ci;
+};
+
+const S cs;
+// the types of cs.i and cs.ci are 
+// both const int
+```
+
+If an array type is declared with the `const` type qualifier, it's elements are considered `const`. 
+
+```cpp
+const A a[6] = {1, 2, 3, 4, 5, 6};
+
+// int* pi = a[0]; // a[0] is const int*
+```
+
+A pointer to a non-`const` type can be implicitly converted to a pointer to const-qualified version of the same. The reverse conversion requires a cast expression. 
+
+## `const` members
+
+Having `const` local variables is good. Having `const` as a member variable is never a good idea. You cannot copy assign or move assign to the objects of such a type.
+
+## `const` return types
+
+When returning objects by value, it is not recommended to use the `const` qualifier. It would be misleading to return a value by `const` object. RVO(Return Value Optimization) only kicks in when you return an object by value without the `const` qualifier. 
+
+Imagine that we need the unit vectors $\hat{i} = (1,0)$ and $\hat{j} = (0,1)$ in the physics engine in our game. We might specify these vectors as:
+
+```cpp
+const Point unit_vector_i(1,0);
+const Point unit_vector_j(0,1);
+```
+
+When an object is declared `const`, all its subobjects are `const`. This aligns with our intuition. Being able to modify the coordinates of the basis vectors should be an illegal and makes no sense. 
+
+Hence, the `x()` and `y()` getter methods should have a `const` version, that operates on `const Point` objects and returns a constant reference.
+
+## `const` function parameters
+
+Consider the following code:
+
+```cpp
+void f(int);        // declaration of f(int)
+void f(const int);  // re-declaration of f(int)
+void f(int){ /*...*/ } // defintion of f(int)
+void f(const int){ /*...*/ } //re-definition of f(int)
+```
+
+A function declaration tells the compiler the function's signature and return type. One line 2, the `const`ness of the function's parameter type is ignored. Similarly, line 4 is a definition of the same function `f(int)`, which will result in an error at link time. Multiple declarations are allowed, but only a single definition is permitted. 
+
+### Meaning of `const` in function declarations
+
+Not all `const` qualifications in function declarations are ignored. To quote from from the C++ standard,
+
+> *`const` type-specifiers buried within a parameter type specification are significant and can be used to distinguish overloaded function declarations.*
+
+# References
+
+- *[`const` correctness](https://isocpp.org/wiki/faq/const-correctness#const-ref-alt)
+
