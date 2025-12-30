@@ -8,24 +8,7 @@ toc: true
 toc-depth: 3
 ---
 
-# Writing your own `vector<T>` training implementation
-
-In this blog post, we will write a naive `vector<T>` training implementation. Coding up these training implementations, handling corner cases, getting your code reviewed, revisiting your design is very effective at understanding the inner workings of STL data-strucures and writing good C++ code. I adopt a gradual refinement approach, so my first versions will be simpler but less efficient. 
-
-> #### *If you know `std::vector`, you know half of C++.*
->
-> -- Bjarne Stroustrup
-
-Informally, a `std::vector<T>` represents a dynamically allocated array that can grow as needed. As with any array, a `std::vector<T>` is a sequence of elements of type `T` arranged contigously in memory. We will put our homegrown version of `vector<T>` under the `dev` namespace. 
-
-The internal representation of a `vector` like type has a book-keeping node that consists of:
-- A pointer to the raw data (a block of memory that will hold elements of type `T`)
-- Size of the container(the number of elements in the container)
-- Capacity
-
-It's important to distinguish between `size` and `capacity`. `size` is the number of elements currently in the container. When `size == capacity`, the container becomes full and will need to grow, which means allocating more member, copying the elements from the old storage to the new storage and getting rid of the old storage. 
-
-For those of you, who want to first attempt writing a basic implementation yourself, I present it in the form a task. 
+# Implementing `vector<T>`
 
 ## The problem statement
 
@@ -49,260 +32,311 @@ Implement your own version of a vector with the following methods:
 
 For more such C++ coding tasks, visit [getcracked.io](https://getcracked.io/problem/1/implement-vector). 
 
-## A basic implementation
+# Writing your own `vector<T>` training implementation
 
-Take a look at my submission. I used uninitialized memory algorithms, where necessary. 
+> ### *If you know `std::vector`, you know half of C++.*
+>
+> ### - Bjarne Stroustrup
+
+The most fundamental STL data-structure is the `vector`. In this article, I am going to explore writing a custom implementation of the `vector` data-structure. The standard library implementation `std::vector` is a work of art, it is extremely efficient at managing memory and has been tested ad nauseam. It is much better, in fact, than a homegrown alternative would be. 
+
+Why then write our own custom `vector`? 
+- Writing a naive implementation is challenging and rewarding. It is a lot of fun!
+- Coding up these training implementations, thinking about corner cases, getting your code reviewed, revisiting your design is very effective at understanding the inner workings of STL data-strucures and writing good C++ code. 
+- Its a good opportunity to learn about low-level memory management algorithms. 
+
+We are not aiming for an exhaustive representation or implementation, but we will write test cases for all basic functionalities expected out of a `vector` like data-structure.
+
+Informally, a `std::vector<T>` represents a dynamically allocated array that can grow as needed. As with any array, a `std::vector<T>` is a sequence of elements of type `T` arranged contigously in memory. We will put our homegrown version of `vector<T>` under the `dev` namespace. 
+
+## Unit tests for `vector<T>`
+
+For low-level data-structures such as the `vector`, let's write the unit-tests upfront before the implementation. This will help us think through the interface and corner cases. Tests will also serve as documentation of the expected functionality.
+
+The internal representation of a `vector` like type has a book-keeping node that consists of:
+- A pointer to the raw data (a block of memory that will hold elements of type `T`)
+- Size of the container(the number of elements in the container)
+- Capacity
+
+![](vector.png){width=800px height=250px}
+
+It's important to distinguish between `size` and `capacity`. `size` is the number of elements currently in the container. When `size == capacity`, the container becomes full and will need to grow, which means allocating more member, copying the elements from the old storage to the new storage and getting rid of the old storage. 
+
+Given this background, we assume that the `vector` is equipped with basic getters such as:
+
+- `std::size_t size()`
+- `std::size_t capacity()`
+- `bool empty()` 
+- `bool is_full()`
+
+The `vector` should support various constructors.
 
 ```cpp
-// Write your solution here
-// C++20 for C++
+TEST(VectorTest, DefaultConstructorTest) {
+    dev::vector<int> v;
+    EXPECT_EQ(v.empty(), true);
+}
 
-#include <cstddef>
-#include <cstdint>
-#include <format>
-#include <initializer_list>
-#include <memory>
-#include <print>
-#include <stdexcept>
-#include <type_traits>
-#include <utility>
-
-namespace getcracked {
-template <typename Element>
-class vector {
-    constexpr static std::size_t initial_capacity{1};
-
-   private:
-    Element* m_data;
-    std::size_t m_size;
-    std::size_t m_capacity;
-
-   public:
-    std::size_t get_size() const { return m_size; }
-    std::size_t get_capacity() const { return m_capacity; }
-    vector()
-        : m_data{static_cast<Element*>(operator new(sizeof(Element)))},
-          m_size{0},
-          m_capacity{initial_capacity} {}
-
-    vector(size_t n, Element& initial_value)
-        : m_data{static_cast<Element*>(operator new(sizeof(Element) * n))},
-          m_size{0},
-          m_capacity{n} {
-        try {
-            std::uninitialized_fill_n(m_data, n, initial_value);
-            m_size = n;
-        } catch (std::exception& ex) {
-            operator delete(m_data);
-            m_capacity = 0;
-        }
+TEST(VectorTest, InitializerListTest){
+    dev::vector<int> v{1, 2, 3, 4, 5};
+    EXPECT_EQ(!v.empty(), true);
+    EXPECT_EQ(v.size(), 5);
+    EXPECT_TRUE(v.capacity() > 0);
+    for(auto i{0uz}; i < v.size(); ++i){
+        EXPECT_EQ(v.at(i), i+1);
     }
+}
 
-    vector(std::initializer_list<Element> list)
-        : m_data{static_cast<Element*>(operator new(sizeof(Element) *
-                                                    list.size()))},
-          m_size{list.size()},
-          m_capacity{list.size()} {
-        try {
-            if constexpr (std::is_nothrow_move_constructible_v<Element>) {
-                std::uninitialized_move(list.begin(), list.end(), m_data);
-            } else {
-                std::uninitialized_copy(list.begin(), list.end(), m_data);
-            }
-        } catch (std::exception& ex) {
-            operator delete(m_data);
-            m_size = 0;
-            m_capacity = 0;
-        }
+TEST(VectorTest, ParameterizedConstructorTest){
+    dev::vector v(10, 5.5);
+    EXPECT_EQ(v.size(), 10);
+    for(auto i{0uz}; i < v.size(); ++i){
+        EXPECT_EQ(v[i], 5.5);
     }
+}
 
-    vector(const vector& other)
-        : m_data{operator new(sizeof(Element) * other.get_size())},
-          m_size{other.get_size()},
-          m_capacity{other.get_capacity()} {
-        try {
-            // Perform a deep-copy of all the elements
-            std::uninitialized_copy(other.m_data, other.m_data + other.m_size,
-                                    m_data);
-        } catch (std::exception& ex) {
-            operator delete(m_data);
-            std::string error_msg =
-                std::format("Error while copying in copy ctor {}", ex.what());
-            throw std::logic_error(error_msg);
-        }
+TEST(VectorTest, CopyConstructorTest){
+    dev::vector v1{ 1.0, 2.0, 3.0, 4.0, 5.0 };
+    dev::vector v2(v1);
+
+    EXPECT_EQ(v1.size() == v2.size(), true);
+
+    for (int i{ 0 }; i < v1.size(); ++i)
+    {
+        EXPECT_EQ(v2[i], i+1);
+        EXPECT_EQ(v1[i], v2[i]);
     }
+}
 
-    vector(vector&& other) noexcept
-        : m_data{std::exchange(other.m_data, nullptr)},
-          m_size{std::exchange(other.m_size, 0)},
-          m_capacity{std::exchange(other.m_capacity, 0)} {}
+TEST(VectorTest, MoveConstructorTest){
+    dev::vector<int> v1{ 1, 2, 3 };
+    dev::vector<int> v2(std::move(v1));
+    EXPECT_EQ(v1.size(), 0);
+    EXPECT_EQ(v1.capacity(), 0);
+    EXPECT_EQ(v2.size(), 3);
+    for(auto i{0uz}; i<v2.size(); ++ i)
+        EXPECT_EQ(v2[i], i + 1);
+}
 
-    void swap(vector& other) noexcept {
-        std::swap(this->m_data, other.m_data);
-        std::swap(this->m_size, other.m_size);
-        std::swap(this->m_capacity, other.m_capacity);
+TEST(VectorTest, CopyAssignmentTest)
+{
+    dev::vector<int> v1{ 1, 2, 3 };
+    dev::vector<int> v2;
+    v2 = v1;
+
+    EXPECT_EQ(v1.size(), v2.size());
+    EXPECT_EQ(v1.capacity(), v2.capacity());
+    for (int i = 0; i < v1.size(); ++i) {
+        EXPECT_EQ(v1[i], i+1);
+        EXPECT_EQ(v1[i], v2[i]);
     }
+}
 
-    vector& operator=(const vector& other) {
-        vector(other).swap(*this);
-        return *this;
+TEST(VectorTest, MoveAssignmentTest)
+{
+    dev::vector<int> v1{ 1, 2, 3 };
+    dev::vector<int> v2;
+    v2 = std::move(v1);
+
+    EXPECT_EQ(v1.size(), 0);
+    EXPECT_EQ(v1.capacity(), 0);
+    EXPECT_EQ(v2.size(), 3);
+    for (int i = 0; i < v1.size(); ++i) {
+        EXPECT_EQ(v2[i], i+1);
     }
-
-    vector& operator=(vector&& other) {
-        vector(std::move(other)).swap(*this);
-        return *this;
-    }
-
-    bool is_full() { return get_size() == get_capacity(); }
-
-    void push_back(Element element) {
-        std::size_t offset = get_size();
-        if (m_size == m_capacity - 1) {
-            // Allocate new memory
-            std::size_t new_size = get_size() + 1;
-            std::size_t new_capacity = 3 * m_capacity;
-            Element* new_memory_block = static_cast<Element*>(operator new(
-                sizeof(Element) * new_capacity));
-            Element* ptr_to_new_element{nullptr};
-
-            try {
-                // Construct the new element in new memory block
-                ptr_to_new_element =
-                    new (new_memory_block + offset) Element(element);
-            } catch (std::exception& ex) {
-                operator delete(new_memory_block);
-                std::string error_msg = std::format(
-                    "Failed to copy-construct element : {}", ex.what());
-                throw std::logi c_error(error_msg);
-            }
-
-            try {
-                // Copy/move- the elements from the old storage to new
-                if constexpr (std::is_nothrow_move_constructible_v<Element>) {
-                    std::uninitialized_move(m_data, m_data + offset,
-                                            new_memory_block);
-                } else {
-                    std::uninitialized_copy(m_data, m_data + offset,
-                                            new_memory_block);
-                }
-            } catch (std::exception& ex) {
-                std::destroy_at(ptr_to_new_element);
-                operator delete(new_memory_block);
-                std::string error_msg = std::format(
-                    "Failed to copy/move data from old to new storage, "
-                    "exception : {}",
-                    ex.what());
-                throw std::logic_error(error_msg);
-            }
-
-            // Destroy the objects in the old storage
-            auto p{m_data};
-            for (auto p{m_data}; p < m_data + m_size; ++p) {
-                p->~Element();
-            }
-
-            // Deallocate old storage
-            operator delete(m_data);
-
-            // Reassign internal buffer pointer and update size and capacity
-            m_data = new_memory_block;
-            m_size = new_size;
-            m_capacity = new_capacity;
-        } else {
-            try {
-                std::construct_at(m_data + offset, element);
-                m_size += 1;
-            } catch (std::exception& ex) {
-                std::string error_msg = std::format(
-                    "Failed to copy-construct element, exception : {}",
-                    ex.what());
-                throw std::logic_error(error_msg);
-            }
-        }
-    }
-
-    const Element& at(std::size_t index) const {
-        if (index < 0 || index >= m_size)
-            throw std::out_of_range("Array index out of bounds!");
-
-        return m_data[index];
-    }
-    void shrink_to_fit() {
-        // Allocate a new memory block of capacity = m_size
-        Element* new_memory_block =
-            static_cast<Element*>(operator new(sizeof(Element) * m_size));
-
-        try {
-            // Copy/move the elements from the old storage to new storage
-            if constexpr (std::is_nothrow_move_constructible_v<Element>) {
-                std::uninitialized_move(m_data, m_data + m_size,
-                                        new_memory_block);
-            } else {
-                std::uninitialized_copy(m_data, m_data + m_size,
-                                        new_memory_block);
-            }
-        } catch (std::exception& ex) {
-            operator delete(new_memory_block);
-            std::string error_msg = std::format(
-                "Internal error in shrink_to_fit() : {}", ex.what());
-            throw std::logic_error(error_msg);
-        }
-
-        // Destroy objects in old storage and deallocate memory
-        for (auto p{m_data}; p < m_data + m_size; ++p) {
-            std::destroy_at<Element>(p);
-        }
-        // Deallocate memory
-        operator delete(m_data);
-
-        // Reassign internal buffer pointer and set size and capacity
-        m_data = new_memory_block;
-        m_capacity = m_size;
-    }
-    void pop_back() {
-        Element* ptr_to_last = m_data + m_size - 1;
-        std::destroy_at(ptr_to_last);
-        --m_size;
-    }
-};
-}  // namespace getcracked
-
-int main() {
-    getcracked::vector<double> v;
-    v.push_back(1);
-    v.push_back(2);
-    std::println("v[0] = {}", v.at(0));
-    std::println("size = {}", v.get_size());
-    std::println("capacity = {}", v.get_capacity());
 }
 ```
-[Compiler Explorer](https://compiler-explorer.com/z/M491zKcdz)
-
-## Adding support for other methods
-
-### Iterators 
-
-C++ containers usually expose iterators as part of their interface and ours will be no exception. We will define type aliases for the `const` and non-`const` iterator types, as this makes it simpler to implement alternatives.
+The `vector` data-structure should support element access through the array subscript operator `[]`, just like C-style arrays. The `T& at(std::size_t idx)` could also be used to access the element at index `idx` with bounds checking.
 
 ```cpp
-// ...
+TEST(VectorTest, AtTest)
+{
+    dev::vector<int> v{ 1, 2, 3 };
+    EXPECT_EQ(v.at(0), 1);
+    EXPECT_EQ(v.at(1), 2);
+    EXPECT_EQ(v.at(2), 3);
+
+    EXPECT_THROW(v.at(3), std::out_of_range);
+}
+
+TEST(VectorTest, SubscriptOperatorTest)
+{
+    dev::vector<int> v{ 1, 2, 3 };
+    for (int i{0uz}; i < v.size(); ++i) {
+        EXPECT_EQ(v[i], i+1);
+    }
+}
+```
+
+We expect the container to perform the book-keeping of size and capacity correctly.
+
+```cpp
+TEST(VectorTest, EmptyTest)
+{
+    dev::vector<int> v;
+    EXPECT_EQ(v.empty(), true);
+
+    v.push_back(42);
+    EXPECT_EQ(v.empty(), false);
+}
+
+TEST(VectorTest, SizeAndCapacityTest)
+{
+    dev::vector<int> v;
+    EXPECT_EQ(v.size(), 0);
+    EXPECT_GE(v.capacity(), 0);
+
+    v.push_back(42);
+    EXPECT_EQ(v.size(), 1);
+    EXPECT_GT(v.capacity(), 0);
+
+    v.push_back(v.back());
+    EXPECT_EQ(v.size(), 2);
+    EXPECT_EQ(v[1], 42);
+}
+
+```
+
+We expect the container to support the getter methods `front()` and `back()`. 
+
+```cpp
+TEST(VectorTest, FrontAndBackTest)
+{
+    dev::vector<int> v{ 1, 2, 3 };
+    EXPECT_EQ(v.front(), 1);
+    EXPECT_EQ(v.back(), 3);
+}
+```
+
+The container should support `reserve(size_t new_capacity)` and `resize(size_t new_size)`. These are explained at length further ahead.
+
+```cpp
+TEST(VectorTest, ReserveTest)
+{
+    dev::vector<int> v1;
+    v1.reserve(10);
+    EXPECT_GE(v1.capacity(), 10);
+    EXPECT_EQ(v1.size(), 0);
+
+    dev::vector<int> v2{1, 2, 3, 4, 5, 6, 7};
+    size_t old_capacity = v2.capacity();
+    EXPECT_GE(v2.capacity(), 7);
+    EXPECT_EQ(v2.size(), 7);
+    size_t new_capacity = 2 * old_capacity;
+    v2.reserve(new_capacity);
+    EXPECT_GE(v2.capacity(), new_capacity);
+    EXPECT_EQ(v2.size(), 7);
+    for(auto i{0uz}; i < v2.size(); ++i)
+        EXPECT_EQ(v2[i], i + 1);
+}
+
+TEST(VectorTest, ResizeTest)
+{
+    dev::vector<int> v{ 1, 2, 3 };
+    v.resize(5);
+
+    EXPECT_EQ(v.size(), 5);
+    for(auto i{0uz}; i<3; ++i)
+        EXPECT_EQ(v[i], i + 1);
+
+    EXPECT_EQ(v[3], 0);
+    EXPECT_EQ(v[4], 0);
+
+    v.resize(2);
+    EXPECT_EQ(v.size(), 2);
+    EXPECT_EQ(v[0], 1);
+    EXPECT_EQ(v[1], 2);
+}
+```
+
+The container should support appending elements or remove elements at the back. 
+
+```cpp
+TEST(VectorTest, PushBackTest)
+{
+    dev::vector<int> v;
+    v.push_back(1);
+    v.push_back(2);
+    v.push_back(3);
+
+    EXPECT_EQ(v.size(), 3);
+    for(auto i{0uz}; i<v.size(); ++i)
+        EXPECT_EQ(v[i], i + 1);
+}
+
+TEST(VectorTest, PushBackSelfReferenceTest)
+{
+    // The design of push_back/insert is slightly hard to get right.
+    // If the vector is full, then you reallocate(grow) the vector.
+    // If the value to be added is a reference to an existing
+    // vector element, then value in vec.push_back(value) may become
+    // a dangling reference, if it refers to the old storage (an element of the vector
+    // itself e.g. vec.back()). This test is meant for such an edge case.
+    dev::vector<int> vec{ 1 };
+    for (auto i{0uz}; i < 64; ++i) {
+        vec.push_back(vec.back());
+        EXPECT_EQ(vec.back(), 1);
+    }
+}
+
+TEST(VectorTest, EmplaceBackTest)
+{
+    struct Point
+    {
+        int x, y;
+        Point(int a, int b)
+          : x(a)
+          , y(b)
+        {
+        }
+    };
+
+    dev::vector<Point> v;
+    v.emplace_back(1, 2);
+    v.emplace_back(3, 4);
+
+    EXPECT_EQ(v.size(), 2);
+    EXPECT_EQ(v[0].x, 1);
+    EXPECT_EQ(v[0].y, 2);
+    EXPECT_EQ(v[1].x, 3);
+    EXPECT_EQ(v[1].y, 4);
+}
+```
+[TODO] Add implementation for insert, pop_back()
+## `vector` member data
+
+We start with coding up the `vector` as a class template. It is templated by the type  `T` of the elements stored in the container. We also define various  type aliases.
+
+```cpp
+namespace dev {
+    template <typename T>
+    class vector {
+        using value_type = T;
+        using size_type = std::size_t;
+        using pointer = T*;
+        using const_pointer = const T*;
+        using reference = T&;
+        using const_reference = const T&;
+        using iterator = pointer;
+        using const_iterator = const_pointer;
+        constexpr static std::size_t initial_capacity{1};
+        constexpr static unsigned short growth_factor{2};
+
+    private:
+        pointer m_data;
+        size_type m_size;
+        size_type m_capacity;
+    };
+}
+```
+
+
+C++ containers usually expose iterators as part of their interface and ours will be no exception. We define type aliases for the `const` and non-`const` iterator types, as this makes it simpler to implement alternatives.
+
+```cpp
 template <typename T>
 class vector {
-    using value_type = T;
-    using size_type = std::size_t;
-    using pointer = T*;
-    using const_pointer = const T*;
-    using reference = T&;
-    using const_reference = const T&;
-    using iterator = pointer;
-    using const_iterator = const_pointer;
-    constexpr static std::size_t initial_capacity{1};
-
-private:
-    pointer m_data;
-    size_type m_size;
-    size_type m_capacity;
-
+    // ...
 public:
 
     iterator begin(){ return m_data; }
@@ -311,10 +345,12 @@ public:
     const_iterator end() const{ return begin() + m_size; }
 // ...
 ```
-[Compiler Explorer](https://compiler-explorer.com/z/MojqWhezr)
 
-### Basic services of a vector-like class
-There is more to writing a convenient dynamic array type. For example, member functions that let you access the `first()` element or the last `back()` element or that let you access the element at a specific index in the array using square brackets are all to be expected.
+## Basic services of a vector-like class
+
+### Implementing `front()`, `back()` and `operator[](size_t idx)`
+
+There is more to writing a convenient dynamic array type. For example, member functions that let you access the elements at front or rear-end of the vector are to be expected. Similarly, an implementation of `operator[]` to access the element at a specific index in the array is also expected.
 
 ```cpp
 // ...
@@ -395,8 +431,6 @@ void reserve(size_type new_capacity){
     m_capacity = new_capacity;    
 }
 ```
-[Compiler Explorer](https://compiler-explorer.com/z/ajWYcjaYd)
-
 
 If `new_capacity > capacity()`, we must:
 
@@ -446,8 +480,7 @@ void resize(size_type new_size){
 
         // Default construct elements at indicates
         // [current_size,...,new_size-1]
-        for (auto p{ begin() + current_size }; p != begin() + new_size; ++p)
-            std::construct_at(p, value_type{});
+        std::uninitialized_fill(m_data + size(), m_data + capacity(), value_type{});
     }
     m_size = new_size;
 }    
@@ -590,14 +623,43 @@ reference emplace_back(Args... args){
         return emplace_back_fast_path(std::forward<Args>(args)...);
 }
 ```
-[Compiler Explorer](https://compiler-explorer.com/z/eKfnMfvqs)
 
-## Implementing `insert(const_iterator position, const T& value)`
+## Implementing `pop_back()`
+
+`pop_back()` should call the destructor of the element at index `m_size - 1`. `std::destroy_at(T* p)` calls the destructor of the object pointed to by `p`. It is equivalent to `p->~T()`. We must not forget to decrement the size of the container.
+
+```cpp
+void pop_back() {
+	T* ptr_to_last = m_data + m_size - 1;
+	std::destroy_at(ptr_to_last);
+	--m_size;
+}
+```
+
+## Implementing 
+## Implementing `insert(const_iterator position, It first, It last)`
 
 The `insert` function inserts the given value into the vector before the specified `position`, possibly using move-semantics. Note that, this
 kind of operation could be expensive for a vector, and if it is 
-frequently used, it can trigger reallocation. The user should consider 
-using `std::list`. 
+frequently used, it can trigger reallocation. 
+
+Our `insert` function will be generic enough with the following interface:
+
+```cpp
+template<class It>
+iterator insert(const_iterator pos, It first, It last)
+```
+
+It inserts the range `[first,last)` at position `pos` (immediately prior to element currently at `pos`).
+
+There are $4$ steps to be considered here:
+
+- How many elements should be copied or moved from the `[begin(), end())` range to the uninitialized memory block at the end of the container?
+- If there are elements from the `[first,last)` sequence to insert in raw memory (there could be none), how many should be there?
+- If there are elements to copy or move from `[pos,end())` sequence to copy or move as a replacement to existing objects in the container(there could be none), how many should be there?
+- Finally, whatever remains to be inserted from the `[first,last)` sequence will be copied in the container starting at `pos`.
+
+Here is a possible implementation:
 
 ```cpp
 template<typename U>
@@ -635,633 +697,11 @@ iterator insert(const_iterator position, U&& value)
 }
 ```
 
-# Complete implementation with unit tests
+## Conclusion
 
-```cpp
-// Write your solution here
-// C++20 for C++
-#include <gtest/gtest.h>
-#include <cstddef>
-#include <cstdint>
-#include <format>
-#include <initializer_list>
-#include <memory>
-#include <print>
-#include <stdexcept>
-#include <type_traits>
-#include <utility>
+You can find the complete source listing and unit tests online at [https://compiler-explorer.com/z/f4Esbhv6d](https://compiler-explorer.com/z/f4Esbhv6d). 
 
-namespace dev {
-    template <typename T>
-    class vector {
-        using value_type = T;
-        using size_type = std::size_t;
-        using pointer = T*;
-        using const_pointer = const T*;
-        using reference = T&;
-        using const_reference = const T&;
-        using iterator = pointer;
-        using const_iterator = const_pointer;
-        constexpr static std::size_t initial_capacity{1};
-        constexpr static unsigned short growth_factor{2};
+![](qr_code.png){width=200px height=200px}
 
-    private:
-        pointer m_data;
-        size_type m_size;
-        size_type m_capacity;
-
-    public:
-
-        iterator begin(){ return m_data; }
-        const_iterator begin() const{ return m_data; }
-        iterator end(){ return begin() + m_size; }
-        const_iterator end() const{ return begin() + m_size; }
-        
-        size_type size() const { return m_size; }
-        size_type capacity() const { return m_capacity; }
-
-        vector()
-        : m_data{static_cast<T*>(operator new(sizeof(T)))},
-        m_size{0},
-        m_capacity{initial_capacity} {}
-
-        vector(size_t n, const T& initial_value)
-        : m_data{static_cast<T*>(operator new(sizeof(T) * n))},
-        m_size{0},
-        m_capacity{n} {
-            try {
-                std::uninitialized_fill_n(m_data, n, initial_value);
-                m_size = n;
-            } catch (std::exception& ex) {
-                operator delete(m_data);
-                m_capacity = 0;
-            }
-        }
-
-        vector(std::initializer_list<T> list)
-        : m_data{static_cast<T*>(operator new(sizeof(T) *
-                                                    list.size()))},
-        m_size{list.size()},
-        m_capacity{list.size()} {
-            try {
-                if constexpr (std::is_nothrow_move_constructible_v<T>) {
-                    std::uninitialized_move(list.begin(), list.end(), m_data);
-                } else {
-                    std::uninitialized_copy(list.begin(), list.end(), m_data);
-                }
-            } catch (std::exception& ex) {
-                operator delete(m_data);
-                m_size = 0;
-                m_capacity = 0;
-            }
-        }
-
-        vector(const vector& other)
-        : m_data{static_cast<T*>(operator new(sizeof(T) * other.size()))},
-        m_size{other.size()},
-        m_capacity{other.capacity()} {
-            try {
-                // Perform a deep-copy of all the Ts
-                std::uninitialized_copy(other.m_data, other.m_data + other.m_size,
-                                        m_data);
-            } catch (std::exception& ex) {
-                operator delete(m_data);
-                std::string error_msg =
-                    std::format("Error while copying in copy ctor {}", ex.what());
-                throw std::logic_error(error_msg);
-            }
-        }
-
-        vector(vector&& other) noexcept
-        : m_data{std::exchange(other.m_data, nullptr)},
-        m_size{std::exchange(other.m_size, 0)},
-        m_capacity{std::exchange(other.m_capacity, 0)} 
-        {}
-
-        void swap(vector& other) noexcept {
-            std::swap(this->m_data, other.m_data);
-            std::swap(this->m_size, other.m_size);
-            std::swap(this->m_capacity, other.m_capacity);
-        }
-
-        vector& operator=(const vector& other) {
-            vector(other).swap(*this);
-            return *this;
-        }
-
-        vector& operator=(vector&& other) {
-            vector(std::move(other)).swap(*this);
-            return *this;
-        }
-
-        bool is_full() { return size() == capacity(); }
-        bool empty() { return m_size == 0; }
-
-        template<typename U>
-        void push_back_slow_path(U&& value){
-            // allocate more memory
-            size_type offset = size();
-            size_type new_size = m_size + 1;
-            size_type new_capacity = growth_factor * capacity();
-            auto ptr_new_blk = allocate_helper(new_capacity);
-
-            try{
-                // Copy-construct the new value at the index m_size
-                std::construct_at(ptr_new_blk + m_size, value);
-            }catch(std::exception& ex){
-                deallocate_helper(ptr_new_blk);
-                throw ex;   // rethrow                
-            }
-            
-            try{
-                // copy/move construct the existing elements 
-                // of the container from the old storage 
-                // to the new block of storage.
-                copy_old_storage_to_new(m_data, m_size, ptr_new_blk);
-            }catch(std::exception& ex){
-                std::destroy_at(ptr_new_blk + m_size);
-                deallocate_helper(ptr_new_blk);
-                throw ex;   // rethrow
-            }
-
-            // deallocate the old storage, if we are here
-            deallocate_helper(m_data);
-
-            m_data = ptr_new_blk;
-            ++m_size;
-            m_capacity = new_capacity;
-        }
-
-        template<typename U>
-        void push_back_fast_path(U&& value){
-            std::construct_at(m_data + m_size, value);
-            ++m_size;
-        }        
-
-        template<typename U>
-        void push_back(U&& value)
-        {
-            if(is_full())
-            {
-                push_back_slow_path(std::forward<U>(value));
-            }
-            else{
-                push_back_fast_path(std::forward<U>(value));
-            }
-        }
-        /*void push_back(T value) {
-            std::size_t offset = size();
-            if (m_size == m_capacity - 1) {
-                // Allocate new memory
-                std::size_t new_size = size() + 1;
-                std::size_t new_capacity = 3 * m_capacity;
-                T* new_memory_block = static_cast<T*>(operator new(
-                    sizeof(T) * new_capacity));
-                T* ptr_to_new_T{nullptr};
-
-                try {
-                    // Construct the new T in new memory block
-                    ptr_to_new_T =
-                        new (new_memory_block + offset) T(value);
-                } catch (std::exception& ex) {
-                    operator delete(new_memory_block);
-                    std::string error_msg = std::format(
-                        "Failed to copy-construct T : {}", ex.what());
-                    throw std::logic_error(error_msg);
-                }
-
-                try {
-                    // Copy/move- the Ts from the old storage to new
-                    if constexpr (std::is_nothrow_move_constructible_v<T>) {
-                        std::uninitialized_move(m_data, m_data + offset,
-                                                new_memory_block);
-                    } else {
-                        std::uninitialized_copy(m_data, m_data + offset,
-                                                new_memory_block);
-                    }
-                } catch (std::exception& ex) {
-                    std::destroy_at(ptr_to_new_T);
-                    operator delete(new_memory_block);
-                    std::string error_msg = std::format(
-                        "Failed to copy/move data from old to new storage, "
-                        "exception : {}",
-                        ex.what());
-                    throw std::logic_error(error_msg);
-                }
-
-                // Destroy the objects in the old storage
-                auto p{m_data};
-                for (auto p{m_data}; p < m_data + m_size; ++p) {
-                    p->~T();
-                }
-
-                // Deallocate old storage
-                operator delete(m_data);
-
-                // Reassign internal buffer pointer and update size and capacity
-                m_data = new_memory_block;
-                m_size = new_size;
-                m_capacity = new_capacity;
-            } else {
-                try {
-                    std::construct_at(m_data + offset, value);
-                    m_size += 1;
-                } catch (std::exception& ex) {
-                    std::string error_msg = std::format(
-                        "Failed to copy-construct T, exception : {}",
-                        ex.what());
-                    throw std::logic_error(error_msg);
-                }
-            }
-        }*/
-        
-        reference operator[](size_type idx){
-            return m_data[idx];
-        }
-
-        const_reference operator[](size_type idx) const{
-            return m_data[idx];
-        }
-
-        // precondition: !empty()
-        reference front(){ return (*this)[0]; }
-        const_reference front() const { return (*this)[0]; }
-        reference back(){ return (*this)[m_size - 1]; }
-        const_reference back() const{ return (*this)[m_size - 1]; }
-
-        const T& at(std::size_t index) const {
-            if (index < 0 || index >= m_size)
-                throw std::out_of_range("Array index out of bounds!");
-
-            return m_data[index];
-        }
-        void shrink_to_fit() {
-            // Allocate a new memory block of capacity = m_size
-            T* new_memory_block =
-                static_cast<T*>(operator new(sizeof(T) * m_size));
-
-            try {
-                // Copy/move the Ts from the old storage to new storage
-                if constexpr (std::is_nothrow_move_constructible_v<T>) {
-                    std::uninitialized_move(m_data, m_data + m_size,
-                                            new_memory_block);
-                } else {
-                    std::uninitialized_copy(m_data, m_data + m_size,
-                                            new_memory_block);
-                }
-            } catch (std::exception& ex) {
-                operator delete(new_memory_block);
-                std::string error_msg = std::format(
-                    "Internal error in shrink_to_fit() : {}", ex.what());
-                throw std::logic_error(error_msg);
-            }
-
-            // Destroy objects in old storage and deallocate memory
-            for (auto p{m_data}; p < m_data + m_size; ++p) {
-                std::destroy_at<T>(p);
-            }
-            // Deallocate memory
-            operator delete(m_data);
-
-            // Reassign internal buffer pointer and set size and capacity
-            m_data = new_memory_block;
-            m_capacity = m_size;
-        }
-        void pop_back() {
-            T* ptr_to_last = m_data + m_size - 1;
-            std::destroy_at(ptr_to_last);
-            --m_size;
-        }
-
-        bool operator==(const vector& other){
-            return size() == other.size() && 
-            std::equal(begin(), end(), other.begin());
-        }
-
-        // Dynamically allocates a chunk of uninitialized memory on the heap
-        // that can hold `new_capacity` number of elements.
-        // Allocation excepts are propogated to the caller.
-        pointer allocate_helper(size_type new_capacity){
-            return static_cast<pointer>(operator new(sizeof(value_type) * new_capacity));
-        }
-
-        void deallocate_helper(pointer ptr){
-            operator delete(ptr);
-        }
-
-        // Copies elements from old storage to new
-        // If T's copy/move ctor throws, the objects already constructed are
-        // destroyed and the exception is propagated to the caller.
-        void copy_old_storage_to_new(pointer source_first, size_t num_elements, pointer destination_first){
-            if constexpr(std::is_nothrow_move_constructible_v<T>){
-                std::uninitialized_move(source_first, source_first + num_elements, destination_first);
-            }
-            else{
-                try{
-                    std::uninitialized_copy(source_first, source_first + num_elements, destination_first);
-                }catch(std::exception& ex){
-                    throw ex;
-                }
-            }
-        }
-
-        void reserve(size_type new_capacity){
-            if(new_capacity <= capacity())
-                return;
-            
-            auto ptr_new_blk = allocate_helper(new_capacity);
-            try{
-                copy_old_storage_to_new(m_data, m_size, ptr_new_blk);
-            }catch(std::exception& ex){
-                deallocate_helper(ptr_new_blk);
-                throw ex;   // rethrow
-            }
-
-            std::destroy(m_data, m_data + m_size);
-            deallocate_helper(m_data);
-            m_data = ptr_new_blk;
-            m_capacity = new_capacity;
-        }
-
-        void resize(size_type new_size){
-            size_type current_size = m_size;
-            if(new_size == current_size)
-                return;
-
-            if(new_size < current_size)
-            {
-                // Reduce the container to count elements
-                std::destroy(m_data + new_size, m_data + m_size);
-            }
-
-            if(new_size > current_size)
-            {
-                reserve(new_size);
-
-                // Default construct elements at indicates
-                // [current_size,...,new_size-1]
-                for (auto p{ begin() + current_size }; p != begin() + new_size; ++p)
-                    std::construct_at(p, value_type{});
-            }
-            m_size = new_size;
-        }
-
-        template<typename... Args>
-        reference emplace_back_slow_path(Args... args){
-            // allocate more memory
-            size_type offset = size();
-            size_type new_size = m_size + 1;
-            size_type new_capacity = growth_factor * capacity();
-            auto ptr_new_blk = allocate_helper(new_capacity);
-
-            try{
-                // copy/move construct the existing elements 
-                // of the container from the old storage 
-                // to the new block of storage.
-                copy_old_storage_to_new(m_data, m_size, ptr_new_blk);
-            }catch(std::exception& ex){
-                deallocate_helper(ptr_new_blk);
-                throw ex;   // rethrow
-            }
-
-            std::construct_at(ptr_new_blk + m_size, std::forward<Args>(args)...);
-            deallocate_helper(m_data);
-            m_data = ptr_new_blk;
-            ++m_size;
-            return back();
-        }
-
-        template<typename... Args>
-        reference emplace_back_fast_path(Args... args){
-            std::construct_at(m_data + m_size, std::forward<Args>(args)...);
-            ++m_size;
-            return back();
-        }
-
-        template<typename... Args>
-        reference emplace_back(Args... args){
-            if(is_full())
-                return emplace_back_slow_path(std::forward<Args>(args)...);
-            else
-                return emplace_back_fast_path(std::forward<Args>(args)...);
-        }
-    };    
-}  // namespace dev
-
-TEST(VectorTest, DefaultConstructorTest) {
-    dev::vector<int> v;
-    EXPECT_EQ(v.empty(), true);
-}
-
-TEST(VectorTest, InitializerListTest){
-    dev::vector<int> v{1, 2, 3, 4, 5};
-    EXPECT_EQ(!v.empty(), true);
-    EXPECT_EQ(v.size(), 5);
-    EXPECT_TRUE(v.capacity() > 0);
-    for(auto i{0uz}; i < v.size(); ++i){
-        EXPECT_EQ(v.at(i), i+1);
-    }
-}
-
-TEST(VectorTest, ParameterizedConstructorTest){
-    dev::vector v(10, 5.5);
-    EXPECT_EQ(v.size(), 10);
-    for(auto i{0uz}; i < v.size(); ++i){
-        EXPECT_EQ(v[i], 5.5);
-    }
-}
-
-TEST(VectorTest, CopyConstructorTest){
-    dev::vector v1{ 1.0, 2.0, 3.0, 4.0, 5.0 };
-    dev::vector v2(v1);
-
-    EXPECT_EQ(v1.size() == v2.size(), true);
-
-    for (int i{ 0 }; i < v1.size(); ++i)
-    {
-        EXPECT_EQ(v2[i], i+1);
-        EXPECT_EQ(v1[i], v2[i]);
-    }
-}
-
-TEST(VectorTest, MoveConstructorTest){
-    dev::vector<int> v1{ 1, 2, 3 };
-    dev::vector<int> v2(std::move(v1));
-    EXPECT_EQ(v1.size(), 0);
-    EXPECT_EQ(v1.capacity(), 0);
-    EXPECT_EQ(v2.size(), 3);
-    for(auto i{0uz}; i<v2.size(); ++ i)
-        EXPECT_EQ(v2[i], i + 1);
-}
-
-TEST(VectorTest, CopyAssignmentTest)
-{
-    dev::vector<int> v1{ 1, 2, 3 };
-    dev::vector<int> v2;
-    v2 = v1;
-
-    EXPECT_EQ(v1.size(), v2.size());
-    EXPECT_EQ(v1.capacity(), v2.capacity());
-    for (int i = 0; i < v1.size(); ++i) {
-        EXPECT_EQ(v1[i], i+1);
-        EXPECT_EQ(v1[i], v2[i]);
-    }
-}
-
-TEST(VectorTest, MoveAssignmentTest)
-{
-    dev::vector<int> v1{ 1, 2, 3 };
-    dev::vector<int> v2;
-    v2 = std::move(v1);
-
-    EXPECT_EQ(v1.size(), 0);
-    EXPECT_EQ(v1.capacity(), 0);
-    EXPECT_EQ(v2.size(), 3);
-    for (int i = 0; i < v1.size(); ++i) {
-        EXPECT_EQ(v2[i], i+1);
-    }
-}
-
-TEST(VectorTest, AtTest)
-{
-    dev::vector<int> v{ 1, 2, 3 };
-    EXPECT_EQ(v.at(0), 1);
-    EXPECT_EQ(v.at(1), 2);
-    EXPECT_EQ(v.at(2), 3);
-
-    EXPECT_THROW(v.at(3), std::out_of_range);
-}
-
-TEST(VectorTest, SubscriptOperatorTest)
-{
-    dev::vector<int> v{ 1, 2, 3 };
-    for (int i{0uz}; i < v.size(); ++i) {
-        EXPECT_EQ(v[i], i+1);
-    }
-}
-
-TEST(VectorTest, FrontAndBackTest)
-{
-    dev::vector<int> v{ 1, 2, 3 };
-    EXPECT_EQ(v.front(), 1);
-    EXPECT_EQ(v.back(), 3);
-}
-
-TEST(VectorTest, EmptyTest)
-{
-    dev::vector<int> v;
-    EXPECT_EQ(v.empty(), true);
-
-    v.push_back(42);
-    EXPECT_EQ(v.empty(), false);
-}
-
-TEST(VectorTest, SizeAndCapacityTest)
-{
-    dev::vector<int> v;
-    EXPECT_EQ(v.size(), 0);
-    EXPECT_GE(v.capacity(), 0);
-
-    v.push_back(42);
-    EXPECT_EQ(v.size(), 1);
-    EXPECT_GT(v.capacity(), 0);
-
-    v.push_back(v.back());
-    EXPECT_EQ(v.size(), 2);
-    EXPECT_EQ(v[1], 42);
-}
-
-
-TEST(VectorTest, ReserveTest)
-{
-    dev::vector<int> v1;
-    v1.reserve(10);
-    EXPECT_GE(v1.capacity(), 10);
-    EXPECT_EQ(v1.size(), 0);
-
-    dev::vector<int> v2{1, 2, 3, 4, 5, 6, 7};
-    size_t old_capacity = v2.capacity();
-    EXPECT_GE(v2.capacity(), 7);
-    EXPECT_EQ(v2.size(), 7);
-    size_t new_capacity = 2 * old_capacity;
-    v2.reserve(new_capacity);
-    EXPECT_GE(v2.capacity(), new_capacity);
-    EXPECT_EQ(v2.size(), 7);
-    for(auto i{0uz}; i < v2.size(); ++i)
-        EXPECT_EQ(v2[i], i + 1);
-}
-
-TEST(VectorTest, ResizeTest)
-{
-    dev::vector<int> v{ 1, 2, 3 };
-    v.resize(5);
-
-    EXPECT_EQ(v.size(), 5);
-    for(auto i{0uz}; i<3; ++i)
-        EXPECT_EQ(v[i], i + 1);
-
-    EXPECT_EQ(v[3], 0);
-    EXPECT_EQ(v[4], 0);
-
-    v.resize(2);
-    EXPECT_EQ(v.size(), 2);
-    EXPECT_EQ(v[0], 1);
-    EXPECT_EQ(v[1], 2);
-}
-
-TEST(VectorTest, PushBackTest)
-{
-    dev::vector<int> v;
-    v.push_back(1);
-    v.push_back(2);
-    v.push_back(3);
-
-    EXPECT_EQ(v.size(), 3);
-    for(auto i{0uz}; i<v.size(); ++i)
-        EXPECT_EQ(v[i], i + 1);
-}
-
-TEST(VectorTest, PushBackSelfReferenceTest)
-{
-    // The design of push_back/insert is slightly hard to get right.
-    // If the vector is full, then you reallocate(grow) the vector.
-    // If the value to be added is a reference to an existing
-    // vector element, then value in vec.push_back(value) may become
-    // a dangling reference, if it refers to the old storage (an element of the vector
-    // itself e.g. vec.back()). This test is meant for such an edge case.
-    dev::vector<int> vec{ 1 };
-    for (auto i{0uz}; i < 64; ++i) {
-        vec.push_back(vec.back());
-        EXPECT_EQ(vec.back(), 1);
-    }
-}
-
-TEST(VectorTest, EmplaceBackTest)
-{
-    struct Point
-    {
-        int x, y;
-        Point(int a, int b)
-          : x(a)
-          , y(b)
-        {
-        }
-    };
-
-    dev::vector<Point> v;
-    v.emplace_back(1, 2);
-    v.emplace_back(3, 4);
-
-    EXPECT_EQ(v.size(), 2);
-    EXPECT_EQ(v[0].x, 1);
-    EXPECT_EQ(v[0].y, 2);
-    EXPECT_EQ(v[1].x, 3);
-    EXPECT_EQ(v[1].y, 4);
-}
-
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
-```
-[Compiler Explorer](https://compiler-explorer.com/z/f4Esbhv6d)
+## References
+-  
