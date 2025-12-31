@@ -58,7 +58,7 @@ The internal representation of a `vector` like type has a book-keeping node that
 - Size of the container(the number of elements in the container)
 - Capacity
 
-![](vector.png){width=800px height=250px}
+![](vector.png)
 
 It's important to distinguish between `size` and `capacity`. `size` is the number of elements currently in the container. When `size == capacity`, the container becomes full and will need to grow, which means allocating more member, copying the elements from the old storage to the new storage and getting rid of the old storage. 
 
@@ -249,7 +249,7 @@ TEST(VectorTest, ResizeTest)
 }
 ```
 
-The container should support appending elements or remove elements at the back. 
+The container should support appending elements or removal elements at the back. 
 
 ```cpp
 TEST(VectorTest, PushBackTest)
@@ -301,8 +301,19 @@ TEST(VectorTest, EmplaceBackTest)
     EXPECT_EQ(v[1].x, 3);
     EXPECT_EQ(v[1].y, 4);
 }
+
+TEST(VectorTest, PopBackTest)
+{
+    dev::vector<int> v = {1, 2, 3};
+    EXPECT_EQ(v.size(), 3);
+    v.pop_back();
+    EXPECT_EQ(v.size(), 2);
+    EXPECT_EQ(v, dev::vector<int>({1, 2}));
+}
 ```
-[TODO] Add implementation for insert, pop_back()
+
+The container should support a `.insert` method that allows us to insert elements from a source range to a specified position in the target vector. You can write a variety tests, like inserting at the beginning, middle, end of the vector, self-referential insertion etc. For brevity, I skip listing all of the tests here. The Compiler Explorer online source listing for this entire article is available in the conclusion section.
+
 ## `vector` member data
 
 We start with coding up the `vector` as a class template. It is templated by the type  `T` of the elements stored in the container. We also define various  type aliases.
@@ -346,6 +357,99 @@ public:
 // ...
 ```
 
+## `vector` constructors
+
+
+```cpp
+vector()
+: m_data{allocate_helper(initial_capacity)},
+m_size{0},
+m_capacity{initial_capacity} {}
+
+vector(size_t n, const T& initial_value)
+: m_data{static_cast<T*>(operator new(sizeof(T) * n))},
+m_size{0},
+m_capacity{n} {
+	try {
+		std::uninitialized_fill_n(m_data, n, initial_value);
+		m_size = n;
+	} catch (std::exception& ex) {
+		operator delete(m_data);
+		m_capacity = 0;
+	}
+}
+
+// Constructs a vector with count default-inserted 
+// objects of T. No copies are made.
+vector(size_t n)
+: m_data{ allocate_helper(n) },
+m_size{0},
+m_capacity{n}{
+	try {
+		std::uninitialized_default_construct(m_data, m_data + n);
+		m_size = n;
+	} catch (std::exception& ex) {
+		operator delete(m_data);
+		m_capacity = 0;
+	}
+}
+
+vector(std::initializer_list<T> list)
+: m_data{allocate_helper(list.size())},
+m_size{list.size()},
+m_capacity{list.size()} {
+	try {
+		if constexpr (std::is_nothrow_move_constructible_v<T>) {
+			std::uninitialized_move(list.begin(), list.end(), m_data);
+		} else {
+			std::uninitialized_copy(list.begin(), list.end(), m_data);
+		}
+	} catch (std::exception& ex) {
+		operator delete(m_data);
+		m_size = 0;
+		m_capacity = 0;
+	}
+}
+
+vector(const vector& other)
+: m_data{ allocate_helper(other.size()) },
+m_size{other.size()},
+m_capacity{other.capacity()} {
+	try {
+		// Perform a deep-copy of all the Ts
+		std::uninitialized_copy(other.m_data, other.m_data + other.m_size,
+								m_data);
+	} catch (std::exception& ex) {
+		operator delete(m_data);
+		std::string error_msg =
+			std::format("Error while copying in copy ctor {}", ex.what());
+		throw std::logic_error(error_msg);
+	}
+}
+
+vector(vector&& other) noexcept
+: m_data{std::exchange(other.m_data, nullptr)},
+m_size{std::exchange(other.m_size, 0)},
+m_capacity{std::exchange(other.m_capacity, 0)} 
+{}
+
+void swap(vector& other) noexcept {
+	std::swap(this->m_data, other.m_data);
+	std::swap(this->m_size, other.m_size);
+	std::swap(this->m_capacity, other.m_capacity);
+}
+
+vector& operator=(const vector& other) {
+	vector(other).swap(*this);
+	return *this;
+}
+
+vector& operator=(vector&& other) {
+	vector(std::move(other)).swap(*this);
+	return *this;
+}
+
+```
 ## Basic services of a vector-like class
 
 ### Implementing `front()`, `back()` and `operator[](size_t idx)`
@@ -439,7 +543,7 @@ If `new_capacity > capacity()`, we must:
 - Destruct the elements in the old storage and deallocate the memory occupied. 
 - Update the `vector`'s `m_data` pointer and `m_capacity` field.
 
-In general, we must separate allocation from construction. C++17 introduced the `operator new(size_t count)` and `operator new[](size_t count)`. `operator new(size_t count)` attempts to allocate `count` bytes on the heap. The newly allocated memory is **uninitialized**. This is different from the `new` expression, `new T(Args)` or `new T[]()` which performs both allocation and zero initialization (invokes the default constructor `T()`). 
+In general, we must separate allocation from construction. `operator new(size_t count)` and `operator new[](size_t count)`. `operator new(size_t count)` attempt to allocate `count` bytes on the heap. The newly allocated memory is **uninitialized**. This is different from the `new` expression, `new T(Args)` or `new T[]()` which performs both allocation and zero initialization (invokes the default constructor `T()`). 
 
 After the allocation, we want to copy the elements in the range `m_data[0...m_size-1]` to `ptr_new_blk`. `copy_old_storage_to_new` is a helper function to copy `num_elements` from the memory location `source_first` to `destination_first`. 
 
@@ -636,7 +740,6 @@ void pop_back() {
 }
 ```
 
-## Implementing 
 ## Implementing `insert(const_iterator position, It first, It last)`
 
 The `insert` function inserts the given value into the vector before the specified `position`, possibly using move-semantics. Note that, this
@@ -652,56 +755,155 @@ iterator insert(const_iterator pos, It first, It last)
 
 It inserts the range `[first,last)` at position `pos` (immediately prior to element currently at `pos`).
 
-There are $4$ steps to be considered here:
+I spent some time thinking about `.insert`, and drawing some quick diagrams helped me generalize the algorithm.
 
-- How many elements should be copied or moved from the `[begin(), end())` range to the uninitialized memory block at the end of the container?
-- If there are elements from the `[first,last)` sequence to insert in raw memory (there could be none), how many should be there?
-- If there are elements to copy or move from `[pos,end())` sequence to copy or move as a replacement to existing objects in the container(there could be none), how many should be there?
-- Finally, whatever remains to be inserted from the `[first,last)` sequence will be copied in the container starting at `pos`.
+Step 1. We first determine if the elements in the range `[first,last)` can fit into the `remaining_capacity = capacity() - size()`. If `n` exceeds the `remaining_capacity`, the `excess_capacity_reqd` we require is `std::max(n - remaining_capacity,0)`. So, we invoke `reserve(capacity() + excess_capacity_reqd)`. 
 
-Here is a possible implementation:
+Step 2. Assume that we have sufficient room for the range `[first,last)`. 
+
+How many elements should be copied from the `[begin(), end())` sequqence to the raw memory block at the end of the container? 
+
+Consider the scenario, where the range `[first,last)` is smaller than `[pos,end)`.
+
+![](Screenshot%202025-12-31%20at%2006.08.02.png)
+
+
+In this scenario, the elements `[end()-n, end())` need to be copied or moved to the uninitialized memory. 
+
+If there are elements to copy or move from `[pos,end())` sequence as a replacement to existing objects in the container(there could be none), how many should be there? Looking at the figure below, the subsequence `[pos, end() - n)` will be mapped to `[pos + n, end())` upon insertion.
+
+![](Screenshot%202025-12-31%20at%2006.31.33.png)
+
+Consider the scenario, where the range `[first,last)` is larger than `[pos,end)`.
+
+![](Screenshot%202025-12-31%20at%2006.38.57.png)
+
+In this case, let's define `num_tail` as the trailing number of elements from the source range `[first,last)` that would be copied/moved to uninitialized memory. Clearly, `num_tail = std::max(n - end() + pos,0)`. So, the tail `[last-num_tail,last)` will be mapped to `[end(),end()+num_tail)` upon insertion. 
+
+To make room for the insertion, the  elements `[pos,end())` will have to be moved to `[end() + num_tail, end() + num_tail + end() - pos)`. 
+ 
+Here is a possible implementation based on our ideas above:
 
 ```cpp
-template<typename U>
-iterator insert_slow_path(const_iterator insert_it, U&& value){
-    // If a reallocation is triggered, all iterators are
-    // invalidated and additionally `value` would also become a
-    // dangling reference, if it refers to an existing element of
-    // the vector.
-    // TODO
-}
+template<typename It>
+iterator insert(const_iterator pos, It first, It last){
+    auto pos_ = const_cast<iterator>(pos);
+    auto first_ = first;
+    auto last_ = last;
 
-template<typename U>
-iterator insert_fast_path(const_iterator position, U&& value){
-    auto pos_ = position;
-    if constexpr (std::is_nothrow_move_constructible_v<T>) {
-        std::uninitialized_move(end() - 1, end(), end());
-        std::move_backward(pos_, end(), end());
-        *pos_ = std::move(value);
-    } else {
-        std::uninitialized_copy(end() - 1, end(), end());
-        std::copy_backward(pos_, end(), end());
-        *pos_ = value;
+    if(first != last)
+    {
+        size_type offset = std::distance(begin(), pos_);
+        size_type n = std::distance(first, last);
+        size_type num_elems_to_shift = std::distance(pos_, end());
+        size_type remaining_capacity = capacity() - size();
+        
+        dev::vector<T> temp;
+        // handle self-referential insertion
+        if((first_ >= begin() && first_ < end()) 
+        && last_ > begin() && last_ <= end())
+        {
+            for(auto it{first_}; it!=last_; ++it)
+                temp.push_back(*it);
+
+            first_ = temp.begin();
+            last_ = temp.end();
+        }
+
+        if(n > remaining_capacity)
+        {
+            size_type excess_capacity_reqd = std::max(n - remaining_capacity, 0uz);
+            reserve(capacity() + excess_capacity_reqd);
+            // The iterator pos is invalidated. Update it.
+            pos_ = std::next(begin(), offset);
+        }
+
+        // objects to displace (move or copy) from the 
+        // [begin, end()] sequence into raw uninitialized
+        // memory 
+        if(n < num_elems_to_shift)
+        {
+            if constexpr(std::is_nothrow_move_constructible_v<T>)
+            {
+                std::uninitialized_move(end() - n, end(), end());
+            }
+            else
+            {
+                std::uninitialized_copy(end() - n, end(), end());
+            }
+
+        }else{
+            size_type num_tail = std::max(n - num_elems_to_shift, 0uz);
+            if constexpr(std::is_nothrow_move_constructible_v<T>)
+            {
+                std::uninitialized_move(pos_, end(), end() + num_tail);
+            }
+            else
+            {
+                std::uninitialized_copy(pos_, end(), end() + num_tail);
+            }
+        }
+
+        // objects to displace (copy or move) from [pos,end()]
+        // to the end of the container
+        if(n < num_elems_to_shift)
+        {
+            if constexpr(std::is_nothrow_move_constructible_v<T>)
+            {
+                std::move_backward(pos_, end() - n, end());
+            }
+            else
+            {
+                std::copy_backward(pos_, end() - n, end());
+            }
+        }
+
+        // objects from [first,last) to insert into raw
+        // uninitialized memory
+        const size_type num_tail = std::max(n - num_elems_to_shift, 0uz);
+        if(n >= num_elems_to_shift)
+        {
+            if constexpr(std::is_nothrow_move_constructible_v<T>)
+            {
+                std::uninitialized_move(last_ - num_tail, last_, end());
+            }
+            else
+            {
+                std::uninitialized_copy(last_ - num_tail, last_, end());
+            }
+        }
+        
+        // objects to copy from [first,last) to pos
+        if(n < num_elems_to_shift)
+        {
+            std::copy(first_, last_, pos_);
+        }
+        else{
+            std::copy(first_, first_ + n - num_tail, pos_);
+        }
+
+        m_size += n;
     }
-    ++m_size;
     return pos_;
-}
-
-template<typename U>
-iterator insert(const_iterator position, U&& value)
-{
-    if(is_full())
-        return insert_slow_path(position, std::forward<U>(value));
-    else
-        return insert_fast_path(position, std::forward<U>(value));
 }
 ```
 
 ## Conclusion
 
-You can find the complete source listing and unit tests online at [https://compiler-explorer.com/z/f4Esbhv6d](https://compiler-explorer.com/z/f4Esbhv6d). 
+Implementing a custom `vector<T>` from scratch is a rewarding exercise that deepens understanding of C++ fundamentals.
+
+The standard library implementation handles additional complexities I haven't addressed: custom allocator support, small object optimizations, and numerous other edge cases discovered through decades of production use. 
+
+However, the journey of building this container teaches invaluable lessons. You learn to think carefully about exception safety, understand the tradeoffs between copy and move operations, appreciate the elegance of algorithms like `std::uninitialized_copy`, and recognize why seemingly simple operations like `insert()` require careful reasoning about memory layout and iterator invalidation.
+
+If you enjoyed this deep dive, I recommend exploring `deque`, `std::inplace_vector`, or the more complex associative containers. Each presents unique challenges and design decisions that will further sharpen your C++ skills.
+
+You can find the complete source listing and unit tests online at [https://compiler-explorer.com/z/Tvbs5Wc73](https://compiler-explorer.com/z/Tvbs5Wc73).
 
 ![](qr_code.png){width=200px height=200px}
 
+
 ## References
--  
+- The deepest code review of the simplest data structure, `vector` [https://www.youtube.com/watch?v=GfIxO_vpM4g](https://www.youtube.com/watch?v=GfIxO_vpM4g)
+- libstdc++ `vector` test suite, [https://gnu.googlesource.com/gcc/+/trunk/libstdc++-v3/testsuite/23_containers/vector](https://gnu.googlesource.com/gcc/+/trunk/libstdc++-v3/testsuite/23_containers/vector)
+- STL `std::vector`, Modern Cpp Series Episode 116, [https://www.youtube.com/watch?v=iM_rIWmq6cE](https://www.youtube.com/watch?v=iM_rIWmq6cE)
