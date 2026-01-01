@@ -44,3 +44,138 @@ The *linkage* of a name is the extent to which that name might refer to a name d
 - external linkage
 - internal linkage
 - no linkage
+
+## External linkage
+
+A given name declared with external linkage denotes the same entity across all translation units in a program. 
+
+In the below example, `total` in each translation unit has external linkage:
+
+```cpp
+//file1.cpp
+extern int total = 0;   // definition
+
+//file2.cpp
+extern int total;       // declaration for the same object
+```
+
+`total` is defined in `file1.cpp`. It has `extern` on it, which means external linkage. It is a definition, it does have an initial value `0`. In the second implementation file `file2.cpp`, it does not have an initializer, so its just a declaration. Those two things refer to the same variable. After separate compiling both `file1.cpp` and `file2.cpp` into `file1.o` and `file2.o` and linking them together, there's going to be only one `total` in this executable.
+
+## Internal linkage
+
+A given name declared with internal linkage denotes the same entity ***within a single translation unit***.
+
+A variable with internal linkage can be declared multiple times within a single translation unit and they all wind up referring to the same thing. But, nobody outside the translation unit can refer to those things with internal linkage.
+
+```cpp
+// file1.cpp
+static int total = 0;   // definition of total 
+                        // with internal linkage
+    
+// file2.cpp
+extern int total;       // declaration for 
+                        // a different object
+```
+
+In `file2.cpp` you have a declaration of `total` with external linkage and that says, *"Hey, I don't have any storage, I need it from somewhere else!". But, it can't get it from `file1.cpp`. `file1.cpp` does not have external linkage. If you try to build this program, because that's an unsatisfied reference `file2.cpp`, you'd probably get a link error. At link time, it would say, I don't see a definition for `total` to satisfy. 
+
+So, what we need is a third one - `file3.cpp`. The previous example needs the `total` in `file3.cpp` to link:
+
+```cpp
+// file1.cpp
+static int total = 0;   // a definition for total
+                        // with internal linkage
+
+// file2.cpp
+extern int total;       // a declaration that refers to 
+                        // the total in file3.cpp
+
+// file3.cpp
+int total;              // a definition for the object
+                        // referenced in file2.cpp
+```
+
+The `total` in `file2.cpp` refers to the object in `file3.cpp`. To summarize, there are two `total` objects in all - one internal to `file1.cpp` and one that's shared by `file2` and `file3` via external linkage.
+
+## No linkage
+
+Local variables have no linkage. Suppose you have two functions `f()` and `g()`. Each have a local variable named `total`. Think about it. Is there any way, you can write a declaration for `total` anywhere else in the program that will at link time become a reference to one of those `total`s?
+
+```cpp
+int f(int i){
+    int total;  // a definition
+}
+
+int g(int i){
+    int total;  // a definition for a different object
+}
+```
+
+No, you can't do that. Those `total`s have automatic storage. They are not statically allocated. Because they don't have a fixed location, there's no way the linker can can link them. The only things that can have linkage, are things that have a fixed location - functions and objects with static storage. 
+
+# A conceptual model
+
+In a release build, the ***linker sees names only if they have external linkage.*** Names that have internal linkage or no linkage are useful for symbolic debugging, but the linker does not use them when it is combining `*.o` object files together to produce an executable.
+
+- Names ***defined*** with external linkage in a translation unit become definitions in the compiled object module.
+
+- Names ***declared*** with external linkage but not defined in a translation unit become ***refs*** in the compiled object module. But, only if they are used in that translation unit. 
+
+In a release build, the ***compiler discards names declared with internal or no linkage*** at the end of compilation. 
+
+# Storage class specifiers and functions
+
+By default functions at namespace scope have external linkage. 
+
+```cpp
+int f(int);
+```
+
+Adding the keyword `extern` to a function declaration at file or namespace(global) scope has no effect:
+
+```cpp
+namespace demo{
+    extern int f(int);
+}
+```
+
+Class members in C++ have external linkage by default.
+
+```cpp
+class Widget{
+    public:
+    int f(int);     // f has external linkage
+}
+```
+
+You commonly place class definitions in header files. And you include those all over the place and create objects that type and call member functions on them and at nowhere did you say that these things were extern. You just implicitly treat them as if they are. They have `extern` linkage by default.
+
+```cpp
+class Widget{
+    public:
+    int f(int);     // f has external linkage
+    // extern int g(int);   // error: can't use extern here
+};
+```
+
+Adding an `extern` to a declaration at class scope is an error. Class member functions can never have anything but external linkage by default.
+
+Declaring a free-standing function ***`static` at file or namespace scope affects its linkage.***
+
+```cpp
+static int f(int);      // f has internal linkage
+```
+
+This is not so for C++ class member functions. 
+
+Declaring a C++ class member function `static` ***does not*** affect its linkage. 
+
+It eliminates the function's implicitly declared ***`this` parameter.***
+
+```cpp
+class Widget{
+    public:
+    static int f(int);      // f has external linkage
+                            // but has no `this`
+};
+```
