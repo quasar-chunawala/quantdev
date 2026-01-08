@@ -1,0 +1,180 @@
+---
+title: "Different ways to write a filter function"
+author: "Quasar"
+date: "2026-01-08"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Writing a filter function
+
+A nice collection of techniques to filter elements in a range satisfying a predicate. The complete article can be found on [Bartlomiej Filipek's blog](https://www.cppstories.com/2021/filter-cpp-containers/).
+
+```cpp
+#include <execution>
+#include <functional>
+#include <iostream>
+#include <iterator>
+#include <vector>
+#include <print>
+#include <algorithm>
+#include <ranges>
+
+// Ref: 15 Different ways to Filter Containers 
+// in Modern C++ by Bartlomiej Filipek, cppstories.com
+// https://www.cppstories.com/2021/filter-cpp-containers/
+    
+// A filter function has the following interface:
+// auto Filter(const Container& cont, Predicate p)
+
+// It returns all elements that satisfy the predicate.
+    
+// Raw loops.
+// filter v1
+template<typename T, typename Pred>
+auto FilterRaw(const std::vector<T>& vec, Pred p){
+    std::vector<T> out;
+    for(auto&& elem : vec)
+        if(p(elem))
+            out.push_back(elem);
+
+    return out;
+}
+
+// Using std::copy_if(@begin, @end, @tgt_begin, f(element)->bool)
+// filter v2
+template<typename T, typename Pred>
+auto FilterCopyIf(const std::vector<T>& vec, Pred p){
+    std::vector<T> out;
+    std::copy_if(vec.begin(), vec.end(), std::back_inserter(out), p);
+    return out;
+}
+
+// std::remove_copy_if(@begin, @end, @tgt_begin, f(element)->bool)
+// It copies all elements omitting those that do NOT satisfy 
+// the predicate.
+// filter v3
+template<typename T, typename Pred>
+auto FilterRemoveCopyIf(const std::vector<T>& vec, Pred p){
+    std::vector<T> out;
+    // std::not_fn(func) is used to reverse the predicate.
+    std::remove_copy_if(vec.begin(), vec.end(), std::back_inserter(out), std::not_fn(p));
+    return out;
+}
+
+// The famous remove-erase idiom
+// filter v4
+// std::remove_if doesn't actually remove elements. It moves
+// them to the end of the container. So, we use erase to do the final
+// work.
+template<typename T, typename Pred>
+auto FilterRemoveErase(const std::vector<T>& vec, Pred p){
+    // std::remove_if return @new_end
+    std::vector out{ vec };
+    out.erase(std::remove_if(out.begin(), out.end(), std::not_fn(p)), out.end());
+    return out;
+}
+
+// std::erase_if
+// filter v5
+template<typename T, typename Pred>
+auto FilterEraseIf(const std::vector<T>& vec, Pred p){
+    std::vector out{ vec };
+    std::erase_if(out, std::not_fn(p));
+    return out;
+}
+
+// A more generic approach
+// filter v6
+template<typename ContainerType, typename Pred>
+auto FilterEraseIfGen(const ContainerType& cont, Pred p){
+    auto out = cont;
+    std::erase_if(out, std::not_fn(p));
+    return out;
+}
+
+// Another version for ranges
+// filter v7 
+// This can already work with other containers and not just
+// std::vector.
+namespace stdr = std::ranges;
+template<typename ContainerType, typename Pred>
+auto FilterRangeCopyIfGen(const ContainerType& vec, Pred p){
+    ContainerType out;
+    stdr::copy_if(vec, std::back_inserter(out), p);
+    return out;
+}
+
+// The only problem with the above approach is that 
+// std::back_inserter(v) does not work with associative containers
+// or containers that don't support push_back()
+// In that case, we can fall back to std::inserter() adapter.
+
+template<typename ContainerType>
+concept HasPushBack = requires(ContainerType container, ContainerType::value_type v){
+    container.push_back(v);
+};
+
+// filter v8
+template<HasPushBack ContainerType, typename Pred>
+auto FilterRangeCopyIfWithConcepts(const ContainerType& vec, Pred p){
+    ContainerType out;
+    stdr::copy_if(vec, std::back_inserter(out), p);
+    return out;
+}
+
+template<typename ContainerType, typename Pred>
+auto FilterRangeCopyIfWithConcepts(const ContainerType& vec, Pred p){
+    ContainerType out;
+    stdr::copy_if(vec, std::inserter(out, out.begin()), p);
+    return out;
+}
+
+// Since C++17, we also had parallel algorithms, so why can try perform
+// a parallel copy_if
+// filter v9
+template<typename ContainerType, typename Pred>
+auto FilterCopyIfParallel(const ContainerType& vec, Pred p){
+    ContainerType out;
+    std::copy_if(std::execution::par, vec.begin(), vec.end(), 
+        std::back_inserter(out), p
+    );
+    return out;
+}
+
+namespace stdv = std::ranges::views;
+
+// filter v10
+template<typename T, typename Pred>
+auto FilterRangesFilter(const std::vector<T>& vec, Pred p){
+    std::vector<T> out;
+    for(const auto& elem : vec | stdv::filter(p))
+        out.push_back(elem);
+
+    return out;
+}
+
+// We can use ranges::to to automatically create a container.
+// filter v11
+template<typename ContainerType, typename Pred>
+auto FilterRangesTo(const ContainerType& vec, Pred p){
+    return vec | stdv::filter(p)
+               | stdr::to<ContainerType>();
+}
+
+int main(){
+    std::vector<int> vec = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    auto is_even = [](int x) { return !(x & 1); };
+    auto out1 = FilterRaw(vec, is_even);
+    auto out2 = FilterCopyIf(vec, is_even);
+    auto out3 = FilterRemoveCopyIf(vec, is_even);
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/TojsKvoWc)
+
+# References
+
+- [Different ways to filter containers in modern C++](https://www.cppstories.com/2021/filter-cpp-containers/)
