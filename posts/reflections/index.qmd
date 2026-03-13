@@ -1,0 +1,155 @@
+---
+title: "C++ Ranges"
+author: "Quasar"
+date: "2025-01-31"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Introduction
+
+I recently attended a talk on reflections in C++26 by [Sarthak Sehgal](https://www.linkedin.com/in/sarthaksehgal99/) and much of my code snippets here are inspired by his talk. 
+
+# What is a reflection really?
+
+A *reflection* is the ability of software to expose its internal structure. C++ reflections are static reflections - that is, the compiler exposes the structure at compile-time. 
+
+```cpp
+#include <iostream>
+#include <meta>
+
+enum class Color{ Red, Blue, Green };
+
+int main(){
+    std::cout << std::meta::identifier_of(^^Color) << "\n";
+    std::cout << std::meta::identifier_of(
+        std::meta::enumerators_of(^^Color)[0]
+    ) << "\n";
+}
+```
+
+Suppose you want to iterate over the elements of the `Color` enum class or we may want to convert an enum variant to its string representation - could be done using reflections. Or let's say, you have a `struct` in C++ and you want to iterate over what the data-members of the `struct` are. We are essentially inspecting the C++ code that has been written. Essentially, our program is reflecting itself at compile-time.
+
+# Reflections before C++26
+
+Before C++26, there were various workarounds used to generate code to achieve reflection-like behavior. Boost Describe is a C++14 library that uses macro magic, that provides reflections in C++14. 
+
+## Macro magic
+
+Let' say I define an `enum` for the three primary colors `Red`, `Green` and `Blue`. 
+
+```cpp
+// I define a macro COLORS. This macro takes in a function FUNC
+// and invokes FUNC() on three literals Red, Green and Blue.
+// So, what this macro expects is the user to provide some sort 
+// of a function and it is going to invoke that on these 
+// 3 literals.
+#define COLORS      \
+    FUNC(Red)       \
+    FUNC(Blue)      \
+    FUNC(Green)
+
+// Next, we have this enum class Color. What I am doing in the body
+// of this enum is, I am defining a function FUNC(arg), which always
+// appends `,`(comma) to the argument. So, FUNC(Red) would return
+// Red,. I pass COLORS as a parameter to FUNC. So, all its going
+// to do is, it will expand FUNC(Red) FUNC(Blue) FUNC(Green) as
+// Red, Blue, Green,.
+enum class Color{
+    #define FUNC(name) name,
+        COLORS
+    #undef FUNC
+};
+```
+[Compiler Explorer](https://compiler-explorer.com/z/587qq7doq)
+
+We can actually see the preprocessor output in Compiler Explorer.
+
+We can now write our own `enum_to_string` function as follows:
+
+```cpp
+std::string enum_to_string(Color color){
+    switch(color){
+        #define FUNC(name) case Color::name:    \
+            return std::string(#name);
+            COLORS
+        #undef FUNC
+        default:
+            return "unknown"; 
+    }
+}
+```
+
+# Reflection in C++26
+
+In C++26, we will use the unibrow operator `^^` as the reflection operator. Reflection using the reflection operator maps its operand from the programming domain to the reflections domain. We can think of the code that we write, types we define as living in the programming domain. Reflections of these types live in the reflections domain. These are two different domains. We can reflect many different entities, for example, a variable, a type, an `enum`, a namespace, `struct` or a `class`. 
+
+## Reflection operator `^^` and the splicer operator.
+
+Consider the following code snippet:
+
+```cpp
+constexpr auto r = ^^int;
+typename [:r:] x = 42;
+```
+
+The caret-caret `^^` is the new reflection operator introduced in C++26. What this operator does is, it lifts the expression into the reflection domain. The entity being reflected can be a type, variable, function, namespace, `enum`. Its informally called the unibrow operator. (Because if you type two carets with dot in-between, it looks like a face `^.^`). 
+
+We are using the reflection expression on the right `^^int` in a `constexpr` context, so it will be evaluated at compile-time. 
+
+The type returned by the reflection operator is `std::meta::info`. This is the universal type returned from reflecting any type whatsoever. 
+
+We can go back from the reflection domain to the programming domain by using the splicer operator `[:r:]`. 
+
+## Meta functions
+
+We can write a simple meta-function to print all of the variants of an `enum`.
+
+```cpp
+template 
+//                                                                      reflect the enum
+//                                                                             |
+for(constexpr auto c : std::define_static_array(std::meta::enumerators_of(^^Color)))
+{
+    std::cout << std::meta::identifier_of(c) << "\n";
+}
+```
+
+The reflection operator `^^`applied to the `Color` enum reflects the `enum`. This reflection lives in the reflection domain. In the reflection domain, I can use some nice meta-functions such as `std::meta::enumerators_of()` which returns a list of reflections for each of the elements in the `enum`. Note that it does not return the elements themselves, but the reflection of the elements : `{^^Color::Red, ^^Color::Blue, ^^Color::Green }`.
+
+The `template for` iterates for each element reflection at compile-time. `std::define_static_array` takes an array at compile time and promotes it to static storage duration for use at runtime.
+
+To the reflection of each color, I can apply another metafunction `identifier_of` which takes in a reflection and returns a `string_view` which is the identifier of that reflection. 
+
+# What really is a reflection under the hood?
+
+Consider the following code snippet:
+
+```cpp
+class R;
+
+constexpr std::meta::info res1 = ^^R;
+constexpr auto print1 = std::meta::is_complete_type(res1);  // false
+
+class R{
+    int a;
+};
+
+constexpr std::meta::info res2 = ^^R;
+
+constexpr auto print2 = std::meta::is_complete_type(res2);
+constexpr auto print3 = std::meta::is_complete_type(res1);
+
+int main(){
+    std::cout << "print1 : " << print1 << "\n";
+    std::cout << "print2 : " << print2 << "\n";
+    std::cout << "print3 : " << print3 << "\n";
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/G7rob14Px)
+
+`res1` is the reflection of an incomplete type - `R` has only been declared. Hence, we all know that `print1` is `false`, because the type is not complete at this point. Once we define the `class R`, the type is complete. We now reflect the type `R` once again, `res2` is the reflection of the completed type. So, `print2` is `true`. `print3` is interesting. We use the same reflection `res1` defined before the type was completed. If we query it, for whether the type is complete, after `R` has been defined, now this returns `true`, which is surprising. 
+
+The C++ compiler constructs an AST(Abstract Syntax Tree) of the entire source code. *A reflection is a reference to a node in the AST*. This is why when the type is completed, `std::is_complete_type(res1)` returns `true`. 
