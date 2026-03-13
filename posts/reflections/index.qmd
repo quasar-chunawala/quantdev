@@ -153,3 +153,51 @@ int main(){
 `res1` is the reflection of an incomplete type - `R` has only been declared. Hence, we all know that `print1` is `false`, because the type is not complete at this point. Once we define the `class R`, the type is complete. We now reflect the type `R` once again, `res2` is the reflection of the completed type. So, `print2` is `true`. `print3` is interesting. We use the same reflection `res1` defined before the type was completed. If we query it, for whether the type is complete, after `R` has been defined, now this returns `true`, which is surprising. 
 
 The C++ compiler constructs an AST(Abstract Syntax Tree) of the entire source code. *A reflection is a reference to a node in the AST*. This is why when the type is completed, `std::is_complete_type(res1)` returns `true`. 
+
+# Writing `string_to_enum` and `enum_to_string` functions
+
+```cpp
+#include <iostream>
+#include <meta>
+
+// I define a macro COLORS. This macro takes in a function FUNC
+// and invokes FUNC() on three literals Red, Green and Blue.
+// So, what this macro expects is the user to provide some sort
+// of a function and it is going to invoke that on these
+// 3 literals.
+#define COLORS \
+    FUNC(Red)  \
+    FUNC(Blue) \
+    FUNC(Green)
+
+// Next, we have this enum class Color. What I am doing in the body
+// of this enum is, I am defining a function FUNC(arg), which always
+// appends `,`(comma) to the argument. So, FUNC(Red) would return
+// Red,. I pass COLORS as a parameter to FUNC. So, all its going
+// to do is, it will expand FUNC(Red) FUNC(Blue) FUNC(Green) as
+// Red, Blue, Green,.
+enum class Color {
+#define FUNC(name) name,
+    COLORS
+#undef FUNC
+};
+
+template <typename E>
+constexpr std::string_view enum_to_string(E e) {
+    template for (constexpr auto I : std::define_static_array(std::meta::enumerators_of(^^E))) {
+        if (e == [:I:]) return std::meta::identifier_of(I);
+    }
+    return "unknown";
+}
+
+template <typename E>
+constexpr std::optional<E> string_to_enum(std::string_view s) {
+    static constexpr auto enum_vals = std::define_static_array(std::meta::enumerators_of(^^E));
+    template for (constexpr auto I : enum_vals) {
+        if (s == std::meta::identifier_of(I)) return [:I:];
+    }
+    return std::nullopt;
+}
+int main() {}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/4qqbqdYsG)

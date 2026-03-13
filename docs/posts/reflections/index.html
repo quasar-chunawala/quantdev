@@ -221,6 +221,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#meta-functions" id="toc-meta-functions" class="nav-link" data-scroll-target="#meta-functions">Meta functions</a></li>
   </ul></li>
   <li><a href="#what-really-is-a-reflection-under-the-hood" id="toc-what-really-is-a-reflection-under-the-hood" class="nav-link" data-scroll-target="#what-really-is-a-reflection-under-the-hood">What really is a reflection under the hood?</a></li>
+  <li><a href="#writing-string_to_enum-and-enum_to_string-functions" id="toc-writing-string_to_enum-and-enum_to_string-functions" class="nav-link" data-scroll-target="#writing-string_to_enum-and-enum_to_string-functions">Writing <code>string_to_enum</code> and <code>enum_to_string</code> functions</a></li>
   </ul>
 </nav>
     </div>
@@ -345,6 +346,52 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><a href="https://compiler-explorer.com/z/G7rob14Px">Compiler Explorer</a></p>
 <p><code>res1</code> is the reflection of an incomplete type - <code>R</code> has only been declared. Hence, we all know that <code>print1</code> is <code>false</code>, because the type is not complete at this point. Once we define the <code>class R</code>, the type is complete. We now reflect the type <code>R</code> once again, <code>res2</code> is the reflection of the completed type. So, <code>print2</code> is <code>true</code>. <code>print3</code> is interesting. We use the same reflection <code>res1</code> defined before the type was completed. If we query it, for whether the type is complete, after <code>R</code> has been defined, now this returns <code>true</code>, which is surprising.</p>
 <p>The C++ compiler constructs an AST(Abstract Syntax Tree) of the entire source code. <em>A reflection is a reference to a node in the AST</em>. This is why when the type is completed, <code>std::is_complete_type(res1)</code> returns <code>true</code>.</p>
+</section>
+<section id="writing-string_to_enum-and-enum_to_string-functions" class="level1">
+<h1>Writing <code>string_to_enum</code> and <code>enum_to_string</code> functions</h1>
+<div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb7-2"><a href="#cb7-2"></a><span class="pp">#include </span><span class="im">&lt;meta&gt;</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a></span>
+<span id="cb7-4"><a href="#cb7-4"></a><span class="co">// I define a macro COLORS. This macro takes in a function FUNC</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a><span class="co">// and invokes FUNC() on three literals Red, Green and Blue.</span></span>
+<span id="cb7-6"><a href="#cb7-6"></a><span class="co">// So, what this macro expects is the user to provide some sort</span></span>
+<span id="cb7-7"><a href="#cb7-7"></a><span class="co">// of a function and it is going to invoke that on these</span></span>
+<span id="cb7-8"><a href="#cb7-8"></a><span class="co">// 3 literals.</span></span>
+<span id="cb7-9"><a href="#cb7-9"></a><span class="pp">#define COLORS </span><span class="op">\</span></span>
+<span id="cb7-10"><a href="#cb7-10"></a><span class="pp">    </span>FUNC<span class="op">(</span>Red<span class="op">)</span><span class="pp">  </span><span class="op">\</span></span>
+<span id="cb7-11"><a href="#cb7-11"></a><span class="pp">    </span>FUNC<span class="op">(</span>Blue<span class="op">)</span><span class="pp"> </span><span class="op">\</span></span>
+<span id="cb7-12"><a href="#cb7-12"></a><span class="pp">    </span>FUNC<span class="op">(</span>Green<span class="op">)</span></span>
+<span id="cb7-13"><a href="#cb7-13"></a></span>
+<span id="cb7-14"><a href="#cb7-14"></a><span class="co">// Next, we have this enum class Color. What I am doing in the body</span></span>
+<span id="cb7-15"><a href="#cb7-15"></a><span class="co">// of this enum is, I am defining a function FUNC(arg), which always</span></span>
+<span id="cb7-16"><a href="#cb7-16"></a><span class="co">// appends `,`(comma) to the argument. So, FUNC(Red) would return</span></span>
+<span id="cb7-17"><a href="#cb7-17"></a><span class="co">// Red,. I pass COLORS as a parameter to FUNC. So, all its going</span></span>
+<span id="cb7-18"><a href="#cb7-18"></a><span class="co">// to do is, it will expand FUNC(Red) FUNC(Blue) FUNC(Green) as</span></span>
+<span id="cb7-19"><a href="#cb7-19"></a><span class="co">// Red, Blue, Green,.</span></span>
+<span id="cb7-20"><a href="#cb7-20"></a><span class="kw">enum</span> <span class="kw">class</span> Color <span class="op">{</span></span>
+<span id="cb7-21"><a href="#cb7-21"></a><span class="pp">#define FUNC</span><span class="op">(</span>name<span class="op">)</span><span class="pp"> </span>name<span class="op">,</span></span>
+<span id="cb7-22"><a href="#cb7-22"></a>    COLORS</span>
+<span id="cb7-23"><a href="#cb7-23"></a><span class="pp">#undef FUNC</span></span>
+<span id="cb7-24"><a href="#cb7-24"></a><span class="op">};</span></span>
+<span id="cb7-25"><a href="#cb7-25"></a></span>
+<span id="cb7-26"><a href="#cb7-26"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> E<span class="op">&gt;</span></span>
+<span id="cb7-27"><a href="#cb7-27"></a><span class="kw">constexpr</span> <span class="bu">std::</span>string_view<span class="op"> </span>enum_to_string<span class="op">(</span>E e<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-28"><a href="#cb7-28"></a>    <span class="kw">template</span> <span class="cf">for</span> <span class="op">(</span><span class="kw">constexpr</span> <span class="kw">auto</span> I <span class="op">:</span> <span class="bu">std::</span>define_static_array<span class="op">(</span><span class="bu">std::</span>meta<span class="bu">::</span>enumerators_of<span class="op">(^^</span>E<span class="op">)))</span> <span class="op">{</span></span>
+<span id="cb7-29"><a href="#cb7-29"></a>        <span class="cf">if</span> <span class="op">(</span>e <span class="op">==</span> <span class="op">[:</span>I<span class="op">:])</span> <span class="cf">return</span> <span class="bu">std::</span>meta<span class="bu">::</span>identifier_of<span class="op">(</span>I<span class="op">);</span></span>
+<span id="cb7-30"><a href="#cb7-30"></a>    <span class="op">}</span></span>
+<span id="cb7-31"><a href="#cb7-31"></a>    <span class="cf">return</span> <span class="st">"unknown"</span><span class="op">;</span></span>
+<span id="cb7-32"><a href="#cb7-32"></a><span class="op">}</span></span>
+<span id="cb7-33"><a href="#cb7-33"></a></span>
+<span id="cb7-34"><a href="#cb7-34"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> E<span class="op">&gt;</span></span>
+<span id="cb7-35"><a href="#cb7-35"></a><span class="kw">constexpr</span> <span class="bu">std::</span>optional<span class="op">&lt;</span>E<span class="op">&gt;</span> string_to_enum<span class="op">(</span><span class="bu">std::</span>string_view<span class="op"> </span>s<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-36"><a href="#cb7-36"></a>    <span class="at">static</span> <span class="kw">constexpr</span> <span class="kw">auto</span> enum_vals <span class="op">=</span> <span class="bu">std::</span>define_static_array<span class="op">(</span><span class="bu">std::</span>meta<span class="bu">::</span>enumerators_of<span class="op">(^^</span>E<span class="op">));</span></span>
+<span id="cb7-37"><a href="#cb7-37"></a>    <span class="kw">template</span> <span class="cf">for</span> <span class="op">(</span><span class="kw">constexpr</span> <span class="kw">auto</span> I <span class="op">:</span> enum_vals<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-38"><a href="#cb7-38"></a>        <span class="cf">if</span> <span class="op">(</span>s <span class="op">==</span> <span class="bu">std::</span>meta<span class="bu">::</span>identifier_of<span class="op">(</span>I<span class="op">))</span> <span class="cf">return</span> <span class="op">[:</span>I<span class="op">:];</span></span>
+<span id="cb7-39"><a href="#cb7-39"></a>    <span class="op">}</span></span>
+<span id="cb7-40"><a href="#cb7-40"></a>    <span class="cf">return</span> <span class="bu">std::</span>nullopt<span class="op">;</span></span>
+<span id="cb7-41"><a href="#cb7-41"></a><span class="op">}</span></span>
+<span id="cb7-42"><a href="#cb7-42"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/4qqbqdYsG">Compiler Explorer</a></p>
 
 
 </section>
