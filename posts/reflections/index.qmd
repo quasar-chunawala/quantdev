@@ -154,6 +154,17 @@ int main(){
 
 The C++ compiler constructs an AST(Abstract Syntax Tree) of the entire source code. *A reflection is a reference to a node in the AST*. This is why when the type is completed, `std::is_complete_type(res1)` returns `true`. 
 
+# Splicers
+
+The splicing operator produces a C++ expression evaluating to the entity represented by the reflection `r`. `typename[:r:]` produces a type specifier. `template[:r:]` produces a template name. 
+
+```cpp
+constexpr auto r = ^^int;
+typename[:r:] x = 42;
+```
+
+The splicer operator is used to go back from the reflection domain to the programming domain.
+
 # Writing `string_to_enum` and `enum_to_string` functions
 
 ```cpp
@@ -185,7 +196,8 @@ enum class Color {
 template <typename E>
 constexpr std::string_view enum_to_string(E e) {
     template for (constexpr auto I : std::define_static_array(std::meta::enumerators_of(^^E))) {
-        if (e == [:I:]) return std::meta::identifier_of(I);
+        if (e == [:I:]) 
+            return std::meta::identifier_of(I);
     }
     return "unknown";
 }
@@ -194,10 +206,44 @@ template <typename E>
 constexpr std::optional<E> string_to_enum(std::string_view s) {
     static constexpr auto enum_vals = std::define_static_array(std::meta::enumerators_of(^^E));
     template for (constexpr auto I : enum_vals) {
-        if (s == std::meta::identifier_of(I)) return [:I:];
+        if (s == std::meta::identifier_of(I)) 
+            return [:I:];
     }
     return std::nullopt;
 }
 int main() {}
 ```
 [Compiler Explorer](https://compiler-explorer.com/z/4qqbqdYsG)
+
+# Writing an elementary class serializer
+
+We can iterate over the non-static data-members of the class. Let's write a simple class serializer using this logic.
+
+```cpp
+#include <iostream>
+#include <meta>
+#include <optional>
+
+struct Point2D {
+    double x;
+    double y;
+};
+
+template <typename T>
+void format(T const& t) {
+    std::cout << identifier_of(^^T) << "{";
+    constexpr auto access_ctx = std::meta::access_context::unchecked();
+
+    template for (constexpr auto mem :
+                  std::define_static_array(nonstatic_data_members_of(^^T, access_ctx))) {
+        std::cout << std::format("{} = {}, ", identifier_of(mem), t.[:mem:]);
+    }
+
+    std::cout << "}";
+}
+
+int main() { 
+    format(Point2D{.x = 3.0, .y = 4.0}); 
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/KrTaqYK5M)
