@@ -260,10 +260,105 @@ consteval auto define_aggregate(info type_class, R&&) -> std::meta::info;
 In order to provide the reflection of a data-member description, there is another metafunction `data_member_spec`. `data_member_spec` returns a reflection a data member description for the data-member of a given type.
 
 ```cpp
-consteval auto data_member_spec(info type, )
+consteval auto data_member_spec(info type, data_member_options options) -> info;
+```
+
+`info type` is the type we want, for example, `int` or `char`. `options` can be used to specify the alignment, bit-field width amongst other things. 
+
+```cpp
+#include <iostream>
+#include <meta>
+#include <string>
+
+struct Person;
+
+consteval{
+    define_aggregate(^^Person, {
+        data_member_spec(^^std::string, { .name = "name" }),
+        data_member_spec(^^int, { .name = "age" }),
+        data_member_spec(^^double, { .name = "weight" })
+    });
+}
+
+int main(){}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/xE6xPd9Tn)
+
+In the above example, I take an incomplete type `Person` and then generate code to add various data-members to it. 
+
+# Implementing a `tuple`
+
+## `tuple` implementation before C++26
+
+```cpp
+#include <iostream>
+#include <string>
+
+namespace dev {
+template <typename... Ts>
+struct tuple;
+
+template <typename T>
+struct tuple<T> {
+    T head;
+
+    constexpr tuple(T value) : head(value) {}
+};
+
+template <typename Head, typename... Tail>
+struct tuple<Head, Tail...> {
+    Head head;
+    tuple<Tail...> tail;
+
+    constexpr tuple(Head first, Tail... rest) : head{first}, tail{rest...} {}
+};
+
+template <size_t N, typename... Types>
+struct nth_type;
+
+template <typename First, typename... Rest>
+struct nth_type<0, First, Rest...> {
+    using type = First;
+};
+
+template <size_t N, typename Head, typename... Tail>
+struct nth_type<N, Head, Tail...> {
+    using type = nth_type<N - 1, Tail...>::type;
+};
+
+template <size_t N, typename... Ts>
+using nth_type_t = nth_type<N, Ts...>::type;
+
+template <size_t N, typename Head, typename... Tail>
+nth_type_t<N, Head, Tail...> get(tuple<Head, Tail...> tup) {
+    if constexpr (N == 0) {
+        return tup.head;
+    } else {
+        return get<N - 1, Tail...>(tup.tail);
+    }
+}
+
+template <typename... Ts>
+tuple(Ts...) -> tuple<Ts...>;
+
+}  // namespace dev
+
+int main() {
+    dev::tuple tup{std::string("Hello"), 123, 3.14159};
+    std::cout << dev::get<0>(tup) << "\n";
+    std::cout << dev::get<1>(tup) << "\n";
+    std::cout << dev::get<2>(tup) << "\n";
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/P359abWKe)
+
+## `tuple` implementation using reflections
+
+```cpp
+
 ```
 
 # References
 
 - Time to Introspect, a talk by Sarthak Sehgal at CppOnline 2026.
-- [`enum` to `string`](https://digital-medium-co-uk.zoom.us/rec/play/tgoaK6PL6kyK5nee3WXj1sO4Q3dQtySn8GDlOLUZoEN6Ovmsrrjg21U9FTcsZsX3mzK1fcF0vQbX23yW.-j5rk04FL41RvpeN)
+- [`enum` to `string`](https://digital-medium-co-uk.zoom.us/rec/play/tgoaK6PL6kyK5nee3WXj1sO4Q3dQtySn8GDlOLUZoEN6Ovmsrrjg21U9FTcsZsX3mzK1fcF0vQbX23yW.-j5rk04FL41RvpeN) C++26 P2996 Reflection Support
