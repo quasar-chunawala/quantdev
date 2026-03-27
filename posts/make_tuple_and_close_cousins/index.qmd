@@ -1,0 +1,35 @@
+---
+title: "The differences between `std::make_tuple`, `std::tie` and `std::forward_as_tuple`"
+author: "Quasar"
+date: "2025-05-04"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Introduction
+
+`std::make_tuple(T&&)` applies a `std::decay` on each of the the types it receives, in order to determine the corresponding type to store in the tuple. `std::decay` removes all `const` and reference attributes of the type. The below example is instructive.
+
+```cpp
+#include <iostream>
+#include <tuple>
+#include <print>
+
+struct X{};
+int main(){
+    X x;
+    const auto& ref_ = X();
+    static_assert(std::is_same_v<decltype(std::make_tuple(x)), std::tuple<X>>);
+    static_assert(std::is_same_v<decltype(std::make_tuple(std::move(x))), std::tuple<X>>);
+    static_assert(std::is_same_v<decltype(std::make_tuple(X{})), std::tuple<X>>);
+    static_assert(std::is_same_v<decltype(std::make_tuple(std::move(ref_))), std::tuple<X>>);
+    return 0;
+}
+```
+[Compiler Explorer](https://godbolt.org/z/z18savxoP)
+
+As a result, if we pass lvalue references to `std::make_tuple`, `std::tuple` will store the corresponding decayed types. The tuple elements are copy constructed. If we pass any rvalue references `T&&` to `std::make_tuple`, `std::tuple` will again decay the type to `T`, THe tuple elements will move constructed at the corresponding indices.
+
+There is one caveat here. A `reference_wrapper<T>` is a copy-constructible and copy-assignable wrapper class around a reference to the object `T&`. For example, you can store references inside standard containers such as `std::vector`. If you pass `reference_wrapper<T>` to `make_tuple`, then the tuple will have `T&` at the corresponding index.
