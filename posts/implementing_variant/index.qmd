@@ -1,0 +1,130 @@
+---
+title: "Implementing `variant`"
+author: "Quasar"
+date: "2026-04-10"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Introduction
+
+C unions are simple and crude. You don't have a way to know what's the currently active type. The destructor is implicitly deleted, and if the user supplies a destructor, we don't know which underlying type should be destroyed.
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <string>
+#include <print>
+
+union S{
+    std::string str;
+    std::vector<int> vec;
+    ~S(){}  // what to delete?
+};
+
+int main(){
+    S s = {"Hello World"};
+    std::println("s.str = {}", s.str);
+
+    // you have to call the destructor of the contained objects
+    s.str.~basic_string<char>();
+
+    // and a constructor
+    new (&s.vec) std::vector<int>{};
+
+    s.vec.push_back(42);
+    std::println("s.vec.size() = {}", s.vec.size());
+
+    // another destructor
+    s.vec.~vector<int>();
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/WeMMfjh9n)
+
+As you see, the `S` union needs a lot of maintenance from our side. We have to know, which type is active and call appropriate constructors/destructors before switching to a new type.
+
+## What could make unions better?
+
+- The ability to use complex types and full support of their lifetimes. If you switch the type, then a proper destructor is called and we don't leak memory.
+- A way to know what's the active type.
+
+# `std::variant` usage
+
+We look at the protoypical use-case for a `std::variant`. 
+
+Visitors are objects that overload a function call operator `operator()(T t)` for each possible type. When a visitor object visits a variant, they invoke the best matching function call operator for the actual value of the variant. 
+
+```cpp
+#include <variant>
+#include <string>
+#include <iostream>
+
+struct MyVisitor{
+    void operator()(int i) const{
+        std::cout << "int: " << i << "\n";
+    }
+
+    void operator()(std::string s) const{
+        std::cout << "string: " << s << "\n"; 
+    }
+
+    void operator()(double d) const{
+        std::cout << "double: " << d << "\n";
+    }
+};
+
+int main(){
+    std::variant<int, std::string, double> var(42);
+    std::visit(MyVisitor(), var);   // calls operator()(int)
+
+    var = "hello";
+    std::visit(MyVisitor(), var);   // calls operator()(std::string)
+
+    var = 3.14;
+    std::visit(MyVisitor(), var);   // calls operator()(double)
+    return 0;
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/Tzn53YT76)
+
+# Using generic lambdas as visitors
+
+```cpp
+#include <variant>
+#include <string>
+#include <iostream>
+
+auto printVisitor() = [](const auto& v){
+    std::cout << "\n" << v;
+};
+
+int main(){
+    std::variant<int, std::string, double> var(42);
+    std::visit(printVisitor, var);
+    var = "hello";
+    std::visit(printVisitor, var);
+    var = 42.7;
+    std::visit(printVisitor, var);
+    return 0;
+}
+```
+
+# The cracked-man's match
+
+```cpp
+template<typename... Ts>
+struct overload : Ts... {
+    using Ts::operator()...;
+};
+
+// base types are deduced from the passed arguments
+template<typename... Ts>
+overload(Ts...) -> overload<Ts...>;
+
+int main(){
+    std::variant<int, std::string> var(42);
+    
+}
+```
