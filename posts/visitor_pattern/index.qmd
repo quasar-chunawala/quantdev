@@ -222,7 +222,57 @@ struct Pet{
     std::vector<Pet*> m_children;
 
     void add_child(Pet* p){ m_children.push_back(p); }
+    virtual void accept(PetVisitor&v, Pet* p = nullptr)
 };
 ```
 
-Each 
+Each parent `Pet` object tracks its child objects (note that the container is a vector of pointers, not a vector of unique pointers, so the object doesn't own its children, but merely has access to them). We have also added the new `add_child()` member function to to add objects to the vector. We could have done this with a visitor, but this function is non-virtual, so we have to add it only once to the base class, not to every derived class - the visitor is unnecessary here. The `accept()` function has been modified to have an additional parameter that would have to be added to all derived  classes as well, where it is simply forwarded to the `visit()` function:
+
+```cpp
+struct Cat{
+    
+    Cat(std::string_view color) : Pet(color) {}
+
+    void accept(PetVisitor& v, Pet* p = nullptr) override{
+        v.visit(this, p);
+    }
+};
+
+struct Dog : public Pet{
+    public:
+    Dog(std::string_view color) : Pet(color) {}
+    void accept(PetVisitor& v, Pet* p = nullptr){
+        v.visit(this, p);
+    }
+}
+```
+
+The `visit()` function also has to be modified to accept the additional argument, even for the visitors that do not need it. Changing the parameters of the `accept()` function is, therefore, an expensive global operation that should not be done often, if at all. Note that, all overrides for the same virtual function in the hierarchy already have to have the same parameters. The Visitor pattern extends this restriction to all operations added using the same base Visitor object. A common workaround for this is to pass parameters using aggregates (classes or structures that combine multiple parameters together). The `visit()` function is declared to accept a pointer to the base aggregate class, while each visitor receives a pointer to a derived class that may have additional fields, and uses them as needed. 
+
+Now, our additional argument is forwarded through the chain of virtual function calls to the visitor, where we can make use of it. Let's create a visitor that records the pet births and adds new pet objects, as children to their parent objects:
+
+ ```cpp
+ struct BirthVisitor : public PetVisitor{
+    void visit(Cat* c, Pet* p) override{
+        assert(dynamic_cast<Cat*>(p));
+        c->add_child(p);
+    }
+
+    void visit(Dog* d, Pet* p) override{
+        assert(dynamic_cast<Dog*>(p));
+        d->add_child(p);
+    }
+ };
+ ```
+
+ Note that, if we want to make sure that there are no biological impossibilities in our family tree,the verification has to be done at run-time - at compile-time, we don not know the actual types of the polymorphic objects. The new visitor is just as easy to use as the ones before:
+
+ ```cpp
+ Pet* parent(new Cat("orange tabby")); // A cat
+ BirthVisitor bv;
+
+ Pet* child(new Cat("calico"));
+ parent->visit(bv, child);
+ ```
+
+ Once we have established the parenthood relationships, we want to examine our pet families. That is another operation we want to add, which calls for another visitor. 
