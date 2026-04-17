@@ -192,6 +192,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#what-is-the-visitor-pattern" id="toc-what-is-the-visitor-pattern" class="nav-link active" data-scroll-target="#what-is-the-visitor-pattern">What is the Visitor pattern?</a></li>
   <li><a href="#basic-visitor-in-c" id="toc-basic-visitor-in-c" class="nav-link" data-scroll-target="#basic-visitor-in-c">Basic Visitor in C++</a></li>
   <li><a href="#visitor-generalizations-and-limitations" id="toc-visitor-generalizations-and-limitations" class="nav-link" data-scroll-target="#visitor-generalizations-and-limitations">Visitor generalizations and limitations</a></li>
+  <li><a href="#visiting-complex-objects" id="toc-visiting-complex-objects" class="nav-link" data-scroll-target="#visiting-complex-objects">Visiting complex objects</a>
+  <ul class="collapse">
+  <li><a href="#visiting-composite-objects" id="toc-visiting-composite-objects" class="nav-link" data-scroll-target="#visiting-composite-objects">Visiting composite objects</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -608,9 +612,154 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb14-105"><a href="#cb14-105"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p><a href="https://compiler-explorer.com/z/WGv6P548a">Compiler Explorer</a></p>
 <p>Unlike <code>BirthVisitor</code>, <code>FamilyTreeVisitor</code> does not need the additional argument.</p>
-<p>Now, we have visitors that implement operations with parameters. What about return values? Technically, there is no requirement for <code>visit()</code> and <code>accept()</code> functions to return <code>void</code>. They can return anything else. However, the limitation that they have to all return the same type usuallyt makes this capability useless. Virtual functions can have covariant return types, where the base class virtual function returns an object of some class and the derived class overrides return objects derived from that class, but even that is usually too limiting. There is another, much simpler solution - the <code>visit()</code> functions of every visitor object</p>
+<p>Now, we have visitors that implement operations with parameters. What about return values? Technically, there is no requirement for <code>visit()</code> and <code>accept()</code> functions to return <code>void</code>. They can return anything else. However, the limitation that they have to all return the same type usuallyt makes this capability useless. Virtual functions can have covariant return types, where the base class virtual function returns an object of some class and the derived class overrides return objects derived from that class, but even that is usually too limiting. There is another, much simpler solution - the <code>visit()</code> functions of every visitor object has full access to the data members of the object. THere is no reason why we cannot store the the return value in the Visitor class itself and access it later. This fits well with the most common use where each visitor adds a different operation and is likely to have a unique return type, but the operation itself usually has the same return type for all the classes in the hierarchy. For example, we can make our <code>FamilyTreeVisitor</code> count the total number of children and return the value through the visitor object.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb15-1"><a href="#cb15-1"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<span id="cb15-2"><a href="#cb15-2"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb15-3"><a href="#cb15-3"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb15-4"><a href="#cb15-4"></a><span class="pp">#include </span><span class="im">&lt;cassert&gt;</span></span>
+<span id="cb15-5"><a href="#cb15-5"></a></span>
+<span id="cb15-6"><a href="#cb15-6"></a><span class="kw">struct</span> Pet<span class="op">;</span></span>
+<span id="cb15-7"><a href="#cb15-7"></a><span class="kw">struct</span> Cat<span class="op">;</span></span>
+<span id="cb15-8"><a href="#cb15-8"></a><span class="kw">struct</span> Dog<span class="op">;</span></span>
+<span id="cb15-9"><a href="#cb15-9"></a></span>
+<span id="cb15-10"><a href="#cb15-10"></a><span class="kw">struct</span> PetVisitor<span class="op">{</span></span>
+<span id="cb15-11"><a href="#cb15-11"></a>    <span class="kw">virtual</span> <span class="dt">void</span> visit<span class="op">(</span>Cat<span class="op">*</span> c<span class="op">,</span> Pet<span class="op">*</span> p <span class="op">=</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb15-12"><a href="#cb15-12"></a>    <span class="kw">virtual</span> <span class="dt">void</span> visit<span class="op">(</span>Dog<span class="op">*</span> d<span class="op">,</span> Pet<span class="op">*</span> p <span class="op">=</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb15-13"><a href="#cb15-13"></a><span class="op">};</span></span>
+<span id="cb15-14"><a href="#cb15-14"></a></span>
+<span id="cb15-15"><a href="#cb15-15"></a><span class="kw">struct</span> Pet<span class="op">{</span></span>
+<span id="cb15-16"><a href="#cb15-16"></a>    <span class="kw">friend</span> <span class="kw">struct</span> FamilyTreeVisitor<span class="op">;</span></span>
+<span id="cb15-17"><a href="#cb15-17"></a></span>
+<span id="cb15-18"><a href="#cb15-18"></a>    <span class="dt">void</span> add_child<span class="op">(</span>Pet<span class="op">*</span> p<span class="op">){</span> <span class="va">m_children</span><span class="op">.</span>push_back<span class="op">(</span>p<span class="op">);</span> <span class="op">}</span></span>
+<span id="cb15-19"><a href="#cb15-19"></a>    <span class="kw">virtual</span> <span class="dt">void</span> accept<span class="op">(</span>PetVisitor<span class="op">&amp;</span>v<span class="op">,</span> Pet<span class="op">*</span> p <span class="op">=</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb15-20"><a href="#cb15-20"></a>    Pet<span class="op">(</span><span class="bu">std::</span>string_view<span class="op"> </span>color<span class="op">)</span> <span class="op">:</span> <span class="va">m_color</span><span class="op">{</span> color <span class="op">}{}</span></span>
+<span id="cb15-21"><a href="#cb15-21"></a>    <span class="at">const</span> <span class="bu">std::</span>string<span class="op">&amp;</span> color<span class="op">(){</span> <span class="cf">return</span> <span class="va">m_color</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb15-22"><a href="#cb15-22"></a></span>
+<span id="cb15-23"><a href="#cb15-23"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb15-24"><a href="#cb15-24"></a>    <span class="bu">std::</span>vector<span class="op">&lt;</span>Pet<span class="op">*&gt;</span> <span class="va">m_children</span><span class="op">;</span></span>
+<span id="cb15-25"><a href="#cb15-25"></a>    <span class="bu">std::</span>string<span class="op"> </span>      <span class="va">m_color</span><span class="op">;</span></span>
+<span id="cb15-26"><a href="#cb15-26"></a><span class="op">};</span></span>
+<span id="cb15-27"><a href="#cb15-27"></a></span>
+<span id="cb15-28"><a href="#cb15-28"></a><span class="kw">struct</span> Cat <span class="op">:</span> <span class="kw">public</span> Pet<span class="op">{</span></span>
+<span id="cb15-29"><a href="#cb15-29"></a>    Cat<span class="op">(</span><span class="bu">std::</span>string_view<span class="op"> </span>color<span class="op">)</span> <span class="op">:</span> Pet<span class="op">{</span> color <span class="op">}{}</span></span>
+<span id="cb15-30"><a href="#cb15-30"></a>    <span class="dt">void</span> accept<span class="op">(</span>PetVisitor<span class="op">&amp;</span> v<span class="op">,</span> Pet<span class="op">*</span> p <span class="op">=</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="kw">override</span> <span class="op">{</span> v<span class="op">.</span>visit<span class="op">(</span><span class="kw">this</span><span class="op">,</span> p<span class="op">);</span> <span class="op">}</span></span>
+<span id="cb15-31"><a href="#cb15-31"></a><span class="op">};</span></span>
+<span id="cb15-32"><a href="#cb15-32"></a></span>
+<span id="cb15-33"><a href="#cb15-33"></a><span class="kw">struct</span> Dog <span class="op">:</span> <span class="kw">public</span> Pet<span class="op">{</span></span>
+<span id="cb15-34"><a href="#cb15-34"></a>    Dog<span class="op">(</span><span class="bu">std::</span>string_view<span class="op"> </span>color<span class="op">)</span> <span class="op">:</span> Pet<span class="op">{</span> color <span class="op">}{}</span></span>
+<span id="cb15-35"><a href="#cb15-35"></a>    <span class="dt">void</span> accept<span class="op">(</span>PetVisitor<span class="op">&amp;</span> v<span class="op">,</span> Pet<span class="op">*</span> p <span class="op">=</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="kw">override</span> <span class="op">{</span> v<span class="op">.</span>visit<span class="op">(</span><span class="kw">this</span><span class="op">,</span> p<span class="op">);</span> <span class="op">}</span></span>
+<span id="cb15-36"><a href="#cb15-36"></a><span class="op">};</span></span>
+<span id="cb15-37"><a href="#cb15-37"></a></span>
+<span id="cb15-38"><a href="#cb15-38"></a><span class="kw">struct</span> FeedingVisitor <span class="op">:</span> <span class="kw">public</span> PetVisitor<span class="op">{</span></span>
+<span id="cb15-39"><a href="#cb15-39"></a>    <span class="dt">void</span> visit<span class="op">(</span>Cat<span class="op">*</span> c<span class="op">,</span> Pet<span class="op">*</span> p <span class="op">=</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="kw">override</span><span class="op">{</span></span>
+<span id="cb15-40"><a href="#cb15-40"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Feed tuna to the </span><span class="sc">{}</span><span class="st"> cat"</span><span class="op">,</span> c<span class="op">-&gt;</span>color<span class="op">());</span></span>
+<span id="cb15-41"><a href="#cb15-41"></a>    <span class="op">}</span></span>
+<span id="cb15-42"><a href="#cb15-42"></a></span>
+<span id="cb15-43"><a href="#cb15-43"></a>    <span class="dt">void</span> visit<span class="op">(</span>Dog<span class="op">*</span> d<span class="op">,</span> Pet<span class="op">*</span> p <span class="op">=</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="kw">override</span><span class="op">{</span></span>
+<span id="cb15-44"><a href="#cb15-44"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Feed steak to the </span><span class="sc">{}</span><span class="st"> dog"</span><span class="op">,</span> d<span class="op">-&gt;</span>color<span class="op">());</span></span>
+<span id="cb15-45"><a href="#cb15-45"></a>    <span class="op">}</span></span>
+<span id="cb15-46"><a href="#cb15-46"></a><span class="op">};</span></span>
+<span id="cb15-47"><a href="#cb15-47"></a></span>
+<span id="cb15-48"><a href="#cb15-48"></a><span class="kw">struct</span> PlayingVisitor <span class="op">:</span> <span class="kw">public</span> PetVisitor<span class="op">{</span></span>
+<span id="cb15-49"><a href="#cb15-49"></a>    <span class="dt">void</span> visit<span class="op">(</span>Cat<span class="op">*</span> c<span class="op">,</span> Pet<span class="op">*</span> p <span class="op">=</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="kw">override</span><span class="op">{</span></span>
+<span id="cb15-50"><a href="#cb15-50"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Play with a feather with the </span><span class="sc">{}</span><span class="st"> cat"</span><span class="op">,</span> c<span class="op">-&gt;</span>color<span class="op">());</span></span>
+<span id="cb15-51"><a href="#cb15-51"></a>    <span class="op">}</span></span>
+<span id="cb15-52"><a href="#cb15-52"></a></span>
+<span id="cb15-53"><a href="#cb15-53"></a>    <span class="dt">void</span> visit<span class="op">(</span>Dog<span class="op">*</span> d<span class="op">,</span> Pet<span class="op">*</span> p <span class="op">=</span> <span class="kw">nullptr</span><span class="op">)</span> <span class="kw">override</span><span class="op">{</span></span>
+<span id="cb15-54"><a href="#cb15-54"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Play fetch with the </span><span class="sc">{}</span><span class="st"> dog"</span><span class="op">,</span> d<span class="op">-&gt;</span>color<span class="op">());</span></span>
+<span id="cb15-55"><a href="#cb15-55"></a>    <span class="op">}</span></span>
+<span id="cb15-56"><a href="#cb15-56"></a><span class="op">};</span></span>
+<span id="cb15-57"><a href="#cb15-57"></a></span>
+<span id="cb15-58"><a href="#cb15-58"></a> <span class="kw">struct</span> BirthVisitor <span class="op">:</span> <span class="kw">public</span> PetVisitor<span class="op">{</span></span>
+<span id="cb15-59"><a href="#cb15-59"></a>    <span class="dt">void</span> visit<span class="op">(</span>Cat<span class="op">*</span> c<span class="op">,</span> Pet<span class="op">*</span> child<span class="op">)</span> <span class="kw">override</span><span class="op">{</span></span>
+<span id="cb15-60"><a href="#cb15-60"></a>        <span class="ot">assert</span><span class="op">(</span><span class="kw">dynamic_cast</span><span class="op">&lt;</span>Cat<span class="op">*&gt;(</span>child<span class="op">));</span></span>
+<span id="cb15-61"><a href="#cb15-61"></a>        c<span class="op">-&gt;</span>add_child<span class="op">(</span>child<span class="op">);</span></span>
+<span id="cb15-62"><a href="#cb15-62"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"</span><span class="sc">{}</span><span class="st"> gave birth to child </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> c<span class="op">-&gt;</span>color<span class="op">(),</span> child<span class="op">-&gt;</span>color<span class="op">());</span></span>
+<span id="cb15-63"><a href="#cb15-63"></a>    <span class="op">}</span></span>
+<span id="cb15-64"><a href="#cb15-64"></a></span>
+<span id="cb15-65"><a href="#cb15-65"></a>    <span class="dt">void</span> visit<span class="op">(</span>Dog<span class="op">*</span> d<span class="op">,</span> Pet<span class="op">*</span> child<span class="op">)</span> <span class="kw">override</span><span class="op">{</span></span>
+<span id="cb15-66"><a href="#cb15-66"></a>        <span class="ot">assert</span><span class="op">(</span><span class="kw">dynamic_cast</span><span class="op">&lt;</span>Dog<span class="op">*&gt;(</span>child<span class="op">));</span></span>
+<span id="cb15-67"><a href="#cb15-67"></a>        d<span class="op">-&gt;</span>add_child<span class="op">(</span>child<span class="op">);</span></span>
+<span id="cb15-68"><a href="#cb15-68"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"</span><span class="sc">{}</span><span class="st"> gave birth to child </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> d<span class="op">-&gt;</span>color<span class="op">(),</span> child<span class="op">-&gt;</span>color<span class="op">());</span></span>
+<span id="cb15-69"><a href="#cb15-69"></a>    <span class="op">}</span></span>
+<span id="cb15-70"><a href="#cb15-70"></a> <span class="op">};</span></span>
+<span id="cb15-71"><a href="#cb15-71"></a></span>
+<span id="cb15-72"><a href="#cb15-72"></a></span>
+<span id="cb15-73"><a href="#cb15-73"></a> <span class="kw">struct</span> FamilyTreeVisitor <span class="op">:</span> <span class="kw">public</span> PetVisitor<span class="op">{</span></span>
+<span id="cb15-74"><a href="#cb15-74"></a>    FamilyTreeVisitor<span class="op">()</span> <span class="op">:</span> <span class="va">m_child_count</span><span class="op">{</span><span class="dv">0</span><span class="bu">uz</span><span class="op">}</span> <span class="op">{}</span></span>
+<span id="cb15-75"><a href="#cb15-75"></a>    <span class="dt">void</span> reset<span class="op">(){</span> <span class="va">m_child_count</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb15-76"><a href="#cb15-76"></a>    <span class="dt">size_t</span> get_child_count<span class="op">(){</span> <span class="cf">return</span> <span class="va">m_child_count</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb15-77"><a href="#cb15-77"></a></span>
+<span id="cb15-78"><a href="#cb15-78"></a>    <span class="dt">void</span> visit<span class="op">(</span>Cat<span class="op">*</span> c<span class="op">,</span> Pet<span class="op">*</span> p<span class="op">)</span> <span class="kw">override</span><span class="op">{</span></span>
+<span id="cb15-79"><a href="#cb15-79"></a>        visit_impl<span class="op">(</span>c<span class="op">,</span> <span class="st">"Kittens"</span><span class="op">);</span></span>
+<span id="cb15-80"><a href="#cb15-80"></a>    <span class="op">}</span></span>
+<span id="cb15-81"><a href="#cb15-81"></a></span>
+<span id="cb15-82"><a href="#cb15-82"></a>    <span class="dt">void</span> visit<span class="op">(</span>Dog<span class="op">*</span> d<span class="op">,</span> Pet<span class="op">*</span> p<span class="op">)</span> <span class="kw">override</span><span class="op">{</span></span>
+<span id="cb15-83"><a href="#cb15-83"></a>        visit_impl<span class="op">(</span>d<span class="op">,</span> <span class="st">"Puppies"</span><span class="op">);</span></span>
+<span id="cb15-84"><a href="#cb15-84"></a>    <span class="op">}</span></span>
+<span id="cb15-85"><a href="#cb15-85"></a></span>
+<span id="cb15-86"><a href="#cb15-86"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb15-87"><a href="#cb15-87"></a>    <span class="dt">size_t</span> <span class="va">m_child_count</span><span class="op">;</span></span>
+<span id="cb15-88"><a href="#cb15-88"></a></span>
+<span id="cb15-89"><a href="#cb15-89"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb15-90"><a href="#cb15-90"></a>    <span class="dt">void</span> visit_impl<span class="op">(</span>T<span class="op">*</span> t<span class="op">,</span> <span class="at">const</span> <span class="dt">char</span><span class="op">*</span> s<span class="op">){</span></span>
+<span id="cb15-91"><a href="#cb15-91"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"</span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> s<span class="op">);</span></span>
+<span id="cb15-92"><a href="#cb15-92"></a>        <span class="cf">for</span><span class="op">(</span><span class="kw">auto</span> p <span class="op">:</span> t<span class="op">-&gt;</span><span class="va">m_children</span><span class="op">){</span></span>
+<span id="cb15-93"><a href="#cb15-93"></a>            <span class="bu">std::</span>println<span class="op">(</span><span class="st">"</span><span class="sc">\t{}</span><span class="st">"</span><span class="op">,</span> p<span class="op">-&gt;</span>color<span class="op">());</span></span>
+<span id="cb15-94"><a href="#cb15-94"></a>            <span class="op">++</span><span class="va">m_child_count</span><span class="op">;</span></span>
+<span id="cb15-95"><a href="#cb15-95"></a>        <span class="op">}</span></span>
+<span id="cb15-96"><a href="#cb15-96"></a>    <span class="op">}</span></span>
+<span id="cb15-97"><a href="#cb15-97"></a> <span class="op">};</span></span>
+<span id="cb15-98"><a href="#cb15-98"></a></span>
+<span id="cb15-99"><a href="#cb15-99"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb15-100"><a href="#cb15-100"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>Pet<span class="op">&gt;</span> parent<span class="op">(</span><span class="kw">new</span> Cat<span class="op">(</span><span class="st">"orange tabby"</span><span class="op">));</span></span>
+<span id="cb15-101"><a href="#cb15-101"></a>    Pet<span class="op">*</span> child1<span class="op">(</span><span class="kw">new</span> Cat<span class="op">(</span><span class="st">"calico"</span><span class="op">));</span></span>
+<span id="cb15-102"><a href="#cb15-102"></a>    Pet<span class="op">*</span> child2<span class="op">(</span><span class="kw">new</span> Cat<span class="op">(</span><span class="st">"garfield"</span><span class="op">));</span></span>
+<span id="cb15-103"><a href="#cb15-103"></a></span>
+<span id="cb15-104"><a href="#cb15-104"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>PetVisitor<span class="op">&gt;</span> pv<span class="op">(</span><span class="kw">new</span> PlayingVisitor<span class="op">());</span></span>
+<span id="cb15-105"><a href="#cb15-105"></a>    <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>PetVisitor<span class="op">&gt;</span> fv<span class="op">(</span><span class="kw">new</span> FeedingVisitor<span class="op">());</span></span>
+<span id="cb15-106"><a href="#cb15-106"></a>    BirthVisitor bv<span class="op">;</span></span>
+<span id="cb15-107"><a href="#cb15-107"></a></span>
+<span id="cb15-108"><a href="#cb15-108"></a>    parent<span class="op">-&gt;</span>accept<span class="op">(*</span>pv<span class="op">);</span>   <span class="co">// Play with a feather with orange tabby cat</span></span>
+<span id="cb15-109"><a href="#cb15-109"></a>    parent<span class="op">-&gt;</span>accept<span class="op">(*</span>fv<span class="op">);</span>   <span class="co">// Feeding tuna to the organge tabby cat</span></span>
+<span id="cb15-110"><a href="#cb15-110"></a>    parent<span class="op">-&gt;</span>accept<span class="op">(</span>bv<span class="op">,</span> child1<span class="op">);</span></span>
+<span id="cb15-111"><a href="#cb15-111"></a>    parent<span class="op">-&gt;</span>accept<span class="op">(</span>bv<span class="op">,</span> child2<span class="op">);</span></span>
+<span id="cb15-112"><a href="#cb15-112"></a></span>
+<span id="cb15-113"><a href="#cb15-113"></a>    FamilyTreeVisitor tv<span class="op">;</span></span>
+<span id="cb15-114"><a href="#cb15-114"></a>    parent<span class="op">-&gt;</span>accept<span class="op">(</span>tv<span class="op">);</span></span>
+<span id="cb15-115"><a href="#cb15-115"></a></span>
+<span id="cb15-116"><a href="#cb15-116"></a>    <span class="bu">std::</span>println<span class="op">(</span><span class="st">"</span><span class="sc">{}</span><span class="st"> kittens total"</span><span class="op">,</span> tv<span class="op">.</span>get_child_count<span class="op">());</span></span>
+<span id="cb15-117"><a href="#cb15-117"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/cTndEvYPb">Compiler Explorer</a></p>
+<p>This approach imposes some limitations in multithreaded programs - the visitor is now not thread safe since multiple threads cannot use the same Visitor object to visit different pet objects. The most common solution is to use one visitor object per thread.</p>
+<p>Let’s return for a moment and examine the <code>FamilyTreeVisitor</code> implementation again. Note that it iterates over the child objects of the parent object and calls the same operation on each one, in turn. It does not, however, process the children of the child object - our family tree is only one-generation deep. The problem of visiting objects that contain other objects is very general and occurs rather often. Our motivational example - the problem of serialization demonstrates this need perfectly - every complex object is serialized by serializing its components one by one and they in turn are serialized the same way, until we get all the way down to the built-in types such as <code>int</code> and <code>double</code> which we know to read and write.</p>
+</section>
+<section id="visiting-complex-objects" class="level1">
+<h1>Visiting complex objects</h1>
+<p>In the last section, we saw, how the Visitor pattern allows us to add new operations to the existing hierarchy. In one of the examples, we visited a complex object that contained pointers to other objects. The visitor iterated over these pointers, in a limited way. We are now going to consider the general problem of visiting objects that are composed of other objects, or objects that contain other objects and build up to the demonstration of a working serialization./deserialization solution at the end.</p>
+<section id="visiting-composite-objects" class="level2">
+<h2 class="anchored" data-anchor-id="visiting-composite-objects">Visiting composite objects</h2>
+<p>The general idea of visiting complex objects is quite straightforward - when visiting the object itself, we generally do not know all the details of how to handle each component or contained object. But there is something else that does - the visitor for that object type is written specifically to handle that class and nothing else. This observation suggests that the correct way to handle the component objects is to simply visit each one, and thus delegate the problem to someone else.</p>
+<p>Let’s first demonstrate this idea on the example of a simple container class, such as the <code>Shelter</code> class, which can contain any number of pet objects representing the pets waiting for adoption:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb16-1"><a href="#cb16-1"></a><span class="kw">struct</span> Shelter<span class="op">{</span></span>
+<span id="cb16-2"><a href="#cb16-2"></a>    <span class="dt">void</span> add<span class="op">(</span>Pet<span class="op">*</span> p<span class="op">){</span></span>
+<span id="cb16-3"><a href="#cb16-3"></a>        <span class="va">m_pets</span><span class="op">.</span>emplace_back<span class="op">(</span>p<span class="op">);</span></span>
+<span id="cb16-4"><a href="#cb16-4"></a>    <span class="op">}</span></span>
+<span id="cb16-5"><a href="#cb16-5"></a></span>
+<span id="cb16-6"><a href="#cb16-6"></a>    <span class="dt">void</span> accept<span class="op">(</span>PetVisitor<span class="op">&amp;</span> v<span class="op">){</span></span>
+<span id="cb16-7"><a href="#cb16-7"></a>        <span class="cf">for</span><span class="op">(</span><span class="kw">auto</span><span class="op">&amp;</span> p <span class="op">:</span> <span class="va">m_pets</span><span class="op">){</span></span>
+<span id="cb16-8"><a href="#cb16-8"></a>            p<span class="op">-&gt;</span>accept<span class="op">(</span>v<span class="op">);</span></span>
+<span id="cb16-9"><a href="#cb16-9"></a>        <span class="op">}</span></span>
+<span id="cb16-10"><a href="#cb16-10"></a>    <span class="op">}</span></span>
+<span id="cb16-11"><a href="#cb16-11"></a></span>
+<span id="cb16-12"><a href="#cb16-12"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb16-13"><a href="#cb16-13"></a>    <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>Pet<span class="op">&gt;&gt;</span> <span class="va">m_pets</span><span class="op">;</span></span>
+<span id="cb16-14"><a href="#cb16-14"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This class is essentially an adapter to make a vector of pet objects visitable(more on the adapter pattern in another blog post). Note that the objects of this class do own the pet objects they contain - when the <code>Shelter</code> object is destroyed, so are all the <code>Pet</code> objects in the vector. Any container of unique pointers is a container that owns its contained objects; this is how polymorphic objects should be stored in a container such as <code>std::vector</code>.</p>
+<p>The code relevant to our current problem is, of course, <code>Shelter::accept()</code>, which determines how a <code>Shelter</code> object is visited. As you can see, we do not invoke</p>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->

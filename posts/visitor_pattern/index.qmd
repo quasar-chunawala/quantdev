@@ -483,4 +483,160 @@ int main(){
 
 Unlike `BirthVisitor`, `FamilyTreeVisitor` does not need the additional argument.
 
-Now, we have visitors that implement operations with parameters. What about return values? Technically, there is no requirement for `visit()` and `accept()` functions to return `void`. They can return anything else. However, the limitation that they have to all return the same type usuallyt makes this capability useless. Virtual functions can have covariant return types, where the base class virtual function returns an object of some class and the derived class overrides return objects derived from that class, but even that is usually too limiting. There is another, much simpler solution - the `visit()` functions of every visitor object 
+Now, we have visitors that implement operations with parameters. What about return values? Technically, there is no requirement for `visit()` and `accept()` functions to return `void`. They can return anything else. However, the limitation that they have to all return the same type usuallyt makes this capability useless. Virtual functions can have covariant return types, where the base class virtual function returns an object of some class and the derived class overrides return objects derived from that class, but even that is usually too limiting. There is another, much simpler solution - the `visit()` functions of every visitor object has full access to the data members of the object. THere is no reason why we cannot store the the return value in the Visitor class itself and access it later. This fits well with the most common use where each visitor adds a different operation and is likely to have a unique return type, but the operation itself usually has the same return type for all the classes in the hierarchy. For example, we can make our `FamilyTreeVisitor` count the total number of children and return the value through the visitor object. 
+
+```cpp
+#include <vector>
+#include <print>
+#include <memory>
+#include <cassert>
+
+struct Pet;
+struct Cat;
+struct Dog;
+
+struct PetVisitor{
+    virtual void visit(Cat* c, Pet* p = nullptr) = 0;
+    virtual void visit(Dog* d, Pet* p = nullptr) = 0;
+};
+
+struct Pet{
+    friend struct FamilyTreeVisitor;
+
+    void add_child(Pet* p){ m_children.push_back(p); }
+    virtual void accept(PetVisitor&v, Pet* p = nullptr) = 0;
+    Pet(std::string_view color) : m_color{ color }{}
+    const std::string& color(){ return m_color; }
+
+    private:
+    std::vector<Pet*> m_children;
+    std::string       m_color;
+};
+
+struct Cat : public Pet{
+    Cat(std::string_view color) : Pet{ color }{}
+    void accept(PetVisitor& v, Pet* p = nullptr) override { v.visit(this, p); }
+};
+
+struct Dog : public Pet{
+    Dog(std::string_view color) : Pet{ color }{}
+    void accept(PetVisitor& v, Pet* p = nullptr) override { v.visit(this, p); }
+};
+
+struct FeedingVisitor : public PetVisitor{
+    void visit(Cat* c, Pet* p = nullptr) override{
+        std::println("Feed tuna to the {} cat", c->color());
+    }
+
+    void visit(Dog* d, Pet* p = nullptr) override{
+        std::println("Feed steak to the {} dog", d->color());
+    }
+};
+
+struct PlayingVisitor : public PetVisitor{
+    void visit(Cat* c, Pet* p = nullptr) override{
+        std::println("Play with a feather with the {} cat", c->color());
+    }
+
+    void visit(Dog* d, Pet* p = nullptr) override{
+        std::println("Play fetch with the {} dog", d->color());
+    }
+};
+
+ struct BirthVisitor : public PetVisitor{
+    void visit(Cat* c, Pet* child) override{
+        assert(dynamic_cast<Cat*>(child));
+        c->add_child(child);
+        std::println("{} gave birth to child {}", c->color(), child->color());
+    }
+
+    void visit(Dog* d, Pet* child) override{
+        assert(dynamic_cast<Dog*>(child));
+        d->add_child(child);
+        std::println("{} gave birth to child {}", d->color(), child->color());
+    }
+ };
+
+
+ struct FamilyTreeVisitor : public PetVisitor{
+    FamilyTreeVisitor() : m_child_count{0uz} {}
+    void reset(){ m_child_count = 0; }
+    size_t get_child_count(){ return m_child_count; }
+
+    void visit(Cat* c, Pet* p) override{
+        visit_impl(c, "Kittens");
+    }
+
+    void visit(Dog* d, Pet* p) override{
+        visit_impl(d, "Puppies");
+    }
+
+    private:
+    size_t m_child_count;
+
+    template<typename T>
+    void visit_impl(T* t, const char* s){
+        std::println("{}", s);
+        for(auto p : t->m_children){
+            std::println("\t{}", p->color());
+            ++m_child_count;
+        }
+    }
+ };
+
+int main(){
+    std::unique_ptr<Pet> parent(new Cat("orange tabby"));
+    Pet* child1(new Cat("calico"));
+    Pet* child2(new Cat("garfield"));
+
+    std::unique_ptr<PetVisitor> pv(new PlayingVisitor());
+    std::unique_ptr<PetVisitor> fv(new FeedingVisitor());
+    BirthVisitor bv;
+
+    parent->accept(*pv);   // Play with a feather with orange tabby cat
+    parent->accept(*fv);   // Feeding tuna to the organge tabby cat
+    parent->accept(bv, child1);
+    parent->accept(bv, child2);
+
+    FamilyTreeVisitor tv;
+    parent->accept(tv);
+
+    std::println("{} kittens total", tv.get_child_count());
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/cTndEvYPb)
+
+This approach imposes some limitations in multithreaded programs - the visitor is now not thread safe since multiple threads cannot use the same Visitor object to visit different pet objects. The most common solution is to use one visitor object per thread. 
+
+Let's return for a moment and examine the `FamilyTreeVisitor` implementation again. Note that it iterates over the child objects of the parent object and calls the same operation on each one, in turn. It does not, however, process the children of the child object - our family tree is only one-generation deep. The problem of visiting objects that contain other objects is very general and occurs rather often. Our motivational example - the problem of serialization demonstrates this need perfectly - every complex object is serialized by serializing its components one by one and they in turn are serialized the same way, until we get all the way down to the built-in types such as `int` and `double` which we know to read and write. 
+
+# Visiting complex objects
+
+In the last section, we saw, how the Visitor pattern allows us to add new operations to the existing hierarchy. In one of the examples, we visited a complex object that contained pointers to other objects. The visitor iterated over these pointers, in a limited way. We are now going to consider the general problem of visiting objects that are composed of other objects, or objects that contain other objects and build up to the demonstration of a working serialization./deserialization solution at the end.
+
+## Visiting composite objects
+
+The general idea of visiting complex objects is quite straightforward - when visiting the object itself, we generally do not know all the details of how to handle each component or contained object. But there is something else that does - the visitor for that object type is written specifically to handle that class and nothing else. This observation suggests that the correct way to handle the component objects is to simply visit each one, and thus delegate the problem to someone else. 
+
+Let's first demonstrate this idea on the example of a simple container class, such as the `Shelter` class, which can contain any number of pet objects representing the pets waiting for adoption:
+
+```cpp
+struct Shelter{
+    void add(Pet* p){
+        m_pets.emplace_back(p);
+    }
+
+    void accept(PetVisitor& v){
+        for(auto& p : m_pets){
+            p->accept(v);
+        }
+    }
+
+    private:
+    std::vector<std::unique_ptr<Pet>> m_pets;
+};
+```
+
+This class is essentially an adapter to make a vector of pet objects visitable(more on the adapter pattern in another blog post). Note that the objects of this class do own the pet objects they contain - when the `Shelter` object is destroyed, so are all the `Pet` objects in the vector. Any container of unique pointers is a container that owns its contained objects; this is how polymorphic objects should be stored in a container such as `std::vector`. 
+
+The code relevant to our current problem is, of course, `Shelter::accept()`, which determines how a `Shelter` object is visited. As you can see, we do not invoke 
