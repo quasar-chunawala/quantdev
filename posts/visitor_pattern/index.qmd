@@ -639,4 +639,118 @@ struct Shelter{
 
 This class is essentially an adapter to make a vector of pet objects visitable(more on the adapter pattern in another blog post). Note that the objects of this class do own the pet objects they contain - when the `Shelter` object is destroyed, so are all the `Pet` objects in the vector. Any container of unique pointers is a container that owns its contained objects; this is how polymorphic objects should be stored in a container such as `std::vector`. 
 
-The code relevant to our current problem is, of course, `Shelter::accept()`, which determines how a `Shelter` object is visited. As you can see, we do not invoke 
+The code relevant to our current problem is, of course, `Shelter::accept()`, which determines how a `Shelter` object is visited. As you can see, we do not invoke the visitor on the shelter object itself. Instead, we delegate the visitation to each of the containing objects. Since our Visitors are already written to handle `Pet` objects, nothing more needs to be done. When `Shelter` is visited by, say, `FeedingVisitor`, every pet in the shelter gets fed, and we didn't have to write any special code to make it happen. 
+
+Visitation of composite objects is done in a similar manner - if an object is composed of several smaller objects, we have to visit each of these objects. Let's consider an object representing a family with two family pets, a dog and a cat(the humans who serve the pets are not included in the following code, but we assume they are there too):
+
+```cpp
+struct Family{
+    public:
+    Family(const car* cat_color, const char* dog_color)
+    : m_cat{ cat_color }
+    , m_dog{ dog_color }
+    {}
+
+    void accept(PetVisitor& v){
+        m_cat.accept(v);
+        m_dog.accept(v);
+    }
+
+    private:
+    Cat m_cat;
+    Dog m_dog;
+};
+```
+
+Again, visiting the family with a visitor from the `PetVisitor` hierarchy is delegated so that each `Pet` object is visited, and the visitors already have everything they need to handle these objects. Now, at last, we have all the pieces we need to tackle the problem of serialization and deserialization of arbitrary objects. 
+
+# Serialization and Deserialization with visitor
+
+The problem itself was described in detail in the previous section - for serialization, each object needs to be converted to a sequence of bits, and these bits need to be stored, copied or sent. The first part of the action depends on the object(each object is converted differently), but the second part depends on the specific application of the serialization(saving to the disk is different from sending across the network). The implementation depends on two factors, hence the need for double dispatch, which is exactly what the Visitor pattern provides. Furthermore, if we have a way to serialize some object and then deserialize it (reconstruct the object from the sequence of bits), we should use the same method when this object is included in another object.
+
+To demonstrate serialization/deserialization of a class hierarchy using the Visitor pattern. we meed a more complex hierarchy than the toy examples we have used so far. Let's consider this hierarchy of two-dimensional geometric objects:
+
+```cpp
+struct Geometry{
+    virtual ~Geometry(){}
+};
+
+struct Point : public Geometry{
+    Point() = default;
+    Point(double x, double y) : x_{x}, y_{y}
+    {}
+
+    private:
+    double x_;
+    double y_;
+};
+
+struct Circle : public Geometry{
+    Circle() = default;
+    Circle(Point center, double radius) 
+    : center_{ center }
+    , radius_{ radius }
+    {}
+
+    private:
+    Point center_;
+    double radius_;
+};
+
+struct Line : public Geometry{
+    Line() = default;
+    Line(Point p1, Point p2) 
+    : p1_{ p1 }
+    , p2_{ p2 }
+    {}
+
+    private:
+    Point p1_;
+    Point p2_;
+}
+```
+
+All objects derived from the abstract `Geometry` base class, but the more complex object contains one or more of the simpler objects; for example, `Line` is defined by two `Point` objects. Note that, at the end of the day, all our objects are made of `double` numbers, and therefore, will serialize into a sequence of numbers. The key is knowing, which `double` represents which field of which object: we ned this to restore the original objects correctly.
+
+To serialize these objects using the Visitor pattern, we follow the same process we used in the last section. First, we need to declare the base Visitor class:
+
+```cpp
+struct Visitor{
+    virtual void visit(double& x) = 0;
+    virtual void visit(Point& p) = 0;
+    virtual void visit(Circle& c) = 0;
+    virtual void visit(Line& l) = 0;
+};
+```
+
+There is one additional detail here - we can also visit double values; each visitor would need to handle them appropriately(write them, read them and so on). Visiting any geometry object will result, eventually, in visiting the numbers it is composed of.
+
+Our base `Geometry` class and all classes derived from it need to accept this visitor:
+
+```cpp
+struct Geometry{
+    virtual ~Geometry(){}
+    virtual void accept(Visitor& v) = 0;
+};
+```
+
+There is of course, no way to add an `accept()` member function to `double`, but we won't have to. The `accept()` member functions of the derived classes, each of which is composed of one or more members and other classes, visit every data member in order:
+
+```cpp
+void Point::accpet(Visitor& v){
+    v.visit(x_);
+    v.visit(y_);
+}
+
+void Circle::accept(Visitor& v){
+    v.visit(center_);
+    v.visit(radius_);
+}
+
+void Line::accept(Visitor& v){
+    v.visit(p1_);
+    v.visit(p2_);
+}
+```
+
+The concrete Visitor classes, all derived from the base `Visitor` class, are responsible for the specific mechanisms of serialization and deserialization. The order in which the objects are broken down into their parts, all the way down to the numbers, is controlled by each object, but the visitors determine what is done with these numbers. For example, we can serialize all objects into a string using formatted I/O(similar to what we get if we print the numbers into `cout`).
