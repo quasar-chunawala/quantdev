@@ -147,13 +147,20 @@ We had to forward declare the `Pet` hierarchy classes because `PetVistor` has to
 ```cpp
 struct Pet{
     virtual void accept(PetVisitor& v) = 0;
+    const std::string& color(){ return m_color; }
+
+    Pet(std::string_view color) : m_color{ color }{}
+    private:
+    std::string m_color;
 };
 
 struct Cat : public Pet{
+    Cat(std::string_view color) : Pet{ color }{}
     void accept(PetVisitor& v) override { v.visit(this); }
 };
 
 struct Dog : public Pet{
+    Dog(std::string_view color) : Pet{ color }{}
     void accept(PetVisitor& v) override { v.visit(this); }
 };
 ```
@@ -206,6 +213,7 @@ std::unique_ptr<Pet> p(new Cat("orange tabby"));
 std::unique_ptr<PetVisitor> v(new FeedingVisitor());
 p->accept(*v);
 ```
+[Compiler Explorer](https://compiler-explorer.com/z/YhxsY9sG5)
 
 When written this way, the code highlights the double dispatch aspect of the visitor pattern - the call to `accept()` ends up dispatched to a particular `visit()` function based on two factors - the type of the visitable `*p` object and the type of the visitor `*v` object. 
 
@@ -219,10 +227,14 @@ Our very first visitor in the previous section allowed us to effectively add a v
 
 ```cpp
 struct Pet{
-    std::vector<Pet*> m_children;
-
     void add_child(Pet* p){ m_children.push_back(p); }
-    virtual void accept(PetVisitor&v, Pet* p = nullptr)
+    virtual void accept(PetVisitor&v, Pet* p = nullptr) = 0;
+    Pet(std::string_view color) : m_color{ color }{}
+    const std::string& color(){ return m_color; }
+
+    private:
+    std::vector<Pet*> m_children;
+    std::string       m_color;
 };
 ```
 
@@ -252,27 +264,223 @@ The `visit()` function also has to be modified to accept the additional argument
 Now, our additional argument is forwarded through the chain of virtual function calls to the visitor, where we can make use of it. Let's create a visitor that records the pet births and adds new pet objects, as children to their parent objects:
 
  ```cpp
+#include <vector>
+#include <print>
+#include <memory>
+#include <cassert>
+
+struct Pet;
+struct Cat;
+struct Dog;
+
+struct PetVisitor{
+    virtual void visit(Cat* c, Pet* p = nullptr) = 0;
+    virtual void visit(Dog* d, Pet* p = nullptr) = 0;
+};
+
+struct Pet{
+    void add_child(Pet* p){ m_children.push_back(p); }
+    virtual void accept(PetVisitor&v, Pet* p = nullptr) = 0;
+    Pet(std::string_view color) : m_color{ color }{}
+    const std::string& color(){ return m_color; }
+
+    private:
+    std::vector<Pet*> m_children;
+    std::string       m_color;
+};
+
+struct Cat : public Pet{
+    Cat(std::string_view color) : Pet{ color }{}
+    void accept(PetVisitor& v, Pet* p = nullptr) override { v.visit(this, p); }
+};
+
+struct Dog : public Pet{
+    Dog(std::string_view color) : Pet{ color }{}
+    void accept(PetVisitor& v, Pet* p = nullptr) override { v.visit(this, p); }
+};
+
+struct FeedingVisitor : public PetVisitor{
+    void visit(Cat* c, Pet* p = nullptr) override{
+        std::println("Feed tuna to the {} cat", c->color());
+    }
+
+    void visit(Dog* d, Pet* p = nullptr) override{
+        std::println("Feed steak to the {} dog", d->color());
+    }
+};
+
+struct PlayingVisitor : public PetVisitor{
+    void visit(Cat* c, Pet* p = nullptr) override{
+        std::println("Play with a feather with the {} cat", c->color());
+    }
+
+    void visit(Dog* d, Pet* p = nullptr) override{
+        std::println("Play fetch with the {} dog", d->color());
+    }
+};
+
  struct BirthVisitor : public PetVisitor{
+    void visit(Cat* c, Pet* child) override{
+        assert(dynamic_cast<Cat*>(child));
+        c->add_child(child);
+        std::println("{} gave birth to child {}", c->color(), child->color());
+    }
+
+    void visit(Dog* d, Pet* child) override{
+        assert(dynamic_cast<Dog*>(child));
+        d->add_child(child);
+        std::println("{} gave birth to child {}", d->color(), child->color());
+    }
+ };
+
+int main(){
+    std::unique_ptr<Pet> parent(new Cat("orange tabby"));
+    Pet* child(new Cat("calico"));
+
+    std::unique_ptr<PetVisitor> pv(new PlayingVisitor());
+    std::unique_ptr<PetVisitor> fv(new FeedingVisitor());
+    BirthVisitor bv;
+
+    parent->accept(*pv);   // Play with a feather with orange tabby cat
+    parent->accept(*fv);   // Feeding tuna to the organge tabby cat
+    parent->accept(bv, child);
+}
+ ```
+ [Compiler Explorer](https://compiler-explorer.com/z/nTbW1azoT)
+
+ Once we have established the parenthood relationships, we want to examine our pet families. That is another operation we want to add, which calls for another visitor. 
+
+ ```cpp
+ #include <print>
+
+ struct FamilyTreeVisitor : public PetVisitor{
     void visit(Cat* c, Pet* p) override{
-        assert(dynamic_cast<Cat*>(p));
-        c->add_child(p);
+        std::println("Kittens : ");
+        for(auto k : c->m_children){
+            std::println("{}", k->color());
+        }
     }
 
     void visit(Dog* d, Pet* p) override{
-        assert(dynamic_cast<Dog*>(p));
-        d->add_child(p);
+        std::println("Puppies : ");
+        for(auto p : d->m_children){
+            std::println("{}", p->color());
+        }
     }
  };
  ```
 
- Note that, if we want to make sure that there are no biological impossibilities in our family tree,the verification has to be done at run-time - at compile-time, we don not know the actual types of the polymorphic objects. The new visitor is just as easy to use as the ones before:
+ We have hit a slight problem, though, because as written, the code will not compile. The reason is that the `FamilyTreeVisitor` is trying to access the `Pet::m_children` data member, which is private. THis is another weakness of the Visitor pattern - from our point of view, the visitors add new operations to the classes, just like virtual functions, but from the compiler's point of view, they are completely separate classes, not at all like member functions of the `Pet` classes and have no special access. Application of the visitor pattern usually requires that the encapsulation is relaxed in one of two ways - we can either allow public access to the data(directly or through `get` member functions) or declare the Visitor classes to be friends. In our example, we will follow the second route:
 
- ```cpp
- Pet* parent(new Cat("orange tabby")); // A cat
- BirthVisitor bv;
+```cpp
+#include <vector>
+#include <print>
+#include <memory>
+#include <cassert>
 
- Pet* child(new Cat("calico"));
- parent->visit(bv, child);
- ```
+struct Pet;
+struct Cat;
+struct Dog;
 
- Once we have established the parenthood relationships, we want to examine our pet families. That is another operation we want to add, which calls for another visitor. 
+struct PetVisitor{
+    virtual void visit(Cat* c, Pet* p = nullptr) = 0;
+    virtual void visit(Dog* d, Pet* p = nullptr) = 0;
+};
+
+struct Pet{
+    friend struct FamilyTreeVisitor;
+
+    void add_child(Pet* p){ m_children.push_back(p); }
+    virtual void accept(PetVisitor&v, Pet* p = nullptr) = 0;
+    Pet(std::string_view color) : m_color{ color }{}
+    const std::string& color(){ return m_color; }
+
+    private:
+    std::vector<Pet*> m_children;
+    std::string       m_color;
+};
+
+struct Cat : public Pet{
+    Cat(std::string_view color) : Pet{ color }{}
+    void accept(PetVisitor& v, Pet* p = nullptr) override { v.visit(this, p); }
+};
+
+struct Dog : public Pet{
+    Dog(std::string_view color) : Pet{ color }{}
+    void accept(PetVisitor& v, Pet* p = nullptr) override { v.visit(this, p); }
+};
+
+struct FeedingVisitor : public PetVisitor{
+    void visit(Cat* c, Pet* p = nullptr) override{
+        std::println("Feed tuna to the {} cat", c->color());
+    }
+
+    void visit(Dog* d, Pet* p = nullptr) override{
+        std::println("Feed steak to the {} dog", d->color());
+    }
+};
+
+struct PlayingVisitor : public PetVisitor{
+    void visit(Cat* c, Pet* p = nullptr) override{
+        std::println("Play with a feather with the {} cat", c->color());
+    }
+
+    void visit(Dog* d, Pet* p = nullptr) override{
+        std::println("Play fetch with the {} dog", d->color());
+    }
+};
+
+ struct BirthVisitor : public PetVisitor{
+    void visit(Cat* c, Pet* child) override{
+        assert(dynamic_cast<Cat*>(child));
+        c->add_child(child);
+        std::println("{} gave birth to child {}", c->color(), child->color());
+    }
+
+    void visit(Dog* d, Pet* child) override{
+        assert(dynamic_cast<Dog*>(child));
+        d->add_child(child);
+        std::println("{} gave birth to child {}", d->color(), child->color());
+    }
+ };
+
+
+ struct FamilyTreeVisitor : public PetVisitor{
+    void visit(Cat* c, Pet* p) override{
+        std::println("Kittens");
+        for(auto k : c->m_children){
+            std::println("\t{}", k->color());
+        }
+    }
+
+    void visit(Dog* d, Pet* p) override{
+        std::println("Puppies");
+        for(auto p : d->m_children){
+            std::println("\t{}", p->color());
+        }
+    }
+ };
+
+int main(){
+    std::unique_ptr<Pet> parent(new Cat("orange tabby"));
+    Pet* child1(new Cat("calico"));
+    Pet* child2(new Cat("garfield"));
+
+    std::unique_ptr<PetVisitor> pv(new PlayingVisitor());
+    std::unique_ptr<PetVisitor> fv(new FeedingVisitor());
+    BirthVisitor bv;
+
+    parent->accept(*pv);   // Play with a feather with orange tabby cat
+    parent->accept(*fv);   // Feeding tuna to the organge tabby cat
+    parent->accept(bv, child1);
+    parent->accept(bv, child2);
+
+    FamilyTreeVisitor tv;
+    parent->accept(tv);
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/WGv6P548a)
+
+Unlike `BirthVisitor`, `FamilyTreeVisitor` does not need the additional argument.
+
+Now, we have visitors that implement operations with parameters. What about return values? Technically, there is no requirement for `visit()` and `accept()` functions to return `void`. They can return anything else. However, the limitation that they have to all return the same type usuallyt makes this capability useless. Virtual functions can have covariant return types, where the base class virtual function returns an object of some class and the derived class overrides return objects derived from that class, but even that is usually too limiting. There is another, much simpler solution - the `visit()` functions of every visitor object 
