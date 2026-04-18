@@ -106,6 +106,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 <script async="" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9993009899870547" crossorigin="anonymous"></script>
 
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
 
 <link rel="stylesheet" href="../../styles.css">
 </head>
@@ -189,13 +191,21 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a>
-  <ul class="collapse">
-  <li><a href="#what-could-make-unions-better" id="toc-what-could-make-unions-better" class="nav-link" data-scroll-target="#what-could-make-unions-better">What could make unions better?</a></li>
-  </ul></li>
+  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
   <li><a href="#stdvariant-usage" id="toc-stdvariant-usage" class="nav-link" data-scroll-target="#stdvariant-usage"><code>std::variant</code> usage</a></li>
   <li><a href="#using-generic-lambdas-as-visitors" id="toc-using-generic-lambdas-as-visitors" class="nav-link" data-scroll-target="#using-generic-lambdas-as-visitors">Using generic lambdas as visitors</a></li>
-  <li><a href="#the-cracked-mans-match" id="toc-the-cracked-mans-match" class="nav-link" data-scroll-target="#the-cracked-mans-match">The cracked-man’s match</a></li>
+  <li><a href="#the-cracked-mans-match" id="toc-the-cracked-mans-match" class="nav-link" data-scroll-target="#the-cracked-mans-match">The cracked-man’s match</a>
+  <ul class="collapse">
+  <li><a href="#multiple-dispatch" id="toc-multiple-dispatch" class="nav-link" data-scroll-target="#multiple-dispatch">Multiple Dispatch</a></li>
+  </ul></li>
+  <li><a href="#what-is-a-stdvariant-under-the-hood" id="toc-what-is-a-stdvariant-under-the-hood" class="nav-link" data-scroll-target="#what-is-a-stdvariant-under-the-hood">What is a <code>std::variant</code> under the hood?</a></li>
+  <li><a href="#tmp-utilities" id="toc-tmp-utilities" class="nav-link" data-scroll-target="#tmp-utilities">TMP Utilities</a>
+  <ul class="collapse">
+  <li><a href="#find_index_of_v" id="toc-find_index_of_v" class="nav-link" data-scroll-target="#find_index_of_v"><code>find_index_of_v</code></a></li>
+  <li><a href="#uint_atleast_t" id="toc-uint_atleast_t" class="nav-link" data-scroll-target="#uint_atleast_t"><code>uint_atleast_t</code></a></li>
+  <li><a href="#get_nth_type" id="toc-get_nth_type" class="nav-link" data-scroll-target="#get_nth_type"><code>get_nth_type</code></a></li>
+  <li><a href="#instance_of" id="toc-instance_of" class="nav-link" data-scroll-target="#instance_of"><code>instance_of</code></a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -237,86 +247,317 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-27"><a href="#cb1-27"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p><a href="https://compiler-explorer.com/z/WeMMfjh9n">Compiler Explorer</a></p>
 <p>As you see, the <code>S</code> union needs a lot of maintenance from our side. We have to know, which type is active and call appropriate constructors/destructors before switching to a new type.</p>
-<section id="what-could-make-unions-better" class="level2">
-<h2 class="anchored" data-anchor-id="what-could-make-unions-better">What could make unions better?</h2>
-<ul>
-<li>The ability to use complex types and full support of their lifetimes. If you switch the type, then a proper destructor is called and we don’t leak memory.</li>
-<li>A way to know what’s the active type.</li>
-</ul>
-</section>
 </section>
 <section id="stdvariant-usage" class="level1">
 <h1><code>std::variant</code> usage</h1>
-<p>We look at the protoypical use-case for a <code>std::variant</code>.</p>
-<p>Visitors are objects that overload a function call operator <code>operator()(T t)</code> for each possible type. When a visitor object visits a variant, they invoke the best matching function call operator for the actual value of the variant.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
-<span id="cb2-2"><a href="#cb2-2"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
-<span id="cb2-3"><a href="#cb2-3"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb2-4"><a href="#cb2-4"></a></span>
-<span id="cb2-5"><a href="#cb2-5"></a><span class="kw">struct</span> MyVisitor<span class="op">{</span></span>
-<span id="cb2-6"><a href="#cb2-6"></a>    <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span><span class="dt">int</span> i<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
-<span id="cb2-7"><a href="#cb2-7"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"int: "</span> <span class="op">&lt;&lt;</span> i <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
-<span id="cb2-8"><a href="#cb2-8"></a>    <span class="op">}</span></span>
-<span id="cb2-9"><a href="#cb2-9"></a></span>
-<span id="cb2-10"><a href="#cb2-10"></a>    <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span><span class="bu">std::</span>string<span class="op"> </span>s<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
-<span id="cb2-11"><a href="#cb2-11"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"string: "</span> <span class="op">&lt;&lt;</span> s <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span> </span>
-<span id="cb2-12"><a href="#cb2-12"></a>    <span class="op">}</span></span>
-<span id="cb2-13"><a href="#cb2-13"></a></span>
-<span id="cb2-14"><a href="#cb2-14"></a>    <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span><span class="dt">double</span> d<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
-<span id="cb2-15"><a href="#cb2-15"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"double: "</span> <span class="op">&lt;&lt;</span> d <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
-<span id="cb2-16"><a href="#cb2-16"></a>    <span class="op">}</span></span>
-<span id="cb2-17"><a href="#cb2-17"></a><span class="op">};</span></span>
-<span id="cb2-18"><a href="#cb2-18"></a></span>
-<span id="cb2-19"><a href="#cb2-19"></a><span class="dt">int</span> main<span class="op">(){</span></span>
-<span id="cb2-20"><a href="#cb2-20"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> var<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
-<span id="cb2-21"><a href="#cb2-21"></a>    <span class="bu">std::</span>visit<span class="op">(</span>MyVisitor<span class="op">(),</span> var<span class="op">);</span>   <span class="co">// calls operator()(int)</span></span>
-<span id="cb2-22"><a href="#cb2-22"></a></span>
-<span id="cb2-23"><a href="#cb2-23"></a>    var <span class="op">=</span> <span class="st">"hello"</span><span class="op">;</span></span>
-<span id="cb2-24"><a href="#cb2-24"></a>    <span class="bu">std::</span>visit<span class="op">(</span>MyVisitor<span class="op">(),</span> var<span class="op">);</span>   <span class="co">// calls operator()(std::string)</span></span>
-<span id="cb2-25"><a href="#cb2-25"></a></span>
-<span id="cb2-26"><a href="#cb2-26"></a>    var <span class="op">=</span> <span class="fl">3.14</span><span class="op">;</span></span>
-<span id="cb2-27"><a href="#cb2-27"></a>    <span class="bu">std::</span>visit<span class="op">(</span>MyVisitor<span class="op">(),</span> var<span class="op">);</span>   <span class="co">// calls operator()(double)</span></span>
-<span id="cb2-28"><a href="#cb2-28"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb2-29"><a href="#cb2-29"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p><a href="https://compiler-explorer.com/z/Tzn53YT76">Compiler Explorer</a></p>
-</section>
-<section id="using-generic-lambdas-as-visitors" class="level1">
-<h1>Using generic lambdas as visitors</h1>
+<p>The <code>std::variant</code> template is essentially a <strong>smart union</strong>. <code>std::variant&lt;T1, T2, T3&gt;</code> is similar to <code>union{T1 v1; T2 v2; T3 v3}</code> in that both can store a value of one of the specified types and only one value can be stored at a time. The key difference is that a variant objects knows which type it contains, while with a union the programmer is wholly responsible for reading the same type as what was written earlier. It is undefined behavior to access a union as a type that differs from the one used to initialize it:</p>
+<p>In contrast <code>std::variant</code> offers a safe way to store values of different types in the same memory. It is easy to check at runtime which alternative type is currently stored in the vartiant, and accessing a variant as the wrong type throws an exception.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">double</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;</span> v<span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a>v <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a><span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> v<span class="op">.</span>index<span class="op">();</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a><span class="op">++</span><span class="bu">std::</span>get<span class="op">&lt;</span><span class="dv">0</span><span class="op">&gt;(</span>v<span class="op">);</span></span>
+<span id="cb2-5"><a href="#cb2-5"></a><span class="co">// std::get&lt;1&gt;(v);  //throws std::bad_variant_access</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>In many ways, <code>std::variant</code> offers capabilities similar to inheritance-based run-timne polymorphism: both let us write code where the same variable name can refer to objects of different types at run-time. The two major differences are: first, a <code>std::variant</code> does not require that all its types come from the same hierarchy(they need not be classes at all) and second, a variant object can only store one of the types listed in its declaration, while a base class pointer can point to any derived class.</p>
+<p>Visitors are objects that are used to implement the Visitor design pattern. Typically, they are used to add an operation to all classes in a class hierarchy, that is the equivalent of adding a virtual function, but without modifying the classes themselves. When a visitor object visits a variant, they invoke the best matching function call operator for the actual value of the variant.</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
 <span id="cb3-2"><a href="#cb3-2"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
 <span id="cb3-3"><a href="#cb3-3"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
 <span id="cb3-4"><a href="#cb3-4"></a></span>
-<span id="cb3-5"><a href="#cb3-5"></a><span class="kw">auto</span> printVisitor<span class="op">()</span> <span class="op">=</span> <span class="op">[](</span><span class="at">const</span> <span class="kw">auto</span><span class="op">&amp;</span> v<span class="op">){</span></span>
-<span id="cb3-6"><a href="#cb3-6"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> v<span class="op">;</span></span>
-<span id="cb3-7"><a href="#cb3-7"></a><span class="op">};</span></span>
-<span id="cb3-8"><a href="#cb3-8"></a></span>
-<span id="cb3-9"><a href="#cb3-9"></a><span class="dt">int</span> main<span class="op">(){</span></span>
-<span id="cb3-10"><a href="#cb3-10"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> var<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
-<span id="cb3-11"><a href="#cb3-11"></a>    <span class="bu">std::</span>visit<span class="op">(</span>printVisitor<span class="op">,</span> var<span class="op">);</span></span>
-<span id="cb3-12"><a href="#cb3-12"></a>    var <span class="op">=</span> <span class="st">"hello"</span><span class="op">;</span></span>
-<span id="cb3-13"><a href="#cb3-13"></a>    <span class="bu">std::</span>visit<span class="op">(</span>printVisitor<span class="op">,</span> var<span class="op">);</span></span>
-<span id="cb3-14"><a href="#cb3-14"></a>    var <span class="op">=</span> <span class="fl">42.7</span><span class="op">;</span></span>
-<span id="cb3-15"><a href="#cb3-15"></a>    <span class="bu">std::</span>visit<span class="op">(</span>printVisitor<span class="op">,</span> var<span class="op">);</span></span>
-<span id="cb3-16"><a href="#cb3-16"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb3-17"><a href="#cb3-17"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb3-5"><a href="#cb3-5"></a><span class="kw">struct</span> MyVisitor<span class="op">{</span></span>
+<span id="cb3-6"><a href="#cb3-6"></a>    <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span><span class="dt">int</span> i<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb3-7"><a href="#cb3-7"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"int: "</span> <span class="op">&lt;&lt;</span> i <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb3-8"><a href="#cb3-8"></a>    <span class="op">}</span></span>
+<span id="cb3-9"><a href="#cb3-9"></a></span>
+<span id="cb3-10"><a href="#cb3-10"></a>    <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span><span class="bu">std::</span>string<span class="op"> </span>s<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb3-11"><a href="#cb3-11"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"string: "</span> <span class="op">&lt;&lt;</span> s <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span> </span>
+<span id="cb3-12"><a href="#cb3-12"></a>    <span class="op">}</span></span>
+<span id="cb3-13"><a href="#cb3-13"></a></span>
+<span id="cb3-14"><a href="#cb3-14"></a>    <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span><span class="dt">double</span> d<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb3-15"><a href="#cb3-15"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"double: "</span> <span class="op">&lt;&lt;</span> d <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb3-16"><a href="#cb3-16"></a>    <span class="op">}</span></span>
+<span id="cb3-17"><a href="#cb3-17"></a><span class="op">};</span></span>
+<span id="cb3-18"><a href="#cb3-18"></a></span>
+<span id="cb3-19"><a href="#cb3-19"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb3-20"><a href="#cb3-20"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> var<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
+<span id="cb3-21"><a href="#cb3-21"></a>    <span class="bu">std::</span>visit<span class="op">(</span>MyVisitor<span class="op">(),</span> var<span class="op">);</span>   <span class="co">// calls operator()(int)</span></span>
+<span id="cb3-22"><a href="#cb3-22"></a></span>
+<span id="cb3-23"><a href="#cb3-23"></a>    var <span class="op">=</span> <span class="st">"hello"</span><span class="op">;</span></span>
+<span id="cb3-24"><a href="#cb3-24"></a>    <span class="bu">std::</span>visit<span class="op">(</span>MyVisitor<span class="op">(),</span> var<span class="op">);</span>   <span class="co">// calls operator()(std::string)</span></span>
+<span id="cb3-25"><a href="#cb3-25"></a></span>
+<span id="cb3-26"><a href="#cb3-26"></a>    var <span class="op">=</span> <span class="fl">3.14</span><span class="op">;</span></span>
+<span id="cb3-27"><a href="#cb3-27"></a>    <span class="bu">std::</span>visit<span class="op">(</span>MyVisitor<span class="op">(),</span> var<span class="op">);</span>   <span class="co">// calls operator()(double)</span></span>
+<span id="cb3-28"><a href="#cb3-28"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-29"><a href="#cb3-29"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/Tzn53YT76">Compiler Explorer</a></p>
+</section>
+<section id="using-generic-lambdas-as-visitors" class="level1">
+<h1>Using generic lambdas as visitors</h1>
+<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
+<span id="cb4-2"><a href="#cb4-2"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
+<span id="cb4-3"><a href="#cb4-3"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb4-4"><a href="#cb4-4"></a></span>
+<span id="cb4-5"><a href="#cb4-5"></a><span class="kw">auto</span> printVisitor<span class="op">()</span> <span class="op">=</span> <span class="op">[](</span><span class="at">const</span> <span class="kw">auto</span><span class="op">&amp;</span> v<span class="op">){</span></span>
+<span id="cb4-6"><a href="#cb4-6"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> v<span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7"></a><span class="op">};</span></span>
+<span id="cb4-8"><a href="#cb4-8"></a></span>
+<span id="cb4-9"><a href="#cb4-9"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb4-10"><a href="#cb4-10"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> var<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
+<span id="cb4-11"><a href="#cb4-11"></a>    <span class="bu">std::</span>visit<span class="op">(</span>printVisitor<span class="op">,</span> var<span class="op">);</span></span>
+<span id="cb4-12"><a href="#cb4-12"></a>    var <span class="op">=</span> <span class="st">"hello"</span><span class="op">;</span></span>
+<span id="cb4-13"><a href="#cb4-13"></a>    <span class="bu">std::</span>visit<span class="op">(</span>printVisitor<span class="op">,</span> var<span class="op">);</span></span>
+<span id="cb4-14"><a href="#cb4-14"></a>    var <span class="op">=</span> <span class="fl">42.7</span><span class="op">;</span></span>
+<span id="cb4-15"><a href="#cb4-15"></a>    <span class="bu">std::</span>visit<span class="op">(</span>printVisitor<span class="op">,</span> var<span class="op">);</span></span>
+<span id="cb4-16"><a href="#cb4-16"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb4-17"><a href="#cb4-17"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
 <section id="the-cracked-mans-match" class="level1">
 <h1>The cracked-man’s match</h1>
-<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
-<span id="cb4-2"><a href="#cb4-2"></a><span class="kw">struct</span> overload <span class="op">:</span> Ts<span class="op">...</span> <span class="op">{</span></span>
-<span id="cb4-3"><a href="#cb4-3"></a>    <span class="kw">using</span> Ts<span class="op">::</span><span class="kw">operator</span><span class="op">()...;</span></span>
-<span id="cb4-4"><a href="#cb4-4"></a><span class="op">};</span></span>
-<span id="cb4-5"><a href="#cb4-5"></a></span>
-<span id="cb4-6"><a href="#cb4-6"></a><span class="co">// base types are deduced from the passed arguments</span></span>
-<span id="cb4-7"><a href="#cb4-7"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
-<span id="cb4-8"><a href="#cb4-8"></a>overload<span class="op">(</span>Ts<span class="op">...)</span> <span class="op">-&gt;</span> overload<span class="op">&lt;</span>Ts<span class="op">...&gt;;</span></span>
-<span id="cb4-9"><a href="#cb4-9"></a></span>
-<span id="cb4-10"><a href="#cb4-10"></a><span class="dt">int</span> main<span class="op">(){</span></span>
-<span id="cb4-11"><a href="#cb4-11"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;</span> var<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
-<span id="cb4-12"><a href="#cb4-12"></a>    </span>
-<span id="cb4-13"><a href="#cb4-13"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a><span class="kw">struct</span> overload <span class="op">:</span> Ts<span class="op">...</span> <span class="op">{</span></span>
+<span id="cb5-3"><a href="#cb5-3"></a>    <span class="kw">using</span> Ts<span class="op">::</span><span class="kw">operator</span><span class="op">()...;</span></span>
+<span id="cb5-4"><a href="#cb5-4"></a><span class="op">};</span></span>
+<span id="cb5-5"><a href="#cb5-5"></a></span>
+<span id="cb5-6"><a href="#cb5-6"></a><span class="co">// base types are deduced from the passed arguments</span></span>
+<span id="cb5-7"><a href="#cb5-7"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb5-8"><a href="#cb5-8"></a>overload<span class="op">(</span>Ts<span class="op">...)</span> <span class="op">-&gt;</span> overload<span class="op">&lt;</span>Ts<span class="op">...&gt;;</span></span>
+<span id="cb5-9"><a href="#cb5-9"></a></span>
+<span id="cb5-10"><a href="#cb5-10"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb5-11"><a href="#cb5-11"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;</span> var<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
+<span id="cb5-12"><a href="#cb5-12"></a>    <span class="bu">std::</span>visit<span class="op">(</span>overload<span class="op">{</span></span>
+<span id="cb5-13"><a href="#cb5-13"></a>        <span class="op">[](</span><span class="dt">int</span> i<span class="op">){</span> <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"int : "</span> <span class="op">&lt;&lt;</span> i<span class="op">;</span> <span class="op">},</span></span>
+<span id="cb5-14"><a href="#cb5-14"></a>        <span class="op">[](</span><span class="bu">std::</span>string<span class="op"> </span>s<span class="op">){</span> <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"string : "</span> <span class="op">&lt;&lt;</span> s<span class="op">;</span> <span class="op">}</span></span>
+<span id="cb5-15"><a href="#cb5-15"></a>        <span class="op">[](</span><span class="dt">double</span> d<span class="op">){</span> <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"double : "</span> <span class="op">&lt;&lt;</span> d<span class="op">;</span> <span class="op">}</span></span>
+<span id="cb5-16"><a href="#cb5-16"></a>    <span class="op">},</span> var<span class="op">);</span></span>
+<span id="cb5-17"><a href="#cb5-17"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Since the struct <code>overload</code> inherits from the closure types (<code>__my_lambda_with_int_param_struct</code> and <code>__my_lambda_with_string_param_struct</code>), we need to bring their function call operators in scope.</p>
+<section id="multiple-dispatch" class="level2">
+<h2 class="anchored" data-anchor-id="multiple-dispatch">Multiple Dispatch</h2>
+<p>As mentioned before, the killer feature of <code>std::variant</code> is multiple dispatch. Here is a common interview problem. Imagine you have an excel spreadsheet, and a spreadsheet has cells. By definition, in a cell, you can have either an <code>int</code> or a <code>string</code>. And then, there’s an operation defined like plus <code>operator+()</code>. For example, you can add two numbers. Adding two strings results in concatentation. <code>string</code> + <code>int</code> : you convert into <code>int</code> to <code>string</code> and concatenate. And <code>int</code> + <code>string</code> : you throw an error. This interview problem is much easier to solve, if you have a <code>variant</code>.</p>
+<p>Here, you have to select an overload not based on just one type (like in virtual functions), but on two types or in general <span class="math inline">\(N\)</span> types.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
+<span id="cb6-3"><a href="#cb6-3"></a><span class="pp">#include </span><span class="im">&lt;stdexcept&gt;</span></span>
+<span id="cb6-4"><a href="#cb6-4"></a></span>
+<span id="cb6-5"><a href="#cb6-5"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb6-6"><a href="#cb6-6"></a><span class="kw">struct</span> overloaded <span class="op">:</span> <span class="kw">public</span> Ts<span class="op">...{</span></span>
+<span id="cb6-7"><a href="#cb6-7"></a>    <span class="kw">using</span> Ts<span class="op">::</span><span class="kw">operator</span><span class="op">()...;</span></span>
+<span id="cb6-8"><a href="#cb6-8"></a><span class="op">};</span></span>
+<span id="cb6-9"><a href="#cb6-9"></a></span>
+<span id="cb6-10"><a href="#cb6-10"></a><span class="co">// base types are deduced from passed arguments</span></span>
+<span id="cb6-11"><a href="#cb6-11"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb6-12"><a href="#cb6-12"></a>overloaded<span class="op">(</span>Ts<span class="op">...)</span> <span class="op">-&gt;</span> overloaded<span class="op">&lt;</span>Ts<span class="op">...&gt;;</span></span>
+<span id="cb6-13"><a href="#cb6-13"></a></span>
+<span id="cb6-14"><a href="#cb6-14"></a><span class="kw">struct</span> Cell<span class="op">{</span></span>
+<span id="cb6-15"><a href="#cb6-15"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;</span> data<span class="op">;</span></span>
+<span id="cb6-16"><a href="#cb6-16"></a></span>
+<span id="cb6-17"><a href="#cb6-17"></a>    Cell<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">+=(</span>Cell<span class="op">&amp;</span> other<span class="op">){</span></span>
+<span id="cb6-18"><a href="#cb6-18"></a>        <span class="bu">std::</span>visit<span class="op">(</span>overloaded<span class="op">{</span></span>
+<span id="cb6-19"><a href="#cb6-19"></a>            <span class="op">[](</span><span class="dt">int</span> a<span class="op">,</span> <span class="dt">int</span> b<span class="op">){</span> a <span class="op">+=</span> b<span class="op">;</span> <span class="op">},</span></span>
+<span id="cb6-20"><a href="#cb6-20"></a>            <span class="op">[](</span><span class="bu">std::</span>string<span class="op"> </span>a<span class="op">,</span> <span class="dt">int</span> b<span class="op">){</span> a <span class="op">+=</span> <span class="bu">std::</span>to_string<span class="op">(</span>b<span class="op">);</span> <span class="op">},</span></span>
+<span id="cb6-21"><a href="#cb6-21"></a>            <span class="op">[](</span><span class="dt">int</span> a<span class="op">,</span> <span class="bu">std::</span>string<span class="op"> </span>b<span class="op">){</span> <span class="cf">throw</span> <span class="bu">std::</span>runtime_error<span class="op">(</span><span class="st">"Invalid inputs!"</span><span class="op">);</span> <span class="op">},</span></span>
+<span id="cb6-22"><a href="#cb6-22"></a>            <span class="op">[](</span><span class="bu">std::</span>string<span class="op"> </span>a<span class="op">,</span> <span class="bu">std::</span>string<span class="op"> </span>b<span class="op">){</span> a <span class="op">+=</span> b<span class="op">;</span> <span class="op">}</span></span>
+<span id="cb6-23"><a href="#cb6-23"></a>        <span class="op">},</span> data<span class="op">,</span> other<span class="op">.</span>data<span class="op">);</span></span>
+<span id="cb6-24"><a href="#cb6-24"></a></span>
+<span id="cb6-25"><a href="#cb6-25"></a>        <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb6-26"><a href="#cb6-26"></a>    <span class="op">}</span></span>
+<span id="cb6-27"><a href="#cb6-27"></a><span class="op">};</span></span>
+<span id="cb6-28"><a href="#cb6-28"></a></span>
+<span id="cb6-29"><a href="#cb6-29"></a><span class="dt">int</span> main<span class="op">(){}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/qqKTK99dE">Compiler Explorer</a></p>
+<p><code>std::visit()</code> is a way to dispatch on a variant. It does multiple dispatch - based on my own <code>self</code> Cell type and the <code>other</code> Cell type.</p>
+</section>
+</section>
+<section id="what-is-a-stdvariant-under-the-hood" class="level1">
+<h1>What is a <code>std::variant</code> under the hood?</h1>
+<div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="co">// Pseudo-code</span></span>
+<span id="cb7-2"><a href="#cb7-2"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb7-4"><a href="#cb7-4"></a>    <span class="kw">struct</span> variant<span class="op">{</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a>        <span class="kw">union</span><span class="op">{</span></span>
+<span id="cb7-6"><a href="#cb7-6"></a>            Ts<span class="op">...</span> elements<span class="op">;</span></span>
+<span id="cb7-7"><a href="#cb7-7"></a>        <span class="op">};</span></span>
+<span id="cb7-8"><a href="#cb7-8"></a></span>
+<span id="cb7-9"><a href="#cb7-9"></a>        <span class="co">// ....</span></span>
+<span id="cb7-10"><a href="#cb7-10"></a>        <span class="dt">index_type</span> index<span class="op">;</span></span>
+<span id="cb7-11"><a href="#cb7-11"></a>    <span class="op">};</span></span>
+<span id="cb7-12"><a href="#cb7-12"></a></span>
+<span id="cb7-13"><a href="#cb7-13"></a>    <span class="kw">auto</span> visit<span class="op">(</span><span class="kw">auto</span><span class="op">&amp;&amp;</span> visitor<span class="op">,</span> <span class="kw">auto</span><span class="op">&amp;&amp;...</span> args<span class="op">){</span></span>
+<span id="cb7-14"><a href="#cb7-14"></a>        <span class="cf">switch</span><span class="op">(...)</span></span>
+<span id="cb7-15"><a href="#cb7-15"></a>            <span class="cf">case</span> <span class="dv">0</span><span class="op">:</span></span>
+<span id="cb7-16"><a href="#cb7-16"></a>                visitor<span class="op">.</span>visit<span class="op">(</span>get<span class="op">&lt;</span><span class="dv">0</span><span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb7-17"><a href="#cb7-17"></a>            <span class="cf">case</span> <span class="dv">1</span><span class="op">:</span></span>
+<span id="cb7-18"><a href="#cb7-18"></a>                visitor<span class="op">.</span>visit<span class="op">(</span>get<span class="op">&lt;</span><span class="dv">1</span><span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb7-19"><a href="#cb7-19"></a>    <span class="op">}</span></span>
+<span id="cb7-20"><a href="#cb7-20"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Under the hood, a <code>std::variant</code> is a union of all of the possible alternatives. It has an active index. And then, in <code>visit</code> there is some sort of <code>switch</code> statement, between all of the possible types. And we’re going to implement all of these components.</p>
+</section>
+<section id="tmp-utilities" class="level1">
+<h1>TMP Utilities</h1>
+<p>We are going to start with just a bunch of template metaprogramming utilities.</p>
+<section id="find_index_of_v" class="level2">
+<h2 class="anchored" data-anchor-id="find_index_of_v"><code>find_index_of_v</code></h2>
+<div class="sourceCode" id="cb8"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb8-2"><a href="#cb8-2"></a><span class="pp">#include </span><span class="im">&lt;concepts&gt;</span></span>
+<span id="cb8-3"><a href="#cb8-3"></a><span class="pp">#include </span><span class="im">&lt;initializer_list&gt;</span></span>
+<span id="cb8-4"><a href="#cb8-4"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
+<span id="cb8-5"><a href="#cb8-5"></a></span>
+<span id="cb8-6"><a href="#cb8-6"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb8-7"><a href="#cb8-7"></a></span>
+<span id="cb8-8"><a href="#cb8-8"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
+<span id="cb8-9"><a href="#cb8-9"></a>    <span class="kw">namespace</span> type_lists<span class="op">{</span></span>
+<span id="cb8-10"><a href="#cb8-10"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb8-11"><a href="#cb8-11"></a>        <span class="kw">constexpr</span> <span class="dt">size_t</span> find_index_of_impl<span class="op">(){</span></span>
+<span id="cb8-12"><a href="#cb8-12"></a>            <span class="dt">size_t</span> i<span class="op">{</span><span class="dv">0</span><span class="bu">uz</span><span class="op">};</span></span>
+<span id="cb8-13"><a href="#cb8-13"></a>            <span class="cf">for</span><span class="op">(</span><span class="dt">bool</span> <span class="dt">is_same_type</span> <span class="op">:</span> <span class="op">{</span> <span class="bu">std::</span>is_same_v<span class="op">&lt;</span>T<span class="op">,</span> Ts<span class="op">&gt;...</span> <span class="op">}){</span></span>
+<span id="cb8-14"><a href="#cb8-14"></a>                <span class="cf">if</span><span class="op">(</span><span class="dt">is_same_type</span><span class="op">)</span></span>
+<span id="cb8-15"><a href="#cb8-15"></a>                    <span class="cf">break</span><span class="op">;</span></span>
+<span id="cb8-16"><a href="#cb8-16"></a></span>
+<span id="cb8-17"><a href="#cb8-17"></a>                <span class="op">++</span>i<span class="op">;</span></span>
+<span id="cb8-18"><a href="#cb8-18"></a>            <span class="op">}</span></span>
+<span id="cb8-19"><a href="#cb8-19"></a></span>
+<span id="cb8-20"><a href="#cb8-20"></a>            <span class="cf">return</span> i<span class="op">;</span></span>
+<span id="cb8-21"><a href="#cb8-21"></a>        <span class="op">}</span></span>
+<span id="cb8-22"><a href="#cb8-22"></a></span>
+<span id="cb8-23"><a href="#cb8-23"></a>        <span class="co">// define a concept that checks if the index is not</span></span>
+<span id="cb8-24"><a href="#cb8-24"></a>        <span class="co">// out of bounds</span></span>
+<span id="cb8-25"><a href="#cb8-25"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb8-26"><a href="#cb8-26"></a>        <span class="kw">concept</span> out_of_bounds_check <span class="op">=</span> <span class="op">(</span></span>
+<span id="cb8-27"><a href="#cb8-27"></a>            find_index_of_impl<span class="op">&lt;</span>T<span class="op">,</span>Ts<span class="op">...&gt;()</span> <span class="op">&lt;</span> <span class="kw">sizeof</span><span class="op">...(</span>Ts<span class="op">)</span></span>
+<span id="cb8-28"><a href="#cb8-28"></a>        <span class="op">);</span></span>
+<span id="cb8-29"><a href="#cb8-29"></a>    <span class="op">}</span> <span class="co">// namespace type_lists</span></span>
+<span id="cb8-30"><a href="#cb8-30"></a></span>
+<span id="cb8-31"><a href="#cb8-31"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb8-32"><a href="#cb8-32"></a>    <span class="kw">requires</span> type_lists<span class="op">::</span>out_of_bounds_check<span class="op">&lt;</span>T<span class="op">,</span> Ts<span class="op">...&gt;</span></span>
+<span id="cb8-33"><a href="#cb8-33"></a>    <span class="kw">constexpr</span> <span class="dt">size_t</span> find_index_of_v <span class="op">=</span> type_lists<span class="op">::</span>find_index_of_impl<span class="op">&lt;</span>T<span class="op">,</span>Ts<span class="op">...&gt;();</span></span>
+<span id="cb8-34"><a href="#cb8-34"></a></span>
+<span id="cb8-35"><a href="#cb8-35"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb8-36"><a href="#cb8-36"></a>    <span class="kw">concept</span> exists <span class="op">=</span> <span class="kw">requires</span><span class="op">{</span></span>
+<span id="cb8-37"><a href="#cb8-37"></a>        <span class="op">{</span> find_index_of_v<span class="op">&lt;</span>T<span class="op">,</span>Ts<span class="op">...&gt;</span> <span class="op">};</span></span>
+<span id="cb8-38"><a href="#cb8-38"></a>    <span class="op">};</span></span>
+<span id="cb8-39"><a href="#cb8-39"></a></span>
+<span id="cb8-40"><a href="#cb8-40"></a><span class="op">}</span> <span class="co">// namespace tools</span></span>
+<span id="cb8-41"><a href="#cb8-41"></a></span>
+<span id="cb8-42"><a href="#cb8-42"></a><span class="op">}</span></span>
+<span id="cb8-43"><a href="#cb8-43"></a></span>
+<span id="cb8-44"><a href="#cb8-44"></a><span class="co">// -------------- tests ------------</span></span>
+<span id="cb8-45"><a href="#cb8-45"></a><span class="kw">static_assert</span><span class="op">(</span>dev<span class="op">::</span>tools<span class="op">::</span>find_index_of_v<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> <span class="op">==</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb8-46"><a href="#cb8-46"></a><span class="kw">static_assert</span><span class="op">(</span>dev<span class="op">::</span>tools<span class="op">::</span>find_index_of_v<span class="op">&lt;</span><span class="dt">float</span><span class="op">,</span> <span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> <span class="op">==</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb8-47"><a href="#cb8-47"></a><span class="kw">static_assert</span><span class="op">(</span>dev<span class="op">::</span>tools<span class="op">::</span>exists<span class="op">&lt;</span><span class="dt">double</span><span class="op">,</span> <span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">,</span> <span class="dt">double</span><span class="op">&gt;);</span></span>
+<span id="cb8-48"><a href="#cb8-48"></a><span class="kw">static_assert</span><span class="op">(!</span>dev<span class="op">::</span>tools<span class="op">::</span>exists<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">,</span> <span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">&gt;);</span></span>
+<span id="cb8-49"><a href="#cb8-49"></a></span>
+<span id="cb8-50"><a href="#cb8-50"></a><span class="dt">int</span> main<span class="op">(){}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/5rbM5cd48">Compiler Explorer</a></p>
+</section>
+<section id="uint_atleast_t" class="level2">
+<h2 class="anchored" data-anchor-id="uint_atleast_t"><code>uint_atleast_t</code></h2>
+<p>The next utility we are going to write is <code>uint_atleast_t</code>. I want to represent a number and I want to use the smallest <code>unsigned int</code> possible to store this number. For a <code>100</code>, <code>uint8_t</code> will be enough. For <code>256</code>, I already need <code>uint16_t</code>.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1"></a><span class="pp">#include </span><span class="im">&lt;cstdint&gt;</span></span>
+<span id="cb9-2"><a href="#cb9-2"></a><span class="co">// -------------- tests ------------</span></span>
+<span id="cb9-3"><a href="#cb9-3"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>same_as<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">,</span>dev<span class="op">::</span>tools<span class="op">::</span>uint_atleast<span class="op">&lt;</span><span class="dv">100</span><span class="op">&gt;&gt;);</span></span>
+<span id="cb9-4"><a href="#cb9-4"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>same_as<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">,</span>dev<span class="op">::</span>tools<span class="op">::</span>uint_atleast<span class="op">&lt;</span><span class="dv">255</span><span class="op">&gt;&gt;);</span></span>
+<span id="cb9-5"><a href="#cb9-5"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>same_as<span class="op">&lt;</span><span class="dt">uint16_t</span><span class="op">,</span>dev<span class="op">::</span>tools<span class="op">::</span>uint_atleast<span class="op">&lt;</span><span class="dv">256</span><span class="op">&gt;&gt;);</span></span>
+<span id="cb9-6"><a href="#cb9-6"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>same_as<span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">,</span>dev<span class="op">::</span>tools<span class="op">::</span>uint_atleast<span class="op">&lt;</span><span class="bu">std::</span>numeric_limits<span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">&gt;&gt;&gt;);</span></span>
+<span id="cb9-7"><a href="#cb9-7"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>same_as<span class="op">&lt;</span><span class="dt">uint64_t</span><span class="op">,</span>dev<span class="op">::</span>tools<span class="op">::</span>uint_atleast<span class="op">&lt;</span><span class="dv">5'000'000'000</span><span class="op">&gt;&gt;);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>We define <code>uint_atleast_t</code> as the type returned by the function <code>uint_atleast_impl()</code>.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a></span>
+<span id="cb10-3"><a href="#cb10-3"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
+<span id="cb10-4"><a href="#cb10-4"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> max<span class="op">&gt;</span></span>
+<span id="cb10-5"><a href="#cb10-5"></a>    <span class="kw">using</span> <span class="dt">uint_atleast_t</span> <span class="op">=</span> <span class="kw">decltype</span><span class="op">(</span>int_utils<span class="op">::</span>uint_atleast_impl<span class="op">&lt;</span>max<span class="op">&gt;());</span></span>
+<span id="cb10-6"><a href="#cb10-6"></a><span class="op">}</span></span>
+<span id="cb10-7"><a href="#cb10-7"></a></span>
+<span id="cb10-8"><a href="#cb10-8"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The implementation is very easy - we just define a <code>constexpr</code> table. If you see, I am just checking conditions one after the other, in a fallthrough.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1"></a><span class="pp">#include </span><span class="im">&lt;cstdint&gt;</span></span>
+<span id="cb11-2"><a href="#cb11-2"></a></span>
+<span id="cb11-3"><a href="#cb11-3"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb11-4"><a href="#cb11-4"></a></span>
+<span id="cb11-5"><a href="#cb11-5"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
+<span id="cb11-6"><a href="#cb11-6"></a>    <span class="kw">namespace</span> int_utils<span class="op">{</span></span>
+<span id="cb11-7"><a href="#cb11-7"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> max<span class="op">&gt;</span></span>
+<span id="cb11-8"><a href="#cb11-8"></a>        <span class="kw">constexpr</span> <span class="kw">auto</span> uint_atleast_impl<span class="op">(){</span></span>
+<span id="cb11-9"><a href="#cb11-9"></a>            <span class="cf">if</span> <span class="kw">constexpr</span><span class="op">(</span>max <span class="op">&lt;=</span> <span class="bu">std::</span>numeric_limits<span class="op">&lt;</span><span class="bu">std::</span>uint8_t<span class="op">&gt;::</span>max<span class="op">())</span></span>
+<span id="cb11-10"><a href="#cb11-10"></a>                <span class="cf">return</span> <span class="dt">uint8_t</span><span class="op">{};</span></span>
+<span id="cb11-11"><a href="#cb11-11"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span><span class="op">(</span>max <span class="op">&lt;=</span> <span class="bu">std::</span>numeric_limits<span class="op">&lt;</span><span class="bu">std::</span>uint16_t<span class="op">&gt;::</span>max<span class="op">())</span></span>
+<span id="cb11-12"><a href="#cb11-12"></a>                <span class="cf">return</span> <span class="dt">uint16_t</span><span class="op">{};</span></span>
+<span id="cb11-13"><a href="#cb11-13"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span><span class="op">(</span>max <span class="op">&lt;=</span> <span class="bu">std::</span>numeric_limits<span class="op">&lt;</span><span class="bu">std::</span>uint32_t<span class="op">&gt;::</span>max<span class="op">())</span></span>
+<span id="cb11-14"><a href="#cb11-14"></a>                <span class="cf">return</span> <span class="dt">uint32_t</span><span class="op">{};</span></span>
+<span id="cb11-15"><a href="#cb11-15"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span><span class="op">(</span>max <span class="op">&lt;=</span> <span class="bu">std::</span>numeric_limits<span class="op">&lt;</span><span class="bu">std::</span>uint64_t<span class="op">&gt;::</span>max<span class="op">())</span></span>
+<span id="cb11-16"><a href="#cb11-16"></a>                <span class="cf">return</span> <span class="dt">uint64_t</span><span class="op">{};</span>                </span>
+<span id="cb11-17"><a href="#cb11-17"></a>        <span class="op">}</span></span>
+<span id="cb11-18"><a href="#cb11-18"></a>    <span class="op">}</span></span>
+<span id="cb11-19"><a href="#cb11-19"></a>    </span>
+<span id="cb11-20"><a href="#cb11-20"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> max<span class="op">&gt;</span></span>
+<span id="cb11-21"><a href="#cb11-21"></a>    <span class="kw">using</span> <span class="dt">uint_atleast_t</span> <span class="op">=</span> <span class="kw">decltype</span><span class="op">(</span>int_utils<span class="op">::</span>uint_atleast_impl<span class="op">&lt;</span>max<span class="op">&gt;());</span></span>
+<span id="cb11-22"><a href="#cb11-22"></a>    </span>
+<span id="cb11-23"><a href="#cb11-23"></a><span class="op">}</span></span>
+<span id="cb11-24"><a href="#cb11-24"></a></span>
+<span id="cb11-25"><a href="#cb11-25"></a><span class="co">// -------------- tests ------------</span></span>
+<span id="cb11-26"><a href="#cb11-26"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">,</span> dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">uint_atleast_t</span><span class="op">&lt;</span><span class="dv">100</span><span class="op">&gt;&gt;);</span></span>
+<span id="cb11-27"><a href="#cb11-27"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">,</span> dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">uint_atleast_t</span><span class="op">&lt;</span><span class="dv">255</span><span class="op">&gt;&gt;);</span></span>
+<span id="cb11-28"><a href="#cb11-28"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">uint16_t</span><span class="op">,</span> dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">uint_atleast_t</span><span class="op">&lt;</span><span class="dv">256</span><span class="op">&gt;&gt;);</span></span>
+<span id="cb11-29"><a href="#cb11-29"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">,</span> dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">uint_atleast_t</span><span class="op">&lt;</span><span class="bu">std::</span>numeric_limits<span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">&gt;&gt;&gt;);</span></span>
+<span id="cb11-30"><a href="#cb11-30"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">uint64_t</span><span class="op">,</span> dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">uint_atleast_t</span><span class="op">&lt;</span><span class="dv">5'000'000'000</span><span class="op">&gt;&gt;);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/rxfdaqrdE">Compiler Explorer</a></p>
+</section>
+<section id="get_nth_type" class="level2">
+<h2 class="anchored" data-anchor-id="get_nth_type"><code>get_nth_type</code></h2>
+<p>Writing a good <code>get_nth_type</code> implementation is a surprisingly difficult problem. There is an excellent CppCon talk by <a href="https://www.youtube.com/watch?v=MLmDm1XFhEM">Kris Jusiak</a> on this, called the <code>nth_element</code> case study, where he talks specifically about this problem - how to get the <code>n</code>th type from a pack. This problem is not trivial to solve in optimal compile-time.</p>
+<p>What we do is, to create a <code>constexpr</code> table. We are going to unroll the first <code>10</code> types. If the type index is <code>0</code>, we are going to return the first type, if the type index is <code>1</code>, we going to return the second type and so forth. If, for example, you request for the type at index <code>5</code> or even index <code>9</code>, the function can directly return the type. If you request the type at index <code>10</code>, the function calls itself with the template argument list <code>get_nth_type&lt;10-10, T10&gt;()</code> and the template is instantiated again.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb12-2"><a href="#cb12-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
+<span id="cb12-3"><a href="#cb12-3"></a>    <span class="kw">namespace</span> type_lists<span class="op">{</span></span>
+<span id="cb12-4"><a href="#cb12-4"></a>        <span class="kw">template</span> <span class="op">&lt;</span><span class="dt">size_t</span> n<span class="op">,</span></span>
+<span id="cb12-5"><a href="#cb12-5"></a>                  <span class="kw">typename</span> T0 <span class="op">=</span> <span class="dt">void</span><span class="op">,</span></span>
+<span id="cb12-6"><a href="#cb12-6"></a>                  <span class="kw">typename</span> T1 <span class="op">=</span> <span class="dt">void</span><span class="op">,</span></span>
+<span id="cb12-7"><a href="#cb12-7"></a>                  <span class="kw">typename</span> T2 <span class="op">=</span> <span class="dt">void</span><span class="op">,</span></span>
+<span id="cb12-8"><a href="#cb12-8"></a>                  <span class="kw">typename</span> T3 <span class="op">=</span> <span class="dt">void</span><span class="op">,</span></span>
+<span id="cb12-9"><a href="#cb12-9"></a>                  <span class="kw">typename</span> T4 <span class="op">=</span> <span class="dt">void</span><span class="op">,</span></span>
+<span id="cb12-10"><a href="#cb12-10"></a>                  <span class="kw">typename</span> T5 <span class="op">=</span> <span class="dt">void</span><span class="op">,</span></span>
+<span id="cb12-11"><a href="#cb12-11"></a>                  <span class="kw">typename</span> T6 <span class="op">=</span> <span class="dt">void</span><span class="op">,</span></span>
+<span id="cb12-12"><a href="#cb12-12"></a>                  <span class="kw">typename</span> T7 <span class="op">=</span> <span class="dt">void</span><span class="op">,</span></span>
+<span id="cb12-13"><a href="#cb12-13"></a>                  <span class="kw">typename</span> T8 <span class="op">=</span> <span class="dt">void</span><span class="op">,</span></span>
+<span id="cb12-14"><a href="#cb12-14"></a>                  <span class="kw">typename</span> T9 <span class="op">=</span> <span class="dt">void</span><span class="op">,</span></span>
+<span id="cb12-15"><a href="#cb12-15"></a>                  <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb12-16"><a href="#cb12-16"></a>        <span class="kw">constexpr</span> <span class="kw">auto</span> get_nth_type_impl<span class="op">(){</span></span>
+<span id="cb12-17"><a href="#cb12-17"></a>            <span class="co">/**/</span> <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span> n <span class="op">==</span> <span class="dv">0</span> <span class="op">)</span> <span class="cf">return</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span>T0<span class="op">&gt;{};</span></span>
+<span id="cb12-18"><a href="#cb12-18"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span> n <span class="op">==</span> <span class="dv">1</span> <span class="op">)</span> <span class="cf">return</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span>T1<span class="op">&gt;{};</span></span>
+<span id="cb12-19"><a href="#cb12-19"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span> n <span class="op">==</span> <span class="dv">2</span> <span class="op">)</span> <span class="cf">return</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span>T2<span class="op">&gt;{};</span></span>
+<span id="cb12-20"><a href="#cb12-20"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span> n <span class="op">==</span> <span class="dv">3</span> <span class="op">)</span> <span class="cf">return</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span>T3<span class="op">&gt;{};</span></span>
+<span id="cb12-21"><a href="#cb12-21"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span> n <span class="op">==</span> <span class="dv">4</span> <span class="op">)</span> <span class="cf">return</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span>T4<span class="op">&gt;{};</span></span>
+<span id="cb12-22"><a href="#cb12-22"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span> n <span class="op">==</span> <span class="dv">5</span> <span class="op">)</span> <span class="cf">return</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span>T5<span class="op">&gt;{};</span></span>
+<span id="cb12-23"><a href="#cb12-23"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span> n <span class="op">==</span> <span class="dv">6</span> <span class="op">)</span> <span class="cf">return</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span>T6<span class="op">&gt;{};</span></span>
+<span id="cb12-24"><a href="#cb12-24"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span> n <span class="op">==</span> <span class="dv">7</span> <span class="op">)</span> <span class="cf">return</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span>T7<span class="op">&gt;{};</span></span>
+<span id="cb12-25"><a href="#cb12-25"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span> n <span class="op">==</span> <span class="dv">8</span> <span class="op">)</span> <span class="cf">return</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span>T8<span class="op">&gt;{};</span></span>
+<span id="cb12-26"><a href="#cb12-26"></a>            <span class="cf">else</span> <span class="cf">if</span> <span class="kw">constexpr</span> <span class="op">(</span> n <span class="op">==</span> <span class="dv">9</span> <span class="op">)</span> <span class="cf">return</span> <span class="bu">std::</span>type_identity<span class="op">&lt;</span>T9<span class="op">&gt;{};</span></span>
+<span id="cb12-27"><a href="#cb12-27"></a>            <span class="cf">else</span>                         <span class="cf">return</span> get_nth_type_impl<span class="op">&lt;</span>n<span class="op">-</span><span class="dv">10</span><span class="op">,</span> Ts<span class="op">...&gt;();</span></span>
+<span id="cb12-28"><a href="#cb12-28"></a>        <span class="op">}</span></span>
+<span id="cb12-29"><a href="#cb12-29"></a>    <span class="op">}</span> <span class="co">// namespace type_lists</span></span>
+<span id="cb12-30"><a href="#cb12-30"></a></span>
+<span id="cb12-31"><a href="#cb12-31"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> n<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb12-32"><a href="#cb12-32"></a>    <span class="kw">requires</span><span class="op">(</span>n <span class="op">&lt;</span> <span class="kw">sizeof</span><span class="op">...(</span>Ts<span class="op">))</span></span>
+<span id="cb12-33"><a href="#cb12-33"></a>    <span class="kw">using</span> <span class="dt">get_nth_type_t</span> <span class="op">=</span> <span class="kw">typename</span> <span class="kw">decltype</span><span class="op">(</span>type_lists<span class="op">::</span>get_nth_type_impl<span class="op">&lt;</span>n<span class="op">,</span> Ts<span class="op">...&gt;())::</span>type<span class="op">;</span></span>
+<span id="cb12-34"><a href="#cb12-34"></a><span class="op">}</span> <span class="co">// namespace tools</span></span>
+<span id="cb12-35"><a href="#cb12-35"></a><span class="op">}</span></span>
+<span id="cb12-36"><a href="#cb12-36"></a></span>
+<span id="cb12-37"><a href="#cb12-37"></a><span class="co">// -------------- tests ------------</span></span>
+<span id="cb12-38"><a href="#cb12-38"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span></span>
+<span id="cb12-39"><a href="#cb12-39"></a>    dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">get_nth_type_t</span><span class="op">&lt;</span><span class="dv">0</span><span class="op">,</span> <span class="dt">char</span><span class="op">,</span> <span class="dt">short</span><span class="op">,</span> <span class="dt">int</span><span class="op">,</span> <span class="dt">long</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="dt">double</span><span class="op">&gt;,</span> </span>
+<span id="cb12-40"><a href="#cb12-40"></a>    <span class="dt">char</span><span class="op">&gt;);</span></span>
+<span id="cb12-41"><a href="#cb12-41"></a></span>
+<span id="cb12-42"><a href="#cb12-42"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span></span>
+<span id="cb12-43"><a href="#cb12-43"></a>    dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">get_nth_type_t</span><span class="op">&lt;</span><span class="dv">5</span><span class="op">,</span> <span class="dt">char</span><span class="op">,</span> <span class="dt">short</span><span class="op">,</span> <span class="dt">int</span><span class="op">,</span> <span class="dt">long</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="dt">double</span><span class="op">&gt;,</span> </span>
+<span id="cb12-44"><a href="#cb12-44"></a>    <span class="dt">double</span><span class="op">&gt;);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/1r8Pe9Ye8">Compiler Explorer</a></p>
+<p>Generally, the compile-time performance depends upon the number of function template instantiations. If I would have a single <code>if constexpr(n == 0)</code> condition, and requested <code>get_nth_type&lt;4, char, short, int, float, double&gt;</code>, the function would instantiate itself <code>4</code> times. In our implementation, we instantiate only once for every ten types.</p>
+<p>There is another interesting thing here. In the <code>uint_atleast_t</code> implementation, we just default constructed the types <code>uint8_t</code> etc. But, in the general case, you can’t just default construct the type. So, we wrap it up in the identity meta-function <code>std::type_identity&lt;T&gt;</code>.</p>
+</section>
+<section id="instance_of" class="level2">
+<h2 class="anchored" data-anchor-id="instance_of"><code>instance_of</code></h2>
+<p>The next utility we would like to build is <code>instance_of</code>. We want a concept that will tell us, if concrete type is an instance of a certain templated type. For example, <code>vector&lt;int&gt;</code> is an instance of <code>vector&lt;T&gt;</code>. But, <code>int</code> is not an instance of a <code>vector</code>. A little bit of a tricky one is : <code>vector&lt;int&gt;&amp;</code> is not an instance of <code>vector</code>.</p>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->
