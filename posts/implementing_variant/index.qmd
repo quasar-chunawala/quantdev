@@ -465,7 +465,7 @@ This can be annoying to type, people often use a macro for economy.
     static_cast<decltype(__VA_ARGS__)&&>(__VA_ARGS__)
 ```
 
-## `union_`
+# `union_` type definition
 
 The `union_` type is something which is used to store the data. It is similar to the built-in union but it allows unpacking. That is, you could, for example request to construct the element at index `2` or get the element at index `2`. 
 
@@ -492,4 +492,97 @@ struct union_<T>{
 };
 ```
 
-We implement some constructors.
+We implement some constructors. There is a default constructor, a constructor for the head and a constructor for the `I`th element.
+
+The API of these constructors is templated by a parameter `size_t I` - the index of the element to be constructed. The first argument to the constructor is of the type `std::in_place_index_t`, which is simply a wrapper type for storing indexes at compile-time. 
+
+```cpp
+namespace dev{
+namespace tools{
+
+    template<typename First, typename... Rest>
+    struct union_{
+        union{
+            First head;
+            union_<Rest...> tail; 
+        }
+
+        constexpr union_() = default;
+        constexpr union_(std::in_place_index_t<0u>, auto&&... args)
+        : head{ TOOLS_FWD(args)... }
+        {}
+
+        template<size_t I>
+        constexpr union_(std::in_place_index_t<I> idx, auto&&... args)
+        : tail{ std::in_place_index<I - 1>{}, TOOLS_FWD(args)... }
+        {}
+    };
+
+    template<typename T>
+    struct union_<T>{
+        T head;
+
+        constexpr union_() = default;
+        constexpr union_(std::in_place_index_t<0u>, auto&&... args)
+        : head{ TOOLS_FWD(args)... }
+        {}
+    };
+
+} // namespace tools
+}
+```
+
+## `union_size`
+
+There is `union_size` to tell me, how many elements are there in the union. This is very simple. I have a base case and then have a partial specialization, where I say that `sizeof...(Ts)` is my template union size.
+
+```cpp
+namespace dev{
+namespace tools{
+    template<typename>
+    struct union_size;
+
+    template<typename... Ts>
+    struct union_size<union_<Ts...>>
+    : std::integral_constant<size_t, sizeof...(Ts)>
+    {}
+
+    template <typename Union>
+    constexpr size_t union_size_v = union_size<Union>::value;
+} // namespace tools
+}
+```
+
+## `get`
+
+The implementation of `get` is very simple. 
+
+```cpp
+namespace dev{
+namespace tools{
+    template<size_t i, typename Self>
+    constexpr auto&& get(Self&& self)
+    requires instance_of<std::remove_cvref_t<Self>, union_> &&
+    (i < union_size<std::remove_cvref_t<Self>>)
+    {
+        if constexpr(i == 0)
+            return TOOLS_FWD(self).head;
+        else
+            return get<i - 1>(TOOLS_FWD(self).tail);
+    }
+} // namespace tools
+}
+```
+
+## `construct_at` and `destroy_at`
+
+```cpp
+namespace dev{
+namespace tools{
+    template<size_t i, typename... Ts>
+    constexpr void construct_at(union_<Ts...> u, auto&&... args){
+        
+    }
+}
+}
+```

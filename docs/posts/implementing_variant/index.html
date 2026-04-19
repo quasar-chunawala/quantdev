@@ -206,7 +206,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#get_nth_type" id="toc-get_nth_type" class="nav-link" data-scroll-target="#get_nth_type"><code>get_nth_type</code></a></li>
   <li><a href="#instance_of" id="toc-instance_of" class="nav-link" data-scroll-target="#instance_of"><code>instance_of</code></a></li>
   <li><a href="#a-macro-for-forwarding-arguments" id="toc-a-macro-for-forwarding-arguments" class="nav-link" data-scroll-target="#a-macro-for-forwarding-arguments">A macro for forwarding arguments</a></li>
-  <li><a href="#union_" id="toc-union_" class="nav-link" data-scroll-target="#union_"><code>union_</code></a></li>
+  </ul></li>
+  <li><a href="#union_-type-definition" id="toc-union_-type-definition" class="nav-link" data-scroll-target="#union_-type-definition"><code>union_</code> type definition</a>
+  <ul class="collapse">
+  <li><a href="#union_size" id="toc-union_size" class="nav-link" data-scroll-target="#union_size"><code>union_size</code></a></li>
+  <li><a href="#get" id="toc-get" class="nav-link" data-scroll-target="#get"><code>get</code></a></li>
+  <li><a href="#construct_at-and-destroy_at" id="toc-construct_at-and-destroy_at" class="nav-link" data-scroll-target="#construct_at-and-destroy_at"><code>construct_at</code> and <code>destroy_at</code></a></li>
   </ul></li>
   </ul>
 </nav>
@@ -605,8 +610,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="sourceCode" id="cb18"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb18-1"><a href="#cb18-1"></a><span class="pp">#define TOOLS_FWD</span><span class="op">(...)</span></span>
 <span id="cb18-2"><a href="#cb18-2"></a>    <span class="kw">static_cast</span><span class="op">&lt;</span><span class="kw">decltype</span><span class="op">(</span>__VA_ARGS__<span class="op">)&amp;&amp;&gt;(</span>__VA_ARGS__<span class="op">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
-<section id="union_" class="level2">
-<h2 class="anchored" data-anchor-id="union_"><code>union_</code></h2>
+</section>
+<section id="union_-type-definition" class="level1">
+<h1><code>union_</code> type definition</h1>
 <p>The <code>union_</code> type is something which is used to store the data. It is similar to the built-in union but it allows unpacking. That is, you could, for example request to construct the element at index <code>2</code> or get the element at index <code>2</code>.</p>
 <p>Let’s first understand how to write the <code>union_</code> type. A while back people just created a bunch of <code>char</code>s - a buffer area to accomodate the largest type and they would cast pointers to the alternative types in the union.</p>
 <p>The modern approach is to write a recursive solution. Using some mathematical formalism, the union of <code>N+1</code> types <code>T0, T1, ..., TN</code> written <span class="math inline">\(\bigcup_{i=0}^{N} \texttt{Ti}\)</span> is equivalent to pulling out the first type, union’ing with the union of the rest of the types, that is <span class="math inline">\(\texttt{T0} \cup \left(\bigcup_{i=1}^N \texttt{Ti}\right)\)</span>. In code:</p>
@@ -622,7 +628,87 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb20-2"><a href="#cb20-2"></a><span class="kw">struct</span> <span class="va">union_</span><span class="op">&lt;</span>T<span class="op">&gt;{</span></span>
 <span id="cb20-3"><a href="#cb20-3"></a>    T head<span class="op">;</span></span>
 <span id="cb20-4"><a href="#cb20-4"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>We implement some constructors.</p>
+<p>We implement some constructors. There is a default constructor, a constructor for the head and a constructor for the <code>I</code>th element.</p>
+<p>The API of these constructors is templated by a parameter <code>size_t I</code> - the index of the element to be constructed. The first argument to the constructor is of the type <code>std::in_place_index_t</code>, which is simply a wrapper type for storing indexes at compile-time.</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb21-1"><a href="#cb21-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb21-2"><a href="#cb21-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
+<span id="cb21-3"><a href="#cb21-3"></a></span>
+<span id="cb21-4"><a href="#cb21-4"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> First<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Rest<span class="op">&gt;</span></span>
+<span id="cb21-5"><a href="#cb21-5"></a>    <span class="kw">struct</span> <span class="va">union_</span><span class="op">{</span></span>
+<span id="cb21-6"><a href="#cb21-6"></a>        <span class="kw">union</span><span class="op">{</span></span>
+<span id="cb21-7"><a href="#cb21-7"></a>            First head<span class="op">;</span></span>
+<span id="cb21-8"><a href="#cb21-8"></a>            <span class="va">union_</span><span class="op">&lt;</span>Rest<span class="op">...&gt;</span> tail<span class="op">;</span> </span>
+<span id="cb21-9"><a href="#cb21-9"></a>        <span class="op">}</span></span>
+<span id="cb21-10"><a href="#cb21-10"></a></span>
+<span id="cb21-11"><a href="#cb21-11"></a>        <span class="kw">constexpr</span> <span class="va">union_</span><span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb21-12"><a href="#cb21-12"></a>        <span class="kw">constexpr</span> <span class="va">union_</span><span class="op">(</span><span class="bu">std::</span>in_place_index_t<span class="op">&lt;</span><span class="dv">0</span><span class="bu">u</span><span class="op">&gt;,</span> <span class="kw">auto</span><span class="op">&amp;&amp;...</span> args<span class="op">)</span></span>
+<span id="cb21-13"><a href="#cb21-13"></a>        <span class="op">:</span> head<span class="op">{</span> TOOLS_FWD<span class="op">(</span>args<span class="op">)...</span> <span class="op">}</span></span>
+<span id="cb21-14"><a href="#cb21-14"></a>        <span class="op">{}</span></span>
+<span id="cb21-15"><a href="#cb21-15"></a></span>
+<span id="cb21-16"><a href="#cb21-16"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> I<span class="op">&gt;</span></span>
+<span id="cb21-17"><a href="#cb21-17"></a>        <span class="kw">constexpr</span> <span class="va">union_</span><span class="op">(</span><span class="bu">std::</span>in_place_index_t<span class="op">&lt;</span>I<span class="op">&gt;</span> idx<span class="op">,</span> <span class="kw">auto</span><span class="op">&amp;&amp;...</span> args<span class="op">)</span></span>
+<span id="cb21-18"><a href="#cb21-18"></a>        <span class="op">:</span> tail<span class="op">{</span> <span class="bu">std::</span>in_place_index<span class="op">&lt;</span>I <span class="op">-</span> <span class="dv">1</span><span class="op">&gt;{},</span> TOOLS_FWD<span class="op">(</span>args<span class="op">)...</span> <span class="op">}</span></span>
+<span id="cb21-19"><a href="#cb21-19"></a>        <span class="op">{}</span></span>
+<span id="cb21-20"><a href="#cb21-20"></a>    <span class="op">};</span></span>
+<span id="cb21-21"><a href="#cb21-21"></a></span>
+<span id="cb21-22"><a href="#cb21-22"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb21-23"><a href="#cb21-23"></a>    <span class="kw">struct</span> <span class="va">union_</span><span class="op">&lt;</span>T<span class="op">&gt;{</span></span>
+<span id="cb21-24"><a href="#cb21-24"></a>        T head<span class="op">;</span></span>
+<span id="cb21-25"><a href="#cb21-25"></a></span>
+<span id="cb21-26"><a href="#cb21-26"></a>        <span class="kw">constexpr</span> <span class="va">union_</span><span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb21-27"><a href="#cb21-27"></a>        <span class="kw">constexpr</span> <span class="va">union_</span><span class="op">(</span><span class="bu">std::</span>in_place_index_t<span class="op">&lt;</span><span class="dv">0</span><span class="bu">u</span><span class="op">&gt;,</span> <span class="kw">auto</span><span class="op">&amp;&amp;...</span> args<span class="op">)</span></span>
+<span id="cb21-28"><a href="#cb21-28"></a>        <span class="op">:</span> head<span class="op">{</span> TOOLS_FWD<span class="op">(</span>args<span class="op">)...</span> <span class="op">}</span></span>
+<span id="cb21-29"><a href="#cb21-29"></a>        <span class="op">{}</span></span>
+<span id="cb21-30"><a href="#cb21-30"></a>    <span class="op">};</span></span>
+<span id="cb21-31"><a href="#cb21-31"></a></span>
+<span id="cb21-32"><a href="#cb21-32"></a><span class="op">}</span> <span class="co">// namespace tools</span></span>
+<span id="cb21-33"><a href="#cb21-33"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="union_size" class="level2">
+<h2 class="anchored" data-anchor-id="union_size"><code>union_size</code></h2>
+<p>There is <code>union_size</code> to tell me, how many elements are there in the union. This is very simple. I have a base case and then have a partial specialization, where I say that <code>sizeof...(Ts)</code> is my template union size.</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb22-1"><a href="#cb22-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb22-2"><a href="#cb22-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
+<span id="cb22-3"><a href="#cb22-3"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">&gt;</span></span>
+<span id="cb22-4"><a href="#cb22-4"></a>    <span class="kw">struct</span> union_size<span class="op">;</span></span>
+<span id="cb22-5"><a href="#cb22-5"></a></span>
+<span id="cb22-6"><a href="#cb22-6"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb22-7"><a href="#cb22-7"></a>    <span class="kw">struct</span> union_size<span class="op">&lt;</span><span class="va">union_</span><span class="op">&lt;</span>Ts<span class="op">...&gt;&gt;</span></span>
+<span id="cb22-8"><a href="#cb22-8"></a>    <span class="op">:</span> <span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">...(</span>Ts<span class="op">)&gt;</span></span>
+<span id="cb22-9"><a href="#cb22-9"></a>    <span class="op">{}</span></span>
+<span id="cb22-10"><a href="#cb22-10"></a></span>
+<span id="cb22-11"><a href="#cb22-11"></a>    <span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> Union<span class="op">&gt;</span></span>
+<span id="cb22-12"><a href="#cb22-12"></a>    <span class="kw">constexpr</span> <span class="dt">size_t</span> union_size_v <span class="op">=</span> union_size<span class="op">&lt;</span>Union<span class="op">&gt;::</span>value<span class="op">;</span></span>
+<span id="cb22-13"><a href="#cb22-13"></a><span class="op">}</span> <span class="co">// namespace tools</span></span>
+<span id="cb22-14"><a href="#cb22-14"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="get" class="level2">
+<h2 class="anchored" data-anchor-id="get"><code>get</code></h2>
+<p>The implementation of <code>get</code> is very simple.</p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb23-1"><a href="#cb23-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb23-2"><a href="#cb23-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
+<span id="cb23-3"><a href="#cb23-3"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> i<span class="op">,</span> <span class="kw">typename</span> Self<span class="op">&gt;</span></span>
+<span id="cb23-4"><a href="#cb23-4"></a>    <span class="kw">constexpr</span> <span class="kw">auto</span><span class="op">&amp;&amp;</span> get<span class="op">(</span>Self<span class="op">&amp;&amp;</span> self<span class="op">)</span></span>
+<span id="cb23-5"><a href="#cb23-5"></a>    <span class="kw">requires</span> instance_of<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Self<span class="op">&gt;,</span> <span class="va">union_</span><span class="op">&gt;</span> <span class="op">&amp;&amp;</span></span>
+<span id="cb23-6"><a href="#cb23-6"></a>    <span class="op">(</span>i <span class="op">&lt;</span> union_size<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Self<span class="op">&gt;&gt;)</span></span>
+<span id="cb23-7"><a href="#cb23-7"></a>    <span class="op">{</span></span>
+<span id="cb23-8"><a href="#cb23-8"></a>        <span class="cf">if</span> <span class="kw">constexpr</span><span class="op">(</span>i <span class="op">==</span> <span class="dv">0</span><span class="op">)</span></span>
+<span id="cb23-9"><a href="#cb23-9"></a>            <span class="cf">return</span> TOOLS_FWD<span class="op">(</span>self<span class="op">).</span>head<span class="op">;</span></span>
+<span id="cb23-10"><a href="#cb23-10"></a>        <span class="cf">else</span></span>
+<span id="cb23-11"><a href="#cb23-11"></a>            <span class="cf">return</span> get<span class="op">&lt;</span>i <span class="op">-</span> <span class="dv">1</span><span class="op">&gt;(</span>TOOLS_FWD<span class="op">(</span>self<span class="op">).</span>tail<span class="op">);</span></span>
+<span id="cb23-12"><a href="#cb23-12"></a>    <span class="op">}</span></span>
+<span id="cb23-13"><a href="#cb23-13"></a><span class="op">}</span> <span class="co">// namespace tools</span></span>
+<span id="cb23-14"><a href="#cb23-14"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="construct_at-and-destroy_at" class="level2">
+<h2 class="anchored" data-anchor-id="construct_at-and-destroy_at"><code>construct_at</code> and <code>destroy_at</code></h2>
+<div class="sourceCode" id="cb24"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb24-1"><a href="#cb24-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb24-2"><a href="#cb24-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
+<span id="cb24-3"><a href="#cb24-3"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> i<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb24-4"><a href="#cb24-4"></a>    <span class="kw">constexpr</span> <span class="dt">void</span> construct_at<span class="op">(</span><span class="va">union_</span><span class="op">&lt;</span>Ts<span class="op">...&gt;</span> u<span class="op">,</span> <span class="kw">auto</span><span class="op">&amp;&amp;...</span> args<span class="op">){</span></span>
+<span id="cb24-5"><a href="#cb24-5"></a>        </span>
+<span id="cb24-6"><a href="#cb24-6"></a>    <span class="op">}</span></span>
+<span id="cb24-7"><a href="#cb24-7"></a><span class="op">}</span></span>
+<span id="cb24-8"><a href="#cb24-8"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>
