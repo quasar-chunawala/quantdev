@@ -555,7 +555,7 @@ namespace tools{
 
 ## `get`
 
-The implementation of `get` is very simple. 
+The implementation of `get` is very simple. If the index equals `0`, get the head. If its not `0`, get the tail.
 
 ```cpp
 namespace dev{
@@ -574,15 +574,28 @@ namespace tools{
 }
 ```
 
+Note that, because of how perfect forwarding works, `Self` is sometimes not deduced as `union_`, but rather `union_&`. Hence, to strip off the reference qualifiers, I call the meta-function `std::remove_cvref_t`. 
+
 ## `construct_at` and `destroy_at`
+
+Given a `union_<T0,...,Ti,...,TN>`, `construct_at`, `destroy_at` are used to construct/destroy an object of one of the possible alternatives `T0,T1,...Ti,...Tn` specified using an index `i`.
+
+We use the STL algorithms [`std::construct_at`](https://en.cppreference.com/cpp/memory/construct_at) and [`std::destroy_at`](https://en.cppreference.com/cpp/memory/destroy_at). These algorithms perform placement `new` at compile-time; they construct/destroy an object at a specified address. 
 
 ```cpp
 namespace dev{
 namespace tools{
     template<size_t i, typename... Ts>
-    constexpr void construct_at(union_<Ts...> u, auto&&... args){
-        
+    constexpr void construct_at(union_<Ts...>& self, auto&&... args){
+        // std::construct_at(<address>, <ctor args>...)
+        std::construct_at(&get<i>(self), std::in_place_index<i>, TOOLS_FWD(args)...);
     }
-}
+
+    template<size_t i, typename... Ts>
+    constexpr void destroy_at(union_<Ts...>& self){
+        // std::destroy_at(<address>)
+        std::destroy_at(&get<i>(self));
+    }
+} // namespace tools
 }
 ```

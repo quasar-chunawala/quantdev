@@ -683,7 +683,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="get" class="level2">
 <h2 class="anchored" data-anchor-id="get"><code>get</code></h2>
-<p>The implementation of <code>get</code> is very simple.</p>
+<p>The implementation of <code>get</code> is very simple. If the index equals <code>0</code>, get the head. If its not <code>0</code>, get the tail.</p>
 <div class="sourceCode" id="cb23"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb23-1"><a href="#cb23-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb23-2"><a href="#cb23-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
 <span id="cb23-3"><a href="#cb23-3"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> i<span class="op">,</span> <span class="kw">typename</span> Self<span class="op">&gt;</span></span>
@@ -698,17 +698,27 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb23-12"><a href="#cb23-12"></a>    <span class="op">}</span></span>
 <span id="cb23-13"><a href="#cb23-13"></a><span class="op">}</span> <span class="co">// namespace tools</span></span>
 <span id="cb23-14"><a href="#cb23-14"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Note that, because of how perfect forwarding works, <code>Self</code> is sometimes not deduced as <code>union_</code>, but rather <code>union_&amp;</code>. Hence, to strip off the reference qualifiers, I call the meta-function <code>std::remove_cvref_t</code>.</p>
 </section>
 <section id="construct_at-and-destroy_at" class="level2">
 <h2 class="anchored" data-anchor-id="construct_at-and-destroy_at"><code>construct_at</code> and <code>destroy_at</code></h2>
+<p>Given a <code>union_&lt;T0,...,Ti,...,TN&gt;</code>, <code>construct_at</code>, <code>destroy_at</code> are used to construct/destroy an object of one of the possible alternatives <code>T0,T1,...Ti,...Tn</code> specified using an index <code>i</code>.</p>
+<p>We use the STL algorithms <a href="https://en.cppreference.com/cpp/memory/construct_at"><code>std::construct_at</code></a> and <a href="https://en.cppreference.com/cpp/memory/destroy_at"><code>std::destroy_at</code></a>. These algorithms perform placement <code>new</code> at compile-time; they construct/destroy an object at a specified address.</p>
 <div class="sourceCode" id="cb24"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb24-1"><a href="#cb24-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb24-2"><a href="#cb24-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
 <span id="cb24-3"><a href="#cb24-3"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> i<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
-<span id="cb24-4"><a href="#cb24-4"></a>    <span class="kw">constexpr</span> <span class="dt">void</span> construct_at<span class="op">(</span><span class="va">union_</span><span class="op">&lt;</span>Ts<span class="op">...&gt;</span> u<span class="op">,</span> <span class="kw">auto</span><span class="op">&amp;&amp;...</span> args<span class="op">){</span></span>
-<span id="cb24-5"><a href="#cb24-5"></a>        </span>
-<span id="cb24-6"><a href="#cb24-6"></a>    <span class="op">}</span></span>
-<span id="cb24-7"><a href="#cb24-7"></a><span class="op">}</span></span>
-<span id="cb24-8"><a href="#cb24-8"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb24-4"><a href="#cb24-4"></a>    <span class="kw">constexpr</span> <span class="dt">void</span> construct_at<span class="op">(</span><span class="va">union_</span><span class="op">&lt;</span>Ts<span class="op">...&gt;&amp;</span> self<span class="op">,</span> <span class="kw">auto</span><span class="op">&amp;&amp;...</span> args<span class="op">){</span></span>
+<span id="cb24-5"><a href="#cb24-5"></a>        <span class="co">// std::construct_at(&lt;address&gt;, &lt;ctor args&gt;...)</span></span>
+<span id="cb24-6"><a href="#cb24-6"></a>        <span class="bu">std::</span>construct_at<span class="op">(&amp;</span>get<span class="op">&lt;</span>i<span class="op">&gt;(</span>self<span class="op">),</span> <span class="bu">std::</span>in_place_index<span class="op">&lt;</span>i<span class="op">&gt;,</span> TOOLS_FWD<span class="op">(</span>args<span class="op">)...);</span></span>
+<span id="cb24-7"><a href="#cb24-7"></a>    <span class="op">}</span></span>
+<span id="cb24-8"><a href="#cb24-8"></a></span>
+<span id="cb24-9"><a href="#cb24-9"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> i<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb24-10"><a href="#cb24-10"></a>    <span class="kw">constexpr</span> <span class="dt">void</span> destroy_at<span class="op">(</span><span class="va">union_</span><span class="op">&lt;</span>Ts<span class="op">...&gt;&amp;</span> self<span class="op">){</span></span>
+<span id="cb24-11"><a href="#cb24-11"></a>        <span class="co">// std::destroy_at(&lt;address&gt;)</span></span>
+<span id="cb24-12"><a href="#cb24-12"></a>        <span class="bu">std::</span>destroy_at<span class="op">(&amp;</span>get<span class="op">&lt;</span>i<span class="op">&gt;(</span>self<span class="op">));</span></span>
+<span id="cb24-13"><a href="#cb24-13"></a>    <span class="op">}</span></span>
+<span id="cb24-14"><a href="#cb24-14"></a><span class="op">}</span> <span class="co">// namespace tools</span></span>
+<span id="cb24-15"><a href="#cb24-15"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>
