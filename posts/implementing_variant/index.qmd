@@ -394,4 +394,59 @@ There is another interesting thing here. In the `uint_atleast_t` implementation,
 
 ## `instance_of`
 
-The next utility we would like to build is `instance_of`. We want a concept that will tell us, if concrete type is an instance of a certain templated type. For example, `vector<int>` is an instance of `vector<T>`. But, `int` is not an instance of a `vector`. A little bit of a tricky one is : `vector<int>&` is not an instance of `vector`. 
+The next utility we would like to build is `instance_of`. We want a concept that will tell us, if a concrete type is an instance of a certain templated type. For example, `vector<int>` is an instance of `vector<T>`. But, `int` is not an instance of a `vector`. A little bit of a tricky one is : `vector<int>&` is not an instance of `vector`. 
+
+```cpp
+// -------------- tests ------------
+static_assert(dev::tools::instance_of<std::vector<int>, std::vector>);
+static_assert(!dev::tools::instance_of<int, std::vector>);
+static_assert(!dev::tools::instance_of<std::vector<int>&, std::vector>);
+```
+
+How do we do that? First, we define the `concept`, which just calls into the implementation `impl`. The `impl` is a meta-function that accepts two parameters, a template and a concrete type.
+
+```cpp
+template<template <typename ...> class Template, typename What>
+//       ^--------------------------------^       ^--------^
+//       1st param: a template that accepts       2nd param: a
+//       any number of args                       concrete type
+struct impl : std::false_type {};
+```
+
+The default implementation of `impl` is to define as `std::false_type`. The partial specialization `impl<What, What<Ts...>>`, says, if we have a template `What` and `What<Ts...>` is an instantiation of the template, that inherit from `true_type`.
+
+```cpp
+template<template<typename...> typename What, typename... Ts>
+        struct impl<What, What<Ts...>> : std::true_type {};
+```
+
+Together, we have:
+
+```cpp
+#include <vector>
+
+namespace dev{
+namespace tools{
+    namespace _instance_of{
+        template<template <typename...> typename Template, typename What>
+        //       ^--------------------------------^       ^--------^
+        //       1st param: a template that accepts       2nd param: a
+        //       any number of args                       concrete type        
+        struct impl : std::false_type {};
+
+        template<template<typename...> typename What, typename... Ts>
+        struct impl<What, What<Ts...>> : std::true_type {};
+    }
+
+    template<typename T, template <typename... > typename Template>
+    concept instance_of = _instance_of::impl<Template, T>::value;
+} // namespace tools 
+}
+
+// -------------- tests ------------
+static_assert(dev::tools::instance_of<std::vector<int>, std::vector>);
+static_assert(!dev::tools::instance_of<int, std::vector>);
+static_assert(!dev::tools::instance_of<std::vector<int>&, std::vector>);
+```
+[Compiler Explorer](https://compiler-explorer.com/z/z3n4dPbnd)
+
