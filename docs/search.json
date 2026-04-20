@@ -3568,5 +3568,33 @@
     "title": "Implementing variant",
     "section": "instance_of",
     "text": "instance_of\nThe next utility we would like to build is instance_of. We want a concept that will tell us, if a concrete type is an instance of a certain templated type. For example, vector&lt;int&gt; is an instance of vector&lt;T&gt;. But, int is not an instance of a vector. A little bit of a tricky one is : vector&lt;int&gt;& is not an instance of vector.\n// -------------- tests ------------\nstatic_assert(dev::tools::instance_of&lt;std::vector&lt;int&gt;, std::vector&gt;);\nstatic_assert(!dev::tools::instance_of&lt;int, std::vector&gt;);\nstatic_assert(!dev::tools::instance_of&lt;std::vector&lt;int&gt;&, std::vector&gt;);\nHow do we do that? First, we define the concept, which just calls into the implementation impl. The impl is a meta-function that accepts two parameters, a template and a concrete type.\ntemplate&lt;template &lt;typename ...&gt; class Template, typename What&gt;\n//       ^--------------------------------^       ^--------^\n//       1st param: a template that accepts       2nd param: a\n//       any number of args                       concrete type\nstruct impl : std::false_type {};\nThe default implementation of impl is to define as std::false_type. The partial specialization impl&lt;What, What&lt;Ts...&gt;&gt;, says, if we have a template What and What&lt;Ts...&gt; is an instantiation of the template, that inherit from true_type.\ntemplate&lt;template&lt;typename...&gt; typename What, typename... Ts&gt;\n        struct impl&lt;What, What&lt;Ts...&gt;&gt; : std::true_type {};\nTogether, we have:\n#include &lt;vector&gt;\n\nnamespace dev{\nnamespace tools{\n    namespace _instance_of{\n        template&lt;template &lt;typename...&gt; typename Template, typename What&gt;\n        //       ^--------------------------------^       ^--------^\n        //       1st param: a template that accepts       2nd param: a\n        //       any number of args                       concrete type        \n        struct impl : std::false_type {};\n\n        template&lt;template&lt;typename...&gt; typename What, typename... Ts&gt;\n        struct impl&lt;What, What&lt;Ts...&gt;&gt; : std::true_type {};\n    }\n\n    template&lt;typename T, template &lt;typename... &gt; typename Template&gt;\n    concept instance_of = _instance_of::impl&lt;Template, T&gt;::value;\n} // namespace tools \n}\n\n// -------------- tests ------------\nstatic_assert(dev::tools::instance_of&lt;std::vector&lt;int&gt;, std::vector&gt;);\nstatic_assert(!dev::tools::instance_of&lt;int, std::vector&gt;);\nstatic_assert(!dev::tools::instance_of&lt;std::vector&lt;int&gt;&, std::vector&gt;);\nCompiler Explorer"
+  },
+  {
+    "objectID": "posts/implementing_variant/index.html#a-macro-for-forwarding-arguments",
+    "href": "posts/implementing_variant/index.html#a-macro-for-forwarding-arguments",
+    "title": "Implementing variant",
+    "section": "A macro for forwarding arguments",
+    "text": "A macro for forwarding arguments\nWe all know how std::forward works. It unconditionally casts the type of its argument T to T&&. Sometimes you have to specify the types of the arguments, so you use decltype. For example,\nstd::forward&lt;decltype(x)&gt;(x);\nThis can be annoying to type, people often use a macro for economy.\n#define TOOLS_FWD(...)\n    static_cast&lt;decltype(__VA_ARGS__)&&&gt;(__VA_ARGS__)"
+  },
+  {
+    "objectID": "posts/implementing_variant/index.html#union_size",
+    "href": "posts/implementing_variant/index.html#union_size",
+    "title": "Implementing variant",
+    "section": "union_size",
+    "text": "union_size\nThere is union_size to tell me, how many elements are there in the union. This is very simple. I have a base case and then have a partial specialization, where I say that sizeof...(Ts) is my template union size.\nnamespace dev{\nnamespace tools{\n    template&lt;typename&gt;\n    struct union_size;\n\n    template&lt;typename... Ts&gt;\n    struct union_size&lt;union_&lt;Ts...&gt;&gt;\n    : std::integral_constant&lt;size_t, sizeof...(Ts)&gt;\n    {}\n\n    template &lt;typename Union&gt;\n    constexpr size_t union_size_v = union_size&lt;Union&gt;::value;\n} // namespace tools\n}"
+  },
+  {
+    "objectID": "posts/implementing_variant/index.html#get",
+    "href": "posts/implementing_variant/index.html#get",
+    "title": "Implementing variant",
+    "section": "get",
+    "text": "get\nThe implementation of get is very simple. If the index equals 0, get the head. If its not 0, get the tail.\nnamespace dev{\nnamespace tools{\n    template&lt;size_t i, typename Self&gt;\n    constexpr auto&& get(Self&& self)\n    requires instance_of&lt;std::remove_cvref_t&lt;Self&gt;, union_&gt; &&\n    (i &lt; union_size&lt;std::remove_cvref_t&lt;Self&gt;&gt;)\n    {\n        if constexpr(i == 0)\n            return TOOLS_FWD(self).head;\n        else\n            return get&lt;i - 1&gt;(TOOLS_FWD(self).tail);\n    }\n} // namespace tools\n}\nNote that, because of how perfect forwarding works, Self is sometimes not deduced as union_, but rather union_&. Hence, to strip off the reference qualifiers, I call the meta-function std::remove_cvref_t."
+  },
+  {
+    "objectID": "posts/implementing_variant/index.html#construct_at-and-destroy_at",
+    "href": "posts/implementing_variant/index.html#construct_at-and-destroy_at",
+    "title": "Implementing variant",
+    "section": "construct_at and destroy_at",
+    "text": "construct_at and destroy_at\nGiven a union_&lt;T0,...,Ti,...,TN&gt;, construct_at, destroy_at are used to construct/destroy an object of one of the possible alternatives T0,T1,...Ti,...Tn specified using an index i.\nWe use the STL algorithms std::construct_at and std::destroy_at. These algorithms perform placement new at compile-time; they construct/destroy an object at a specified address.\nnamespace dev{\nnamespace tools{\n    template&lt;size_t i, typename... Ts&gt;\n    constexpr void construct_at(union_&lt;Ts...&gt;& self, auto&&... args){\n        // std::construct_at(&lt;address&gt;, &lt;ctor args&gt;...)\n        std::construct_at(&get&lt;i&gt;(self), std::in_place_index&lt;i&gt;, TOOLS_FWD(args)...);\n    }\n\n    template&lt;size_t i, typename... Ts&gt;\n    constexpr void destroy_at(union_&lt;Ts...&gt;& self){\n        // std::destroy_at(&lt;address&gt;)\n        std::destroy_at(&get&lt;i&gt;(self));\n    }\n} // namespace tools\n}"
   }
 ]
