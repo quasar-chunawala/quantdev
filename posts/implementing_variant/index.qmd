@@ -602,3 +602,154 @@ namespace tools{
 
 # Wrapping it up - the `variant` class
 
+A basic implementation is listed below. Perhaps, the most challenging problem to solve is writing a destructor/copy ctor.
+
+When implementing `~variant()` we know the active index, so we can use `std::get<I>` to get underlying T object. However, `template<size_t I> std::get()` and other meta-functions are designed to accept compile-time constants as template parameters. We don't know, the active index until run-time. 
+
+The solution is to generate an array of if-conditionals, at compile-time using pack expansion of the form:
+
+```cpp
+// Generate if-conditionals sizeof...(Ts) times
+if(m_idx == 0)
+    tools::destroy_at<0>(m_data);
+else if(m_idx === 1)
+    tools::destroy_at<1>(m_data);
+//...
+```
+
+ We use `std::index_sequence` for this purpose, which represents a compile-time sequence of numbers. We construct the sequence `0,1,2,3,...,sizeof...(Ts)-1` and then define a lambda function that accepts this as a parameter pack `Indices`. Inside the lambda function, we use a ternary expression to check if the active index `m_idx == Indices` (the pack variable) and perform destruction in the true case. We apply C++17 fold expressions to expand `Indices` and generate multiple if statements.
+
+ ```cpp
+ // Destructor
+constexpr ~variant(){
+    constexpr auto idx_seq = std::make_index_sequence<sizeof...(Ts)>();
+    [&]<auto... Indices>(std::index_sequence<Indices...>){
+        (((m_idx == Indices) ? (tools::destroy_at<Indices>(m_data), 0) : 0), ...);
+    }(idx_seq);
+}
+```
+
+## Code listing
+
+```cpp
+namespace dev{
+
+template<typename... Ts>
+class variant;
+
+// Forward declaration 
+// so the friend declaration inside variant resolves
+template<size_t I, typename... Ts>
+constexpr decltype(auto) get(const variant<Ts...>& v);
+
+template<typename T, typename... Ts>
+constexpr T get(const variant<Ts...>& v);
+
+template<typename... Ts>
+class variant{
+    using index_type = tools::uint_atleast_t<sizeof...(Ts)>;
+    static constexpr size_t size = sizeof...(Ts);
+
+    tools::union_<Ts...> m_data;
+    index_type m_idx;
+
+    public:
+
+    constexpr variant()
+    {
+        tools::construct_at<0>(m_data, tools::get_nth_type_t<0, Ts...>());
+        m_idx = 0;
+    }
+
+    template<tools::exists<Ts...> T>
+    constexpr explicit variant(T&& x){
+        tools::construct_at<tools::find_index_of_v<T, Ts...>>(m_data, TOOLS_FWD(x));
+        m_idx = tools::find_index_of_v<T, Ts...>;
+    }
+
+    
+    constexpr variant(const variant& other){
+        index_type idx = other.m_idx;
+        constexpr auto idx_seq = std::make_index_sequence<sizeof...(Ts)>();
+        [&]<auto... Indices>(std::index_sequence<Indices...>){
+              (((idx == Indices) 
+            ? (tools::construct_at<Indices>(m_data, tools::get<Indices>(other.m_data)), 0) 
+            : 0), ...);
+        }(idx_seq);
+        m_idx = idx;
+    }
+
+    // Move ctor - steal data from other
+    constexpr variant(variant&& other) noexcept{
+        index_type idx = other.m_idx;
+        constexpr auto idx_seq = std::make_index_sequence<sizeof...(Ts)>();
+        [&]<auto... Indices>(std::index_sequence<Indices...>){
+              (((idx == Indices) 
+            ? (tools::construct_at<Indices>(m_data, tools::get<Indices>(std::move(other.m_data))), 0) 
+            : 0), ...);
+        }(idx_seq);
+        m_idx = std::exchange(other.m_idx, 0);
+    }
+
+    template<typename... Us>
+    void swap(variant<Us...>& other) noexcept{
+        using std::swap;
+        if(m_idx == other.m_idx){
+            swap(get<m_idx>(*this), tools::get<m_idx>(other));
+        }else{
+            variant<Ts...> old_value = std::move(*this);
+            this->~variant();
+            std::construct_at(this, std::move(other));
+            other->~variant();
+            std::construct_at(&other, std::move(old_value));
+        }
+    }
+
+    template<typename... Us>
+    variant<Ts...>& operator=(const variant<Us...>& other){
+        variant(other).swap(*this);
+        return *this;
+    }
+
+    template<typename... Us>
+    variant<Ts...>& operator=(variant<Us...>&& other){
+        variant(std::move(other)).swap(*this);
+        return *this;
+    }
+
+    template<tools::exists<Ts...> T>
+    constexpr variant<Ts...>& operator=(T&& element){
+        this->~variant();
+        constexpr size_t i = tools::find_index_of_v<T, Ts...>;
+        tools::construct_at<i>(m_data, TOOLS_FWD(element));
+        m_idx = i;
+        return *this;
+    }
+
+    constexpr ~variant(){
+        constexpr auto idx_seq = std::make_index_sequence<sizeof...(Ts)>();
+        [&]<auto... Indices>(std::index_sequence<Indices...>){
+            (((m_idx == Indices) ? (tools::destroy_at<Indices>(m_data), 0) : 0), ...);
+        }(idx_seq);
+    }
+
+    template<size_t I, typename... Us>
+    constexpr friend decltype(auto) get(const variant<Us...>& v);
+
+    template<typename T, typename... Us>
+    constexpr friend T get(const variant<Us...>& v);
+}; 
+
+template<size_t I, typename... Ts>
+constexpr decltype(auto) get(const variant<Ts...>& v){
+    return tools::get<I>(v.m_data);
+}
+
+template<typename T, typename... Ts>
+constexpr T get(const variant<Ts...>& v){
+    return tools::get<tools::find_index_of_v<T, Ts...>>(v.m_data);
+}
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/Ph9K1WrW8)
+
