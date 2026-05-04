@@ -22,6 +22,40 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -151,7 +185,15 @@ ul.task-list li input[type="checkbox"] {
 <!-- sidebar -->
 <!-- margin-sidebar -->
     <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
-        
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
+  <li><a href="#a-switcher-struct" id="toc-a-switcher-struct" class="nav-link" data-scroll-target="#a-switcher-struct">A <code>switcher</code> struct</a></li>
+  <li><a href="#code-listing" id="toc-code-listing" class="nav-link" data-scroll-target="#code-listing">Code Listing</a></li>
+  </ul>
+</nav>
     </div>
 <!-- main -->
 <main class="content quarto-banner-title-block" id="quarto-document-content">
@@ -159,8 +201,199 @@ ul.task-list li input[type="checkbox"] {
 
 
 
+<section id="introduction" class="level1">
+<h1>Introduction</h1>
+<p><code>std::visit(Visitor&amp;&amp;, Variants&amp;&amp;...)</code> is a way to implement multiple dispatch in modern C++. <code>std::visit</code> expects a <code>Visitor</code> object and a pack of variants. Since each variant can hold one of many alternatives, the total number of distinguishable combinations are <code>constexpr size_t n = std::variant_size&lt;Variants&gt; * ...</code>. The <code>Visitor</code> contains a callable - one for each possible combination of types of the variants. <code>std::visit</code> selects an appropriate overload, based on the actual combination of alternatives held in the variants from the <code>n</code> candidate functions.</p>
+</section>
+<section id="a-switcher-struct" class="level1">
+<h1>A <code>switcher</code> struct</h1>
+<div class="sourceCode" id="cb1"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="pp">#include </span><span class="im">&lt;cstdint&gt;</span></span>
+<span id="cb1-2"><a href="#cb1-2"></a><span class="pp">#include </span><span class="im">&lt;utility&gt;</span></span>
+<span id="cb1-3"><a href="#cb1-3"></a><span class="pp">#include </span><span class="im">&lt;numeric&gt;</span></span>
+<span id="cb1-4"><a href="#cb1-4"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
+<span id="cb1-5"><a href="#cb1-5"></a></span>
+<span id="cb1-6"><a href="#cb1-6"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb1-7"><a href="#cb1-7"></a>    <span class="kw">namespace</span> tools<span class="op">::</span>v1<span class="op">{</span></span>
+<span id="cb1-8"><a href="#cb1-8"></a></span>
+<span id="cb1-9"><a href="#cb1-9"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op"> </span>size<span class="op">,</span> <span class="kw">typename</span> Func<span class="op">&gt;</span></span>
+<span id="cb1-10"><a href="#cb1-10"></a>        <span class="kw">struct</span> switcher<span class="op">{</span></span>
+<span id="cb1-11"><a href="#cb1-11"></a>            Func <span class="va">func_</span><span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12"></a>            <span class="kw">using</span> <span class="dt">result_t</span> <span class="op">=</span> <span class="kw">decltype</span><span class="op">(</span><span class="va">func_</span><span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span><span class="dv">0</span><span class="op">&gt;()));</span></span>
+<span id="cb1-13"><a href="#cb1-13"></a>            <span class="kw">constexpr</span> switcher<span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> size<span class="op">&gt;,</span> Func func<span class="op">)</span> <span class="op">:</span> <span class="va">func_</span><span class="op">{</span> func <span class="op">}</span> <span class="op">{}</span></span>
+<span id="cb1-14"><a href="#cb1-14"></a></span>
+<span id="cb1-15"><a href="#cb1-15"></a>            <span class="kw">constexpr</span> <span class="dt">result_t</span> <span class="kw">operator</span><span class="op">()(</span><span class="bu">std::</span>size_t<span class="op"> </span>i<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb1-16"><a href="#cb1-16"></a>                <span class="kw">using</span> <span class="va">case_</span> <span class="op">=</span> <span class="dt">result_t</span><span class="op">(*)(</span>Func<span class="op">);</span></span>
+<span id="cb1-17"><a href="#cb1-17"></a>                <span class="cf">return</span> <span class="op">[&amp;]&lt;</span><span class="bu">std::</span>size_t<span class="op">...</span> idxs<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>idxs<span class="op">...&gt;){</span></span>
+<span id="cb1-18"><a href="#cb1-18"></a>                    <span class="co">// an array of anonymous functions</span></span>
+<span id="cb1-19"><a href="#cb1-19"></a>                    <span class="kw">constexpr</span> <span class="va">case_</span> cases<span class="op">[]{</span></span>
+<span id="cb1-20"><a href="#cb1-20"></a>                        <span class="op">[](</span>Func func<span class="op">){</span> <span class="cf">return</span> func <span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span>idxs<span class="op">&gt;());</span> <span class="op">}...</span> </span>
+<span id="cb1-21"><a href="#cb1-21"></a>                    <span class="op">};</span></span>
+<span id="cb1-22"><a href="#cb1-22"></a>                    <span class="cf">return</span> cases<span class="op">[</span>i<span class="op">](</span><span class="va">func_</span><span class="op">);</span></span>
+<span id="cb1-23"><a href="#cb1-23"></a>                <span class="op">}</span></span>
+<span id="cb1-24"><a href="#cb1-24"></a>                <span class="op">(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span>size<span class="op">&gt;{});</span></span>
+<span id="cb1-25"><a href="#cb1-25"></a>            <span class="op">}</span></span>
+<span id="cb1-26"><a href="#cb1-26"></a>        <span class="op">};</span></span>
+<span id="cb1-27"><a href="#cb1-27"></a>    <span class="op">}</span></span>
+<span id="cb1-28"><a href="#cb1-28"></a><span class="op">}</span></span>
+<span id="cb1-29"><a href="#cb1-29"></a></span>
+<span id="cb1-30"><a href="#cb1-30"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb1-31"><a href="#cb1-31"></a>    <span class="kw">namespace</span> tools<span class="op">::</span>v2<span class="op">{</span></span>
+<span id="cb1-32"><a href="#cb1-32"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op"> </span>size<span class="op">,</span> <span class="kw">typename</span> Func<span class="op">&gt;</span></span>
+<span id="cb1-33"><a href="#cb1-33"></a>        <span class="kw">struct</span> switcher<span class="op">{</span></span>
+<span id="cb1-34"><a href="#cb1-34"></a>            Func <span class="va">func_</span><span class="op">;</span></span>
+<span id="cb1-35"><a href="#cb1-35"></a>            <span class="kw">using</span> <span class="dt">res_t</span> <span class="op">=</span> <span class="kw">decltype</span><span class="op">(</span><span class="va">func_</span><span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="dv">0</span><span class="op">&gt;()));</span></span>
+<span id="cb1-36"><a href="#cb1-36"></a>            switcher<span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> size<span class="op">&gt;,</span> Func func<span class="op">)</span> <span class="op">:</span> <span class="va">func_</span><span class="op">{</span> func <span class="op">}{}</span></span>
+<span id="cb1-37"><a href="#cb1-37"></a></span>
+<span id="cb1-38"><a href="#cb1-38"></a>            <span class="kw">constexpr</span> <span class="dt">res_t</span> <span class="kw">operator</span><span class="op">()(</span><span class="bu">std::</span>size_t<span class="op"> </span>i<span class="op">){</span></span>
+<span id="cb1-39"><a href="#cb1-39"></a>                <span class="cf">return</span> <span class="op">[&amp;]&lt;</span><span class="bu">std::</span>size_t<span class="op">...</span> idxs<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>idxs<span class="op">...&gt;){</span></span>
+<span id="cb1-40"><a href="#cb1-40"></a>                    <span class="dt">res_t</span> result<span class="op">;</span></span>
+<span id="cb1-41"><a href="#cb1-41"></a>                    <span class="op">(((</span>i <span class="op">==</span> idxs<span class="op">)</span> <span class="op">?</span> <span class="op">(</span>result <span class="op">=</span> <span class="va">func_</span><span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> idxs<span class="op">&gt;()),</span> <span class="dv">0</span><span class="op">)</span> <span class="op">:</span> <span class="dv">0</span><span class="op">),</span> <span class="op">...);</span></span>
+<span id="cb1-42"><a href="#cb1-42"></a>                    <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb1-43"><a href="#cb1-43"></a>                <span class="op">}(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span>size<span class="op">&gt;());</span></span>
+<span id="cb1-44"><a href="#cb1-44"></a>            <span class="op">}</span></span>
+<span id="cb1-45"><a href="#cb1-45"></a>        <span class="op">};</span></span>
+<span id="cb1-46"><a href="#cb1-46"></a>    <span class="op">}</span></span>
+<span id="cb1-47"><a href="#cb1-47"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="code-listing" class="level1">
+<h1>Code Listing</h1>
+<div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="co">// switch.h</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a><span class="pp">#include </span><span class="im">&lt;cstdint&gt;</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a><span class="pp">#include </span><span class="im">&lt;utility&gt;</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a><span class="pp">#include </span><span class="im">&lt;numeric&gt;</span></span>
+<span id="cb2-5"><a href="#cb2-5"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
+<span id="cb2-6"><a href="#cb2-6"></a></span>
+<span id="cb2-7"><a href="#cb2-7"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb2-8"><a href="#cb2-8"></a>    <span class="kw">namespace</span> tools<span class="op">::</span>v1<span class="op">{</span></span>
+<span id="cb2-9"><a href="#cb2-9"></a></span>
+<span id="cb2-10"><a href="#cb2-10"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op"> </span>size<span class="op">,</span> <span class="kw">typename</span> Func<span class="op">&gt;</span></span>
+<span id="cb2-11"><a href="#cb2-11"></a>        <span class="kw">struct</span> switcher<span class="op">{</span></span>
+<span id="cb2-12"><a href="#cb2-12"></a>            Func <span class="va">func_</span><span class="op">;</span></span>
+<span id="cb2-13"><a href="#cb2-13"></a>            <span class="kw">using</span> <span class="dt">result_t</span> <span class="op">=</span> <span class="kw">decltype</span><span class="op">(</span><span class="va">func_</span><span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span><span class="dv">0</span><span class="op">&gt;()));</span></span>
+<span id="cb2-14"><a href="#cb2-14"></a>            <span class="kw">constexpr</span> switcher<span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> size<span class="op">&gt;,</span> Func func<span class="op">)</span> <span class="op">:</span> <span class="va">func_</span><span class="op">{</span> func <span class="op">}</span> <span class="op">{}</span></span>
+<span id="cb2-15"><a href="#cb2-15"></a></span>
+<span id="cb2-16"><a href="#cb2-16"></a>            <span class="kw">constexpr</span> <span class="dt">result_t</span> <span class="kw">operator</span><span class="op">()(</span><span class="bu">std::</span>size_t<span class="op"> </span>i<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb2-17"><a href="#cb2-17"></a>                <span class="kw">using</span> <span class="va">case_</span> <span class="op">=</span> <span class="dt">result_t</span><span class="op">(*)(</span>Func<span class="op">);</span></span>
+<span id="cb2-18"><a href="#cb2-18"></a>                <span class="cf">return</span> <span class="op">[&amp;]&lt;</span><span class="bu">std::</span>size_t<span class="op">...</span> idxs<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>idxs<span class="op">...&gt;){</span></span>
+<span id="cb2-19"><a href="#cb2-19"></a>                    <span class="co">// an array of anonymous functions</span></span>
+<span id="cb2-20"><a href="#cb2-20"></a>                    <span class="kw">constexpr</span> <span class="va">case_</span> cases<span class="op">[]{</span></span>
+<span id="cb2-21"><a href="#cb2-21"></a>                        <span class="op">[](</span>Func func<span class="op">){</span> <span class="cf">return</span> func <span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span>idxs<span class="op">&gt;());</span> <span class="op">}...</span> </span>
+<span id="cb2-22"><a href="#cb2-22"></a>                    <span class="op">};</span></span>
+<span id="cb2-23"><a href="#cb2-23"></a>                    <span class="cf">return</span> cases<span class="op">[</span>i<span class="op">](</span><span class="va">func_</span><span class="op">);</span></span>
+<span id="cb2-24"><a href="#cb2-24"></a>                <span class="op">}</span></span>
+<span id="cb2-25"><a href="#cb2-25"></a>                <span class="op">(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span>size<span class="op">&gt;{});</span></span>
+<span id="cb2-26"><a href="#cb2-26"></a>            <span class="op">}</span></span>
+<span id="cb2-27"><a href="#cb2-27"></a>        <span class="op">};</span></span>
+<span id="cb2-28"><a href="#cb2-28"></a>    <span class="op">}</span></span>
+<span id="cb2-29"><a href="#cb2-29"></a><span class="op">}</span></span>
+<span id="cb2-30"><a href="#cb2-30"></a></span>
+<span id="cb2-31"><a href="#cb2-31"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb2-32"><a href="#cb2-32"></a>    <span class="kw">namespace</span> tools<span class="op">::</span>v2<span class="op">{</span></span>
+<span id="cb2-33"><a href="#cb2-33"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op"> </span>size<span class="op">,</span> <span class="kw">typename</span> Func<span class="op">&gt;</span></span>
+<span id="cb2-34"><a href="#cb2-34"></a>        <span class="kw">struct</span> switcher<span class="op">{</span></span>
+<span id="cb2-35"><a href="#cb2-35"></a>            Func <span class="va">func_</span><span class="op">;</span></span>
+<span id="cb2-36"><a href="#cb2-36"></a>            <span class="kw">using</span> <span class="dt">res_t</span> <span class="op">=</span> <span class="kw">decltype</span><span class="op">(</span><span class="va">func_</span><span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="dv">0</span><span class="op">&gt;()));</span></span>
+<span id="cb2-37"><a href="#cb2-37"></a>            switcher<span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> size<span class="op">&gt;,</span> Func func<span class="op">)</span> <span class="op">:</span> <span class="va">func_</span><span class="op">{</span> func <span class="op">}{}</span></span>
+<span id="cb2-38"><a href="#cb2-38"></a></span>
+<span id="cb2-39"><a href="#cb2-39"></a>            <span class="kw">constexpr</span> <span class="dt">res_t</span> <span class="kw">operator</span><span class="op">()(</span><span class="bu">std::</span>size_t<span class="op"> </span>i<span class="op">){</span></span>
+<span id="cb2-40"><a href="#cb2-40"></a>                <span class="cf">return</span> <span class="op">[&amp;]&lt;</span><span class="bu">std::</span>size_t<span class="op">...</span> idxs<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>idxs<span class="op">...&gt;){</span></span>
+<span id="cb2-41"><a href="#cb2-41"></a>                    <span class="dt">res_t</span> result<span class="op">;</span></span>
+<span id="cb2-42"><a href="#cb2-42"></a>                    <span class="op">(((</span>i <span class="op">==</span> idxs<span class="op">)</span> <span class="op">?</span> <span class="op">(</span>result <span class="op">=</span> <span class="va">func_</span><span class="op">(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> idxs<span class="op">&gt;()),</span> <span class="dv">0</span><span class="op">)</span> <span class="op">:</span> <span class="dv">0</span><span class="op">),</span> <span class="op">...);</span></span>
+<span id="cb2-43"><a href="#cb2-43"></a>                    <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb2-44"><a href="#cb2-44"></a>                <span class="op">}(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span>size<span class="op">&gt;());</span></span>
+<span id="cb2-45"><a href="#cb2-45"></a>            <span class="op">}</span></span>
+<span id="cb2-46"><a href="#cb2-46"></a>        <span class="op">};</span></span>
+<span id="cb2-47"><a href="#cb2-47"></a>    <span class="op">}</span></span>
+<span id="cb2-48"><a href="#cb2-48"></a><span class="op">}</span></span>
+<span id="cb2-49"><a href="#cb2-49"></a></span>
+<span id="cb2-50"><a href="#cb2-50"></a><span class="co">// Consider that we have variants v1, v2, v3 each having 2, 3, and 5 </span></span>
+<span id="cb2-51"><a href="#cb2-51"></a><span class="co">// alternatives respectively. Then, we have the following:</span></span>
+<span id="cb2-52"><a href="#cb2-52"></a><span class="co">// 0,0,0 maps to -&gt; Case 0</span></span>
+<span id="cb2-53"><a href="#cb2-53"></a><span class="co">// 0,0,1 maps to -&gt; Case 1</span></span>
+<span id="cb2-54"><a href="#cb2-54"></a><span class="co">// ...</span></span>
+<span id="cb2-55"><a href="#cb2-55"></a><span class="co">// 0,1,0 maps to -&gt; Case 5</span></span>
+<span id="cb2-56"><a href="#cb2-56"></a><span class="co">// 0,1,1 maps to -&gt; Case 6</span></span>
+<span id="cb2-57"><a href="#cb2-57"></a><span class="co">// ...</span></span>
+<span id="cb2-58"><a href="#cb2-58"></a><span class="co">// 0,2,4 maps to -&gt; Case 14</span></span>
+<span id="cb2-59"><a href="#cb2-59"></a><span class="co">// 1,0,0 maps to -&gt; Case 15</span></span>
+<span id="cb2-60"><a href="#cb2-60"></a><span class="co">// ...</span></span>
+<span id="cb2-61"><a href="#cb2-61"></a><span class="co">// 1,2,4 maps to -&gt; Case 29</span></span>
+<span id="cb2-62"><a href="#cb2-62"></a><span class="co">// In general, (a,b,c) maps to -&gt; 15a + 5b + c. </span></span>
+<span id="cb2-63"><a href="#cb2-63"></a></span>
+<span id="cb2-64"><a href="#cb2-64"></a><span class="co">// math::coeffs returns the coefficients array [15, 5, 1].</span></span>
+<span id="cb2-65"><a href="#cb2-65"></a><span class="kw">namespace</span> dev<span class="op">::</span>tools<span class="op">{</span></span>
+<span id="cb2-66"><a href="#cb2-66"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">...</span> dims<span class="op">&gt;</span></span>
+<span id="cb2-67"><a href="#cb2-67"></a>    <span class="kw">struct</span> math_array<span class="op">{</span></span>
+<span id="cb2-68"><a href="#cb2-68"></a>        <span class="kw">using</span> multi_idx <span class="op">=</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="kw">sizeof</span><span class="op">...(</span>dims<span class="op">)&gt;;</span></span>
+<span id="cb2-69"><a href="#cb2-69"></a>        <span class="at">static</span> <span class="kw">constexpr</span> multi_idx coeffs <span class="op">=</span> <span class="op">[](){</span></span>
+<span id="cb2-70"><a href="#cb2-70"></a>            <span class="bu">std::</span>array<span class="op"> </span>dims_a <span class="op">=</span> <span class="op">{</span>dims<span class="op">...};</span></span>
+<span id="cb2-71"><a href="#cb2-71"></a>            <span class="bu">std::</span>array<span class="op"> </span>result <span class="op">=</span> dims_a<span class="op">;</span></span>
+<span id="cb2-72"><a href="#cb2-72"></a>            <span class="cf">for</span><span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>running <span class="op">=</span> <span class="dv">1</span><span class="op">,</span> i <span class="op">=</span> dims_a<span class="op">.</span>size<span class="op">();</span> i <span class="op">&gt;</span> <span class="dv">0</span><span class="op">;</span> <span class="op">--</span>i<span class="op">){</span></span>
+<span id="cb2-73"><a href="#cb2-73"></a>                result<span class="op">[</span>i <span class="op">-</span> <span class="dv">1</span><span class="op">]</span> <span class="op">=</span> running<span class="op">;</span></span>
+<span id="cb2-74"><a href="#cb2-74"></a>                running <span class="op">*=</span> dims_a<span class="op">[</span>i <span class="op">-</span> <span class="dv">1</span><span class="op">];</span></span>
+<span id="cb2-75"><a href="#cb2-75"></a>            <span class="op">}</span></span>
+<span id="cb2-76"><a href="#cb2-76"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb2-77"><a href="#cb2-77"></a>        <span class="op">}();</span></span>
+<span id="cb2-78"><a href="#cb2-78"></a></span>
+<span id="cb2-79"><a href="#cb2-79"></a>        <span class="at">static</span> <span class="kw">constexpr</span> multi_idx to_multi_idx<span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>linear_idx<span class="op">){</span></span>
+<span id="cb2-80"><a href="#cb2-80"></a>            <span class="bu">std::</span>array<span class="op"> </span>dims_a <span class="op">=</span> <span class="op">{</span>dims<span class="op">...};</span></span>
+<span id="cb2-81"><a href="#cb2-81"></a>            multi_idx result<span class="op">;</span></span>
+<span id="cb2-82"><a href="#cb2-82"></a>            multi_idx <span class="va">coeffs_</span> <span class="op">=</span> coeffs<span class="op">();</span></span>
+<span id="cb2-83"><a href="#cb2-83"></a></span>
+<span id="cb2-84"><a href="#cb2-84"></a>            <span class="cf">for</span><span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> coeffs<span class="op">.</span>size<span class="op">();</span> <span class="op">++</span>i<span class="op">){</span></span>
+<span id="cb2-85"><a href="#cb2-85"></a>                result<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> linear_idx <span class="op">/</span> <span class="va">coeffs_</span><span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb2-86"><a href="#cb2-86"></a>                linear_idx <span class="op">-=</span> result<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb2-87"><a href="#cb2-87"></a>            <span class="op">}</span></span>
+<span id="cb2-88"><a href="#cb2-88"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb2-89"><a href="#cb2-89"></a>        <span class="op">};</span></span>
+<span id="cb2-90"><a href="#cb2-90"></a></span>
+<span id="cb2-91"><a href="#cb2-91"></a>        <span class="at">static</span> <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>to_linear_idx<span class="op">(</span>multi_idx <span class="va">m_idx</span><span class="op">){</span></span>
+<span id="cb2-92"><a href="#cb2-92"></a>            <span class="bu">std::</span>size_t<span class="op"> </span>result<span class="op">{</span><span class="dv">0</span><span class="bu">uz</span><span class="op">};</span></span>
+<span id="cb2-93"><a href="#cb2-93"></a>            multi_idx <span class="va">coeffs_</span> <span class="op">=</span> coeffs<span class="op">();</span></span>
+<span id="cb2-94"><a href="#cb2-94"></a>            result <span class="op">=</span> <span class="bu">std::</span>inner_product<span class="op">(</span><span class="va">coeffs_</span><span class="op">.</span>begin<span class="op">(),</span> <span class="va">coeffs_</span><span class="op">.</span>end<span class="op">(),</span> <span class="va">m_idx</span><span class="op">.</span>begin<span class="op">(),</span> <span class="dv">0</span><span class="bu">u</span><span class="op">);</span></span>
+<span id="cb2-95"><a href="#cb2-95"></a>            <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb2-96"><a href="#cb2-96"></a>        <span class="op">}</span></span>
+<span id="cb2-97"><a href="#cb2-97"></a></span>
+<span id="cb2-98"><a href="#cb2-98"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op"> </span>linear_idx<span class="op">&gt;</span></span>
+<span id="cb2-99"><a href="#cb2-99"></a>        <span class="at">static</span> <span class="kw">constexpr</span> <span class="kw">auto</span> to_multi_idx_sequence<span class="op">(){</span></span>
+<span id="cb2-100"><a href="#cb2-100"></a>            <span class="cf">return</span> <span class="op">[&amp;]&lt;</span><span class="bu">std::</span>size_t<span class="op">...</span> idxs<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>idxs<span class="op">...&gt;){</span></span>
+<span id="cb2-101"><a href="#cb2-101"></a>                <span class="kw">constexpr</span> <span class="kw">auto</span> arr <span class="op">=</span> to_multi_idx<span class="op">(</span>linear_idx<span class="op">);</span></span>
+<span id="cb2-102"><a href="#cb2-102"></a>                <span class="cf">return</span> <span class="bu">std::</span>index_sequence<span class="op">&lt;</span>arr<span class="op">[</span>idxs<span class="op">]...&gt;();</span></span>
+<span id="cb2-103"><a href="#cb2-103"></a>            <span class="op">}(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span><span class="kw">sizeof</span><span class="op">...(</span>dims<span class="op">)&gt;());</span></span>
+<span id="cb2-104"><a href="#cb2-104"></a>        <span class="op">}</span></span>
+<span id="cb2-105"><a href="#cb2-105"></a>    <span class="op">};</span></span>
+<span id="cb2-106"><a href="#cb2-106"></a><span class="op">};</span></span>
+<span id="cb2-107"><a href="#cb2-107"></a></span>
+<span id="cb2-108"><a href="#cb2-108"></a><span class="bu">std::</span>size_t<span class="op"> </span>test<span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>init<span class="op">,</span> <span class="bu">std::</span>size_t<span class="op"> </span>select<span class="op">){</span></span>
+<span id="cb2-109"><a href="#cb2-109"></a>    dev<span class="op">::</span>tools<span class="op">::</span>v2<span class="op">::</span>switcher <span class="va">switch_</span><span class="op">{</span></span>
+<span id="cb2-110"><a href="#cb2-110"></a>        <span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="dv">10</span><span class="op">&gt;{},</span></span>
+<span id="cb2-111"><a href="#cb2-111"></a>        <span class="op">[&amp;]&lt;</span><span class="bu">std::</span>size_t<span class="op"> </span>i<span class="op">&gt;(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> i<span class="op">&gt;){</span> <span class="cf">return</span> init <span class="op">+</span> i<span class="op">;</span> <span class="op">}</span></span>
+<span id="cb2-112"><a href="#cb2-112"></a>    <span class="op">};</span></span>
+<span id="cb2-113"><a href="#cb2-113"></a>    <span class="cf">return</span> <span class="va">switch_</span><span class="op">(</span>select<span class="op">);</span></span>
+<span id="cb2-114"><a href="#cb2-114"></a><span class="op">}</span></span>
+<span id="cb2-115"><a href="#cb2-115"></a></span>
+<span id="cb2-116"><a href="#cb2-116"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb2-117"><a href="#cb2-117"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Visitor<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Variants<span class="op">&gt;</span></span>
+<span id="cb2-118"><a href="#cb2-118"></a>    <span class="kw">auto</span> visit<span class="op">(</span>Visitor<span class="op">&amp;&amp;</span> visitor<span class="op">,</span> Variants<span class="op">&amp;&amp;...</span> variants<span class="op">){</span></span>
+<span id="cb2-119"><a href="#cb2-119"></a>        <span class="kw">using</span> c_math_array <span class="op">=</span> tools<span class="op">::</span>math_array<span class="op">&lt;</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span>Variants<span class="op">&gt;...&gt;;</span></span>
+<span id="cb2-120"><a href="#cb2-120"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>num_cases <span class="op">=</span> <span class="op">(</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span>Variants<span class="op">&gt;</span> <span class="op">*</span> <span class="op">...);</span></span>
+<span id="cb2-121"><a href="#cb2-121"></a>        tools<span class="op">::</span>v2<span class="op">::</span>switcher switcher<span class="op">{</span></span>
+<span id="cb2-122"><a href="#cb2-122"></a>            <span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> num_cases<span class="op">&gt;{},</span></span>
+<span id="cb2-123"><a href="#cb2-123"></a>            <span class="op">[&amp;]&lt;</span><span class="bu">std::</span>size_t<span class="op"> </span><span class="va">case_</span><span class="op">&gt;(</span><span class="bu">std::</span>integral_constant<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="va">case_</span><span class="op">&gt;){</span></span>
+<span id="cb2-124"><a href="#cb2-124"></a>                <span class="kw">constexpr</span> <span class="kw">auto</span> seq <span class="op">=</span> <span class="kw">typename</span> c_math_array<span class="op">::</span><span class="kw">template</span> to_multi_idx_sequence<span class="op">&lt;</span><span class="va">case_</span><span class="op">&gt;();</span></span>
+<span id="cb2-125"><a href="#cb2-125"></a>                <span class="cf">return</span> <span class="op">[&amp;]&lt;</span><span class="bu">std::</span>size_t<span class="op">...</span> idxs<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>idxs<span class="op">...&gt;){</span></span>
+<span id="cb2-126"><a href="#cb2-126"></a>                    <span class="cf">return</span> <span class="bu">std::</span>forward<span class="op">&lt;</span>Visitor<span class="op">&gt;(</span>visitor<span class="op">)(</span><span class="bu">std::</span>get<span class="op">&lt;</span>idxs<span class="op">&gt;(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Variants<span class="op">&gt;(</span>variants<span class="op">).</span>data<span class="op">)...);</span></span>
+<span id="cb2-127"><a href="#cb2-127"></a>                <span class="op">}(</span>seq<span class="op">);</span></span>
+<span id="cb2-128"><a href="#cb2-128"></a>            <span class="op">}</span></span>
+<span id="cb2-129"><a href="#cb2-129"></a>        <span class="op">};</span></span>
+<span id="cb2-130"><a href="#cb2-130"></a></span>
+<span id="cb2-131"><a href="#cb2-131"></a>        <span class="kw">auto</span> idx <span class="op">=</span> c_math_array<span class="op">::</span>to_linear_idx<span class="op">({</span>variants<span class="op">.</span>index<span class="op">...});</span></span>
+<span id="cb2-132"><a href="#cb2-132"></a>    <span class="op">}</span></span>
+<span id="cb2-133"><a href="#cb2-133"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://compiler-explorer.com/z/n5G14eErM">Compiler Explorer</a></p>
 
 
+</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
@@ -396,7 +629,7 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
   }
 });
 </script>
-<script src="https://giscus.app/client.js" data-repo="quasar-chunawala/quantdev" data-repo-id="R_kgDOL2t5-A" data-category="General" data-category-id="" data-mapping="title" data-reactions-enabled="1" data-emit-metadata="0" data-input-position="top" data-theme="light" data-lang="en" crossorigin="anonymous" async="">
+<script src="https://giscus.app/client.js" data-repo="quasar-chunawala/quantdev" data-repo-id="R_kgDOL2t5-A" data-category="General" data-category-id="DIC_kwDOL2t5-M4ClndQ" data-mapping="title" data-reactions-enabled="1" data-emit-metadata="0" data-input-position="top" data-theme="light" data-lang="en" crossorigin="anonymous" async="">
 </script>
 </div> <!-- /content -->
 
