@@ -22,6 +22,40 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -72,6 +106,8 @@ ul.task-list li input[type="checkbox"] {
 </style>
 <script async="" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9993009899870547" crossorigin="anonymous"></script>
 
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
 
 <link rel="stylesheet" href="../../styles.css">
 </head>
@@ -163,8 +199,14 @@ ul.task-list li input[type="checkbox"] {
   <li><a href="#build-system" id="toc-build-system" class="nav-link" data-scroll-target="#build-system">Build system</a></li>
   <li><a href="#toolchain" id="toc-toolchain" class="nav-link" data-scroll-target="#toolchain">Toolchain</a></li>
   <li><a href="#meta-build-system" id="toc-meta-build-system" class="nav-link" data-scroll-target="#meta-build-system">Meta-build system</a></li>
+  <li><a href="#language-servers" id="toc-language-servers" class="nav-link" data-scroll-target="#language-servers">Language Servers</a></li>
+  <li><a href="#debugger" id="toc-debugger" class="nav-link" data-scroll-target="#debugger">Debugger</a></li>
+  <li><a href="#debug-adapter-protocoldap" id="toc-debug-adapter-protocoldap" class="nav-link" data-scroll-target="#debug-adapter-protocoldap">Debug Adapter Protocol(DAP)</a></li>
   </ul></li>
-  <li><a href="#setup" id="toc-setup" class="nav-link" data-scroll-target="#setup">Setup</a></li>
+  <li><a href="#setup" id="toc-setup" class="nav-link" data-scroll-target="#setup">Setup</a>
+  <ul class="collapse">
+  <li><a href="#visual-studio-extensions" id="toc-visual-studio-extensions" class="nav-link" data-scroll-target="#visual-studio-extensions">Visual Studio Extensions</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -217,13 +259,62 @@ ul.task-list li input[type="checkbox"] {
 <p>Usually, a meta-build system runs a <strong>configuration step</strong> and requires another tool such as <code>ninja</code> for the actual <strong>build step</strong>. The meta-build system discovers the rules that need to be executed (often through a programmatic way to describe dependencies or through file globbing), and then <strong>serializes</strong> (persists) these rules into an action graph, which can be stored either in memory or on disk. On-disk serialized action graphs are themselves build files, in the sense, you can write them by hand but you wouldn’t want to.</p>
 <p>If you’ve ever used CMake, you know that there are two steps involved : a <strong>configure</strong> step (<code>cmake -b build-dir</code>) and a build step <code>cmake --build -S source-dir</code>, An action graph is a serialization of all the build steps, with the ability to regenerate the graph by rerunning the configure step.</p>
 <p>Some examples of meta-build systems are CMake, meson and autotools.</p>
-<p>Not all meta-build systems serialize their action graph. <code>bazel</code> and <code>buck2</code> run persistent servers that store it in memopry and allow querying it, but never serialize it to the disk. For large graphs, this requires a lot of memory.</p>
+<p>Not all meta-build systems serialize their action graph. <code>bazel</code> and <code>buck2</code> run persistent servers that store it in memory and allow querying it, but never serialize it to the disk. For large graphs, this requires a lot of memory.</p>
+</section>
+<section id="language-servers" class="level2">
+<h2 class="anchored" data-anchor-id="language-servers">Language Servers</h2>
+<p>Most modern IDEs provide programnmers with sophisticated features like code completion, hover tooltips, finding symbols, jump-to-definitions, syntax highlighting etc. Language services used to be tightly embedded within the editor or IDE. Assume that there are <span class="math inline">\(m\)</span> code editors and <span class="math inline">\(n\)</span> language servers, we would need to write <span class="math inline">\(m \times n\)</span> (<span class="math inline">\(m\)</span>-times-<span class="math inline">\(n\)</span>) plugins to provide Visual Studio like sophisticated features for all programming languages on all code-editors.</p>
+<p>The Language Server Protocol(LSP) reduces an <span class="math inline">\(m \times n\)</span> problem to an <span class="math inline">\(m + n\)</span> problem. LSP allows language communities to concentrate their efforts on building a single, high performing language server that can provide code completion, hover tooltips, jump-to-definition, find-references, while editor and client communities can concentrate on a building a single, intuitive, high-performing extension that can communicate with any language server.</p>
+<p>The LSP is a protocol for sending messages in a JSON-RPC format that allows the development tool to communicate with any language server. And a single language server can be reused in multiple development tools.</p>
+</section>
+<section id="debugger" class="level2">
+<h2 class="anchored" data-anchor-id="debugger">Debugger</h2>
+<p>Debuggers are the most valuable tool in any developer’s kit. Debuggers allow you to step through the source code, inspect the values of variables, set breakpoints and much more.</p>
+</section>
+<section id="debug-adapter-protocoldap" class="level2">
+<h2 class="anchored" data-anchor-id="debug-adapter-protocoldap">Debug Adapter Protocol(DAP)</h2>
+<p>The Debug Adapter Protocol(DAP) is an abstract protcol that allows any development tool to communicate with any debug-adapter.</p>
 </section>
 </section>
 <section id="setup" class="level1">
 <h1>Setup</h1>
+<p>This is my development environment setup on Arch.</p>
+<ul>
+<li>Compiler: clang++</li>
+<li>Debugger: lldb</li>
+<li>Language Server: <a href="https://clangd.llvm.org/"><code>clangd</code></a></li>
+<li>Meta-build system: CMake</li>
+<li>Build system: <code>ninja</code></li>
+<li>Integrated Development Environment: Visual Studio Code</li>
+<li>C++ code linter: clang-tidy</li>
+<li>Source code formatter: clang-format</li>
+<li>Source code documentation generator: doxygen</li>
+<li>Software package distribution management: CPack</li>
+<li>VCS(Version Control System): Git</li>
+</ul>
+<section id="visual-studio-extensions" class="level2">
+<h2 class="anchored" data-anchor-id="visual-studio-extensions">Visual Studio Extensions</h2>
+<p>I recommend the below VS Code extensions. You could create and optionally customize the below <code>.vscode/extensions.json</code>.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode numberSource json number-lines code-with-copy"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2"></a>    <span class="dt">"recommendations"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1-3"><a href="#cb1-3"></a>        <span class="st">"llvm-vs-code-extensions.vscode-clangd"</span><span class="ot">,</span></span>
+<span id="cb1-4"><a href="#cb1-4"></a>        <span class="st">"ms-vscode.cpptools-extension-pack"</span><span class="ot">,</span></span>
+<span id="cb1-5"><a href="#cb1-5"></a>        <span class="st">"ms-vscode-remote.vscode-remote-extensionpack"</span><span class="ot">,</span></span>
+<span id="cb1-6"><a href="#cb1-6"></a>        <span class="st">"cs128.cs128-clang-tidy"</span><span class="ot">,</span></span>
+<span id="cb1-7"><a href="#cb1-7"></a>        <span class="st">"donjayamanne.githistory"</span><span class="ot">,</span></span>
+<span id="cb1-8"><a href="#cb1-8"></a>        <span class="st">"josetr.cmake-language-support-vscode"</span><span class="ot">,</span></span>
+<span id="cb1-9"><a href="#cb1-9"></a>        <span class="st">"mhutchie.git-graph"</span><span class="ot">,</span></span>
+<span id="cb1-10"><a href="#cb1-10"></a>        <span class="st">"ms-vscode.cmake-tools"</span><span class="ot">,</span></span>
+<span id="cb1-11"><a href="#cb1-11"></a>        <span class="st">"vadimcn.vscode-lldb"</span><span class="ot">,</span></span>
+<span id="cb1-12"><a href="#cb1-12"></a>        <span class="st">"waderyan.gitblame"</span><span class="ot">,</span></span>
+<span id="cb1-13"><a href="#cb1-13"></a>        <span class="st">"xaver.clang-format"</span><span class="ot">,</span></span>
+<span id="cb1-14"><a href="#cb1-14"></a>        <span class="st">"github.vscode-pull-request-github"</span><span class="ot">,</span></span>
+<span id="cb1-15"><a href="#cb1-15"></a>        <span class="st">"ms-vsliveshare.vsliveshare"</span></span>
+<span id="cb1-16"><a href="#cb1-16"></a>    <span class="ot">]</span></span>
+<span id="cb1-17"><a href="#cb1-17"></a><span class="fu">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->
