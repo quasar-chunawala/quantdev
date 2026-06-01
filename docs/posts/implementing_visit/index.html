@@ -197,8 +197,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#what-is-visitation" id="toc-what-is-visitation" class="nav-link" data-scroll-target="#what-is-visitation">What is visitation?</a></li>
   <li><a href="#traditional-visitation" id="toc-traditional-visitation" class="nav-link" data-scroll-target="#traditional-visitation">Traditional visitation</a></li>
   </ul></li>
-  <li><a href="#the-basic-mechanics-of-stdvisit-implementation" id="toc-the-basic-mechanics-of-stdvisit-implementation" class="nav-link" data-scroll-target="#the-basic-mechanics-of-stdvisit-implementation">The basic mechanics of <code>std::visit</code> implementation</a></li>
-  <li><a href="#code-listing" id="toc-code-listing" class="nav-link" data-scroll-target="#code-listing">Code Listing</a>
+  <li><a href="#building-helper-functions-needed-for-stdvisit" id="toc-building-helper-functions-needed-for-stdvisit" class="nav-link" data-scroll-target="#building-helper-functions-needed-for-stdvisit">Building helper functions needed for <code>std::visit</code></a></li>
+  <li><a href="#simpler-case-of-1-and-2-variants" id="toc-simpler-case-of-1-and-2-variants" class="nav-link" data-scroll-target="#simpler-case-of-1-and-2-variants">Simpler case of <span class="math inline">\(1\)</span> and <span class="math inline">\(2\)</span> variants</a></li>
+  <li><a href="#generalizing-to-a-pack-of-variants." id="toc-generalizing-to-a-pack-of-variants." class="nav-link" data-scroll-target="#generalizing-to-a-pack-of-variants.">Generalizing to a pack of variants.</a>
   <ul class="collapse">
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
   </ul></li>
@@ -270,214 +271,503 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>What you get is a form of multiple dispatch, that has to handle all possible combinations. This is also really powerful way of implementing multiple dispatch.</p>
 </section>
 </section>
-<section id="the-basic-mechanics-of-stdvisit-implementation" class="level1">
-<h1>The basic mechanics of <code>std::visit</code> implementation</h1>
-<p>Under the hood <code>std::visit</code> must invoke the right candidate for the currently active alternatives from the function overload set. We start with the simplest case of <span class="math inline">\(2\)</span> variants.</p>
+<section id="building-helper-functions-needed-for-stdvisit" class="level1">
+<h1>Building helper functions needed for <code>std::visit</code></h1>
+<p>Under the hood <code>std::visit</code> must invoke the right candidate for the currently active alternatives from the function overload set. We start with the simplest case of <span class="math inline">\(2\)</span> variants. The central idea is to maintain a single array of function pointers. Each entry in the function pointer table has the shape <code>[](Visitor visitor, Variant0 v0, Variant1 v1)</code>. For concreteness, assume that both variants <code>v0</code> and <code>v1</code> offer a choice between <span class="math inline">\(2\)</span> types:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="kw">using</span> Variant0 <span class="op">=</span> <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">&gt;;</span></span>
+<span id="cb4-2"><a href="#cb4-2"></a><span class="kw">using</span> Variant1 <span class="op">=</span> <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">&gt;;</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>It is possible to have <span class="math inline">\(4\)</span> distinguishable behaviors(overloads), when a visitor visits these variants. So, we build an array of size <span class="math inline">\(4\)</span>.</p>
+<p>The <code>std::visit</code> implementation should automatically invoke the correct function overload based on the currently active types in <code>v0</code> and <code>v1</code>. Before we proceed, let us fix some terminology first. Suppose a variant <code>v</code> allows a choice amongst <span class="math inline">\(n\)</span> types:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="co">// Pseudo-code</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a><span class="bu">std::</span>variant<span class="op">&lt;</span>T0<span class="op">,</span> T1<span class="op">,</span> <span class="op">...,</span> Tn<span class="op">&gt;</span> v<span class="op">;</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>In the case of 2 variants <code>v0</code> and <code>v1</code> offering a choice amongst <span class="math inline">\(n_1\)</span> and <span class="math inline">\(n_2\)</span> alternative types respectively, we have a total of <span class="math inline">\(n_1 \times n_2\)</span> distinguishgable choices. For example, consider the case of <code>v0</code> offer a choice of <span class="math inline">\(3\)</span> types and <code>v1</code> offering a choice of <span class="math inline">\(4\)</span> types. Each choice is a distinct entry in the 2d-table, and we have a total of <span class="math inline">\(3 \times 4 = 12\)</span> distinct choices. We will have <span class="math inline">\(12\)</span> candidates in our function overload set. We can assign a multi-index <code>&lt;i,j&gt;</code> to the function overload <code>[](Ti, Tj){ /*...*/ }</code>.</p>
+<table class="table">
+<thead>
+<tr class="header">
+<th></th>
+<th>j=0</th>
+<th>j=1</th>
+<th>j=2</th>
+<th>j=3</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>i=0</strong></td>
+<td>&lt;0, 0&gt;</td>
+<td>&lt;0, 1&gt;</td>
+<td>&lt;0, 2&gt;</td>
+<td>&lt;0, 3&gt;</td>
+</tr>
+<tr class="even">
+<td><strong>i=1</strong></td>
+<td>&lt;1, 0&gt;</td>
+<td>&lt;1, 1&gt;</td>
+<td>&lt;1, 2&gt;</td>
+<td>&lt;1, 3&gt;</td>
+</tr>
+<tr class="odd">
+<td><strong>i=2</strong></td>
+<td>&lt;2, 0&gt;</td>
+<td>&lt;2, 1&gt;</td>
+<td>&lt;2, 2&gt;</td>
+<td>&lt;2, 3&gt;</td>
+</tr>
+</tbody>
+</table>
+<p>We can convert this 2d-table to a 1d-table.</p>
+<table class="table">
+<thead>
+<tr class="header">
+<th>Multi-index</th>
+<th>1D-index</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>&lt;0, 0&gt;</td>
+<td>0</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 1&gt;</td>
+<td>1</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 2&gt;</td>
+<td>2</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 3&gt;</td>
+<td>3</td>
+</tr>
+<tr class="odd">
+<td>&lt;1, 0&gt;</td>
+<td>4</td>
+</tr>
+<tr class="even">
+<td>&lt;1, 1&gt;</td>
+<td>5</td>
+</tr>
+<tr class="odd">
+<td>&lt;1, 2&gt;</td>
+<td>6</td>
+</tr>
+<tr class="even">
+<td>&lt;1, 3&gt;</td>
+<td>7</td>
+</tr>
+<tr class="odd">
+<td>&lt;2, 0&gt;</td>
+<td>8</td>
+</tr>
+<tr class="even">
+<td>&lt;2, 1&gt;</td>
+<td>9</td>
+</tr>
+<tr class="odd">
+<td>&lt;2, 2&gt;</td>
+<td>10</td>
+</tr>
+<tr class="even">
+<td>&lt;2, 3&gt;</td>
+<td>11</td>
+</tr>
+</tbody>
+</table>
+<p>Thus, the pointer to the function <code>[](Ti, Tj){ /*...*/}</code> with multi-index <code>&lt;i,j&gt;</code> is mapped to <code>4i + j</code> 1d-index in a 1d-table.</p>
+<p>In the case of 3 variants <code>v0</code>, <code>v1</code> and <code>v2</code> offering a choice amongst <span class="math inline">\(n_1 = 3\)</span>, <span class="math inline">\(n_2 = 4\)</span> and <span class="math inline">\(n_3 = 5\)</span> alternative types respectively, we have a total of <span class="math inline">\(3 \times 4 \times 5 = 60\)</span> distinguishable choices. We will have <span class="math inline">\(60\)</span> candidates in our function overload set. We can assign a multi-index <code>&lt;i,j,k&gt;</code> to the function overload <code>[](Ti, Tj, Tk){ /*...*/ }</code>.</p>
+<table class="table">
+<thead>
+<tr class="header">
+<th></th>
+<th>j=0</th>
+<th>j=1</th>
+<th>j=2</th>
+<th>j=3</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>i=0</strong></td>
+<td>&lt;0,0,k&gt;</td>
+<td>&lt;0,1,k&gt;</td>
+<td>&lt;0,2,k&gt;</td>
+<td>&lt;0,3,k&gt;</td>
+</tr>
+<tr class="even">
+<td><strong>i=1</strong></td>
+<td>&lt;1,0,k&gt;</td>
+<td>&lt;1,1,k&gt;</td>
+<td>&lt;1,2,k&gt;</td>
+<td>&lt;1,3,k&gt;</td>
+</tr>
+<tr class="odd">
+<td><strong>i=2</strong></td>
+<td>&lt;2,0,k&gt;</td>
+<td>&lt;2,1,k&gt;</td>
+<td>&lt;2,2,k&gt;</td>
+<td>&lt;2,3,k&gt;</td>
+</tr>
+</tbody>
+</table>
+<p>where each entry <code>&lt;i,j,k&gt;</code> expands over <span class="math inline">\(k = 0, 1, 2, 3, 4\)</span>. The full set of multi-indices and their 1D mappings is:</p>
+<table class="table">
+<colgroup>
+<col style="width: 18%">
+<col style="width: 14%">
+<col style="width: 18%">
+<col style="width: 14%">
+<col style="width: 18%">
+<col style="width: 14%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Multi-index</th>
+<th>1D-index</th>
+<th>Multi-index</th>
+<th>1D-index</th>
+<th>Multi-index</th>
+<th>1D-index</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>&lt;0, 0, 0&gt;</td>
+<td>0</td>
+<td>&lt;1, 0, 0&gt;</td>
+<td>20</td>
+<td>&lt;2, 0, 0&gt;</td>
+<td>40</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 0, 1&gt;</td>
+<td>1</td>
+<td>&lt;1, 0, 1&gt;</td>
+<td>21</td>
+<td>&lt;2, 0, 1&gt;</td>
+<td>41</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 0, 2&gt;</td>
+<td>2</td>
+<td>&lt;1, 0, 2&gt;</td>
+<td>22</td>
+<td>&lt;2, 0, 2&gt;</td>
+<td>42</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 0, 3&gt;</td>
+<td>3</td>
+<td>&lt;1, 0, 3&gt;</td>
+<td>23</td>
+<td>&lt;2, 0, 3&gt;</td>
+<td>43</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 0, 4&gt;</td>
+<td>4</td>
+<td>&lt;1, 0, 4&gt;</td>
+<td>24</td>
+<td>&lt;2, 0, 4&gt;</td>
+<td>44</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 1, 0&gt;</td>
+<td>5</td>
+<td>&lt;1, 1, 0&gt;</td>
+<td>25</td>
+<td>&lt;2, 1, 0&gt;</td>
+<td>45</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 1, 1&gt;</td>
+<td>6</td>
+<td>&lt;1, 1, 1&gt;</td>
+<td>26</td>
+<td>&lt;2, 1, 1&gt;</td>
+<td>46</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 1, 2&gt;</td>
+<td>7</td>
+<td>&lt;1, 1, 2&gt;</td>
+<td>27</td>
+<td>&lt;2, 1, 2&gt;</td>
+<td>47</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 1, 3&gt;</td>
+<td>8</td>
+<td>&lt;1, 1, 3&gt;</td>
+<td>28</td>
+<td>&lt;2, 1, 3&gt;</td>
+<td>48</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 1, 4&gt;</td>
+<td>9</td>
+<td>&lt;1, 1, 4&gt;</td>
+<td>29</td>
+<td>&lt;2, 1, 4&gt;</td>
+<td>49</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 2, 0&gt;</td>
+<td>10</td>
+<td>&lt;1, 2, 0&gt;</td>
+<td>30</td>
+<td>&lt;2, 2, 0&gt;</td>
+<td>50</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 2, 1&gt;</td>
+<td>11</td>
+<td>&lt;1, 2, 1&gt;</td>
+<td>31</td>
+<td>&lt;2, 2, 1&gt;</td>
+<td>51</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 2, 2&gt;</td>
+<td>12</td>
+<td>&lt;1, 2, 2&gt;</td>
+<td>32</td>
+<td>&lt;2, 2, 2&gt;</td>
+<td>52</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 2, 3&gt;</td>
+<td>13</td>
+<td>&lt;1, 2, 3&gt;</td>
+<td>33</td>
+<td>&lt;2, 2, 3&gt;</td>
+<td>53</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 2, 4&gt;</td>
+<td>14</td>
+<td>&lt;1, 2, 4&gt;</td>
+<td>34</td>
+<td>&lt;2, 2, 4&gt;</td>
+<td>54</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 3, 0&gt;</td>
+<td>15</td>
+<td>&lt;1, 3, 0&gt;</td>
+<td>35</td>
+<td>&lt;2, 3, 0&gt;</td>
+<td>55</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 3, 1&gt;</td>
+<td>16</td>
+<td>&lt;1, 3, 1&gt;</td>
+<td>36</td>
+<td>&lt;2, 3, 1&gt;</td>
+<td>56</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 3, 2&gt;</td>
+<td>17</td>
+<td>&lt;1, 3, 2&gt;</td>
+<td>37</td>
+<td>&lt;2, 3, 2&gt;</td>
+<td>57</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 3, 3&gt;</td>
+<td>18</td>
+<td>&lt;1, 3, 3&gt;</td>
+<td>38</td>
+<td>&lt;2, 3, 3&gt;</td>
+<td>58</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 3, 4&gt;</td>
+<td>19</td>
+<td>&lt;1, 3, 4&gt;</td>
+<td>39</td>
+<td>&lt;2, 3, 4&gt;</td>
+<td>59</td>
+</tr>
+</tbody>
+</table>
+<p>Thus, the pointer to the function <code>[](Ti, Tj, Tk){ /*...*/}</code> with multi-index <code>&lt;i,j,k&gt;</code> is mapped to the 1D-index <span class="math inline">\(20i + 5j + k\)</span>.</p>
+<p>We shall code up two helper functions <code>to_1d_index&lt;3,4,5&gt;(size_t, size_t, size_t)</code> and <code>from_1d_index&lt;3,4,5&gt;(size_t)</code> to convert a multi-index to a 1d-index and back.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="kw">namespace</span> dev<span class="op">::</span>tools<span class="op">{</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">...</span> Dimensions<span class="op">&gt;</span></span>
+<span id="cb6-3"><a href="#cb6-3"></a>    <span class="kw">constexpr</span> <span class="kw">auto</span> build_coeffs_array<span class="op">(){</span></span>
+<span id="cb6-4"><a href="#cb6-4"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="kw">sizeof</span><span class="op">...(</span>Dimensions<span class="op">)&gt;</span> dimensions <span class="op">{</span> Dimensions<span class="op">...</span> <span class="op">};</span></span>
+<span id="cb6-5"><a href="#cb6-5"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>coeffs_size <span class="op">=</span> <span class="kw">sizeof</span><span class="op">...(</span>Dimensions<span class="op">);</span></span>
+<span id="cb6-6"><a href="#cb6-6"></a>        <span class="bu">std::</span>array<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> coeffs_size<span class="op">&gt;</span> coeffs <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb6-7"><a href="#cb6-7"></a>        </span>
+<span id="cb6-8"><a href="#cb6-8"></a>        <span class="cf">for</span><span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>i<span class="op">{</span><span class="dv">0</span><span class="op">};</span> i <span class="op">&lt;</span> coeffs_size<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb6-9"><a href="#cb6-9"></a>            coeffs<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb6-10"><a href="#cb6-10"></a></span>
+<span id="cb6-11"><a href="#cb6-11"></a>        <span class="cf">for</span><span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>i<span class="op">{</span><span class="dv">0</span><span class="op">};</span> i <span class="op">&lt;</span> coeffs_size <span class="op">-</span> <span class="dv">1</span><span class="op">;</span> <span class="op">++</span>i<span class="op">){</span></span>
+<span id="cb6-12"><a href="#cb6-12"></a>            <span class="co">// In step i, we need to populate all coeffs[j], j &lt;= i</span></span>
+<span id="cb6-13"><a href="#cb6-13"></a>            <span class="cf">for</span><span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>j<span class="op">{</span><span class="dv">0</span><span class="op">};</span> j <span class="op">&lt;=</span> i<span class="op">;</span> <span class="op">++</span>j<span class="op">){</span></span>
+<span id="cb6-14"><a href="#cb6-14"></a>                coeffs<span class="op">[</span>j<span class="op">]</span> <span class="op">*=</span> dimensions<span class="op">[</span>i<span class="op">+</span><span class="dv">1</span><span class="op">];</span></span>
+<span id="cb6-15"><a href="#cb6-15"></a>            <span class="op">}</span></span>
+<span id="cb6-16"><a href="#cb6-16"></a>        <span class="op">}</span></span>
+<span id="cb6-17"><a href="#cb6-17"></a>        <span class="cf">return</span> coeffs<span class="op">;</span></span>
+<span id="cb6-18"><a href="#cb6-18"></a>    <span class="op">}</span></span>
+<span id="cb6-19"><a href="#cb6-19"></a>    <span class="co">/*</span></span>
+<span id="cb6-20"><a href="#cb6-20"></a><span class="co">    coeff[0] = v1size * ... * v[n-1] size</span></span>
+<span id="cb6-21"><a href="#cb6-21"></a><span class="co">    coeff[1] = v2size * .... *v[n-1] size</span></span>
+<span id="cb6-22"><a href="#cb6-22"></a><span class="co">    ...</span></span>
+<span id="cb6-23"><a href="#cb6-23"></a><span class="co">    coeff[n-2] = v[n-1] size</span></span>
+<span id="cb6-24"><a href="#cb6-24"></a><span class="co">    coeff[n-1] = 1</span></span>
+<span id="cb6-25"><a href="#cb6-25"></a><span class="co">    */</span></span>
+<span id="cb6-26"><a href="#cb6-26"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">...</span> Dimensions<span class="op">&gt;</span></span>
+<span id="cb6-27"><a href="#cb6-27"></a>    <span class="bu">std::</span>size_t<span class="op"> </span><span class="kw">constexpr</span> to_1d_index<span class="op">(</span><span class="kw">auto</span><span class="op">...</span> indices<span class="op">){</span></span>
+<span id="cb6-28"><a href="#cb6-28"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="kw">sizeof</span><span class="op">...(</span>Dimensions<span class="op">)&gt;</span> dimensions <span class="op">{</span> Dimensions<span class="op">...</span> <span class="op">};</span></span>
+<span id="cb6-29"><a href="#cb6-29"></a>        <span class="bu">std::</span>size_t<span class="op"> </span>coeffs_size <span class="op">=</span> <span class="kw">sizeof</span><span class="op">...(</span>Dimensions<span class="op">);</span></span>
+<span id="cb6-30"><a href="#cb6-30"></a>        <span class="kw">auto</span> coeffs <span class="op">=</span> build_coeffs_array<span class="op">&lt;</span>Dimensions<span class="op">...&gt;();</span></span>
+<span id="cb6-31"><a href="#cb6-31"></a>                                                                                                       </span>
+<span id="cb6-32"><a href="#cb6-32"></a>        <span class="at">const</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">...(</span>indices<span class="op">)&gt;</span> indices_arr <span class="op">{</span> indices<span class="op">...</span> <span class="op">};</span></span>
+<span id="cb6-33"><a href="#cb6-33"></a>        <span class="co">//std::println("{}", indices_arr); </span></span>
+<span id="cb6-34"><a href="#cb6-34"></a>        <span class="cf">return</span> <span class="bu">std::</span>inner_product<span class="op">(</span>coeffs<span class="op">.</span>begin<span class="op">(),</span> coeffs<span class="op">.</span>end<span class="op">(),</span> indices_arr<span class="op">.</span>begin<span class="op">(),</span> <span class="dv">0</span><span class="op">);</span> </span>
+<span id="cb6-35"><a href="#cb6-35"></a>    <span class="op">}</span></span>
+<span id="cb6-36"><a href="#cb6-36"></a></span>
+<span id="cb6-37"><a href="#cb6-37"></a>    <span class="co">/*</span></span>
+<span id="cb6-38"><a href="#cb6-38"></a><span class="co">    Suppose we have the dimensions &lt;3, 5, 2&gt; and the coordinates (1, 3, 1).</span></span>
+<span id="cb6-39"><a href="#cb6-39"></a><span class="co">    (1, 3, 1) maps to the linear index 17. </span></span>
+<span id="cb6-40"><a href="#cb6-40"></a><span class="co">    */</span></span>
+<span id="cb6-41"><a href="#cb6-41"></a></span>
+<span id="cb6-42"><a href="#cb6-42"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> N<span class="op">&gt;</span></span>
+<span id="cb6-43"><a href="#cb6-43"></a>    <span class="kw">constexpr</span> <span class="kw">auto</span> build_coords_array<span class="op">(</span><span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">,</span>N<span class="op">&gt;</span> coeffs<span class="op">,</span> <span class="dt">size_t</span><span class="op">&amp;</span> initState<span class="op">){</span> </span>
+<span id="cb6-44"><a href="#cb6-44"></a>        <span class="dt">size_t</span> state <span class="op">=</span> initState<span class="op">;</span></span>
+<span id="cb6-45"><a href="#cb6-45"></a>        <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">,</span> N<span class="op">&gt;</span> coords<span class="op">{};</span></span>
+<span id="cb6-46"><a href="#cb6-46"></a>        <span class="cf">for</span><span class="op">(</span><span class="dt">size_t</span> i<span class="op">{</span><span class="dv">0</span><span class="op">};</span> i <span class="op">&lt;</span> N<span class="op">;</span> <span class="op">++</span>i<span class="op">){</span></span>
+<span id="cb6-47"><a href="#cb6-47"></a>            coords<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">size_t</span><span class="op">&gt;(</span>state <span class="op">/</span> coeffs<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb6-48"><a href="#cb6-48"></a>            state <span class="op">-=</span> coords<span class="op">[</span>i<span class="op">]</span> <span class="op">*</span> coeffs<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb6-49"><a href="#cb6-49"></a>        <span class="op">}</span></span>
+<span id="cb6-50"><a href="#cb6-50"></a>        <span class="cf">return</span> coords<span class="op">;</span></span>
+<span id="cb6-51"><a href="#cb6-51"></a>    <span class="op">}</span></span>
+<span id="cb6-52"><a href="#cb6-52"></a></span>
+<span id="cb6-53"><a href="#cb6-53"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span><span class="op">...</span> Dimensions<span class="op">&gt;</span></span>
+<span id="cb6-54"><a href="#cb6-54"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> <span class="kw">constexpr</span> from_1d_index<span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>n<span class="op">){</span></span>
+<span id="cb6-55"><a href="#cb6-55"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>coords_arr_size <span class="op">=</span> <span class="kw">sizeof</span><span class="op">...(</span>Dimensions<span class="op">);</span></span>
+<span id="cb6-56"><a href="#cb6-56"></a>        <span class="kw">constexpr</span> <span class="kw">auto</span> coeffs <span class="op">=</span> build_coeffs_array<span class="op">&lt;</span>Dimensions<span class="op">...&gt;();</span></span>
+<span id="cb6-57"><a href="#cb6-57"></a>        <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">,</span> coords_arr_size<span class="op">&gt;</span> coords <span class="op">=</span> build_coords_array<span class="op">(</span>coeffs<span class="op">,</span> n<span class="op">);</span></span>
+<span id="cb6-58"><a href="#cb6-58"></a>        <span class="cf">return</span> coords<span class="op">;</span></span>
+<span id="cb6-59"><a href="#cb6-59"></a>    <span class="op">}</span></span>
+<span id="cb6-60"><a href="#cb6-60"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
-<section id="code-listing" class="level1">
-<h1>Code Listing</h1>
-<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="pp">#include </span><span class="im">&lt;array&gt;</span></span>
-<span id="cb4-2"><a href="#cb4-2"></a><span class="pp">#include </span><span class="im">&lt;initializer_list&gt;</span></span>
-<span id="cb4-3"><a href="#cb4-3"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
-<span id="cb4-4"><a href="#cb4-4"></a><span class="pp">#include </span><span class="im">&lt;utility&gt;</span></span>
-<span id="cb4-5"><a href="#cb4-5"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
-<span id="cb4-6"><a href="#cb4-6"></a><span class="pp">#include </span><span class="im">&lt;numeric&gt;</span></span>
-<span id="cb4-7"><a href="#cb4-7"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
-<span id="cb4-8"><a href="#cb4-8"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
-<span id="cb4-9"><a href="#cb4-9"></a><span class="pp">#include </span><span class="im">&lt;format&gt;</span></span>
-<span id="cb4-10"><a href="#cb4-10"></a></span>
-<span id="cb4-11"><a href="#cb4-11"></a><span class="kw">namespace</span> dev<span class="op">::</span>tools<span class="op">{</span></span>
-<span id="cb4-12"><a href="#cb4-12"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">...</span> Dimensions<span class="op">&gt;</span></span>
-<span id="cb4-13"><a href="#cb4-13"></a>    <span class="kw">constexpr</span> <span class="kw">auto</span> build_coeffs_array<span class="op">(){</span></span>
-<span id="cb4-14"><a href="#cb4-14"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="kw">sizeof</span><span class="op">...(</span>Dimensions<span class="op">)&gt;</span> dimensions <span class="op">{</span> Dimensions<span class="op">...</span> <span class="op">};</span></span>
-<span id="cb4-15"><a href="#cb4-15"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>coeffs_size <span class="op">=</span> <span class="kw">sizeof</span><span class="op">...(</span>Dimensions<span class="op">);</span></span>
-<span id="cb4-16"><a href="#cb4-16"></a>        <span class="bu">std::</span>array<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> coeffs_size<span class="op">&gt;</span> coeffs <span class="op">=</span> <span class="op">{};</span></span>
-<span id="cb4-17"><a href="#cb4-17"></a>        </span>
-<span id="cb4-18"><a href="#cb4-18"></a>        <span class="cf">for</span><span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>i<span class="op">{</span><span class="dv">0</span><span class="op">};</span> i <span class="op">&lt;</span> coeffs_size<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
-<span id="cb4-19"><a href="#cb4-19"></a>            coeffs<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb4-20"><a href="#cb4-20"></a></span>
-<span id="cb4-21"><a href="#cb4-21"></a>        <span class="cf">for</span><span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>i<span class="op">{</span><span class="dv">0</span><span class="op">};</span> i <span class="op">&lt;</span> coeffs_size <span class="op">-</span> <span class="dv">1</span><span class="op">;</span> <span class="op">++</span>i<span class="op">){</span></span>
-<span id="cb4-22"><a href="#cb4-22"></a>            <span class="co">// In step i, we need to populate all coeffs[j], j &lt;= i</span></span>
-<span id="cb4-23"><a href="#cb4-23"></a>            <span class="cf">for</span><span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>j<span class="op">{</span><span class="dv">0</span><span class="op">};</span> j <span class="op">&lt;=</span> i<span class="op">;</span> <span class="op">++</span>j<span class="op">){</span></span>
-<span id="cb4-24"><a href="#cb4-24"></a>                coeffs<span class="op">[</span>j<span class="op">]</span> <span class="op">*=</span> dimensions<span class="op">[</span>i<span class="op">+</span><span class="dv">1</span><span class="op">];</span></span>
-<span id="cb4-25"><a href="#cb4-25"></a>            <span class="op">}</span></span>
-<span id="cb4-26"><a href="#cb4-26"></a>        <span class="op">}</span></span>
-<span id="cb4-27"><a href="#cb4-27"></a>        <span class="cf">return</span> coeffs<span class="op">;</span></span>
-<span id="cb4-28"><a href="#cb4-28"></a>    <span class="op">}</span></span>
-<span id="cb4-29"><a href="#cb4-29"></a>    <span class="co">/*</span></span>
-<span id="cb4-30"><a href="#cb4-30"></a><span class="co">    coeff[0] = v1size * ... * v[n-1] size</span></span>
-<span id="cb4-31"><a href="#cb4-31"></a><span class="co">    coeff[1] = v2size * .... *v[n-1] size</span></span>
-<span id="cb4-32"><a href="#cb4-32"></a><span class="co">    ...</span></span>
-<span id="cb4-33"><a href="#cb4-33"></a><span class="co">    coeff[n-2] = v[n-1] size</span></span>
-<span id="cb4-34"><a href="#cb4-34"></a><span class="co">    coeff[n-1] = 1</span></span>
-<span id="cb4-35"><a href="#cb4-35"></a><span class="co">    */</span></span>
-<span id="cb4-36"><a href="#cb4-36"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">...</span> Dimensions<span class="op">&gt;</span></span>
-<span id="cb4-37"><a href="#cb4-37"></a>    <span class="bu">std::</span>size_t<span class="op"> </span><span class="kw">constexpr</span> to_index<span class="op">(</span><span class="kw">auto</span><span class="op">...</span> indices<span class="op">){</span></span>
-<span id="cb4-38"><a href="#cb4-38"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="kw">sizeof</span><span class="op">...(</span>Dimensions<span class="op">)&gt;</span> dimensions <span class="op">{</span> Dimensions<span class="op">...</span> <span class="op">};</span></span>
-<span id="cb4-39"><a href="#cb4-39"></a>        <span class="bu">std::</span>size_t<span class="op"> </span>coeffs_size <span class="op">=</span> <span class="kw">sizeof</span><span class="op">...(</span>Dimensions<span class="op">);</span></span>
-<span id="cb4-40"><a href="#cb4-40"></a>        <span class="kw">auto</span> coeffs <span class="op">=</span> build_coeffs_array<span class="op">&lt;</span>Dimensions<span class="op">...&gt;();</span>                                                               </span>
-<span id="cb4-41"><a href="#cb4-41"></a>        <span class="at">const</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">...(</span>indices<span class="op">)&gt;</span> indices_arr <span class="op">{</span> indices<span class="op">...</span> <span class="op">};</span></span>
-<span id="cb4-42"><a href="#cb4-42"></a>        <span class="co">//std::println("{}", indices_arr); </span></span>
-<span id="cb4-43"><a href="#cb4-43"></a>        <span class="cf">return</span> <span class="bu">std::</span>inner_product<span class="op">(</span>coeffs<span class="op">.</span>begin<span class="op">(),</span> coeffs<span class="op">.</span>end<span class="op">(),</span> indices_arr<span class="op">.</span>begin<span class="op">(),</span> <span class="dv">0</span><span class="op">);</span> </span>
-<span id="cb4-44"><a href="#cb4-44"></a>    <span class="op">}</span></span>
-<span id="cb4-45"><a href="#cb4-45"></a></span>
-<span id="cb4-46"><a href="#cb4-46"></a>    <span class="co">/*</span></span>
-<span id="cb4-47"><a href="#cb4-47"></a><span class="co">    Suppose we have the dimensions &lt;3, 5, 2&gt; and the coordinates (1, 3, 1).</span></span>
-<span id="cb4-48"><a href="#cb4-48"></a><span class="co">    (1, 3, 1) maps to the linear index 17. </span></span>
-<span id="cb4-49"><a href="#cb4-49"></a><span class="co">    */</span></span>
-<span id="cb4-50"><a href="#cb4-50"></a></span>
-<span id="cb4-51"><a href="#cb4-51"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Func<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
-<span id="cb4-52"><a href="#cb4-52"></a>    <span class="kw">constexpr</span> <span class="kw">auto</span> for_each<span class="op">(</span>Func<span class="op">&amp;&amp;</span> func<span class="op">,</span> <span class="bu">std::</span>tuple<span class="op">&lt;</span>Ts<span class="op">...&gt;</span> tup<span class="op">){</span></span>
-<span id="cb4-53"><a href="#cb4-53"></a>        <span class="cf">return</span> </span>
-<span id="cb4-54"><a href="#cb4-54"></a>            <span class="op">[&amp;]&lt;</span><span class="dt">size_t</span><span class="op">...</span> Indices<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>Indices<span class="op">...&gt;){</span></span>
-<span id="cb4-55"><a href="#cb4-55"></a>                <span class="cf">return</span> <span class="bu">std::</span>make_tuple<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Func<span class="op">&gt;(</span>func<span class="op">)(</span><span class="bu">std::</span>get<span class="op">&lt;</span>Indices<span class="op">&gt;(</span>tup<span class="op">))...);</span></span>
-<span id="cb4-56"><a href="#cb4-56"></a>            <span class="op">}(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span><span class="kw">sizeof</span><span class="op">...(</span>Ts<span class="op">)&gt;());</span>     </span>
-<span id="cb4-57"><a href="#cb4-57"></a>    <span class="op">}</span></span>
-<span id="cb4-58"><a href="#cb4-58"></a></span>
-<span id="cb4-59"><a href="#cb4-59"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Func<span class="op">,</span> <span class="kw">typename</span> T<span class="op">,</span> <span class="dt">size_t</span> N<span class="op">&gt;</span></span>
-<span id="cb4-60"><a href="#cb4-60"></a>    <span class="kw">constexpr</span> <span class="kw">auto</span> for_each<span class="op">(</span>Func<span class="op">&amp;&amp;</span> func<span class="op">,</span> <span class="bu">std::</span>array<span class="op">&lt;</span>T<span class="op">,</span>N<span class="op">&gt;</span> arr<span class="op">){</span></span>
-<span id="cb4-61"><a href="#cb4-61"></a>        <span class="kw">using</span> <span class="dt">result_t</span> <span class="op">=</span> <span class="kw">decltype</span><span class="op">(</span>func<span class="op">(</span>T<span class="op">()));</span></span>
-<span id="cb4-62"><a href="#cb4-62"></a>        <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">result_t</span><span class="op">,</span> N<span class="op">&gt;</span> results<span class="op">{};</span></span>
-<span id="cb4-63"><a href="#cb4-63"></a>        <span class="cf">return</span> </span>
-<span id="cb4-64"><a href="#cb4-64"></a>            <span class="op">[&amp;]&lt;</span><span class="dt">size_t</span><span class="op">...</span> Indices<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>Indices<span class="op">...&gt;){</span></span>
-<span id="cb4-65"><a href="#cb4-65"></a>                <span class="op">((</span> results<span class="op">[</span>Indices<span class="op">]</span> <span class="op">=</span> func<span class="op">(</span>arr<span class="op">[</span>Indices<span class="op">])</span> <span class="op">),</span> <span class="op">...</span> <span class="op">);</span></span>
-<span id="cb4-66"><a href="#cb4-66"></a>                <span class="cf">return</span> results<span class="op">;</span></span>
-<span id="cb4-67"><a href="#cb4-67"></a>            <span class="op">}(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span>N<span class="op">&gt;());</span></span>
-<span id="cb4-68"><a href="#cb4-68"></a>    <span class="op">}</span></span>
-<span id="cb4-69"><a href="#cb4-69"></a></span>
-<span id="cb4-70"><a href="#cb4-70"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> N<span class="op">&gt;</span></span>
-<span id="cb4-71"><a href="#cb4-71"></a>    <span class="kw">constexpr</span> <span class="kw">auto</span> build_coords_array<span class="op">(</span><span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">,</span>N<span class="op">&gt;</span> coeffs<span class="op">,</span> <span class="dt">size_t</span><span class="op">&amp;</span> initState<span class="op">){</span> </span>
-<span id="cb4-72"><a href="#cb4-72"></a>        <span class="dt">size_t</span> state <span class="op">=</span> initState<span class="op">;</span></span>
-<span id="cb4-73"><a href="#cb4-73"></a>        <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">,</span> N<span class="op">&gt;</span> coords<span class="op">{};</span></span>
-<span id="cb4-74"><a href="#cb4-74"></a>        <span class="cf">for</span><span class="op">(</span><span class="dt">size_t</span> i<span class="op">{</span><span class="dv">0</span><span class="op">};</span> i <span class="op">&lt;</span> N<span class="op">;</span> <span class="op">++</span>i<span class="op">){</span></span>
-<span id="cb4-75"><a href="#cb4-75"></a>            coords<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">size_t</span><span class="op">&gt;(</span>state <span class="op">/</span> coeffs<span class="op">[</span>i<span class="op">]);</span></span>
-<span id="cb4-76"><a href="#cb4-76"></a>            state <span class="op">-=</span> coords<span class="op">[</span>i<span class="op">]</span> <span class="op">*</span> coeffs<span class="op">[</span>i<span class="op">];</span></span>
-<span id="cb4-77"><a href="#cb4-77"></a>        <span class="op">}</span></span>
-<span id="cb4-78"><a href="#cb4-78"></a>        <span class="cf">return</span> coords<span class="op">;</span></span>
-<span id="cb4-79"><a href="#cb4-79"></a>    <span class="op">}</span></span>
-<span id="cb4-80"><a href="#cb4-80"></a></span>
-<span id="cb4-81"><a href="#cb4-81"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span><span class="op">...</span> Dimensions<span class="op">&gt;</span></span>
-<span id="cb4-82"><a href="#cb4-82"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> <span class="kw">constexpr</span> from_index<span class="op">(</span><span class="bu">std::</span>size_t<span class="op"> </span>n<span class="op">){</span></span>
-<span id="cb4-83"><a href="#cb4-83"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>coords_arr_size <span class="op">=</span> <span class="kw">sizeof</span><span class="op">...(</span>Dimensions<span class="op">);</span></span>
-<span id="cb4-84"><a href="#cb4-84"></a>        <span class="kw">constexpr</span> <span class="kw">auto</span> coeffs <span class="op">=</span> build_coeffs_array<span class="op">&lt;</span>Dimensions<span class="op">...&gt;();</span></span>
-<span id="cb4-85"><a href="#cb4-85"></a>        <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">,</span> coords_arr_size<span class="op">&gt;</span> coords <span class="op">=</span> build_coords_array<span class="op">(</span>coeffs<span class="op">,</span> n<span class="op">);</span></span>
-<span id="cb4-86"><a href="#cb4-86"></a>        <span class="cf">return</span> coords<span class="op">;</span></span>
-<span id="cb4-87"><a href="#cb4-87"></a>    <span class="op">}</span></span>
-<span id="cb4-88"><a href="#cb4-88"></a><span class="op">}</span></span>
-<span id="cb4-89"><a href="#cb4-89"></a></span>
-<span id="cb4-90"><a href="#cb4-90"></a><span class="co">// Simple case of 2 variants</span></span>
-<span id="cb4-91"><a href="#cb4-91"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
-<span id="cb4-92"><a href="#cb4-92"></a></span>
-<span id="cb4-93"><a href="#cb4-93"></a>    <span class="kw">namespace</span> example<span class="op">{</span></span>
-<span id="cb4-94"><a href="#cb4-94"></a></span>
-<span id="cb4-95"><a href="#cb4-95"></a>        <span class="kw">struct</span> Dummy<span class="op">{};</span></span>
-<span id="cb4-96"><a href="#cb4-96"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
-<span id="cb4-97"><a href="#cb4-97"></a>        <span class="kw">using</span> Wrapper <span class="op">=</span> <span class="bu">std::</span>conditional_t<span class="op">&lt;</span><span class="bu">std::</span>is_void_v<span class="op">&lt;</span>T<span class="op">&gt;,</span>Dummy<span class="op">,</span>T<span class="op">&gt;;</span></span>
-<span id="cb4-98"><a href="#cb4-98"></a></span>
-<span id="cb4-99"><a href="#cb4-99"></a></span>
-<span id="cb4-100"><a href="#cb4-100"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Visitor<span class="op">,</span> <span class="kw">typename</span> Variant0<span class="op">,</span> <span class="kw">typename</span> Variant1<span class="op">&gt;</span></span>
-<span id="cb4-101"><a href="#cb4-101"></a>        <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> visit<span class="op">(</span>Visitor<span class="op">&amp;&amp;</span> visitor<span class="op">,</span> Variant0 v0<span class="op">,</span> Variant1 v1<span class="op">){</span></span>
-<span id="cb4-102"><a href="#cb4-102"></a>            <span class="kw">constexpr</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="dv">2</span><span class="op">&gt;</span> dimensions <span class="op">=</span> <span class="op">{</span> <span class="bu">std::</span>variant_size_v<span class="op">&lt;</span>Variant0<span class="op">&gt;,</span> <span class="bu">std::</span>variant_size_v<span class="op">&lt;</span>Variant1<span class="op">&gt;</span> <span class="op">};</span></span>
-<span id="cb4-103"><a href="#cb4-103"></a>            <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>vtable_size <span class="op">=</span> <span class="op">(</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span>Variant0<span class="op">&gt;</span> <span class="op">*</span> <span class="bu">std::</span>variant_size_v<span class="op">&lt;</span>Variant1<span class="op">&gt;);</span></span>
-<span id="cb4-104"><a href="#cb4-104"></a>            <span class="kw">using</span> <span class="dt">cases_t</span> <span class="op">=</span> <span class="bu">std::</span>string<span class="op">(*)(</span>Visitor<span class="op">,</span> Variant0<span class="op">,</span> Variant1<span class="op">);</span></span>
-<span id="cb4-105"><a href="#cb4-105"></a>            <span class="at">static</span> <span class="kw">constexpr</span> <span class="kw">auto</span> vtable <span class="op">{</span></span>
-<span id="cb4-106"><a href="#cb4-106"></a>                <span class="op">[]&lt;</span><span class="dt">size_t</span><span class="op">...</span> Indices<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>Indices<span class="op">...&gt;){</span></span>
-<span id="cb4-107"><a href="#cb4-107"></a>                    <span class="cf">return</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">cases_t</span><span class="op">,</span><span class="dv">4</span><span class="op">&gt;{</span></span>
-<span id="cb4-108"><a href="#cb4-108"></a>                        <span class="op">[](</span>Visitor vis<span class="op">,</span> Variant0 v0<span class="op">,</span> Variant1 v1<span class="op">){</span> </span>
-<span id="cb4-109"><a href="#cb4-109"></a>                            <span class="kw">constexpr</span> <span class="kw">auto</span> multi_idx <span class="op">=</span> dev<span class="op">::</span>tools<span class="op">::</span>from_index<span class="op">&lt;</span><span class="dv">2</span><span class="op">,</span><span class="dv">2</span><span class="op">&gt;(</span>Indices<span class="op">);</span></span>
-<span id="cb4-110"><a href="#cb4-110"></a>                            <span class="cf">return</span> vis<span class="op">(</span><span class="bu">std::</span>get<span class="op">&lt;</span>multi_idx<span class="op">[</span><span class="dv">0</span><span class="op">]&gt;(</span>v0<span class="op">),</span> <span class="bu">std::</span>get<span class="op">&lt;</span>multi_idx<span class="op">[</span><span class="dv">1</span><span class="op">]&gt;(</span>v1<span class="op">));</span></span>
-<span id="cb4-111"><a href="#cb4-111"></a>                    <span class="op">}...</span> <span class="op">};</span></span>
-<span id="cb4-112"><a href="#cb4-112"></a>                    </span>
-<span id="cb4-113"><a href="#cb4-113"></a>                <span class="op">}(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span>vtable_size<span class="op">&gt;())</span></span>
-<span id="cb4-114"><a href="#cb4-114"></a>            <span class="op">};</span></span>
-<span id="cb4-115"><a href="#cb4-115"></a></span>
-<span id="cb4-116"><a href="#cb4-116"></a>            <span class="cf">return</span> vtable<span class="op">[</span>dev<span class="op">::</span>tools<span class="op">::</span>to_index<span class="op">&lt;</span><span class="dv">2</span><span class="op">,</span><span class="dv">2</span><span class="op">&gt;(</span>v0<span class="op">.</span>index<span class="op">(),</span> v1<span class="op">.</span>index<span class="op">())](</span>visitor<span class="op">,</span> v0<span class="op">,</span> v1<span class="op">);</span></span>
-<span id="cb4-117"><a href="#cb4-117"></a>        <span class="op">}</span></span>
-<span id="cb4-118"><a href="#cb4-118"></a>    <span class="op">};</span></span>
-<span id="cb4-119"><a href="#cb4-119"></a><span class="op">}</span></span>
-<span id="cb4-120"><a href="#cb4-120"></a></span>
-<span id="cb4-121"><a href="#cb4-121"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Callables<span class="op">&gt;</span></span>
-<span id="cb4-122"><a href="#cb4-122"></a><span class="kw">struct</span> Visitor <span class="op">:</span> Callables<span class="op">...{</span></span>
-<span id="cb4-123"><a href="#cb4-123"></a>    <span class="kw">using</span> Callables<span class="op">::</span><span class="kw">operator</span><span class="op">()...;</span></span>
-<span id="cb4-124"><a href="#cb4-124"></a><span class="op">};</span></span>
-<span id="cb4-125"><a href="#cb4-125"></a></span>
-<span id="cb4-126"><a href="#cb4-126"></a><span class="dt">void</span> test_single_dispatch<span class="op">(){</span></span>
-<span id="cb4-127"><a href="#cb4-127"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> v<span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
-<span id="cb4-128"><a href="#cb4-128"></a><span class="op">}</span></span>
-<span id="cb4-129"><a href="#cb4-129"></a></span>
-<span id="cb4-130"><a href="#cb4-130"></a><span class="dt">void</span> test_double_dispatch<span class="op">(){</span></span>
-<span id="cb4-131"><a href="#cb4-131"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">&gt;</span> v1<span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
-<span id="cb4-132"><a href="#cb4-132"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">&gt;</span> v2<span class="op">{</span><span class="fl">3.14</span><span class="bu">f</span><span class="op">};</span></span>
-<span id="cb4-133"><a href="#cb4-133"></a></span>
-<span id="cb4-134"><a href="#cb4-134"></a>    <span class="kw">auto</span> result <span class="op">=</span> dev<span class="op">::</span>example<span class="op">::</span>visit<span class="op">(</span></span>
-<span id="cb4-135"><a href="#cb4-135"></a>        Visitor<span class="op">{</span></span>
-<span id="cb4-136"><a href="#cb4-136"></a>            <span class="op">[](</span><span class="dt">int</span><span class="op">,</span> <span class="dt">int</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(int, int)"</span><span class="op">;</span> <span class="op">},</span></span>
-<span id="cb4-137"><a href="#cb4-137"></a>            <span class="op">[](</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(int, float)"</span><span class="op">;</span> <span class="op">},</span></span>
-<span id="cb4-138"><a href="#cb4-138"></a>            <span class="op">[](</span><span class="dt">float</span><span class="op">,</span> <span class="dt">int</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(float, int)"</span><span class="op">;</span> <span class="op">},</span></span>
-<span id="cb4-139"><a href="#cb4-139"></a>            <span class="op">[](</span><span class="dt">float</span><span class="op">,</span> <span class="dt">float</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(float, float)"</span><span class="op">;</span> <span class="op">},</span></span>
-<span id="cb4-140"><a href="#cb4-140"></a>        <span class="op">},</span></span>
-<span id="cb4-141"><a href="#cb4-141"></a>        v1<span class="op">,</span> v2</span>
-<span id="cb4-142"><a href="#cb4-142"></a>    <span class="op">);</span></span>
-<span id="cb4-143"><a href="#cb4-143"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"result = "</span> <span class="op">&lt;&lt;</span> result <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
-<span id="cb4-144"><a href="#cb4-144"></a><span class="op">}</span></span>
-<span id="cb4-145"><a href="#cb4-145"></a></span>
-<span id="cb4-146"><a href="#cb4-146"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
-<span id="cb4-147"><a href="#cb4-147"></a>    <span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> Visitor<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Variants<span class="op">&gt;</span></span>
-<span id="cb4-148"><a href="#cb4-148"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> visit<span class="op">(</span>Visitor <span class="op">&amp;&amp;</span>visitor<span class="op">,</span> Variants <span class="op">&amp;&amp;...</span>vs<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb4-149"><a href="#cb4-149"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>vtable_size <span class="op">=</span> <span class="op">(</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;</span> <span class="op">*</span> <span class="op">...);</span></span>
-<span id="cb4-150"><a href="#cb4-150"></a></span>
-<span id="cb4-151"><a href="#cb4-151"></a>        <span class="co">// Each entry in the vtable should have the shape [](Visitor visitor, Variants... vs){}</span></span>
-<span id="cb4-152"><a href="#cb4-152"></a>        <span class="kw">using</span> <span class="dt">result_t</span> <span class="op">=</span> <span class="kw">decltype</span><span class="op">(</span>visitor<span class="op">(</span><span class="bu">std::</span>get<span class="op">&lt;</span><span class="dv">0</span><span class="op">&gt;(</span>vs<span class="op">)...));</span></span>
-<span id="cb4-153"><a href="#cb4-153"></a>        <span class="kw">using</span> <span class="dt">cases_t</span> <span class="op">=</span> <span class="dt">result_t</span><span class="op">(*)(</span>Visitor<span class="op">,</span> Variants<span class="op">...);</span></span>
-<span id="cb4-154"><a href="#cb4-154"></a></span>
-<span id="cb4-155"><a href="#cb4-155"></a>        <span class="at">static</span> <span class="kw">constexpr</span> <span class="kw">auto</span> vtable<span class="op">{</span></span>
-<span id="cb4-156"><a href="#cb4-156"></a>            <span class="op">[]&lt;</span><span class="dt">size_t</span><span class="op">...</span> Indices<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>Indices<span class="op">...&gt;){</span></span>
-<span id="cb4-157"><a href="#cb4-157"></a>                <span class="kw">constexpr</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="kw">sizeof</span><span class="op">...(</span>Variants<span class="op">)&gt;</span> dimensions <span class="op">=</span> <span class="op">{</span> <span class="bu">std::</span>variant_size_v<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;...</span> <span class="op">};</span></span>
-<span id="cb4-158"><a href="#cb4-158"></a>                <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>vtable_size <span class="op">=</span> <span class="op">(</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;</span> <span class="op">*</span> <span class="op">...);</span></span>
-<span id="cb4-159"><a href="#cb4-159"></a>                <span class="cf">return</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">cases_t</span><span class="op">,</span> vtable_size<span class="op">&gt;{</span></span>
-<span id="cb4-160"><a href="#cb4-160"></a>                    <span class="op">[](</span><span class="kw">auto</span> vis<span class="op">,</span> <span class="kw">auto</span><span class="op">...</span> vs<span class="op">)</span> <span class="op">-&gt;</span> <span class="dt">result_t</span><span class="op">{</span></span>
-<span id="cb4-161"><a href="#cb4-161"></a>                        <span class="kw">constexpr</span> <span class="kw">auto</span> multi_idx <span class="op">=</span> dev<span class="op">::</span>tools<span class="op">::</span>from_index<span class="op">&lt;</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;...&gt;(</span>Indices<span class="op">);</span></span>
-<span id="cb4-162"><a href="#cb4-162"></a>                        <span class="cf">return</span> <span class="op">[&amp;]&lt;</span><span class="dt">size_t</span><span class="op">...</span> Is<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>Is<span class="op">...&gt;){</span></span>
-<span id="cb4-163"><a href="#cb4-163"></a>                            <span class="cf">return</span> vis<span class="op">((</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="bu">std::</span>variant_alternative_t<span class="op">&lt;</span>Is<span class="op">,</span> <span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;&gt;(</span><span class="bu">std::</span>get<span class="op">&lt;</span>multi_idx<span class="op">[</span>Is<span class="op">]&gt;(</span>vs<span class="op">)))...);</span></span>
-<span id="cb4-164"><a href="#cb4-164"></a>                        <span class="op">}(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span><span class="kw">sizeof</span><span class="op">...(</span>Variants<span class="op">)&gt;());</span></span>
-<span id="cb4-165"><a href="#cb4-165"></a>                    <span class="op">}...</span></span>
-<span id="cb4-166"><a href="#cb4-166"></a>                <span class="op">};</span></span>
-<span id="cb4-167"><a href="#cb4-167"></a>            <span class="op">}(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span>vtable_size<span class="op">&gt;())</span></span>
-<span id="cb4-168"><a href="#cb4-168"></a>        <span class="op">};</span></span>
-<span id="cb4-169"><a href="#cb4-169"></a></span>
-<span id="cb4-170"><a href="#cb4-170"></a>        <span class="kw">auto</span> i <span class="op">=</span> dev<span class="op">::</span>tools<span class="op">::</span>to_index<span class="op">&lt;</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;...&gt;(</span>vs<span class="op">.</span>index<span class="op">()...);</span></span>
-<span id="cb4-171"><a href="#cb4-171"></a>        <span class="cf">return</span> vtable<span class="op">[</span>i<span class="op">](</span>visitor<span class="op">,</span> vs<span class="op">...</span> <span class="op">);</span></span>
-<span id="cb4-172"><a href="#cb4-172"></a>    <span class="op">}</span></span>
-<span id="cb4-173"><a href="#cb4-173"></a><span class="op">}</span></span>
-<span id="cb4-174"><a href="#cb4-174"></a></span>
-<span id="cb4-175"><a href="#cb4-175"></a><span class="dt">void</span> test_multiple_dispatch<span class="op">(){</span></span>
-<span id="cb4-176"><a href="#cb4-176"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> v1<span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
-<span id="cb4-177"><a href="#cb4-177"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> v2<span class="op">{</span><span class="fl">3.14</span><span class="bu">f</span><span class="op">};</span></span>
-<span id="cb4-178"><a href="#cb4-178"></a>    <span class="co">//std::variant&lt;char, int, long, float, double&gt; v3{'H'};</span></span>
-<span id="cb4-179"><a href="#cb4-179"></a></span>
-<span id="cb4-180"><a href="#cb4-180"></a>    <span class="kw">auto</span> result <span class="op">=</span> dev<span class="op">::</span>visit<span class="op">(</span></span>
-<span id="cb4-181"><a href="#cb4-181"></a>        Visitor<span class="op">{</span></span>
-<span id="cb4-182"><a href="#cb4-182"></a>            <span class="op">[](</span><span class="dt">int</span><span class="op">,</span> <span class="dt">int</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(int, int)"</span><span class="op">;</span> <span class="op">},</span></span>
-<span id="cb4-183"><a href="#cb4-183"></a>            <span class="op">[](</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(int, float)"</span><span class="op">;</span> <span class="op">},</span></span>
-<span id="cb4-184"><a href="#cb4-184"></a>            <span class="op">[](</span><span class="dt">int</span><span class="op">,</span> <span class="dt">double</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(int, double)"</span><span class="op">;</span> <span class="op">},</span></span>
-<span id="cb4-185"><a href="#cb4-185"></a>            <span class="op">[](</span><span class="dt">float</span><span class="op">,</span> <span class="dt">int</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(float, int)"</span><span class="op">;</span> <span class="op">}</span></span>
-<span id="cb4-186"><a href="#cb4-186"></a>        <span class="op">},</span></span>
-<span id="cb4-187"><a href="#cb4-187"></a>        v1<span class="op">,</span> v2</span>
-<span id="cb4-188"><a href="#cb4-188"></a>    <span class="op">);</span></span>
-<span id="cb4-189"><a href="#cb4-189"></a></span>
-<span id="cb4-190"><a href="#cb4-190"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"result = "</span> <span class="op">&lt;&lt;</span> result <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
-<span id="cb4-191"><a href="#cb4-191"></a><span class="op">}</span></span>
-<span id="cb4-192"><a href="#cb4-192"></a></span>
-<span id="cb4-193"><a href="#cb4-193"></a></span>
-<span id="cb4-194"><a href="#cb4-194"></a><span class="dt">int</span> main<span class="op">(){</span></span>
-<span id="cb4-195"><a href="#cb4-195"></a>    <span class="kw">static_assert</span><span class="op">(</span>dev<span class="op">::</span>tools<span class="op">::</span>to_index<span class="op">&lt;</span><span class="dv">2</span><span class="op">,</span><span class="dv">2</span><span class="op">&gt;(</span><span class="dv">1</span><span class="op">,</span> <span class="dv">1</span><span class="op">)</span> <span class="op">==</span> <span class="dv">3</span><span class="op">);</span></span>
-<span id="cb4-196"><a href="#cb4-196"></a>    <span class="kw">static_assert</span><span class="op">(</span>dev<span class="op">::</span>tools<span class="op">::</span>to_index<span class="op">&lt;</span><span class="dv">2</span><span class="op">,</span><span class="dv">1</span><span class="op">&gt;(</span><span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span> <span class="op">==</span> <span class="dv">1</span><span class="op">);</span></span>
-<span id="cb4-197"><a href="#cb4-197"></a>    <span class="kw">static_assert</span><span class="op">(</span>dev<span class="op">::</span>tools<span class="op">::</span>to_index<span class="op">&lt;</span><span class="dv">3</span><span class="op">,</span><span class="dv">5</span><span class="op">,</span><span class="dv">2</span><span class="op">&gt;(</span><span class="dv">1</span><span class="op">,</span> <span class="dv">3</span><span class="op">,</span> <span class="dv">1</span><span class="op">)</span> <span class="op">==</span> <span class="dv">17</span><span class="op">);</span></span>
-<span id="cb4-198"><a href="#cb4-198"></a>    <span class="kw">static_assert</span><span class="op">(</span>dev<span class="op">::</span>tools<span class="op">::</span>from_index<span class="op">&lt;</span><span class="dv">2</span><span class="op">,</span><span class="dv">2</span><span class="op">&gt;(</span><span class="dv">2</span><span class="op">)</span> <span class="op">==</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">,</span> <span class="dv">2</span><span class="op">&gt;{</span><span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">});</span></span>
-<span id="cb4-199"><a href="#cb4-199"></a>    <span class="kw">static_assert</span><span class="op">(</span>dev<span class="op">::</span>tools<span class="op">::</span>from_index<span class="op">&lt;</span><span class="dv">3</span><span class="op">,</span> <span class="dv">5</span><span class="op">,</span> <span class="dv">2</span><span class="op">&gt;(</span><span class="dv">17</span><span class="op">)</span> <span class="op">==</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">,</span> <span class="dv">3</span><span class="op">&gt;{</span><span class="dv">1</span><span class="op">,</span> <span class="dv">3</span><span class="op">,</span> <span class="dv">1</span><span class="op">});</span></span>
-<span id="cb4-200"><a href="#cb4-200"></a>    test_multiple_dispatch<span class="op">();</span></span>
-<span id="cb4-201"><a href="#cb4-201"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p><a href="https://godbolt.org/z/r35a1a1aE">Compiler Explorer</a></p>
+<section id="simpler-case-of-1-and-2-variants" class="level1">
+<h1>Simpler case of <span class="math inline">\(1\)</span> and <span class="math inline">\(2\)</span> variants</h1>
+<p>I strongly recommend creating a simpler version first, maybe hardcoded with two or three variants. So you can get an idea of the actual shape before making it variadic. Otherwise you’d be facing both problems at once.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="co">// Simple case of 2 variants</span></span>
+<span id="cb7-2"><a href="#cb7-2"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a></span>
+<span id="cb7-4"><a href="#cb7-4"></a>    <span class="kw">namespace</span> example<span class="op">{</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a></span>
+<span id="cb7-6"><a href="#cb7-6"></a>        <span class="kw">struct</span> Dummy<span class="op">{};</span></span>
+<span id="cb7-7"><a href="#cb7-7"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb7-8"><a href="#cb7-8"></a>        <span class="kw">using</span> Wrapper <span class="op">=</span> <span class="bu">std::</span>conditional_t<span class="op">&lt;</span><span class="bu">std::</span>is_void_v<span class="op">&lt;</span>T<span class="op">&gt;,</span>Dummy<span class="op">,</span>T<span class="op">&gt;;</span></span>
+<span id="cb7-9"><a href="#cb7-9"></a></span>
+<span id="cb7-10"><a href="#cb7-10"></a></span>
+<span id="cb7-11"><a href="#cb7-11"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> Visitor<span class="op">,</span> <span class="kw">typename</span> Variant0<span class="op">,</span> <span class="kw">typename</span> Variant1<span class="op">&gt;</span></span>
+<span id="cb7-12"><a href="#cb7-12"></a>        <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> visit<span class="op">(</span>Visitor<span class="op">&amp;&amp;</span> visitor<span class="op">,</span> Variant0 v0<span class="op">,</span> Variant1 v1<span class="op">){</span></span>
+<span id="cb7-13"><a href="#cb7-13"></a>            <span class="kw">constexpr</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="dv">2</span><span class="op">&gt;</span> dimensions <span class="op">=</span> <span class="op">{</span> <span class="bu">std::</span>variant_size_v<span class="op">&lt;</span>Variant0<span class="op">&gt;,</span> <span class="bu">std::</span>variant_size_v<span class="op">&lt;</span>Variant1<span class="op">&gt;</span> <span class="op">};</span></span>
+<span id="cb7-14"><a href="#cb7-14"></a>            <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>vtable_size <span class="op">=</span> <span class="op">(</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span>Variant0<span class="op">&gt;</span> <span class="op">*</span> <span class="bu">std::</span>variant_size_v<span class="op">&lt;</span>Variant1<span class="op">&gt;);</span></span>
+<span id="cb7-15"><a href="#cb7-15"></a>            <span class="kw">using</span> <span class="dt">cases_t</span> <span class="op">=</span> <span class="bu">std::</span>string<span class="op">(*)(</span>Visitor<span class="op">,</span> Variant0<span class="op">,</span> Variant1<span class="op">);</span></span>
+<span id="cb7-16"><a href="#cb7-16"></a>            <span class="at">static</span> <span class="kw">constexpr</span> <span class="kw">auto</span> vtable <span class="op">{</span></span>
+<span id="cb7-17"><a href="#cb7-17"></a>                <span class="op">[]&lt;</span><span class="dt">size_t</span><span class="op">...</span> Indices<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>Indices<span class="op">...&gt;){</span></span>
+<span id="cb7-18"><a href="#cb7-18"></a>                    <span class="cf">return</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">cases_t</span><span class="op">,</span><span class="dv">4</span><span class="op">&gt;{</span></span>
+<span id="cb7-19"><a href="#cb7-19"></a>                        <span class="op">[](</span>Visitor vis<span class="op">,</span> Variant0 v0<span class="op">,</span> Variant1 v1<span class="op">){</span> </span>
+<span id="cb7-20"><a href="#cb7-20"></a>                            <span class="kw">constexpr</span> <span class="kw">auto</span> multi_idx <span class="op">=</span> dev<span class="op">::</span>tools<span class="op">::</span>from_1d_index<span class="op">&lt;</span><span class="dv">2</span><span class="op">,</span><span class="dv">2</span><span class="op">&gt;(</span>Indices<span class="op">);</span></span>
+<span id="cb7-21"><a href="#cb7-21"></a>                            <span class="cf">return</span> vis<span class="op">(</span><span class="bu">std::</span>get<span class="op">&lt;</span>multi_idx<span class="op">[</span><span class="dv">0</span><span class="op">]&gt;(</span>v0<span class="op">),</span> <span class="bu">std::</span>get<span class="op">&lt;</span>multi_idx<span class="op">[</span><span class="dv">1</span><span class="op">]&gt;(</span>v1<span class="op">));</span></span>
+<span id="cb7-22"><a href="#cb7-22"></a>                    <span class="op">}...</span> <span class="op">};</span></span>
+<span id="cb7-23"><a href="#cb7-23"></a>                    </span>
+<span id="cb7-24"><a href="#cb7-24"></a>                <span class="op">}(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span>vtable_size<span class="op">&gt;())</span></span>
+<span id="cb7-25"><a href="#cb7-25"></a>            <span class="op">};</span></span>
+<span id="cb7-26"><a href="#cb7-26"></a></span>
+<span id="cb7-27"><a href="#cb7-27"></a>            <span class="cf">return</span> vtable<span class="op">[</span>dev<span class="op">::</span>tools<span class="op">::</span>to_1d_index<span class="op">&lt;</span><span class="dv">2</span><span class="op">,</span><span class="dv">2</span><span class="op">&gt;(</span>v0<span class="op">.</span>index<span class="op">(),</span> v1<span class="op">.</span>index<span class="op">())](</span>visitor<span class="op">,</span> v0<span class="op">,</span> v1<span class="op">);</span></span>
+<span id="cb7-28"><a href="#cb7-28"></a>        <span class="op">}</span></span>
+<span id="cb7-29"><a href="#cb7-29"></a>    <span class="op">};</span></span>
+<span id="cb7-30"><a href="#cb7-30"></a><span class="op">}</span></span>
+<span id="cb7-31"><a href="#cb7-31"></a></span>
+<span id="cb7-32"><a href="#cb7-32"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Callables<span class="op">&gt;</span></span>
+<span id="cb7-33"><a href="#cb7-33"></a><span class="kw">struct</span> Visitor <span class="op">:</span> Callables<span class="op">...{</span></span>
+<span id="cb7-34"><a href="#cb7-34"></a>    <span class="kw">using</span> Callables<span class="op">::</span><span class="kw">operator</span><span class="op">()...;</span></span>
+<span id="cb7-35"><a href="#cb7-35"></a><span class="op">};</span></span>
+<span id="cb7-36"><a href="#cb7-36"></a></span>
+<span id="cb7-37"><a href="#cb7-37"></a><span class="dt">void</span> test_single_dispatch<span class="op">(){</span></span>
+<span id="cb7-38"><a href="#cb7-38"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> v<span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
+<span id="cb7-39"><a href="#cb7-39"></a><span class="op">}</span></span>
+<span id="cb7-40"><a href="#cb7-40"></a></span>
+<span id="cb7-41"><a href="#cb7-41"></a><span class="dt">void</span> test_double_dispatch<span class="op">(){</span></span>
+<span id="cb7-42"><a href="#cb7-42"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">&gt;</span> v1<span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
+<span id="cb7-43"><a href="#cb7-43"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">&gt;</span> v2<span class="op">{</span><span class="fl">3.14</span><span class="bu">f</span><span class="op">};</span></span>
+<span id="cb7-44"><a href="#cb7-44"></a></span>
+<span id="cb7-45"><a href="#cb7-45"></a>    <span class="kw">auto</span> result <span class="op">=</span> dev<span class="op">::</span>example<span class="op">::</span>visit<span class="op">(</span></span>
+<span id="cb7-46"><a href="#cb7-46"></a>        Visitor<span class="op">{</span></span>
+<span id="cb7-47"><a href="#cb7-47"></a>            <span class="op">[](</span><span class="dt">int</span><span class="op">,</span> <span class="dt">int</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(int, int)"</span><span class="op">;</span> <span class="op">},</span></span>
+<span id="cb7-48"><a href="#cb7-48"></a>            <span class="op">[](</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(int, float)"</span><span class="op">;</span> <span class="op">},</span></span>
+<span id="cb7-49"><a href="#cb7-49"></a>            <span class="op">[](</span><span class="dt">float</span><span class="op">,</span> <span class="dt">int</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(float, int)"</span><span class="op">;</span> <span class="op">},</span></span>
+<span id="cb7-50"><a href="#cb7-50"></a>            <span class="op">[](</span><span class="dt">float</span><span class="op">,</span> <span class="dt">float</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(float, float)"</span><span class="op">;</span> <span class="op">},</span></span>
+<span id="cb7-51"><a href="#cb7-51"></a>        <span class="op">},</span></span>
+<span id="cb7-52"><a href="#cb7-52"></a>        v1<span class="op">,</span> v2</span>
+<span id="cb7-53"><a href="#cb7-53"></a>    <span class="op">);</span></span>
+<span id="cb7-54"><a href="#cb7-54"></a></span>
+<span id="cb7-55"><a href="#cb7-55"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"result = "</span> <span class="op">&lt;&lt;</span> result <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb7-56"><a href="#cb7-56"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="generalizing-to-a-pack-of-variants." class="level1">
+<h1>Generalizing to a pack of variants.</h1>
+<p>The shape of a function inside the vtable_func array should be something like this:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1"></a><span class="op">[](</span>Visitor<span class="op">&amp;&amp;</span> vis<span class="op">,</span> Variants<span class="op">&amp;&amp;...</span> var<span class="op">)</span> <span class="op">{</span> <span class="co">/* ... */</span> <span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Internally you would invoke <code>vis</code> with <code>std::get&lt;Is&gt;(var)...</code>, where <code>Is...</code> would be an index sequence or constexpr array of the desired indices.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb9-2"><a href="#cb9-2"></a>    <span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> Visitor<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Variants<span class="op">&gt;</span></span>
+<span id="cb9-3"><a href="#cb9-3"></a>    <span class="kw">decltype</span><span class="op">(</span><span class="kw">auto</span><span class="op">)</span> visit<span class="op">(</span>Visitor <span class="op">&amp;&amp;</span>visitor<span class="op">,</span> Variants <span class="op">&amp;&amp;...</span>vs<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-4"><a href="#cb9-4"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>vtable_size <span class="op">=</span> <span class="op">(</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;</span> <span class="op">*</span> <span class="op">...);</span></span>
+<span id="cb9-5"><a href="#cb9-5"></a></span>
+<span id="cb9-6"><a href="#cb9-6"></a>        <span class="co">// Each entry in the vtable should have the shape [](Visitor visitor, Variants... vs){}</span></span>
+<span id="cb9-7"><a href="#cb9-7"></a>        <span class="kw">using</span> <span class="dt">result_t</span> <span class="op">=</span> <span class="kw">decltype</span><span class="op">(</span>visitor<span class="op">(</span><span class="bu">std::</span>get<span class="op">&lt;</span><span class="dv">0</span><span class="op">&gt;(</span>vs<span class="op">)...));</span></span>
+<span id="cb9-8"><a href="#cb9-8"></a>        <span class="kw">using</span> <span class="dt">cases_t</span> <span class="op">=</span> <span class="dt">result_t</span><span class="op">(*)(</span>Visitor<span class="op">,</span> Variants<span class="op">...);</span></span>
+<span id="cb9-9"><a href="#cb9-9"></a></span>
+<span id="cb9-10"><a href="#cb9-10"></a>        <span class="at">static</span> <span class="kw">constexpr</span> <span class="kw">auto</span> vtable<span class="op">{</span></span>
+<span id="cb9-11"><a href="#cb9-11"></a>            <span class="op">[]&lt;</span><span class="dt">size_t</span><span class="op">...</span> Indices<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>Indices<span class="op">...&gt;){</span></span>
+<span id="cb9-12"><a href="#cb9-12"></a>                <span class="kw">constexpr</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="bu">std::</span>size_t<span class="op">,</span> <span class="kw">sizeof</span><span class="op">...(</span>Variants<span class="op">)&gt;</span> dimensions <span class="op">=</span> <span class="op">{</span> <span class="bu">std::</span>variant_size_v<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;...</span> <span class="op">};</span></span>
+<span id="cb9-13"><a href="#cb9-13"></a>                <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>vtable_size <span class="op">=</span> <span class="op">(</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;</span> <span class="op">*</span> <span class="op">...);</span></span>
+<span id="cb9-14"><a href="#cb9-14"></a>                <span class="cf">return</span> <span class="bu">std::</span>array<span class="op">&lt;</span><span class="dt">cases_t</span><span class="op">,</span> vtable_size<span class="op">&gt;{</span></span>
+<span id="cb9-15"><a href="#cb9-15"></a>                    <span class="op">[](</span>Visitor vis<span class="op">,</span> Variants<span class="op">...</span> vs<span class="op">)</span> <span class="op">-&gt;</span> <span class="dt">result_t</span><span class="op">{</span></span>
+<span id="cb9-16"><a href="#cb9-16"></a>                        <span class="kw">constexpr</span> <span class="kw">auto</span> multi_idx <span class="op">=</span> dev<span class="op">::</span>tools<span class="op">::</span>from_1d_index<span class="op">&lt;</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;...&gt;(</span>Indices<span class="op">);</span></span>
+<span id="cb9-17"><a href="#cb9-17"></a>                        <span class="cf">return</span> <span class="op">[&amp;]&lt;</span><span class="dt">size_t</span><span class="op">...</span> Is<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>Is<span class="op">...&gt;){</span></span>
+<span id="cb9-18"><a href="#cb9-18"></a>                            <span class="cf">return</span> vis<span class="op">((</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="bu">std::</span>variant_alternative_t<span class="op">&lt;</span>Is<span class="op">,</span> <span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;&gt;(</span><span class="bu">std::</span>get<span class="op">&lt;</span>multi_idx<span class="op">[</span>Is<span class="op">]&gt;(</span>vs<span class="op">)))...);</span></span>
+<span id="cb9-19"><a href="#cb9-19"></a>                        <span class="op">}(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span><span class="kw">sizeof</span><span class="op">...(</span>Variants<span class="op">)&gt;());</span></span>
+<span id="cb9-20"><a href="#cb9-20"></a>                    <span class="op">}...</span></span>
+<span id="cb9-21"><a href="#cb9-21"></a>                <span class="op">};</span></span>
+<span id="cb9-22"><a href="#cb9-22"></a>            <span class="op">}(</span><span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span>vtable_size<span class="op">&gt;())</span></span>
+<span id="cb9-23"><a href="#cb9-23"></a>        <span class="op">};</span></span>
+<span id="cb9-24"><a href="#cb9-24"></a></span>
+<span id="cb9-25"><a href="#cb9-25"></a>        <span class="kw">auto</span> i <span class="op">=</span> dev<span class="op">::</span>tools<span class="op">::</span>to_1d_index<span class="op">&lt;</span><span class="bu">std::</span>variant_size_v<span class="op">&lt;</span><span class="bu">std::</span>remove_cvref_t<span class="op">&lt;</span>Variants<span class="op">&gt;&gt;...&gt;(</span>vs<span class="op">.</span>index<span class="op">()...);</span></span>
+<span id="cb9-26"><a href="#cb9-26"></a>        <span class="cf">return</span> vtable<span class="op">[</span>i<span class="op">](</span>visitor<span class="op">,</span> vs<span class="op">...</span> <span class="op">);</span></span>
+<span id="cb9-27"><a href="#cb9-27"></a>    <span class="op">}</span></span>
+<span id="cb9-28"><a href="#cb9-28"></a><span class="op">}</span></span>
+<span id="cb9-29"><a href="#cb9-29"></a></span>
+<span id="cb9-30"><a href="#cb9-30"></a><span class="dt">void</span> test_multiple_dispatch<span class="op">(){</span></span>
+<span id="cb9-31"><a href="#cb9-31"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> v1<span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
+<span id="cb9-32"><a href="#cb9-32"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="dt">double</span><span class="op">&gt;</span> v2<span class="op">{</span><span class="fl">3.14</span><span class="bu">f</span><span class="op">};</span></span>
+<span id="cb9-33"><a href="#cb9-33"></a>    <span class="co">//std::variant&lt;char, int, long, float, double&gt; v3{'H'};</span></span>
+<span id="cb9-34"><a href="#cb9-34"></a></span>
+<span id="cb9-35"><a href="#cb9-35"></a>    <span class="kw">auto</span> result <span class="op">=</span> dev<span class="op">::</span>visit<span class="op">(</span></span>
+<span id="cb9-36"><a href="#cb9-36"></a>        Visitor<span class="op">{</span></span>
+<span id="cb9-37"><a href="#cb9-37"></a>            <span class="op">[](</span><span class="dt">int</span><span class="op">,</span> <span class="dt">int</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(int, int)"</span><span class="op">;</span> <span class="op">},</span></span>
+<span id="cb9-38"><a href="#cb9-38"></a>            <span class="op">[](</span><span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(int, float)"</span><span class="op">;</span> <span class="op">},</span></span>
+<span id="cb9-39"><a href="#cb9-39"></a>            <span class="op">[](</span><span class="dt">int</span><span class="op">,</span> <span class="dt">double</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(int, double)"</span><span class="op">;</span> <span class="op">},</span></span>
+<span id="cb9-40"><a href="#cb9-40"></a>            <span class="op">[](</span><span class="dt">float</span><span class="op">,</span> <span class="dt">int</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="bu">std::</span>string<span class="op"> {</span> <span class="cf">return</span> <span class="st">"(float, int)"</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb9-41"><a href="#cb9-41"></a>        <span class="op">},</span></span>
+<span id="cb9-42"><a href="#cb9-42"></a>        v1<span class="op">,</span> v2</span>
+<span id="cb9-43"><a href="#cb9-43"></a>    <span class="op">);</span></span>
+<span id="cb9-44"><a href="#cb9-44"></a></span>
+<span id="cb9-45"><a href="#cb9-45"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"result = "</span> <span class="op">&lt;&lt;</span> result <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb9-46"><a href="#cb9-46"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><a href="https://godbolt.org/z/z5q6s7nrr">Compiler Explorer</a></p>
 <section id="references" class="level2">
 <h2 class="anchored" data-anchor-id="references">References</h2>
 <ul>

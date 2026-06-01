@@ -25,10 +25,20 @@
 <p>Let’s start by fixing some terminology.</p>
 <ul>
 <li><p>Shared Library. We use the cross-platform term <em>shared library</em> to refer to, what is otherwise known as shared objects, dynamic object, Dynamic Shared Object(DSO) or on Windows Dynamic Load Library(DLL).</p></li>
-<li><p>Binary. We will use the term <em>Binary</em> for either an executable or a <em>shared library</em>.</p></li>
-<li><p>Symbol. I will use the term <em>symbol</em> for either function / global variables.</p></li>
+<li><p>Binary. An executable or a <em>shared library</em>.</p></li>
+<li><p>Symbol. Function / global variables.</p></li>
 <li><p>Linux. I will loosely use the term <em>linux</em> for all UNIX descendants.</p></li>
 </ul>
+</section>
+<section id="nano-introduction-to-linking" class="level1">
+<h1>Nano-introduction to Linking</h1>
+<p>We start with source files. In the first phase, the compiler translates them into object files. An object file is nothing but a container for sections. Two canonical examples for sections are as <code>.text</code> which contains machine code and <code>.data</code> which contains program data.</p>
+<p>In the second phase, the linker - the first thing it does is, it pulls together the identically named sections and concatenates them into one larger section. The second thing it does, is it reorders the sections. So, sections with similar required run-time permissions are adjacent on disk.</p>
+<p>In the final stage, the loader takes these adjacent chunks called segments and maps them to memory on page-aligned boundaries. After this mapping, the loader adjusts the page permissions accordingly.</p>
+<p>Now, code typically does lots of function calls. The simplest case is that of from the binary into itself. But, that is not the general case. In general, the process can map shared libraries into its address space and perform calls into functions which are implemented in the shared library. The shared library itself can perform calls into functions implemented in yet other shared libraries. Arguably, the most important job of both the linker and loader is to properly wire these calls. How would might a wiring look like?</p>
+<p>Say, we have a <code>.code</code> section that calls the function <code>foo()</code>, which is implemented in another binary. The <code>.code</code> section itself does not contain the string <code>foo</code>, it contains a <code>call 0x0000</code> instruction into an address yet unknown at link time. So, the <code>.code</code> section contains a placeholder - a string of <code>0</code>s. In addition, the linker generates anothe section called <code>.reloc</code> for relocation. On Windows, these are sometimes called fixups. A <code>.reloc</code> section is essentially a small TODO item for the loader. The linker says, “<em>Dear loader, please find the function <code>foo</code>, when you do overwrite this placeholder with the address you found.</em>”. This relocation does happen in practice, but it is generally frowned upon, for two reasons. First, modifying the <code>.code</code> section makes the <code>.code</code> section unshareable between processes and second this form of relocation needs to be done once per call site, not once per function, which can amount to a large difference if you have tens of thousands of calls into the same function e.g.&nbsp;a game engine with calls to the math function <code>sqrt()</code>.</p>
+<p>The more typical scheme is to route all calls to the same function through an indirect call into a single placeholder. In this scheme, when the loader reads the <code>.reloc</code> section, it knows it needs to overwrite just a single slot with the function <code>foo()</code>’s address and not all the call sites. This design trades a little bit of run-time performance for a lot of load-time savings. There is an entire section of such placeholders. On win64, it is called the IAT (Import Address Table). In Linux, this is a rough approximation for a section known as the GOT(Global Offset Table). Note already, that this design means that cross-binary calls are indirect. They carry the same overhead as virtual functions do. And this is not the full truth, it is just the first step in our journey towards it.</p>
+<p>Let us take a closer look at Windows first. A win32/win64 binary</p>
 
 
 </section>
@@ -61,22 +71,7 @@
 <section id="c-compiler" class="level2">
 <h2 class="anchored" data-anchor-id="c-compiler">C++ Compiler</h2>
 <p>A compiler translates C++ source code into low-level machine code (targeted to a specific architecture, for example x86_64, ARM etc). More specifically, each source file is translated into an object file, that contains machine code. Object files are little pieces of machine code, that can be linked together.</p>
-<p>A function declared with external linkage can be referred to from the scopes of other translation units.</p>
-<p>When a compiler compiles a call to such a function(or more generally symbols) <code>foo()</code> in the this translation unit, it has no idea where <code>foo()</code> is defined, so it leaves a placeholder in all calls to <code>foo()</code> in the object file.</p>
-<p>When a compiler compiles (the definition of) a function with external linkage, the compiler writes the machine code of that function at some memory location, and puts the address of that memory location and the function name in <code>.o</code> file, where the linker can find it.</p>
 <p><code>gcc/g++</code>, <code>clang/clang++</code>, <code>msvc</code> are examples of major compilers.</p>
-</section>
-<section id="linker" class="level2">
-<h2 class="anchored" data-anchor-id="linker">Linker</h2>
-<p>The basic job of a linker is simple : it binds symbol references such as calls to <code>foo()</code> to the specific memory address of the function <code>foo()</code>’s definition.</p>
-<p>The linker takes as its input, a set of input object files, other libraries and produces as its output a library or executable. Each input file contains a set of <em>segments</em>, contiguous blocks of code or data to be placed in the output file. Each input file also contains at least one symbol table. Some symbols are exported - defined within thew file for use in other files, generally the names of routines within that file that can be called from elsewhere. Other symbols are imported - used in the file but not defined, generally the names of routines called from but not present in the file.</p>
-<p>When a linker runs, it first scans the input files to find the sizes of the segments and to collect the definitions and references of all of the symbols. It creates a segment table listing all of the segments defined in the input files and a symbol table of all symbols imported/exported.</p>
-<p>The second pass uses the information collected in the first pass to control the actual linking process. It reads and relocates the object code, substituting numeric addresses for symbol references and adjusting memory addresses in code and data to reflect relocated segment addresses, and writes the relocated code to the output file.</p>
-<p>A static library (<code>.a</code> files) is just a little more than a set of object code files catenated together. Shared (dynamic) libraries move some of the work from link time to load time. The linker identifies the shared libraries gthat resolve the undefined names in a linker run, but rather than linking anything into the program, the linker notes in the output file the names of the libraries in which symbols were found, so that the shared library can be bound when the program is loaded.</p>
-</section>
-<section id="loader" class="level2">
-<h2 class="anchored" data-anchor-id="loader">Loader</h2>
-<p>Loading is the process of bringing program into main memory.</p>
 </section>
 <section id="build-system" class="level2">
 <h2 class="anchored" data-anchor-id="build-system">Build system</h2>
@@ -399,914 +394,727 @@ font-style: inherit;">}</span></span></code></pre></div>
 
 <section id="introduction" class="level1">
 <h1>Introduction</h1>
-<p><code>std::visit(Visitor&amp;&amp;, Variants&amp;&amp;...)</code> is a way to implement multiple dispatch in modern C++. <code>std::visit</code> expects a <code>Visitor</code> object and a pack of variants. Since each variant can hold one of many alternatives, the total number of distinguishable combinations are <code>constexpr size_t n = std::variant_size&lt;Variants&gt; * ...</code>. The <code>Visitor</code> contains a callable - one for each possible combination of types of the variants. <code>std::visit</code> selects an appropriate overload, based on the actual combination of alternatives held in the variants from the <code>n</code> candidate functions.</p>
+<p>A <code>variant</code> models a <strong>choice between types</strong>. It is a smart union. Variants are <strong>sum types</strong>.</p>
+<div class="sourceCode" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> on <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">temperature_</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb1-2"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> off <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb1-3"></span>
+<span id="cb1-4"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> oven_state <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>on<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> off<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;;</span></span></code></pre></div>
+<p>Recursive node-based structures, error handling, state machines etc. are examples of concepts that can be elegantly modeled by variants:</p>
+<ul>
+<li>JSON</li>
+<li>ASTs(Abstract Syntax Trees)</li>
+<li>State Machines</li>
+<li>Error Handling</li>
+</ul>
 </section>
-<section id="a-switcher-struct" class="level1">
-<h1>A <code>switcher</code> struct</h1>
-<div class="sourceCode" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><span class="pp" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">#include </span><span class="im" style="color: #00769E;
-background-color: null;
-font-style: inherit;">&lt;cstdint&gt;</span></span>
-<span id="cb1-2"><span class="pp" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">#include </span><span class="im" style="color: #00769E;
-background-color: null;
-font-style: inherit;">&lt;utility&gt;</span></span>
-<span id="cb1-3"><span class="pp" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">#include </span><span class="im" style="color: #00769E;
-background-color: null;
-font-style: inherit;">&lt;numeric&gt;</span></span>
-<span id="cb1-4"><span class="pp" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">#include </span><span class="im" style="color: #00769E;
-background-color: null;
-font-style: inherit;">&lt;variant&gt;</span></span>
-<span id="cb1-5"></span>
-<span id="cb1-6"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">namespace</span> dev<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb1-7">    <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">namespace</span> tools<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">::</span>v1<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb1-8"></span>
-<span id="cb1-9">        <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">typename</span> Func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span></span>
-<span id="cb1-10">        <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">struct</span> switcher<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb1-11">            Func <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb1-12">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">result_t</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">decltype</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;()));</span></span>
-<span id="cb1-13">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">constexpr</span> switcher<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;,</span> Func func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">:</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span> func <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{}</span></span>
-<span id="cb1-14"></span>
-<span id="cb1-15">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">result_t</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">()(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="at" style="color: #657422;
-background-color: null;
-font-style: inherit;">const</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb1-16">                <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">using</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">case_</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">result_t</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(*)(</span>Func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb1-17">                <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[&amp;]&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">...</span> idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>index_sequence<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">...&gt;){</span></span>
-<span id="cb1-18">                    <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// an array of anonymous functions</span></span>
-<span id="cb1-19">                    <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">constexpr</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">case_</span> cases<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[]{</span></span>
-<span id="cb1-20">                        <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[](</span>Func func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span> <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> func <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span>idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;());</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}...</span> </span>
-<span id="cb1-21">                    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb1-22">                    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> cases<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">](</span><span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb1-23">                <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb1-24">                <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>make_index_sequence<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;{});</span></span>
-<span id="cb1-25">            <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb1-26">        <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb1-27">    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb1-28"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb1-29"></span>
-<span id="cb1-30"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">namespace</span> dev<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb1-31">    <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">namespace</span> tools<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">::</span>v2<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb1-32">        <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">typename</span> Func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span></span>
-<span id="cb1-33">        <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">struct</span> switcher<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb1-34">            Func <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb1-35">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">res_t</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">decltype</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;()));</span></span>
-<span id="cb1-36">            switcher<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;,</span> Func func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">:</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span> func <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}{}</span></span>
-<span id="cb1-37"></span>
-<span id="cb1-38">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">res_t</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">()(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb1-39">                <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[&amp;]&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">...</span> idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>index_sequence<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">...&gt;){</span></span>
-<span id="cb1-40">                    <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">res_t</span> result<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb1-41">                    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(((</span>i <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">==</span> idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">?</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>result <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;()),</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">:</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">),</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">...);</span></span>
-<span id="cb1-42">                    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> result<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb1-43">                <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>make_index_sequence<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;());</span></span>
-<span id="cb1-44">            <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb1-45">        <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb1-46">    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb1-47"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span></code></pre></div>
+<section id="variant-visitation" class="level1">
+<h1>Variant visitation</h1>
+<section id="what-is-visitation" class="level2">
+<h2 class="anchored" data-anchor-id="what-is-visitation">What is visitation?</h2>
+<p>Visitation can be defined as an <strong>abstraction</strong> that allows you to access the currently active variant <em>alternative</em> in an <strong>exhaustive</strong> and <strong>expressive</strong> manner. You are forced to provide some behavior for all the types that the variant supports. Its expressive, because it doesn’t work through a chain of if-else; its a very elegant way of saying, for these types perform these actions.</p>
 </section>
-<section id="code-listing" class="level1">
-<h1>Code Listing</h1>
+<section id="traditional-visitation" class="level2">
+<h2 class="anchored" data-anchor-id="traditional-visitation">Traditional visitation</h2>
+<p>Traditional visitation requires a <code>Callable</code> object which can be invoked with every possible variant alternative. The traditional way of creating such an object is defining a <code>struct</code>.</p>
 <div class="sourceCode" id="cb2" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><span class="co" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">// switch.h</span></span>
-<span id="cb2-2"><span class="pp" style="color: #AD0000;
+font-style: inherit;">// Traditional visitation example - one variant</span></span>
+<span id="cb2-2"><span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">#include </span><span class="im" style="color: #00769E;
-background-color: null;
-font-style: inherit;">&lt;cstdint&gt;</span></span>
-<span id="cb2-3"><span class="pp" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">#include </span><span class="im" style="color: #00769E;
-background-color: null;
-font-style: inherit;">&lt;utility&gt;</span></span>
-<span id="cb2-4"><span class="pp" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">#include </span><span class="im" style="color: #00769E;
-background-color: null;
-font-style: inherit;">&lt;numeric&gt;</span></span>
-<span id="cb2-5"><span class="pp" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">#include </span><span class="im" style="color: #00769E;
-background-color: null;
-font-style: inherit;">&lt;variant&gt;</span></span>
-<span id="cb2-6"></span>
-<span id="cb2-7"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">namespace</span> dev<span class="op" style="color: #5E5E5E;
+font-style: inherit;">struct</span> printer<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb2-8">    <span class="kw" style="color: #003B4F;
+<span id="cb2-3">    <span class="dt" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">namespace</span> tools<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">::</span>v1<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb2-9"></span>
-<span id="cb2-10">        <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">typename</span> Func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span></span>
-<span id="cb2-11">        <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">struct</span> switcher<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb2-12">            Func <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb2-13">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">result_t</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">decltype</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;()));</span></span>
-<span id="cb2-14">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">constexpr</span> switcher<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;,</span> Func func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">:</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span> func <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{}</span></span>
-<span id="cb2-15"></span>
-<span id="cb2-16">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">result_t</span> <span class="kw" style="color: #003B4F;
+font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">()(</span><span class="bu" style="color: null;
+font-style: inherit;">()(</span><span class="dt" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;"> </span>i<span class="op" style="color: #5E5E5E;
+font-style: inherit;">){</span> <span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">)</span> <span class="at" style="color: #657422;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">const</span><span class="op" style="color: #5E5E5E;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
 background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb2-17">                <span class="kw" style="color: #003B4F;
+font-style: inherit;">"int"</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">using</span> <span class="va" style="color: #111111;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
 background-color: null;
-font-style: inherit;">case_</span> <span class="op" style="color: #5E5E5E;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">=</span> <span class="dt" style="color: #AD0000;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
 background-color: null;
-font-style: inherit;">result_t</span><span class="op" style="color: #5E5E5E;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">(*)(</span>Func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb2-18">                <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[&amp;]&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">...</span> idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>index_sequence<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">...&gt;){</span></span>
-<span id="cb2-19">                    <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// an array of anonymous functions</span></span>
-<span id="cb2-20">                    <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">constexpr</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">case_</span> cases<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[]{</span></span>
-<span id="cb2-21">                        <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[](</span>Func func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span> <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> func <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span>idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;());</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}...</span> </span>
-<span id="cb2-22">                    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb2-23">                    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> cases<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">](</span><span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb2-24">                <span class="op" style="color: #5E5E5E;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb2-25">                <span class="op" style="color: #5E5E5E;
+<span id="cb2-4">    <span class="dt" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>make_index_sequence<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;{});</span></span>
-<span id="cb2-26">            <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb2-27">        <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb2-28">    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb2-29"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb2-30"></span>
-<span id="cb2-31"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">namespace</span> dev<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb2-32">    <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">namespace</span> tools<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">::</span>v2<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb2-33">        <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">typename</span> Func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span></span>
-<span id="cb2-34">        <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">struct</span> switcher<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb2-35">            Func <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb2-36">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">res_t</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">decltype</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;()));</span></span>
-<span id="cb2-37">            switcher<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;,</span> Func func<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">:</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span> func <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}{}</span></span>
-<span id="cb2-38"></span>
-<span id="cb2-39">            <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">res_t</span> <span class="kw" style="color: #003B4F;
+font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">()(</span><span class="bu" style="color: null;
+font-style: inherit;">()(</span><span class="dt" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;"> </span>i<span class="op" style="color: #5E5E5E;
+font-style: inherit;">){</span> <span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb2-40">                <span class="cf" style="color: #003B4F;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
 background-color: null;
-font-style: inherit;">[&amp;]&lt;</span><span class="bu" style="color: null;
+font-style: inherit;">"float"</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
 background-color: null;
-font-style: inherit;">...</span> idxs<span class="op" style="color: #5E5E5E;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&gt;(</span><span class="bu" style="color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
 background-color: null;
-font-style: inherit;">std::</span>index_sequence<span class="op" style="color: #5E5E5E;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&lt;</span>idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">...&gt;){</span></span>
-<span id="cb2-41">                    <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">res_t</span> result<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb2-42">                    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(((</span>i <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">==</span> idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">?</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>result <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">func_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;()),</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">:</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">),</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">...);</span></span>
-<span id="cb2-43">                    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> result<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb2-44">                <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>make_index_sequence<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;());</span></span>
-<span id="cb2-45">            <span class="op" style="color: #5E5E5E;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb2-46">        <span class="op" style="color: #5E5E5E;
+<span id="cb2-5">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"double"</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb2-6"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span>
-<span id="cb2-47">    <span class="op" style="color: #5E5E5E;
+<span id="cb2-7"></span>
+<span id="cb2-8"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> my_variant <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;;</span></span>
+<span id="cb2-9">my_variant v0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">20.0</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">f</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb2-10"></span>
+<span id="cb2-11"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>visit<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>printer<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{},</span> v0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span></code></pre></div>
+<p>If you call <code>std::visit</code> with an instance of your <code>printer</code> struct and the <code>variant</code>, it will automatically figure out, what type is in the variant and call the corresponding overload.</p>
+<p>You can extend this logic to multiple variants.</p>
+<div class="sourceCode" id="cb3" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> circle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">radius_</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb3-2"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> box<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> </span>
+<span id="cb3-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">width_</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> </span>
+<span id="cb3-4">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">height_</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-5">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span> depth<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb3-6"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb3-7"></span>
+<span id="cb3-8"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> collision_resolver<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb3-9">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()(</span>circle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> circle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span> <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/*...*/</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb2-48"><span class="op" style="color: #5E5E5E;
+<span id="cb3-10">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()(</span>circle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> box<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span> <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/*...*/</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb2-49"></span>
-<span id="cb2-50"><span class="co" style="color: #5E5E5E;
+<span id="cb3-11">    <span class="dt" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">// Consider that we have variants v1, v2, v3 each having 2, 3, and 5 </span></span>
-<span id="cb2-51"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">// alternatives respectively. Then, we have the following:</span></span>
-<span id="cb2-52"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">// 0,0,0 maps to -&gt; Case 0</span></span>
-<span id="cb2-53"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">()(</span>box<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">// 0,0,1 maps to -&gt; Case 1</span></span>
-<span id="cb2-54"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">,</span> circle<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">// ...</span></span>
-<span id="cb2-55"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">){</span> <span class="co" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">// 0,1,0 maps to -&gt; Case 5</span></span>
-<span id="cb2-56"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">/*...*/</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">// 0,1,1 maps to -&gt; Case 6</span></span>
-<span id="cb2-57"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">}</span></span>
+<span id="cb3-12">    <span class="dt" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">// ...</span></span>
-<span id="cb2-58"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">void</span> <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">// 0,2,4 maps to -&gt; Case 14</span></span>
-<span id="cb2-59"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">// 1,0,0 maps to -&gt; Case 15</span></span>
-<span id="cb2-60"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">()(</span>box<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">// ...</span></span>
-<span id="cb2-61"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">,</span> box<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">// 1,2,4 maps to -&gt; Case 29</span></span>
-<span id="cb2-62"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">){</span> <span class="co" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">// In general, (a,b,c) maps to -&gt; 15a + 5b + c. </span></span>
-<span id="cb2-63"></span>
-<span id="cb2-64"><span class="co" style="color: #5E5E5E;
+font-style: inherit;">/*...*/</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">// math::coeffs returns the coefficients array [15, 5, 1].</span></span>
-<span id="cb2-65"><span class="kw" style="color: #003B4F;
+font-style: inherit;">}</span></span>
+<span id="cb3-13"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb3-14"></span>
+<span id="cb3-15"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> my_variant <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>circle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> box<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;;</span></span>
+<span id="cb3-16">my_variant v0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span>circle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{}};</span></span>
+<span id="cb3-17">my_variant v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span>box<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{}};</span></span>
+<span id="cb3-18"></span>
+<span id="cb3-19"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>visit<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>collision_resolver<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{},</span> v0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span></code></pre></div>
+<p>What you get is a form of multiple dispatch, that has to handle all possible combinations. This is also really powerful way of implementing multiple dispatch.</p>
+</section>
+</section>
+<section id="building-helper-functions-needed-for-stdvisit" class="level1">
+<h1>Building helper functions needed for <code>std::visit</code></h1>
+<p>Under the hood <code>std::visit</code> must invoke the right candidate for the currently active alternatives from the function overload set. We start with the simplest case of <img src="https://latex.codecogs.com/png.latex?2"> variants. The central idea is to maintain a single array of function pointers. Each entry in the function pointer table has the shape <code>[](Visitor visitor, Variant0 v0, Variant1 v1)</code>. For concreteness, assume that both variants <code>v0</code> and <code>v1</code> offer a choice between <img src="https://latex.codecogs.com/png.latex?2"> types:</p>
+<div class="sourceCode" id="cb4" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> Variant0 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;;</span></span>
+<span id="cb4-2"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> Variant1 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;;</span></span></code></pre></div>
+<p>It is possible to have <img src="https://latex.codecogs.com/png.latex?4"> distinguishable behaviors(overloads), when a visitor visits these variants. So, we build an array of size <img src="https://latex.codecogs.com/png.latex?4">.</p>
+<p>The <code>std::visit</code> implementation should automatically invoke the correct function overload based on the currently active types in <code>v0</code> and <code>v1</code>. Before we proceed, let us fix some terminology first. Suppose a variant <code>v</code> allows a choice amongst <img src="https://latex.codecogs.com/png.latex?n"> types:</p>
+<div class="sourceCode" id="cb5" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Pseudo-code</span></span>
+<span id="cb5-2"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> T1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...,</span> Tn<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span></code></pre></div>
+<p>In the case of 2 variants <code>v0</code> and <code>v1</code> offering a choice amongst <img src="https://latex.codecogs.com/png.latex?n_1"> and <img src="https://latex.codecogs.com/png.latex?n_2"> alternative types respectively, we have a total of <img src="https://latex.codecogs.com/png.latex?n_1%20%5Ctimes%20n_2"> distinguishgable choices. For example, consider the case of <code>v0</code> offer a choice of <img src="https://latex.codecogs.com/png.latex?3"> types and <code>v1</code> offering a choice of <img src="https://latex.codecogs.com/png.latex?4"> types. Each choice is a distinct entry in the 2d-table, and we have a total of <img src="https://latex.codecogs.com/png.latex?3%20%5Ctimes%204%20=%2012"> distinct choices. We will have <img src="https://latex.codecogs.com/png.latex?12"> candidates in our function overload set. We can assign a multi-index <code>&lt;i,j&gt;</code> to the function overload <code>[](Ti, Tj){ /*...*/ }</code>.</p>
+<table class="table">
+<thead>
+<tr class="header">
+<th></th>
+<th>j=0</th>
+<th>j=1</th>
+<th>j=2</th>
+<th>j=3</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>i=0</strong></td>
+<td>&lt;0, 0&gt;</td>
+<td>&lt;0, 1&gt;</td>
+<td>&lt;0, 2&gt;</td>
+<td>&lt;0, 3&gt;</td>
+</tr>
+<tr class="even">
+<td><strong>i=1</strong></td>
+<td>&lt;1, 0&gt;</td>
+<td>&lt;1, 1&gt;</td>
+<td>&lt;1, 2&gt;</td>
+<td>&lt;1, 3&gt;</td>
+</tr>
+<tr class="odd">
+<td><strong>i=2</strong></td>
+<td>&lt;2, 0&gt;</td>
+<td>&lt;2, 1&gt;</td>
+<td>&lt;2, 2&gt;</td>
+<td>&lt;2, 3&gt;</td>
+</tr>
+</tbody>
+</table>
+<p>We can convert this 2d-table to a 1d-table.</p>
+<table class="table">
+<thead>
+<tr class="header">
+<th>Multi-index</th>
+<th>1D-index</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>&lt;0, 0&gt;</td>
+<td>0</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 1&gt;</td>
+<td>1</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 2&gt;</td>
+<td>2</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 3&gt;</td>
+<td>3</td>
+</tr>
+<tr class="odd">
+<td>&lt;1, 0&gt;</td>
+<td>4</td>
+</tr>
+<tr class="even">
+<td>&lt;1, 1&gt;</td>
+<td>5</td>
+</tr>
+<tr class="odd">
+<td>&lt;1, 2&gt;</td>
+<td>6</td>
+</tr>
+<tr class="even">
+<td>&lt;1, 3&gt;</td>
+<td>7</td>
+</tr>
+<tr class="odd">
+<td>&lt;2, 0&gt;</td>
+<td>8</td>
+</tr>
+<tr class="even">
+<td>&lt;2, 1&gt;</td>
+<td>9</td>
+</tr>
+<tr class="odd">
+<td>&lt;2, 2&gt;</td>
+<td>10</td>
+</tr>
+<tr class="even">
+<td>&lt;2, 3&gt;</td>
+<td>11</td>
+</tr>
+</tbody>
+</table>
+<p>Thus, the pointer to the function <code>[](Ti, Tj){ /*...*/}</code> with multi-index <code>&lt;i,j&gt;</code> is mapped to <code>4i + j</code> 1d-index in a 1d-table.</p>
+<p>In the case of 3 variants <code>v0</code>, <code>v1</code> and <code>v2</code> offering a choice amongst <img src="https://latex.codecogs.com/png.latex?n_1%20=%203">, <img src="https://latex.codecogs.com/png.latex?n_2%20=%204"> and <img src="https://latex.codecogs.com/png.latex?n_3%20=%205"> alternative types respectively, we have a total of <img src="https://latex.codecogs.com/png.latex?3%20%5Ctimes%204%20%5Ctimes%205%20=%2060"> distinguishable choices. We will have <img src="https://latex.codecogs.com/png.latex?60"> candidates in our function overload set. We can assign a multi-index <code>&lt;i,j,k&gt;</code> to the function overload <code>[](Ti, Tj, Tk){ /*...*/ }</code>.</p>
+<table class="table">
+<thead>
+<tr class="header">
+<th></th>
+<th>j=0</th>
+<th>j=1</th>
+<th>j=2</th>
+<th>j=3</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>i=0</strong></td>
+<td>&lt;0,0,k&gt;</td>
+<td>&lt;0,1,k&gt;</td>
+<td>&lt;0,2,k&gt;</td>
+<td>&lt;0,3,k&gt;</td>
+</tr>
+<tr class="even">
+<td><strong>i=1</strong></td>
+<td>&lt;1,0,k&gt;</td>
+<td>&lt;1,1,k&gt;</td>
+<td>&lt;1,2,k&gt;</td>
+<td>&lt;1,3,k&gt;</td>
+</tr>
+<tr class="odd">
+<td><strong>i=2</strong></td>
+<td>&lt;2,0,k&gt;</td>
+<td>&lt;2,1,k&gt;</td>
+<td>&lt;2,2,k&gt;</td>
+<td>&lt;2,3,k&gt;</td>
+</tr>
+</tbody>
+</table>
+<p>where each entry <code>&lt;i,j,k&gt;</code> expands over <img src="https://latex.codecogs.com/png.latex?k%20=%200,%201,%202,%203,%204">. The full set of multi-indices and their 1D mappings is:</p>
+<table class="table">
+<colgroup>
+<col style="width: 18%">
+<col style="width: 14%">
+<col style="width: 18%">
+<col style="width: 14%">
+<col style="width: 18%">
+<col style="width: 14%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Multi-index</th>
+<th>1D-index</th>
+<th>Multi-index</th>
+<th>1D-index</th>
+<th>Multi-index</th>
+<th>1D-index</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>&lt;0, 0, 0&gt;</td>
+<td>0</td>
+<td>&lt;1, 0, 0&gt;</td>
+<td>20</td>
+<td>&lt;2, 0, 0&gt;</td>
+<td>40</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 0, 1&gt;</td>
+<td>1</td>
+<td>&lt;1, 0, 1&gt;</td>
+<td>21</td>
+<td>&lt;2, 0, 1&gt;</td>
+<td>41</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 0, 2&gt;</td>
+<td>2</td>
+<td>&lt;1, 0, 2&gt;</td>
+<td>22</td>
+<td>&lt;2, 0, 2&gt;</td>
+<td>42</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 0, 3&gt;</td>
+<td>3</td>
+<td>&lt;1, 0, 3&gt;</td>
+<td>23</td>
+<td>&lt;2, 0, 3&gt;</td>
+<td>43</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 0, 4&gt;</td>
+<td>4</td>
+<td>&lt;1, 0, 4&gt;</td>
+<td>24</td>
+<td>&lt;2, 0, 4&gt;</td>
+<td>44</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 1, 0&gt;</td>
+<td>5</td>
+<td>&lt;1, 1, 0&gt;</td>
+<td>25</td>
+<td>&lt;2, 1, 0&gt;</td>
+<td>45</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 1, 1&gt;</td>
+<td>6</td>
+<td>&lt;1, 1, 1&gt;</td>
+<td>26</td>
+<td>&lt;2, 1, 1&gt;</td>
+<td>46</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 1, 2&gt;</td>
+<td>7</td>
+<td>&lt;1, 1, 2&gt;</td>
+<td>27</td>
+<td>&lt;2, 1, 2&gt;</td>
+<td>47</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 1, 3&gt;</td>
+<td>8</td>
+<td>&lt;1, 1, 3&gt;</td>
+<td>28</td>
+<td>&lt;2, 1, 3&gt;</td>
+<td>48</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 1, 4&gt;</td>
+<td>9</td>
+<td>&lt;1, 1, 4&gt;</td>
+<td>29</td>
+<td>&lt;2, 1, 4&gt;</td>
+<td>49</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 2, 0&gt;</td>
+<td>10</td>
+<td>&lt;1, 2, 0&gt;</td>
+<td>30</td>
+<td>&lt;2, 2, 0&gt;</td>
+<td>50</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 2, 1&gt;</td>
+<td>11</td>
+<td>&lt;1, 2, 1&gt;</td>
+<td>31</td>
+<td>&lt;2, 2, 1&gt;</td>
+<td>51</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 2, 2&gt;</td>
+<td>12</td>
+<td>&lt;1, 2, 2&gt;</td>
+<td>32</td>
+<td>&lt;2, 2, 2&gt;</td>
+<td>52</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 2, 3&gt;</td>
+<td>13</td>
+<td>&lt;1, 2, 3&gt;</td>
+<td>33</td>
+<td>&lt;2, 2, 3&gt;</td>
+<td>53</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 2, 4&gt;</td>
+<td>14</td>
+<td>&lt;1, 2, 4&gt;</td>
+<td>34</td>
+<td>&lt;2, 2, 4&gt;</td>
+<td>54</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 3, 0&gt;</td>
+<td>15</td>
+<td>&lt;1, 3, 0&gt;</td>
+<td>35</td>
+<td>&lt;2, 3, 0&gt;</td>
+<td>55</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 3, 1&gt;</td>
+<td>16</td>
+<td>&lt;1, 3, 1&gt;</td>
+<td>36</td>
+<td>&lt;2, 3, 1&gt;</td>
+<td>56</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 3, 2&gt;</td>
+<td>17</td>
+<td>&lt;1, 3, 2&gt;</td>
+<td>37</td>
+<td>&lt;2, 3, 2&gt;</td>
+<td>57</td>
+</tr>
+<tr class="odd">
+<td>&lt;0, 3, 3&gt;</td>
+<td>18</td>
+<td>&lt;1, 3, 3&gt;</td>
+<td>38</td>
+<td>&lt;2, 3, 3&gt;</td>
+<td>58</td>
+</tr>
+<tr class="even">
+<td>&lt;0, 3, 4&gt;</td>
+<td>19</td>
+<td>&lt;1, 3, 4&gt;</td>
+<td>39</td>
+<td>&lt;2, 3, 4&gt;</td>
+<td>59</td>
+</tr>
+</tbody>
+</table>
+<p>Thus, the pointer to the function <code>[](Ti, Tj, Tk){ /*...*/}</code> with multi-index <code>&lt;i,j,k&gt;</code> is mapped to the 1D-index <img src="https://latex.codecogs.com/png.latex?20i%20+%205j%20+%20k">.</p>
+<p>We shall code up two helper functions <code>to_1d_index&lt;3,4,5&gt;(size_t, size_t, size_t)</code> and <code>from_1d_index&lt;3,4,5&gt;(size_t)</code> to convert a multi-index to a 1d-index and back.</p>
+<div class="sourceCode" id="cb6" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">namespace</span> dev<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">::</span>tools<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb2-66">    <span class="kw" style="color: #003B4F;
+<span id="cb6-2">    <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1314,19 +1122,19 @@ font-style: inherit;">&lt;</span><span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">...</span> dims<span class="op" style="color: #5E5E5E;
+font-style: inherit;">...</span> Dimensions<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;</span></span>
-<span id="cb2-67">    <span class="kw" style="color: #003B4F;
+<span id="cb6-3">    <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">struct</span> math_array<span class="op" style="color: #5E5E5E;
+font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb2-68">        <span class="kw" style="color: #003B4F;
+font-style: inherit;">auto</span> build_coeffs_array<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">using</span> multi_idx <span class="op" style="color: #5E5E5E;
+font-style: inherit;">(){</span></span>
+<span id="cb6-4">        <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">=</span> <span class="bu" style="color: null;
+font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1338,275 +1146,185 @@ font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">...(</span>dims<span class="op" style="color: #5E5E5E;
+font-style: inherit;">...(</span>Dimensions<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">)&gt;;</span></span>
-<span id="cb2-69">        <span class="at" style="color: #657422;
+font-style: inherit;">)&gt;</span> dimensions <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">static</span> <span class="kw" style="color: #003B4F;
+font-style: inherit;">{</span> Dimensions<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">constexpr</span> multi_idx coeffs <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[](){</span></span>
-<span id="cb2-70">            <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>dims_a <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span>dims<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">...};</span></span>
-<span id="cb2-71">            <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>result <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> dims_a<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb2-72">            <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">for</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>running <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> i <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> dims_a<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">.</span>size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">();</span> i <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">--</span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb2-73">                result<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[</span>i <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">-</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> running<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb2-74">                running <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">*=</span> dims_a<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[</span>i <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">-</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">];</span></span>
-<span id="cb2-75">            <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb2-76">            <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> result<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb2-77">        <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}();</span></span>
-<span id="cb2-78"></span>
-<span id="cb2-79">        <span class="at" style="color: #657422;
-background-color: null;
-font-style: inherit;">static</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">constexpr</span> multi_idx to_multi_idx<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>linear_idx<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb2-80">            <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>dims_a <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span>dims<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">...};</span></span>
-<span id="cb2-81">            multi_idx result<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb2-82">            multi_idx <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">coeffs_</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> coeffs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">();</span></span>
-<span id="cb2-83"></span>
-<span id="cb2-84">            <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">for</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span>i <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span> i <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span> coeffs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">.</span>size<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">();</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">++</span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb2-85">                result<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> linear_idx <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">/</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">coeffs_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">];</span></span>
-<span id="cb2-86">                linear_idx <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">-=</span> result<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">];</span></span>
-<span id="cb2-87">            <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb2-88">            <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> result<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb2-89">        <span class="op" style="color: #5E5E5E;
+font-style: inherit;">...</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span>
-<span id="cb2-90"></span>
-<span id="cb2-91">        <span class="at" style="color: #657422;
-background-color: null;
-font-style: inherit;">static</span> <span class="kw" style="color: #003B4F;
+<span id="cb6-5">        <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;"> </span>to_linear_idx<span class="op" style="color: #5E5E5E;
+font-style: inherit;"> </span>coeffs_size <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">(</span>multi_idx <span class="va" style="color: #111111;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">m_idx</span><span class="op" style="color: #5E5E5E;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb2-92">            <span class="bu" style="color: null;
+font-style: inherit;">...(</span>Dimensions<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb6-6">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;"> </span>result<span class="op" style="color: #5E5E5E;
+font-style: inherit;">,</span> coeffs_size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> coeffs <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb6-7">        </span>
+<span id="cb6-8">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">for</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>i<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">0</span><span class="bu" style="color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">uz</span><span class="op" style="color: #5E5E5E;
+font-style: inherit;">};</span> i <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb2-93">            multi_idx <span class="va" style="color: #111111;
+font-style: inherit;">&lt;</span> coeffs_size<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">coeffs_</span> <span class="op" style="color: #5E5E5E;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">=</span> coeffs<span class="op" style="color: #5E5E5E;
+font-style: inherit;">++</span>i<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">();</span></span>
-<span id="cb2-94">            result <span class="op" style="color: #5E5E5E;
+font-style: inherit;">)</span></span>
+<span id="cb6-9">            coeffs<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">=</span> <span class="bu" style="color: null;
+font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">std::</span>inner_product<span class="op" style="color: #5E5E5E;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">(</span><span class="va" style="color: #111111;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">coeffs_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">.</span>begin<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(),</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">coeffs_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">.</span>end<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(),</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">m_idx</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">.</span>begin<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(),</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">u</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb2-95">            <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> result<span class="op" style="color: #5E5E5E;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="cb2-96">        <span class="op" style="color: #5E5E5E;
+<span id="cb6-10"></span>
+<span id="cb6-11">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">for</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span> i <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span> coeffs_size <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb6-12">            <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// In step i, we need to populate all coeffs[j], j &lt;= i</span></span>
+<span id="cb6-13">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">for</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> </span>j<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span> j <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;=</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++</span>j<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb6-14">                coeffs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>j<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*=</span> dimensions<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span></span>
+<span id="cb6-15">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb2-97"></span>
-<span id="cb2-98">        <span class="kw" style="color: #003B4F;
+<span id="cb6-16">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb6-17">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> coeffs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-18">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb6-19">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/*</span></span>
+<span id="cb6-20"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">    coeff[0] = v1size * ... * v[n-1] size</span></span>
+<span id="cb6-21"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">    coeff[1] = v2size * .... *v[n-1] size</span></span>
+<span id="cb6-22"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">    ...</span></span>
+<span id="cb6-23"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">    coeff[n-2] = v[n-1] size</span></span>
+<span id="cb6-24"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">    coeff[n-1] = 1</span></span>
+<span id="cb6-25"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">    */</span></span>
+<span id="cb6-26">    <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1614,113 +1332,438 @@ font-style: inherit;">&lt;</span><span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;"> </span>linear_idx<span class="op" style="color: #5E5E5E;
+font-style: inherit;">...</span> Dimensions<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;</span></span>
-<span id="cb2-99">        <span class="at" style="color: #657422;
-background-color: null;
-font-style: inherit;">static</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">auto</span> to_multi_idx_sequence<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(){</span></span>
-<span id="cb2-100">            <span class="cf" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[&amp;]&lt;</span><span class="bu" style="color: null;
+<span id="cb6-27">    <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">...</span> idxs<span class="op" style="color: #5E5E5E;
+font-style: inherit;"> </span><span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">&gt;(</span><span class="bu" style="color: null;
+font-style: inherit;">constexpr</span> to_1d_index<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">std::</span>index_sequence<span class="op" style="color: #5E5E5E;
+font-style: inherit;">(</span><span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">&lt;</span>idxs<span class="op" style="color: #5E5E5E;
+font-style: inherit;">auto</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">...&gt;){</span></span>
-<span id="cb2-101">                <span class="kw" style="color: #003B4F;
+font-style: inherit;">...</span> indices<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
+font-style: inherit;">){</span></span>
+<span id="cb6-28">        <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">auto</span> arr <span class="op" style="color: #5E5E5E;
+font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">=</span> to_multi_idx<span class="op" style="color: #5E5E5E;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">(</span>linear_idx<span class="op" style="color: #5E5E5E;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb2-102">                <span class="cf" style="color: #003B4F;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">return</span> <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>index_sequence<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>arr<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[</span>idxs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">]...&gt;();</span></span>
-<span id="cb2-103">            <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>make_index_sequence<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">...(</span>dims<span class="op" style="color: #5E5E5E;
+font-style: inherit;">...(</span>Dimensions<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">)&gt;());</span></span>
-<span id="cb2-104">        <span class="op" style="color: #5E5E5E;
+font-style: inherit;">)&gt;</span> dimensions <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb2-105">    <span class="op" style="color: #5E5E5E;
+font-style: inherit;">{</span> Dimensions<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb2-106"><span class="op" style="color: #5E5E5E;
+font-style: inherit;">...</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span>
-<span id="cb2-107"></span>
-<span id="cb2-108"><span class="bu" style="color: null;
+<span id="cb6-29">        <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;"> </span>test<span class="op" style="color: #5E5E5E;
+font-style: inherit;"> </span>coeffs_size <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...(</span>Dimensions<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb6-30">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> coeffs <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> build_coeffs_array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Dimensions<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...&gt;();</span></span>
+<span id="cb6-31">                                                                                                       </span>
+<span id="cb6-32">        <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...(</span>indices<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)&gt;</span> indices_arr <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> indices<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb6-33">        <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//std::println("{}", indices_arr); </span></span>
+<span id="cb6-34">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>inner_product<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>coeffs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>begin<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(),</span> coeffs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>end<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(),</span> indices_arr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>begin<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(),</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span> </span>
+<span id="cb6-35">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb6-36"></span>
+<span id="cb6-37">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/*</span></span>
+<span id="cb6-38"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">    Suppose we have the dimensions &lt;3, 5, 2&gt; and the coordinates (1, 3, 1).</span></span>
+<span id="cb6-39"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">    (1, 3, 1) maps to the linear index 17. </span></span>
+<span id="cb6-40"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">    */</span></span>
+<span id="cb6-41"></span>
+<span id="cb6-42">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span> N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb6-43">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> build_coords_array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span>N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> coeffs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span> initState<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span> </span>
+<span id="cb6-44">        <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span> state <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> initState<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-45">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> coords<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb6-46">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">for</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span> i <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span> N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb6-47">            coords<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">static_cast</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;(</span>state <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span> coeffs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]);</span></span>
+<span id="cb6-48">            state <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-=</span> coords<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> coeffs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">];</span></span>
+<span id="cb6-49">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb6-50">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> coords<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-51">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb6-52"></span>
+<span id="cb6-53">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...</span> Dimensions<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb6-54">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">decltype</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> from_1d_index<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span><span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;"> </span>init<span class="op" style="color: #5E5E5E;
+font-style: inherit;"> </span>n<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">,</span> <span class="bu" style="color: null;
+font-style: inherit;">){</span></span>
+<span id="cb6-55">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;"> </span>select<span class="op" style="color: #5E5E5E;
+font-style: inherit;"> </span>coords_arr_size <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb2-109">    dev<span class="op" style="color: #5E5E5E;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">::</span>tools<span class="op" style="color: #5E5E5E;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">::</span>v2<span class="op" style="color: #5E5E5E;
+font-style: inherit;">...(</span>Dimensions<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">::</span>switcher <span class="va" style="color: #111111;
+font-style: inherit;">);</span></span>
+<span id="cb6-56">        <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">switch_</span><span class="op" style="color: #5E5E5E;
+font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> coeffs <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> build_coeffs_array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Dimensions<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...&gt;();</span></span>
+<span id="cb6-57">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> coords_arr_size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> coords <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> build_coords_array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>coeffs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> n<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb6-58">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> coords<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb6-59">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb6-60"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+</section>
+<section id="simpler-case-of-1-and-2-variants" class="level1">
+<h1>Simpler case of <img src="https://latex.codecogs.com/png.latex?1"> and <img src="https://latex.codecogs.com/png.latex?2"> variants</h1>
+<p>I strongly recommend creating a simpler version first, maybe hardcoded with two or three variants. So you can get an idea of the actual shape before making it variadic. Otherwise you’d be facing both problems at once.</p>
+<div class="sourceCode" id="cb7" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Simple case of 2 variants</span></span>
+<span id="cb7-2"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">namespace</span> dev<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb2-110">        <span class="bu" style="color: null;
+<span id="cb7-3"></span>
+<span id="cb7-4">    <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
+font-style: inherit;">namespace</span> example<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb7-5"></span>
+<span id="cb7-6">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> Dummy<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{};</span></span>
+<span id="cb7-7">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb7-8">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> Wrapper <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>conditional_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>is_void_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;,</span>Dummy<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;;</span></span>
+<span id="cb7-9"></span>
+<span id="cb7-10"></span>
+<span id="cb7-11">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> Visitor<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> Variant0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span> Variant1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb7-12">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">decltype</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> visit<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>Visitor<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;</span> visitor<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Variant0 v0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Variant1 v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb7-13">            <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;</span><span class="bu" style="color: null;
 background-color: null;
@@ -1728,60 +1771,516 @@ font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&gt;{},</span></span>
-<span id="cb2-111">        <span class="op" style="color: #5E5E5E;
+font-style: inherit;">&gt;</span> dimensions <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">[&amp;]&lt;</span><span class="bu" style="color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant_size_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Variant0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;,</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant_size_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Variant1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb7-14">            <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;"> </span>i<span class="op" style="color: #5E5E5E;
+font-style: inherit;"> </span>vtable_size <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant_size_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Variant0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant_size_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Variant1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;);</span></span>
+<span id="cb7-15">            <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">cases_t</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(*)(</span>Visitor<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Variant0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Variant1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb7-16">            <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">static</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> vtable <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb7-17">                <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...</span> Indices<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;(</span><span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
+font-style: inherit;">std::</span>index_sequence<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+font-style: inherit;">&lt;</span>Indices<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+font-style: inherit;">...&gt;){</span></span>
+<span id="cb7-18">                    <span class="cf" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">,</span> i<span class="op" style="color: #5E5E5E;
+font-style: inherit;">return</span> <span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">&gt;){</span> <span class="cf" style="color: #003B4F;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">return</span> init <span class="op" style="color: #5E5E5E;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">+</span> i<span class="op" style="color: #5E5E5E;
+font-style: inherit;">cases_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;{</span></span>
+<span id="cb7-19">                        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[](</span>Visitor vis<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Variant0 v0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Variant1 v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span> </span>
+<span id="cb7-20">                            <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> multi_idx <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> dev<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>tools<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>from_1d_index<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;(</span>Indices<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb7-21">                            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> vis<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>get<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>multi_idx<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]&gt;(</span>v0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">),</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>get<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>multi_idx<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]&gt;(</span>v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">));</span></span>
+<span id="cb7-22">                    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}...</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb7-23">                    </span>
+<span id="cb7-24">                <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>make_index_sequence<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>vtable_size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;())</span></span>
+<span id="cb7-25">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb7-26"></span>
+<span id="cb7-27">            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> vtable<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>dev<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>tools<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>to_1d_index<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;(</span>v0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>index<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(),</span> v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>index<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">())](</span>visitor<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> v0<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb7-28">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb7-29">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb7-30"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb7-31"></span>
+<span id="cb7-32"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">typename</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...</span> Callables<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb7-33"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">struct</span> Visitor <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">:</span> Callables<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...{</span></span>
+<span id="cb7-34">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">using</span> Callables<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">operator</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()...;</span></span>
+<span id="cb7-35"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb7-36"></span>
+<span id="cb7-37"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> test_single_dispatch<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb7-38">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb7-39"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb7-40"></span>
+<span id="cb7-41"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> test_double_dispatch<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb7-42">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb7-43">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> v2<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.14</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">f</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb7-44"></span>
+<span id="cb7-45">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> result <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> dev<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>example<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>visit<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span></span>
+<span id="cb7-46">        Visitor<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb7-47">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[](</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> {</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"(int, int)"</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb2-112">    <span class="op" style="color: #5E5E5E;
+font-style: inherit;">},</span></span>
+<span id="cb7-48">            <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb2-113">    <span class="cf" style="color: #003B4F;
+font-style: inherit;">[](</span><span class="dt" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">return</span> <span class="va" style="color: #111111;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">switch_</span><span class="op" style="color: #5E5E5E;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">(</span>select<span class="op" style="color: #5E5E5E;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> {</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"(int, float)"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">},</span></span>
+<span id="cb7-49">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[](</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> {</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"(float, int)"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">},</span></span>
+<span id="cb7-50">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[](</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> {</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"(float, float)"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">},</span></span>
+<span id="cb7-51">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">},</span></span>
+<span id="cb7-52">        v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> v2</span>
+<span id="cb7-53">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="cb2-114"><span class="op" style="color: #5E5E5E;
+<span id="cb7-54"></span>
+<span id="cb7-55">    <span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb2-115"></span>
-<span id="cb2-116"><span class="kw" style="color: #003B4F;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"result = "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> result <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb7-56"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+</section>
+<section id="generalizing-to-a-pack-of-variants." class="level1">
+<h1>Generalizing to a pack of variants.</h1>
+<p>The shape of a function inside the vtable_func array should be something like this:</p>
+<div class="sourceCode" id="cb8" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[](</span>Visitor<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;</span> vis<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Variants<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;...</span> var<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/* ... */</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div>
+<p>Internally you would invoke <code>vis</code> with <code>std::get&lt;Is&gt;(var)...</code>, where <code>Is...</code> would be an index sequence or constexpr array of the desired indices.</p>
+<div class="sourceCode" id="cb9" style="background: #f1f3f5;"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">namespace</span> dev<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="cb2-117">    <span class="kw" style="color: #003B4F;
+<span id="cb9-2">    <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+font-style: inherit;">template</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
 background-color: null;
@@ -1794,41 +2293,34 @@ background-color: null;
 font-style: inherit;">...</span> Variants<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;</span></span>
-<span id="cb2-118">    <span class="kw" style="color: #003B4F;
+<span id="cb9-3">    <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">auto</span> visit<span class="op" style="color: #5E5E5E;
+font-style: inherit;">decltype</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">(</span>Visitor<span class="op" style="color: #5E5E5E;
+font-style: inherit;">(</span><span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">&amp;&amp;</span> visitor<span class="op" style="color: #5E5E5E;
+font-style: inherit;">auto</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">,</span> Variants<span class="op" style="color: #5E5E5E;
+font-style: inherit;">)</span> visit<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&amp;&amp;...</span> variants<span class="op" style="color: #5E5E5E;
+font-style: inherit;">(</span>Visitor <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb2-119">        <span class="kw" style="color: #003B4F;
+font-style: inherit;">&amp;&amp;</span>visitor<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">using</span> c_math_array <span class="op" style="color: #5E5E5E;
+font-style: inherit;">,</span> Variants <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">=</span> tools<span class="op" style="color: #5E5E5E;
+font-style: inherit;">&amp;&amp;...</span>vs<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">::</span>math_array<span class="op" style="color: #5E5E5E;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>variant_size_v<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>Variants<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;...&gt;;</span></span>
-<span id="cb2-120">        <span class="kw" style="color: #003B4F;
+font-style: inherit;">{</span></span>
+<span id="cb9-4">        <span class="kw" style="color: #003B4F;
 background-color: null;
 font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;"> </span>num_cases <span class="op" style="color: #5E5E5E;
+font-style: inherit;"> </span>vtable_size <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1836,151 +2328,530 @@ font-style: inherit;">(</span><span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>variant_size_v<span class="op" style="color: #5E5E5E;
 background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>remove_cvref_t<span class="op" style="color: #5E5E5E;
+background-color: null;
 font-style: inherit;">&lt;</span>Variants<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&gt;</span> <span class="op" style="color: #5E5E5E;
+font-style: inherit;">&gt;&gt;</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">...);</span></span>
-<span id="cb2-121">        tools<span class="op" style="color: #5E5E5E;
+<span id="cb9-5"></span>
+<span id="cb9-6">        <span class="co" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">::</span>v2<span class="op" style="color: #5E5E5E;
+font-style: inherit;">// Each entry in the vtable should have the shape [](Visitor visitor, Variants... vs){}</span></span>
+<span id="cb9-7">        <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">::</span>switcher switcher<span class="op" style="color: #5E5E5E;
+font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb2-122">            <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> num_cases<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;{},</span></span>
-<span id="cb2-123">            <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[&amp;]&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;"> </span><span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">case_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>integral_constant<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="va" style="color: #111111;
-background-color: null;
-font-style: inherit;">case_</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;){</span></span>
-<span id="cb2-124">                <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-style: inherit;">auto</span> seq <span class="op" style="color: #5E5E5E;
+font-style: inherit;">result_t</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">typename</span> c_math_array<span class="op" style="color: #5E5E5E;
+font-style: inherit;">decltype</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">::</span><span class="kw" style="color: #003B4F;
+font-style: inherit;">(</span>visitor<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">template</span> to_multi_idx_sequence<span class="op" style="color: #5E5E5E;
+font-style: inherit;">(</span><span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">&lt;</span><span class="va" style="color: #111111;
+font-style: inherit;">std::</span>get<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">case_</span><span class="op" style="color: #5E5E5E;
+font-style: inherit;">&lt;</span><span class="dv" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">&gt;();</span></span>
-<span id="cb2-125">                <span class="cf" style="color: #003B4F;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
+font-style: inherit;">&gt;(</span>vs<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">[&amp;]&lt;</span><span class="bu" style="color: null;
+font-style: inherit;">)...));</span></span>
+<span id="cb9-8">        <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
+font-style: inherit;">using</span> <span class="dt" style="color: #AD0000;
 background-color: null;
-font-style: inherit;">...</span> idxs<span class="op" style="color: #5E5E5E;
+font-style: inherit;">cases_t</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">result_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(*)(</span>Visitor<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Variants<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...);</span></span>
+<span id="cb9-9"></span>
+<span id="cb9-10">        <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">static</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> vtable<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb9-11">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[]&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...</span> Indices<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&gt;(</span><span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>index_sequence<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&lt;</span>idxs<span class="op" style="color: #5E5E5E;
+font-style: inherit;">&lt;</span>Indices<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">...&gt;){</span></span>
-<span id="cb2-126">                    <span class="cf" style="color: #003B4F;
+<span id="cb9-12">                <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">return</span> <span class="bu" style="color: null;
+font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">std::</span>forward<span class="op" style="color: #5E5E5E;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&lt;</span>Visitor<span class="op" style="color: #5E5E5E;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">&gt;(</span>visitor<span class="op" style="color: #5E5E5E;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">)(</span><span class="bu" style="color: null;
+font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">std::</span>get<span class="op" style="color: #5E5E5E;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&lt;</span>idxs<span class="op" style="color: #5E5E5E;
+font-style: inherit;">...(</span>Variants<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&gt;(</span><span class="bu" style="color: null;
+font-style: inherit;">)&gt;</span> dimensions <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">std::</span>forward<span class="op" style="color: #5E5E5E;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant_size_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>remove_cvref_t<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;</span>Variants<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">&gt;(</span>variants<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">).</span>data<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)...);</span></span>
-<span id="cb2-127">                <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}(</span>seq<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb2-128">            <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb2-129">        <span class="op" style="color: #5E5E5E;
+font-style: inherit;">&gt;&gt;...</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">};</span></span>
-<span id="cb2-130"></span>
-<span id="cb2-131">        <span class="kw" style="color: #003B4F;
+<span id="cb9-13">                <span class="kw" style="color: #003B4F;
 background-color: null;
-font-style: inherit;">auto</span> idx <span class="op" style="color: #5E5E5E;
+font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
 background-color: null;
-font-style: inherit;">=</span> c_math_array<span class="op" style="color: #5E5E5E;
+font-style: inherit;">std::</span>size_t<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">::</span>to_linear_idx<span class="op" style="color: #5E5E5E;
+font-style: inherit;"> </span>vtable_size <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">({</span>variants<span class="op" style="color: #5E5E5E;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant_size_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>remove_cvref_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Variants<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;&gt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...);</span></span>
+<span id="cb9-14">                <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">cases_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> vtable_size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;{</span></span>
+<span id="cb9-15">                    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[](</span>Visitor vis<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> Variants<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...</span> vs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">result_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb9-16">                        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> multi_idx <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> dev<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>tools<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>from_1d_index<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant_size_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>remove_cvref_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Variants<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;&gt;...&gt;(</span>Indices<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb9-17">                        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[&amp;]&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">size_t</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...</span> Is<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>index_sequence<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Is<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...&gt;){</span></span>
+<span id="cb9-18">                            <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> vis<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">((</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">static_cast</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant_alternative_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Is<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>remove_cvref_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Variants<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;&gt;&gt;(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>get<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>multi_idx<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>Is<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]&gt;(</span>vs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)))...);</span></span>
+<span id="cb9-19">                        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>make_index_sequence<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...(</span>Variants<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)&gt;());</span></span>
+<span id="cb9-20">                    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}...</span></span>
+<span id="cb9-21">                <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb9-22">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>make_index_sequence<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>vtable_size<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;())</span></span>
+<span id="cb9-23">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb9-24"></span>
+<span id="cb9-25">        <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> i <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> dev<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>tools<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>to_1d_index<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant_size_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>remove_cvref_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Variants<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;&gt;...&gt;(</span>vs<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">.</span>index<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">...});</span></span>
-<span id="cb2-132">    <span class="op" style="color: #5E5E5E;
+font-style: inherit;">()...);</span></span>
+<span id="cb9-26">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> vtable<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">](</span>visitor<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> vs<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">...</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb9-27">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="cb2-133"><span class="op" style="color: #5E5E5E;
+<span id="cb9-28"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb9-29"></span>
+<span id="cb9-30"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> test_multiple_dispatch<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb9-31">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb9-32">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>variant<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> v2<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.14</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">f</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb9-33">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//std::variant&lt;char, int, long, float, double&gt; v3{'H'};</span></span>
+<span id="cb9-34"></span>
+<span id="cb9-35">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">auto</span> result <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> dev<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span>visit<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span></span>
+<span id="cb9-36">        Visitor<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb9-37">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[](</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> {</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"(int, int)"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">},</span></span>
+<span id="cb9-38">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[](</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> {</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"(int, float)"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">},</span></span>
+<span id="cb9-39">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[](</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> {</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"(int, double)"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">},</span></span>
+<span id="cb9-40">            <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[](</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>string<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> {</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-style: inherit;">return</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"(float, int)"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb9-41">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">},</span></span>
+<span id="cb9-42">        v1<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> v2</span>
+<span id="cb9-43">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb9-44"></span>
+<span id="cb9-45">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"> &lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"result = "</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> result <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">\n</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb9-46"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span></code></pre></div>
-<p><a href="https://compiler-explorer.com/z/n5G14eErM">Compiler Explorer</a></p>
+<p><a href="https://godbolt.org/z/z5q6s7nrr">Compiler Explorer</a></p>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li><a href="https://www.youtube.com/watch?v=3KyW5Ve3LtI">Implementing <code>variant</code> visitation using lambdas</a>, CppCon 2017 talk by Vittorio Romeo.</li>
+</ul>
 
 
+</section>
 </section>
 
  ]]></description>
