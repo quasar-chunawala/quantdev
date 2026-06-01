@@ -2,15 +2,18 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.3.450">
+<meta name="generator" content="quarto-1.9.38">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Quasar">
 <meta name="dcterms.date" content="2026-04-10">
 
-<title>quantdev.blog - Implementing std::variant</title>
+<title>Implementing std::variant – quantdev.blog</title>
 <style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
 div.columns{display: flex; gap: min(4vw, 1.5em);}
@@ -23,6 +26,7 @@ ul.task-list li input[type="checkbox"] {
   vertical-align: middle;
 }
 /* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
 pre > code.sourceCode { white-space: pre; position: relative; }
 pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
 pre > code.sourceCode > span:empty { height: 1.2em; }
@@ -66,22 +70,29 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../../">
-<script src="../../site_libs/quarto-html/quarto.js"></script>
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
 <script src="../../site_libs/quarto-html/popper.min.js"></script>
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-ef8630c75214529eed09027b2888cfba.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-f0a9f70b6069f6f73928b9c73b46e068.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
   "collapse-after": 3,
   "panel-placement": "end",
   "type": "overlay",
-  "limit": 20,
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
   "language": {
     "search-no-results-text": "No results",
     "search-matching-documents-text": "matching documents",
@@ -90,6 +101,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     "search-more-match-text": "more match in this document",
     "search-more-matches-text": "more matches in this document",
     "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
     "search-detached-cancel-button-title": "Cancel",
     "search-submit-button-title": "Submit",
     "search-label": "Search"
@@ -106,48 +118,76 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 <script async="" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9993009899870547" crossorigin="anonymous"></script>
 
-  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 <link rel="stylesheet" href="../../styles.css">
 </head>
 
-<body class="nav-fixed">
+<body class="nav-fixed quarto-light">
 
 <div id="quarto-search-results"></div>
-  <header id="quarto-header" class="headroom fixed-top">
-    <nav class="navbar navbar-expand-lg navbar-dark ">
+  <header id="quarto-header" class="headroom fixed-top quarto-banner">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
-      <div class="navbar-brand-container">
+      <div class="navbar-brand-container mx-auto">
     <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../.././symbol.svg" alt="" class="navbar-logo">
+    <img src="../.././symbol.svg" alt="" class="navbar-logo light-content">
+    <img src="../.././symbol.svg" alt="" class="navbar-logo dark-content">
     </a>
     <a class="navbar-brand" href="../../index.html">
     <span class="navbar-title">quantdev.blog</span>
     </a>
   </div>
             <div id="quarto-search" class="" title="Search"></div>
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
   <span class="navbar-toggler-icon"></span>
 </button>
           <div class="collapse navbar-collapse" id="navbarCollapse">
             <ul class="navbar-nav navbar-nav-scroll ms-auto">
   <li class="nav-item">
-    <a class="nav-link" href="../../newsletter.html" rel="" target="">
- <span class="menu-text">Newsletter</span></a>
+    <a class="nav-link" href="../../newsletter.html"> 
+<span class="menu-text">Newsletter</span></a>
   </li>  
   <li class="nav-item">
-    <a class="nav-link" href="../../sell_side_quant_critical_path.html" rel="" target="">
- <span class="menu-text">Sell-side Quant</span></a>
+    <a class="nav-link" href="../../sell_side_quant_critical_path.html"> 
+<span class="menu-text">Sell-side Quant</span></a>
   </li>  
   <li class="nav-item">
-    <a class="nav-link" href="../../roadmap.html" rel="" target="">
- <span class="menu-text">C++ Roadmap</span></a>
+    <a class="nav-link" href="../../roadmap.html"> 
+<span class="menu-text">C++ Roadmap</span></a>
   </li>  
 </ul>
+          </div> <!-- /navcollapse -->
             <div class="quarto-navbar-tools">
 </div>
-          </div> <!-- /navcollapse -->
       </div> <!-- /container-fluid -->
     </nav>
 </header>
@@ -226,16 +266,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 
+
 <section id="introduction" class="level1">
 <h1>Introduction</h1>
 <p>C unions are simple and crude. You don’t have a way to know what’s the currently active type. The destructor is implicitly deleted, and if the user supplies a destructor, we don’t know which underlying type should be destroyed.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
 <span id="cb1-2"><a href="#cb1-2"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
 <span id="cb1-3"><a href="#cb1-3"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
 <span id="cb1-4"><a href="#cb1-4"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
 <span id="cb1-5"><a href="#cb1-5"></a></span>
 <span id="cb1-6"><a href="#cb1-6"></a><span class="kw">union</span> S<span class="op">{</span></span>
-<span id="cb1-7"><a href="#cb1-7"></a>    <span class="bu">std::</span>string<span class="op"> </span>str<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7"></a>    <span class="bu">std::</span>string str<span class="op">;</span></span>
 <span id="cb1-8"><a href="#cb1-8"></a>    <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;</span> vec<span class="op">;</span></span>
 <span id="cb1-9"><a href="#cb1-9"></a>    <span class="op">~</span>S<span class="op">(){}</span>  <span class="co">// what to delete?</span></span>
 <span id="cb1-10"><a href="#cb1-10"></a><span class="op">};</span></span>
@@ -255,7 +296,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-24"><a href="#cb1-24"></a></span>
 <span id="cb1-25"><a href="#cb1-25"></a>    <span class="co">// another destructor</span></span>
 <span id="cb1-26"><a href="#cb1-26"></a>    s<span class="op">.</span>vec<span class="op">.~</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;();</span></span>
-<span id="cb1-27"><a href="#cb1-27"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-27"><a href="#cb1-27"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><a href="https://compiler-explorer.com/z/WeMMfjh9n">Compiler Explorer</a></p>
 <p>As you see, the <code>S</code> union needs a lot of maintenance from our side. We have to know, which type is active and call appropriate constructors/destructors before switching to a new type.</p>
 </section>
@@ -263,28 +304,28 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h1><code>std::variant</code> usage</h1>
 <p>The <code>std::variant</code> template is essentially a <strong>smart union</strong>. <code>std::variant&lt;T1, T2, T3&gt;</code> is similar to <code>union{T1 v1; T2 v2; T3 v3}</code> in that both can store a value of one of the specified types and only one value can be stored at a time. The key difference is that a variant objects knows which type it contains, while with a union the programmer is wholly responsible for reading the same type as what was written earlier. It is undefined behavior to access a union as a type that differs from the one used to initialize it:</p>
 <p>In contrast <code>std::variant</code> offers a safe way to store values of different types in the same memory. It is easy to check at runtime which alternative type is currently stored in the vartiant, and accessing a variant as the wrong type throws an exception.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">double</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;</span> v<span class="op">;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="dt">double</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;</span> v<span class="op">;</span></span>
 <span id="cb2-2"><a href="#cb2-2"></a>v <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb2-3"><a href="#cb2-3"></a><span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> v<span class="op">.</span>index<span class="op">();</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a><span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> v<span class="op">.</span>index<span class="op">();</span></span>
 <span id="cb2-4"><a href="#cb2-4"></a><span class="op">++</span><span class="bu">std::</span>get<span class="op">&lt;</span><span class="dv">0</span><span class="op">&gt;(</span>v<span class="op">);</span></span>
-<span id="cb2-5"><a href="#cb2-5"></a><span class="co">// std::get&lt;1&gt;(v);  //throws std::bad_variant_access</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb2-5"><a href="#cb2-5"></a><span class="co">// std::get&lt;1&gt;(v);  //throws std::bad_variant_access</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>In many ways, <code>std::variant</code> offers capabilities similar to inheritance-based run-timne polymorphism: both let us write code where the same variable name can refer to objects of different types at run-time. The two major differences are: first, a <code>std::variant</code> does not require that all its types come from the same hierarchy(they need not be classes at all) and second, a variant object can only store one of the types listed in its declaration, while a base class pointer can point to any derived class.</p>
 <p>Visitors are objects that are used to implement the Visitor design pattern. Typically, they are used to add an operation to all classes in a class hierarchy, that is the equivalent of adding a virtual function, but without modifying the classes themselves. When a visitor object visits a variant, they invoke the best matching function call operator for the actual value of the variant.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
 <span id="cb3-2"><a href="#cb3-2"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
 <span id="cb3-3"><a href="#cb3-3"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
 <span id="cb3-4"><a href="#cb3-4"></a></span>
 <span id="cb3-5"><a href="#cb3-5"></a><span class="kw">struct</span> MyVisitor<span class="op">{</span></span>
 <span id="cb3-6"><a href="#cb3-6"></a>    <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span><span class="dt">int</span> i<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
-<span id="cb3-7"><a href="#cb3-7"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"int: "</span> <span class="op">&lt;&lt;</span> i <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"int: "</span> <span class="op">&lt;&lt;</span> i <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
 <span id="cb3-8"><a href="#cb3-8"></a>    <span class="op">}</span></span>
 <span id="cb3-9"><a href="#cb3-9"></a></span>
-<span id="cb3-10"><a href="#cb3-10"></a>    <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span><span class="bu">std::</span>string<span class="op"> </span>s<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
-<span id="cb3-11"><a href="#cb3-11"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"string: "</span> <span class="op">&lt;&lt;</span> s <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span> </span>
+<span id="cb3-10"><a href="#cb3-10"></a>    <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span><span class="bu">std::</span>string s<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb3-11"><a href="#cb3-11"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"string: "</span> <span class="op">&lt;&lt;</span> s <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span> </span>
 <span id="cb3-12"><a href="#cb3-12"></a>    <span class="op">}</span></span>
 <span id="cb3-13"><a href="#cb3-13"></a></span>
 <span id="cb3-14"><a href="#cb3-14"></a>    <span class="dt">void</span> <span class="kw">operator</span><span class="op">()(</span><span class="dt">double</span> d<span class="op">)</span> <span class="at">const</span><span class="op">{</span></span>
-<span id="cb3-15"><a href="#cb3-15"></a>        <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"double: "</span> <span class="op">&lt;&lt;</span> d <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
+<span id="cb3-15"><a href="#cb3-15"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"double: "</span> <span class="op">&lt;&lt;</span> d <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span><span class="op">;</span></span>
 <span id="cb3-16"><a href="#cb3-16"></a>    <span class="op">}</span></span>
 <span id="cb3-17"><a href="#cb3-17"></a><span class="op">};</span></span>
 <span id="cb3-18"><a href="#cb3-18"></a></span>
@@ -298,17 +339,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb3-26"><a href="#cb3-26"></a>    var <span class="op">=</span> <span class="fl">3.14</span><span class="op">;</span></span>
 <span id="cb3-27"><a href="#cb3-27"></a>    <span class="bu">std::</span>visit<span class="op">(</span>MyVisitor<span class="op">(),</span> var<span class="op">);</span>   <span class="co">// calls operator()(double)</span></span>
 <span id="cb3-28"><a href="#cb3-28"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb3-29"><a href="#cb3-29"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb3-29"><a href="#cb3-29"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><a href="https://compiler-explorer.com/z/Tzn53YT76">Compiler Explorer</a></p>
 </section>
 <section id="using-generic-lambdas-as-visitors" class="level1">
 <h1>Using generic lambdas as visitors</h1>
-<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
 <span id="cb4-2"><a href="#cb4-2"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
 <span id="cb4-3"><a href="#cb4-3"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
 <span id="cb4-4"><a href="#cb4-4"></a></span>
 <span id="cb4-5"><a href="#cb4-5"></a><span class="kw">auto</span> printVisitor<span class="op">()</span> <span class="op">=</span> <span class="op">[](</span><span class="at">const</span> <span class="kw">auto</span><span class="op">&amp;</span> v<span class="op">){</span></span>
-<span id="cb4-6"><a href="#cb4-6"></a>    <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> v<span class="op">;</span></span>
+<span id="cb4-6"><a href="#cb4-6"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> v<span class="op">;</span></span>
 <span id="cb4-7"><a href="#cb4-7"></a><span class="op">};</span></span>
 <span id="cb4-8"><a href="#cb4-8"></a></span>
 <span id="cb4-9"><a href="#cb4-9"></a><span class="dt">int</span> main<span class="op">(){</span></span>
@@ -319,11 +360,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb4-14"><a href="#cb4-14"></a>    var <span class="op">=</span> <span class="fl">42.7</span><span class="op">;</span></span>
 <span id="cb4-15"><a href="#cb4-15"></a>    <span class="bu">std::</span>visit<span class="op">(</span>printVisitor<span class="op">,</span> var<span class="op">);</span></span>
 <span id="cb4-16"><a href="#cb4-16"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb4-17"><a href="#cb4-17"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb4-17"><a href="#cb4-17"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="the-cracked-mans-match" class="level1">
 <h1>The cracked-man’s match</h1>
-<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
 <span id="cb5-2"><a href="#cb5-2"></a><span class="kw">struct</span> overload <span class="op">:</span> Ts<span class="op">...</span> <span class="op">{</span></span>
 <span id="cb5-3"><a href="#cb5-3"></a>    <span class="kw">using</span> Ts<span class="op">::</span><span class="kw">operator</span><span class="op">()...;</span></span>
 <span id="cb5-4"><a href="#cb5-4"></a><span class="op">};</span></span>
@@ -335,17 +376,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb5-10"><a href="#cb5-10"></a><span class="dt">int</span> main<span class="op">(){</span></span>
 <span id="cb5-11"><a href="#cb5-11"></a>    <span class="bu">std::</span>variant<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">&gt;</span> var<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
 <span id="cb5-12"><a href="#cb5-12"></a>    <span class="bu">std::</span>visit<span class="op">(</span>overload<span class="op">{</span></span>
-<span id="cb5-13"><a href="#cb5-13"></a>        <span class="op">[](</span><span class="dt">int</span> i<span class="op">){</span> <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"int : "</span> <span class="op">&lt;&lt;</span> i<span class="op">;</span> <span class="op">},</span></span>
-<span id="cb5-14"><a href="#cb5-14"></a>        <span class="op">[](</span><span class="bu">std::</span>string<span class="op"> </span>s<span class="op">){</span> <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"string : "</span> <span class="op">&lt;&lt;</span> s<span class="op">;</span> <span class="op">}</span></span>
-<span id="cb5-15"><a href="#cb5-15"></a>        <span class="op">[](</span><span class="dt">double</span> d<span class="op">){</span> <span class="bu">std::</span>cout<span class="op"> &lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"double : "</span> <span class="op">&lt;&lt;</span> d<span class="op">;</span> <span class="op">}</span></span>
+<span id="cb5-13"><a href="#cb5-13"></a>        <span class="op">[](</span><span class="dt">int</span> i<span class="op">){</span> <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"int : "</span> <span class="op">&lt;&lt;</span> i<span class="op">;</span> <span class="op">},</span></span>
+<span id="cb5-14"><a href="#cb5-14"></a>        <span class="op">[](</span><span class="bu">std::</span>string s<span class="op">){</span> <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"string : "</span> <span class="op">&lt;&lt;</span> s<span class="op">;</span> <span class="op">}</span></span>
+<span id="cb5-15"><a href="#cb5-15"></a>        <span class="op">[](</span><span class="dt">double</span> d<span class="op">){</span> <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span> <span class="op">&lt;&lt;</span> <span class="st">"double : "</span> <span class="op">&lt;&lt;</span> d<span class="op">;</span> <span class="op">}</span></span>
 <span id="cb5-16"><a href="#cb5-16"></a>    <span class="op">},</span> var<span class="op">);</span></span>
-<span id="cb5-17"><a href="#cb5-17"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb5-17"><a href="#cb5-17"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Since the struct <code>overload</code> inherits from the closure types (<code>__my_lambda_with_int_param_struct</code> and <code>__my_lambda_with_string_param_struct</code>), we need to bring their function call operators in scope.</p>
 <section id="multiple-dispatch" class="level2">
 <h2 class="anchored" data-anchor-id="multiple-dispatch">Multiple Dispatch</h2>
 <p>As mentioned before, the killer feature of <code>std::variant</code> is multiple dispatch. Here is a common interview problem. Imagine you have an excel spreadsheet, and a spreadsheet has cells. By definition, in a cell, you can have either an <code>int</code> or a <code>string</code>. And then, there’s an operation defined like plus <code>operator+()</code>. For example, you can add two numbers. Adding two strings results in concatentation. <code>string</code> + <code>int</code> : you convert into <code>int</code> to <code>string</code> and concatenate. And <code>int</code> + <code>string</code> : you throw an error. This interview problem is much easier to solve, if you have a <code>variant</code>.</p>
 <p>Here, you have to select an overload not based on just one type (like in virtual functions), but on two types or in general <span class="math inline">\(N\)</span> types.</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
 <span id="cb6-2"><a href="#cb6-2"></a><span class="pp">#include </span><span class="im">&lt;variant&gt;</span></span>
 <span id="cb6-3"><a href="#cb6-3"></a><span class="pp">#include </span><span class="im">&lt;stdexcept&gt;</span></span>
 <span id="cb6-4"><a href="#cb6-4"></a></span>
@@ -364,23 +405,23 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb6-17"><a href="#cb6-17"></a>    Cell<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">+=(</span>Cell<span class="op">&amp;</span> other<span class="op">){</span></span>
 <span id="cb6-18"><a href="#cb6-18"></a>        <span class="bu">std::</span>visit<span class="op">(</span>overloaded<span class="op">{</span></span>
 <span id="cb6-19"><a href="#cb6-19"></a>            <span class="op">[](</span><span class="dt">int</span> a<span class="op">,</span> <span class="dt">int</span> b<span class="op">){</span> a <span class="op">+=</span> b<span class="op">;</span> <span class="op">},</span></span>
-<span id="cb6-20"><a href="#cb6-20"></a>            <span class="op">[](</span><span class="bu">std::</span>string<span class="op"> </span>a<span class="op">,</span> <span class="dt">int</span> b<span class="op">){</span> a <span class="op">+=</span> <span class="bu">std::</span>to_string<span class="op">(</span>b<span class="op">);</span> <span class="op">},</span></span>
-<span id="cb6-21"><a href="#cb6-21"></a>            <span class="op">[](</span><span class="dt">int</span> a<span class="op">,</span> <span class="bu">std::</span>string<span class="op"> </span>b<span class="op">){</span> <span class="cf">throw</span> <span class="bu">std::</span>runtime_error<span class="op">(</span><span class="st">"Invalid inputs!"</span><span class="op">);</span> <span class="op">},</span></span>
-<span id="cb6-22"><a href="#cb6-22"></a>            <span class="op">[](</span><span class="bu">std::</span>string<span class="op"> </span>a<span class="op">,</span> <span class="bu">std::</span>string<span class="op"> </span>b<span class="op">){</span> a <span class="op">+=</span> b<span class="op">;</span> <span class="op">}</span></span>
+<span id="cb6-20"><a href="#cb6-20"></a>            <span class="op">[](</span><span class="bu">std::</span>string a<span class="op">,</span> <span class="dt">int</span> b<span class="op">){</span> a <span class="op">+=</span> <span class="bu">std::</span>to_string<span class="op">(</span>b<span class="op">);</span> <span class="op">},</span></span>
+<span id="cb6-21"><a href="#cb6-21"></a>            <span class="op">[](</span><span class="dt">int</span> a<span class="op">,</span> <span class="bu">std::</span>string b<span class="op">){</span> <span class="cf">throw</span> <span class="bu">std::</span>runtime_error<span class="op">(</span><span class="st">"Invalid inputs!"</span><span class="op">);</span> <span class="op">},</span></span>
+<span id="cb6-22"><a href="#cb6-22"></a>            <span class="op">[](</span><span class="bu">std::</span>string a<span class="op">,</span> <span class="bu">std::</span>string b<span class="op">){</span> a <span class="op">+=</span> b<span class="op">;</span> <span class="op">}</span></span>
 <span id="cb6-23"><a href="#cb6-23"></a>        <span class="op">},</span> data<span class="op">,</span> other<span class="op">.</span>data<span class="op">);</span></span>
 <span id="cb6-24"><a href="#cb6-24"></a></span>
 <span id="cb6-25"><a href="#cb6-25"></a>        <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
 <span id="cb6-26"><a href="#cb6-26"></a>    <span class="op">}</span></span>
 <span id="cb6-27"><a href="#cb6-27"></a><span class="op">};</span></span>
 <span id="cb6-28"><a href="#cb6-28"></a></span>
-<span id="cb6-29"><a href="#cb6-29"></a><span class="dt">int</span> main<span class="op">(){}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb6-29"><a href="#cb6-29"></a><span class="dt">int</span> main<span class="op">(){}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><a href="https://compiler-explorer.com/z/qqKTK99dE">Compiler Explorer</a></p>
 <p><code>std::visit()</code> is a way to dispatch on a variant. It does multiple dispatch - based on my own <code>self</code> Cell type and the <code>other</code> Cell type.</p>
 </section>
 </section>
 <section id="what-is-a-stdvariant-under-the-hood" class="level1">
 <h1>What is a <code>std::variant</code> under the hood?</h1>
-<div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="co">// Pseudo-code</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="co">// Pseudo-code</span></span>
 <span id="cb7-2"><a href="#cb7-2"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb7-3"><a href="#cb7-3"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
 <span id="cb7-4"><a href="#cb7-4"></a>    <span class="kw">struct</span> variant<span class="op">{</span></span>
@@ -399,7 +440,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb7-17"><a href="#cb7-17"></a>            <span class="cf">case</span> <span class="dv">1</span><span class="op">:</span></span>
 <span id="cb7-18"><a href="#cb7-18"></a>                visitor<span class="op">.</span>visit<span class="op">(</span>get<span class="op">&lt;</span><span class="dv">1</span><span class="op">&gt;(</span>args<span class="op">)...);</span></span>
 <span id="cb7-19"><a href="#cb7-19"></a>    <span class="op">}</span></span>
-<span id="cb7-20"><a href="#cb7-20"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb7-20"><a href="#cb7-20"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Under the hood, a <code>std::variant</code> is a union of all of the possible alternatives. It has an active index. And then, in <code>visit</code> there is some sort of <code>switch</code> statement, between all of the possible types. And we’re going to implement all of these components.</p>
 </section>
 <section id="tmp-utilities" class="level1">
@@ -407,7 +448,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>We are going to start with just a bunch of template metaprogramming utilities.</p>
 <section id="find_index_of_v" class="level2">
 <h2 class="anchored" data-anchor-id="find_index_of_v"><code>find_index_of_v</code></h2>
-<div class="sourceCode" id="cb8"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
 <span id="cb8-2"><a href="#cb8-2"></a><span class="pp">#include </span><span class="im">&lt;concepts&gt;</span></span>
 <span id="cb8-3"><a href="#cb8-3"></a><span class="pp">#include </span><span class="im">&lt;initializer_list&gt;</span></span>
 <span id="cb8-4"><a href="#cb8-4"></a><span class="pp">#include </span><span class="im">&lt;string&gt;</span></span>
@@ -456,30 +497,30 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb8-47"><a href="#cb8-47"></a><span class="kw">static_assert</span><span class="op">(</span>dev<span class="op">::</span>tools<span class="op">::</span>exists<span class="op">&lt;</span><span class="dt">double</span><span class="op">,</span> <span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="bu">std::</span>string<span class="op">,</span> <span class="dt">double</span><span class="op">&gt;);</span></span>
 <span id="cb8-48"><a href="#cb8-48"></a><span class="kw">static_assert</span><span class="op">(!</span>dev<span class="op">::</span>tools<span class="op">::</span>exists<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">,</span> <span class="dt">int</span><span class="op">,</span> <span class="dt">float</span><span class="op">&gt;);</span></span>
 <span id="cb8-49"><a href="#cb8-49"></a></span>
-<span id="cb8-50"><a href="#cb8-50"></a><span class="dt">int</span> main<span class="op">(){}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb8-50"><a href="#cb8-50"></a><span class="dt">int</span> main<span class="op">(){}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><a href="https://compiler-explorer.com/z/5rbM5cd48">Compiler Explorer</a></p>
 </section>
 <section id="uint_atleast_t" class="level2">
 <h2 class="anchored" data-anchor-id="uint_atleast_t"><code>uint_atleast_t</code></h2>
 <p>The next utility we are going to write is <code>uint_atleast_t</code>. I want to represent a number and I want to use the smallest <code>unsigned int</code> possible to store this number. For a <code>100</code>, <code>uint8_t</code> will be enough. For <code>256</code>, I already need <code>uint16_t</code>.</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1"></a><span class="pp">#include </span><span class="im">&lt;cstdint&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1"></a><span class="pp">#include </span><span class="im">&lt;cstdint&gt;</span></span>
 <span id="cb9-2"><a href="#cb9-2"></a><span class="co">// -------------- tests ------------</span></span>
 <span id="cb9-3"><a href="#cb9-3"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>same_as<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">,</span>dev<span class="op">::</span>tools<span class="op">::</span>uint_atleast<span class="op">&lt;</span><span class="dv">100</span><span class="op">&gt;&gt;);</span></span>
 <span id="cb9-4"><a href="#cb9-4"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>same_as<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">,</span>dev<span class="op">::</span>tools<span class="op">::</span>uint_atleast<span class="op">&lt;</span><span class="dv">255</span><span class="op">&gt;&gt;);</span></span>
 <span id="cb9-5"><a href="#cb9-5"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>same_as<span class="op">&lt;</span><span class="dt">uint16_t</span><span class="op">,</span>dev<span class="op">::</span>tools<span class="op">::</span>uint_atleast<span class="op">&lt;</span><span class="dv">256</span><span class="op">&gt;&gt;);</span></span>
 <span id="cb9-6"><a href="#cb9-6"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>same_as<span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">,</span>dev<span class="op">::</span>tools<span class="op">::</span>uint_atleast<span class="op">&lt;</span><span class="bu">std::</span>numeric_limits<span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">&gt;&gt;&gt;);</span></span>
-<span id="cb9-7"><a href="#cb9-7"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>same_as<span class="op">&lt;</span><span class="dt">uint64_t</span><span class="op">,</span>dev<span class="op">::</span>tools<span class="op">::</span>uint_atleast<span class="op">&lt;</span><span class="dv">5'000'000'000</span><span class="op">&gt;&gt;);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb9-7"><a href="#cb9-7"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>same_as<span class="op">&lt;</span><span class="dt">uint64_t</span><span class="op">,</span>dev<span class="op">::</span>tools<span class="op">::</span>uint_atleast<span class="op">&lt;</span><span class="dv">5'000'000'000</span><span class="op">&gt;&gt;);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>We define <code>uint_atleast_t</code> as the type returned by the function <code>uint_atleast_impl()</code>.</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb10-2"><a href="#cb10-2"></a></span>
 <span id="cb10-3"><a href="#cb10-3"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
 <span id="cb10-4"><a href="#cb10-4"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> max<span class="op">&gt;</span></span>
 <span id="cb10-5"><a href="#cb10-5"></a>    <span class="kw">using</span> <span class="dt">uint_atleast_t</span> <span class="op">=</span> <span class="kw">decltype</span><span class="op">(</span>int_utils<span class="op">::</span>uint_atleast_impl<span class="op">&lt;</span>max<span class="op">&gt;());</span></span>
 <span id="cb10-6"><a href="#cb10-6"></a><span class="op">}</span></span>
 <span id="cb10-7"><a href="#cb10-7"></a></span>
-<span id="cb10-8"><a href="#cb10-8"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb10-8"><a href="#cb10-8"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The implementation is very easy - we just define a <code>constexpr</code> table. If you see, I am just checking conditions one after the other, in a fallthrough.</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1"></a><span class="pp">#include </span><span class="im">&lt;cstdint&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1"></a><span class="pp">#include </span><span class="im">&lt;cstdint&gt;</span></span>
 <span id="cb11-2"><a href="#cb11-2"></a></span>
 <span id="cb11-3"><a href="#cb11-3"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb11-4"><a href="#cb11-4"></a></span>
@@ -508,14 +549,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb11-27"><a href="#cb11-27"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">,</span> dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">uint_atleast_t</span><span class="op">&lt;</span><span class="dv">255</span><span class="op">&gt;&gt;);</span></span>
 <span id="cb11-28"><a href="#cb11-28"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">uint16_t</span><span class="op">,</span> dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">uint_atleast_t</span><span class="op">&lt;</span><span class="dv">256</span><span class="op">&gt;&gt;);</span></span>
 <span id="cb11-29"><a href="#cb11-29"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">,</span> dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">uint_atleast_t</span><span class="op">&lt;</span><span class="bu">std::</span>numeric_limits<span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">&gt;&gt;&gt;);</span></span>
-<span id="cb11-30"><a href="#cb11-30"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">uint64_t</span><span class="op">,</span> dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">uint_atleast_t</span><span class="op">&lt;</span><span class="dv">5'000'000'000</span><span class="op">&gt;&gt;);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb11-30"><a href="#cb11-30"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span><span class="dt">uint64_t</span><span class="op">,</span> dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">uint_atleast_t</span><span class="op">&lt;</span><span class="dv">5'000'000'000</span><span class="op">&gt;&gt;);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><a href="https://compiler-explorer.com/z/rxfdaqrdE">Compiler Explorer</a></p>
 </section>
 <section id="get_nth_type" class="level2">
 <h2 class="anchored" data-anchor-id="get_nth_type"><code>get_nth_type</code></h2>
 <p>Writing a good <code>get_nth_type</code> implementation is a surprisingly difficult problem. There is an excellent CppCon talk by <a href="https://www.youtube.com/watch?v=MLmDm1XFhEM">Kris Jusiak</a> on this, called the <code>nth_element</code> case study, where he talks specifically about this problem - how to get the <code>n</code>th type from a pack. This problem is not trivial to solve in optimal compile-time.</p>
 <p>What we do is, to create a <code>constexpr</code> table. We are going to unroll the first <code>10</code> types. If the type index is <code>0</code>, we are going to return the first type, if the type index is <code>1</code>, we going to return the second type and so forth. If, for example, you request for the type at index <code>5</code> or even index <code>9</code>, the function can directly return the type. If you request the type at index <code>10</code>, the function calls itself with the template argument list <code>get_nth_type&lt;10-10, T10&gt;()</code> and the template is instantiated again.</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb12-2"><a href="#cb12-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
 <span id="cb12-3"><a href="#cb12-3"></a>    <span class="kw">namespace</span> type_lists<span class="op">{</span></span>
 <span id="cb12-4"><a href="#cb12-4"></a>        <span class="kw">template</span> <span class="op">&lt;</span><span class="dt">size_t</span> n<span class="op">,</span></span>
@@ -558,7 +599,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb12-41"><a href="#cb12-41"></a></span>
 <span id="cb12-42"><a href="#cb12-42"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_same_v<span class="op">&lt;</span></span>
 <span id="cb12-43"><a href="#cb12-43"></a>    dev<span class="op">::</span>tools<span class="op">::</span><span class="dt">get_nth_type_t</span><span class="op">&lt;</span><span class="dv">5</span><span class="op">,</span> <span class="dt">char</span><span class="op">,</span> <span class="dt">short</span><span class="op">,</span> <span class="dt">int</span><span class="op">,</span> <span class="dt">long</span><span class="op">,</span> <span class="dt">float</span><span class="op">,</span> <span class="dt">double</span><span class="op">&gt;,</span> </span>
-<span id="cb12-44"><a href="#cb12-44"></a>    <span class="dt">double</span><span class="op">&gt;);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb12-44"><a href="#cb12-44"></a>    <span class="dt">double</span><span class="op">&gt;);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><a href="https://compiler-explorer.com/z/1r8Pe9Ye8">Compiler Explorer</a></p>
 <p>Generally, the compile-time performance depends upon the number of function template instantiations. If I would have a single <code>if constexpr(n == 0)</code> condition, and requested <code>get_nth_type&lt;4, char, short, int, float, double&gt;</code>, the function would instantiate itself <code>4</code> times. In our implementation, we instantiate only once for every ten types.</p>
 <p>There is another interesting thing here. In the <code>uint_atleast_t</code> implementation, we just default constructed the types <code>uint8_t</code> etc. But, in the general case, you can’t just default construct the type. So, we wrap it up in the identity meta-function <code>std::type_identity&lt;T&gt;</code>.</p>
@@ -566,21 +607,21 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="instance_of" class="level2">
 <h2 class="anchored" data-anchor-id="instance_of"><code>instance_of</code></h2>
 <p>The next utility we would like to build is <code>instance_of</code>. We want a concept that will tell us, if a concrete type is an instance of a certain templated type. For example, <code>vector&lt;int&gt;</code> is an instance of <code>vector&lt;T&gt;</code>. But, <code>int</code> is not an instance of a <code>vector</code>. A little bit of a tricky one is : <code>vector&lt;int&gt;&amp;</code> is not an instance of <code>vector</code>.</p>
-<div class="sourceCode" id="cb13"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1"></a><span class="co">// -------------- tests ------------</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1"></a><span class="co">// -------------- tests ------------</span></span>
 <span id="cb13-2"><a href="#cb13-2"></a><span class="kw">static_assert</span><span class="op">(</span>dev<span class="op">::</span>tools<span class="op">::</span>instance_of<span class="op">&lt;</span><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;,</span> <span class="bu">std::</span>vector<span class="op">&gt;);</span></span>
 <span id="cb13-3"><a href="#cb13-3"></a><span class="kw">static_assert</span><span class="op">(!</span>dev<span class="op">::</span>tools<span class="op">::</span>instance_of<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&gt;);</span></span>
-<span id="cb13-4"><a href="#cb13-4"></a><span class="kw">static_assert</span><span class="op">(!</span>dev<span class="op">::</span>tools<span class="op">::</span>instance_of<span class="op">&lt;</span><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;&amp;,</span> <span class="bu">std::</span>vector<span class="op">&gt;);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb13-4"><a href="#cb13-4"></a><span class="kw">static_assert</span><span class="op">(!</span>dev<span class="op">::</span>tools<span class="op">::</span>instance_of<span class="op">&lt;</span><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;&amp;,</span> <span class="bu">std::</span>vector<span class="op">&gt;);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>How do we do that? First, we define the <code>concept</code>, which just calls into the implementation <code>impl</code>. The <code>impl</code> is a meta-function that accepts two parameters, a template and a concrete type.</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> <span class="op">...&gt;</span> <span class="kw">class</span> Template<span class="op">,</span> <span class="kw">typename</span> What<span class="op">&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> <span class="op">...&gt;</span> <span class="kw">class</span> Template<span class="op">,</span> <span class="kw">typename</span> What<span class="op">&gt;</span></span>
 <span id="cb14-2"><a href="#cb14-2"></a><span class="co">//       ^--------------------------------^       ^--------^</span></span>
 <span id="cb14-3"><a href="#cb14-3"></a><span class="co">//       1st param: a template that accepts       2nd param: a</span></span>
 <span id="cb14-4"><a href="#cb14-4"></a><span class="co">//       any number of args                       concrete type</span></span>
-<span id="cb14-5"><a href="#cb14-5"></a><span class="kw">struct</span> impl <span class="op">:</span> <span class="bu">std::</span>false_type<span class="op"> {};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb14-5"><a href="#cb14-5"></a><span class="kw">struct</span> impl <span class="op">:</span> <span class="bu">std::</span>false_type <span class="op">{};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The default implementation of <code>impl</code> is to define as <code>std::false_type</code>. The partial specialization <code>impl&lt;What, What&lt;Ts...&gt;&gt;</code>, says, if we have a template <code>What</code> and <code>What&lt;Ts...&gt;</code> is an instantiation of the template, that inherit from <code>true_type</code>.</p>
-<div class="sourceCode" id="cb15"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb15-1"><a href="#cb15-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...&gt;</span> <span class="kw">typename</span> What<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
-<span id="cb15-2"><a href="#cb15-2"></a>        <span class="kw">struct</span> impl<span class="op">&lt;</span>What<span class="op">,</span> What<span class="op">&lt;</span>Ts<span class="op">...&gt;&gt;</span> <span class="op">:</span> <span class="bu">std::</span>true_type<span class="op"> {};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb15-1"><a href="#cb15-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...&gt;</span> <span class="kw">typename</span> What<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
+<span id="cb15-2"><a href="#cb15-2"></a>        <span class="kw">struct</span> impl<span class="op">&lt;</span>What<span class="op">,</span> What<span class="op">&lt;</span>Ts<span class="op">...&gt;&gt;</span> <span class="op">:</span> <span class="bu">std::</span>true_type <span class="op">{};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Together, we have:</p>
-<div class="sourceCode" id="cb16"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb16-1"><a href="#cb16-1"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb16-1"><a href="#cb16-1"></a><span class="pp">#include </span><span class="im">&lt;vector&gt;</span></span>
 <span id="cb16-2"><a href="#cb16-2"></a></span>
 <span id="cb16-3"><a href="#cb16-3"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb16-4"><a href="#cb16-4"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
@@ -589,10 +630,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb16-7"><a href="#cb16-7"></a>        <span class="co">//       ^--------------------------------^       ^--------^</span></span>
 <span id="cb16-8"><a href="#cb16-8"></a>        <span class="co">//       1st param: a template that accepts       2nd param: a</span></span>
 <span id="cb16-9"><a href="#cb16-9"></a>        <span class="co">//       any number of args                       concrete type        </span></span>
-<span id="cb16-10"><a href="#cb16-10"></a>        <span class="kw">struct</span> impl <span class="op">:</span> <span class="bu">std::</span>false_type<span class="op"> {};</span></span>
+<span id="cb16-10"><a href="#cb16-10"></a>        <span class="kw">struct</span> impl <span class="op">:</span> <span class="bu">std::</span>false_type <span class="op">{};</span></span>
 <span id="cb16-11"><a href="#cb16-11"></a></span>
 <span id="cb16-12"><a href="#cb16-12"></a>        <span class="kw">template</span><span class="op">&lt;</span><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...&gt;</span> <span class="kw">typename</span> What<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
-<span id="cb16-13"><a href="#cb16-13"></a>        <span class="kw">struct</span> impl<span class="op">&lt;</span>What<span class="op">,</span> What<span class="op">&lt;</span>Ts<span class="op">...&gt;&gt;</span> <span class="op">:</span> <span class="bu">std::</span>true_type<span class="op"> {};</span></span>
+<span id="cb16-13"><a href="#cb16-13"></a>        <span class="kw">struct</span> impl<span class="op">&lt;</span>What<span class="op">,</span> What<span class="op">&lt;</span>Ts<span class="op">...&gt;&gt;</span> <span class="op">:</span> <span class="bu">std::</span>true_type <span class="op">{};</span></span>
 <span id="cb16-14"><a href="#cb16-14"></a>    <span class="op">}</span></span>
 <span id="cb16-15"><a href="#cb16-15"></a></span>
 <span id="cb16-16"><a href="#cb16-16"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> <span class="op">&gt;</span> <span class="kw">typename</span> Template<span class="op">&gt;</span></span>
@@ -603,16 +644,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb16-21"><a href="#cb16-21"></a><span class="co">// -------------- tests ------------</span></span>
 <span id="cb16-22"><a href="#cb16-22"></a><span class="kw">static_assert</span><span class="op">(</span>dev<span class="op">::</span>tools<span class="op">::</span>instance_of<span class="op">&lt;</span><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;,</span> <span class="bu">std::</span>vector<span class="op">&gt;);</span></span>
 <span id="cb16-23"><a href="#cb16-23"></a><span class="kw">static_assert</span><span class="op">(!</span>dev<span class="op">::</span>tools<span class="op">::</span>instance_of<span class="op">&lt;</span><span class="dt">int</span><span class="op">,</span> <span class="bu">std::</span>vector<span class="op">&gt;);</span></span>
-<span id="cb16-24"><a href="#cb16-24"></a><span class="kw">static_assert</span><span class="op">(!</span>dev<span class="op">::</span>tools<span class="op">::</span>instance_of<span class="op">&lt;</span><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;&amp;,</span> <span class="bu">std::</span>vector<span class="op">&gt;);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb16-24"><a href="#cb16-24"></a><span class="kw">static_assert</span><span class="op">(!</span>dev<span class="op">::</span>tools<span class="op">::</span>instance_of<span class="op">&lt;</span><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;&amp;,</span> <span class="bu">std::</span>vector<span class="op">&gt;);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><a href="https://compiler-explorer.com/z/z3n4dPbnd">Compiler Explorer</a></p>
 </section>
 <section id="a-macro-for-forwarding-arguments" class="level2">
 <h2 class="anchored" data-anchor-id="a-macro-for-forwarding-arguments">A macro for forwarding arguments</h2>
 <p>We all know how <code>std::forward</code> works. It unconditionally casts the type of its argument <code>T</code> to <code>T&amp;&amp;</code>. Sometimes you have to specify the types of the arguments, so you use <code>decltype</code>. For example,</p>
-<div class="sourceCode" id="cb17"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb17-1"><a href="#cb17-1"></a><span class="bu">std::</span>forward<span class="op">&lt;</span><span class="kw">decltype</span><span class="op">(</span>x<span class="op">)&gt;(</span>x<span class="op">);</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb17-1"><a href="#cb17-1"></a><span class="bu">std::</span>forward<span class="op">&lt;</span><span class="kw">decltype</span><span class="op">(</span>x<span class="op">)&gt;(</span>x<span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This can be annoying to type, people often use a macro for economy.</p>
-<div class="sourceCode" id="cb18"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb18-1"><a href="#cb18-1"></a><span class="pp">#define TOOLS_FWD</span><span class="op">(...)</span></span>
-<span id="cb18-2"><a href="#cb18-2"></a>    <span class="kw">static_cast</span><span class="op">&lt;</span><span class="kw">decltype</span><span class="op">(</span>__VA_ARGS__<span class="op">)&amp;&amp;&gt;(</span>__VA_ARGS__<span class="op">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb18-1"><a href="#cb18-1"></a><span class="pp">#define TOOLS_FWD</span><span class="op">(...)</span></span>
+<span id="cb18-2"><a href="#cb18-2"></a>    <span class="kw">static_cast</span><span class="op">&lt;</span><span class="kw">decltype</span><span class="op">(</span>__VA_ARGS__<span class="op">)&amp;&amp;&gt;(</span>__VA_ARGS__<span class="op">)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
 <section id="union_-type-definition" class="level1">
@@ -620,21 +661,21 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>The <code>union_</code> type is something which is used to store the data. It is similar to the built-in union but it allows unpacking. That is, you could, for example request to construct the element at index <code>2</code> or get the element at index <code>2</code>.</p>
 <p>Let’s first understand how to write the <code>union_</code> type. A while back people just created a bunch of <code>char</code>s - a buffer area to accomodate the largest type and they would cast pointers to the alternative types in the union.</p>
 <p>The modern approach is to write a recursive solution. Using some mathematical formalism, the union of <code>N+1</code> types <code>T0, T1, ..., TN</code> written <span class="math inline">\(\bigcup_{i=0}^{N} \texttt{Ti}\)</span> is equivalent to pulling out the first type, union’ing with the union of the rest of the types, that is <span class="math inline">\(\texttt{T0} \cup \left(\bigcup_{i=1}^N \texttt{Ti}\right)\)</span>. In code:</p>
-<div class="sourceCode" id="cb19"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb19-1"><a href="#cb19-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> First<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Rest<span class="op">&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb19-1"><a href="#cb19-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> First<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Rest<span class="op">&gt;</span></span>
 <span id="cb19-2"><a href="#cb19-2"></a><span class="kw">struct</span> <span class="va">union_</span><span class="op">{</span></span>
 <span id="cb19-3"><a href="#cb19-3"></a>    <span class="kw">union</span><span class="op">{</span></span>
 <span id="cb19-4"><a href="#cb19-4"></a>        First head<span class="op">;</span></span>
 <span id="cb19-5"><a href="#cb19-5"></a>        <span class="va">union_</span><span class="op">&lt;</span>Rest<span class="op">...&gt;</span> tail<span class="op">;</span> </span>
 <span id="cb19-6"><a href="#cb19-6"></a>    <span class="op">}</span></span>
-<span id="cb19-7"><a href="#cb19-7"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb19-7"><a href="#cb19-7"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>A union must contain atleast one type. This is the default case.</p>
-<div class="sourceCode" id="cb20"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb20-1"><a href="#cb20-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb20-1"><a href="#cb20-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
 <span id="cb20-2"><a href="#cb20-2"></a><span class="kw">struct</span> <span class="va">union_</span><span class="op">&lt;</span>T<span class="op">&gt;{</span></span>
 <span id="cb20-3"><a href="#cb20-3"></a>    T head<span class="op">;</span></span>
-<span id="cb20-4"><a href="#cb20-4"></a><span class="op">};</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb20-4"><a href="#cb20-4"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>We implement some constructors. There is a default constructor, a constructor for the head and a constructor for the <code>I</code>th element.</p>
 <p>The API of these constructors is templated by a parameter <code>size_t I</code> - the index of the element to be constructed. The first argument to the constructor is of the type <code>std::in_place_index_t</code>, which is simply a wrapper type for storing indexes at compile-time.</p>
-<div class="sourceCode" id="cb21"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb21-1"><a href="#cb21-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb21"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb21-1"><a href="#cb21-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb21-2"><a href="#cb21-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
 <span id="cb21-3"><a href="#cb21-3"></a></span>
 <span id="cb21-4"><a href="#cb21-4"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> First<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Rest<span class="op">&gt;</span></span>
@@ -666,11 +707,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb21-30"><a href="#cb21-30"></a>    <span class="op">};</span></span>
 <span id="cb21-31"><a href="#cb21-31"></a></span>
 <span id="cb21-32"><a href="#cb21-32"></a><span class="op">}</span> <span class="co">// namespace tools</span></span>
-<span id="cb21-33"><a href="#cb21-33"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb21-33"><a href="#cb21-33"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <section id="union_size" class="level2">
 <h2 class="anchored" data-anchor-id="union_size"><code>union_size</code></h2>
 <p>There is <code>union_size</code> to tell me, how many elements are there in the union. This is very simple. I have a base case and then have a partial specialization, where I say that <code>sizeof...(Ts)</code> is my template union size.</p>
-<div class="sourceCode" id="cb22"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb22-1"><a href="#cb22-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb22-1"><a href="#cb22-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb22-2"><a href="#cb22-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
 <span id="cb22-3"><a href="#cb22-3"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">&gt;</span></span>
 <span id="cb22-4"><a href="#cb22-4"></a>    <span class="kw">struct</span> union_size<span class="op">;</span></span>
@@ -683,12 +724,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb22-11"><a href="#cb22-11"></a>    <span class="kw">template</span> <span class="op">&lt;</span><span class="kw">typename</span> Union<span class="op">&gt;</span></span>
 <span id="cb22-12"><a href="#cb22-12"></a>    <span class="kw">constexpr</span> <span class="dt">size_t</span> union_size_v <span class="op">=</span> union_size<span class="op">&lt;</span>Union<span class="op">&gt;::</span>value<span class="op">;</span></span>
 <span id="cb22-13"><a href="#cb22-13"></a><span class="op">}</span> <span class="co">// namespace tools</span></span>
-<span id="cb22-14"><a href="#cb22-14"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb22-14"><a href="#cb22-14"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="get" class="level2">
 <h2 class="anchored" data-anchor-id="get"><code>get</code></h2>
 <p>The implementation of <code>get</code> is very simple. If the index equals <code>0</code>, get the head. If its not <code>0</code>, get the tail.</p>
-<div class="sourceCode" id="cb23"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb23-1"><a href="#cb23-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb23"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb23-1"><a href="#cb23-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb23-2"><a href="#cb23-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
 <span id="cb23-3"><a href="#cb23-3"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> i<span class="op">,</span> <span class="kw">typename</span> Self<span class="op">&gt;</span></span>
 <span id="cb23-4"><a href="#cb23-4"></a>    <span class="kw">constexpr</span> <span class="kw">auto</span><span class="op">&amp;&amp;</span> get<span class="op">(</span>Self<span class="op">&amp;&amp;</span> self<span class="op">)</span></span>
@@ -701,14 +742,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb23-11"><a href="#cb23-11"></a>            <span class="cf">return</span> get<span class="op">&lt;</span>i <span class="op">-</span> <span class="dv">1</span><span class="op">&gt;(</span>TOOLS_FWD<span class="op">(</span>self<span class="op">).</span>tail<span class="op">);</span></span>
 <span id="cb23-12"><a href="#cb23-12"></a>    <span class="op">}</span></span>
 <span id="cb23-13"><a href="#cb23-13"></a><span class="op">}</span> <span class="co">// namespace tools</span></span>
-<span id="cb23-14"><a href="#cb23-14"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb23-14"><a href="#cb23-14"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Note that, because of how perfect forwarding works, <code>Self</code> is sometimes not deduced as <code>union_</code>, but rather <code>union_&amp;</code>. Hence, to strip off the reference qualifiers, I call the meta-function <code>std::remove_cvref_t</code>.</p>
 </section>
 <section id="construct_at-and-destroy_at" class="level2">
 <h2 class="anchored" data-anchor-id="construct_at-and-destroy_at"><code>construct_at</code> and <code>destroy_at</code></h2>
 <p>Given a <code>union_&lt;T0,...,Ti,...,TN&gt;</code>, <code>construct_at</code>, <code>destroy_at</code> are used to construct/destroy an object of one of the possible alternatives <code>T0,T1,...Ti,...Tn</code> specified using an index <code>i</code>.</p>
 <p>We use the STL algorithms <a href="https://en.cppreference.com/cpp/memory/construct_at"><code>std::construct_at</code></a> and <a href="https://en.cppreference.com/cpp/memory/destroy_at"><code>std::destroy_at</code></a>. These algorithms perform placement <code>new</code> at compile-time; they construct/destroy an object at a specified address.</p>
-<div class="sourceCode" id="cb24"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb24-1"><a href="#cb24-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb24-1"><a href="#cb24-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb24-2"><a href="#cb24-2"></a><span class="kw">namespace</span> tools<span class="op">{</span></span>
 <span id="cb24-3"><a href="#cb24-3"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">size_t</span> i<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
 <span id="cb24-4"><a href="#cb24-4"></a>    <span class="kw">constexpr</span> <span class="dt">void</span> construct_at<span class="op">(</span><span class="va">union_</span><span class="op">&lt;</span>Ts<span class="op">...&gt;&amp;</span> self<span class="op">,</span> <span class="kw">auto</span><span class="op">&amp;&amp;...</span> args<span class="op">){</span></span>
@@ -722,7 +763,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb24-12"><a href="#cb24-12"></a>        <span class="bu">std::</span>destroy_at<span class="op">(&amp;</span>get<span class="op">&lt;</span>i<span class="op">&gt;(</span>self<span class="op">));</span></span>
 <span id="cb24-13"><a href="#cb24-13"></a>    <span class="op">}</span></span>
 <span id="cb24-14"><a href="#cb24-14"></a><span class="op">}</span> <span class="co">// namespace tools</span></span>
-<span id="cb24-15"><a href="#cb24-15"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb24-15"><a href="#cb24-15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
 <section id="wrapping-it-up---the-variant-class" class="level1">
@@ -730,23 +771,23 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>A basic implementation is listed below. Perhaps, the most challenging problem to solve is writing a destructor/copy ctor.</p>
 <p>When implementing <code>~variant()</code> we know the active index, so we can use <code>std::get&lt;I&gt;</code> to get underlying T object. However, <code>template&lt;size_t I&gt; std::get()</code> and other meta-functions are designed to accept compile-time constants as template parameters. We don’t know, the active index until run-time.</p>
 <p>The solution is to generate an array of if-conditionals, at compile-time using pack expansion of the form:</p>
-<div class="sourceCode" id="cb25"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb25-1"><a href="#cb25-1"></a><span class="co">// Generate if-conditionals sizeof...(Ts) times</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb25-1"><a href="#cb25-1"></a><span class="co">// Generate if-conditionals sizeof...(Ts) times</span></span>
 <span id="cb25-2"><a href="#cb25-2"></a><span class="cf">if</span><span class="op">(</span><span class="va">m_idx</span> <span class="op">==</span> <span class="dv">0</span><span class="op">)</span></span>
 <span id="cb25-3"><a href="#cb25-3"></a>&nbsp;&nbsp;&nbsp;&nbsp;tools<span class="op">::</span>destroy_at<span class="op">&lt;</span><span class="dv">0</span><span class="op">&gt;(</span><span class="va">m_data</span><span class="op">);</span></span>
 <span id="cb25-4"><a href="#cb25-4"></a><span class="cf">else</span> <span class="cf">if</span><span class="op">(</span><span class="va">m_idx</span> <span class="op">===</span> <span class="dv">1</span><span class="op">)</span></span>
 <span id="cb25-5"><a href="#cb25-5"></a>&nbsp;&nbsp;&nbsp;&nbsp;tools<span class="op">::</span>destroy_at<span class="op">&lt;</span><span class="dv">1</span><span class="op">&gt;(</span><span class="va">m_data</span><span class="op">);</span></span>
-<span id="cb25-6"><a href="#cb25-6"></a><span class="co">//...</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb25-6"><a href="#cb25-6"></a><span class="co">//...</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>We use <code>std::index_sequence</code> for this purpose, which represents a compile-time sequence of numbers. We construct the sequence <code>0,1,2,3,...,sizeof...(Ts)-1</code> and then define a lambda function that accepts this as a parameter pack <code>Indices</code>. Inside the lambda function, we use a ternary expression to check if the active index <code>m_idx == Indices</code> (the pack variable) and perform destruction in the true case. We apply C++17 fold expressions to expand <code>Indices</code> and generate multiple if statements.</p>
-<div class="sourceCode" id="cb26"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb26-1"><a href="#cb26-1"></a><span class="co">// Destructor</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb26-1"><a href="#cb26-1"></a><span class="co">// Destructor</span></span>
 <span id="cb26-2"><a href="#cb26-2"></a><span class="kw">constexpr</span> <span class="op">~</span>variant<span class="op">(){</span></span>
 <span id="cb26-3"><a href="#cb26-3"></a>   <span class="kw">constexpr</span> <span class="kw">auto</span> idx_seq <span class="op">=</span> <span class="bu">std::</span>make_index_sequence<span class="op">&lt;</span><span class="kw">sizeof</span><span class="op">...(</span>Ts<span class="op">)&gt;();</span></span>
 <span id="cb26-4"><a href="#cb26-4"></a>   <span class="op">[&amp;]&lt;</span><span class="kw">auto</span><span class="op">...</span> Indices<span class="op">&gt;(</span><span class="bu">std::</span>index_sequence<span class="op">&lt;</span>Indices<span class="op">...&gt;){</span></span>
 <span id="cb26-5"><a href="#cb26-5"></a>       <span class="op">(((</span><span class="va">m_idx</span> <span class="op">==</span> Indices<span class="op">)</span> <span class="op">?</span> <span class="op">(</span>tools<span class="op">::</span>destroy_at<span class="op">&lt;</span>Indices<span class="op">&gt;(</span><span class="va">m_data</span><span class="op">),</span> <span class="dv">0</span><span class="op">)</span> <span class="op">:</span> <span class="dv">0</span><span class="op">),</span> <span class="op">...);</span></span>
 <span id="cb26-6"><a href="#cb26-6"></a>   <span class="op">}(</span>idx_seq<span class="op">);</span></span>
-<span id="cb26-7"><a href="#cb26-7"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb26-7"><a href="#cb26-7"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <section id="code-listing" class="level2">
 <h2 class="anchored" data-anchor-id="code-listing">Code listing</h2>
-<div class="sourceCode" id="cb27"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb27-1"><a href="#cb27-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb27-1"><a href="#cb27-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
 <span id="cb27-2"><a href="#cb27-2"></a></span>
 <span id="cb27-3"><a href="#cb27-3"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span><span class="op">...</span> Ts<span class="op">&gt;</span></span>
 <span id="cb27-4"><a href="#cb27-4"></a>    <span class="kw">class</span> variant<span class="op">;</span></span>
@@ -884,7 +925,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb27-136"><a href="#cb27-136"></a><span class="co">         * </span><span class="an">@brief</span><span class="co"> Returns the zero-based index of the alternative currently</span></span>
 <span id="cb27-137"><a href="#cb27-137"></a><span class="co">         * held by the variant.</span></span>
 <span id="cb27-138"><a href="#cb27-138"></a><span class="co">         */</span></span>
-<span id="cb27-139"><a href="#cb27-139"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>size_t<span class="op"> </span>index<span class="op">()</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb27-139"><a href="#cb27-139"></a>        <span class="kw">constexpr</span> <span class="bu">std::</span>size_t index<span class="op">()</span> <span class="at">const</span> <span class="kw">noexcept</span><span class="op">{</span></span>
 <span id="cb27-140"><a href="#cb27-140"></a>            <span class="cf">return</span> <span class="va">m_idx</span><span class="op">;</span></span>
 <span id="cb27-141"><a href="#cb27-141"></a>        <span class="op">}</span></span>
 <span id="cb27-142"><a href="#cb27-142"></a></span>
@@ -920,7 +961,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb27-172"><a href="#cb27-172"></a>    <span class="kw">constexpr</span> T<span class="op">&amp;</span> get<span class="op">(</span>variant<span class="op">&lt;</span>Ts<span class="op">...&gt;&amp;</span> v<span class="op">){</span></span>
 <span id="cb27-173"><a href="#cb27-173"></a>        <span class="cf">return</span> tools<span class="op">::</span>get<span class="op">&lt;</span>tools<span class="op">::</span>find_index_of_v<span class="op">&lt;</span>T<span class="op">,</span> Ts<span class="op">...&gt;&gt;(</span>v<span class="op">.</span><span class="va">m_data</span><span class="op">);</span></span>
 <span id="cb27-174"><a href="#cb27-174"></a>    <span class="op">}</span></span>
-<span id="cb27-175"><a href="#cb27-175"></a><span class="op">}</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb27-175"><a href="#cb27-175"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><a href="https://compiler-explorer.com/z/odKb9bYPW">Compiler Explorer</a></p>
 
 
@@ -929,43 +970,58 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
-window.document.addEventListener("DOMContentLoaded", function (event) {
-  const toggleBodyColorMode = (bsSheetEl) => {
-    const mode = bsSheetEl.getAttribute("data-mode");
-    const bodyEl = window.document.querySelector("body");
-    if (mode === "dark") {
-      bodyEl.classList.add("quarto-dark");
-      bodyEl.classList.remove("quarto-light");
-    } else {
-      bodyEl.classList.add("quarto-light");
-      bodyEl.classList.remove("quarto-dark");
-    }
-  }
-  const toggleBodyColorPrimary = () => {
-    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
-    if (bsSheetEl) {
-      toggleBodyColorMode(bsSheetEl);
-    }
-  }
-  toggleBodyColorPrimary();  
-  const icon = "";
-  const anchorJS = new window.AnchorJS();
-  anchorJS.options = {
-    placement: 'right',
-    icon: icon
-  };
-  anchorJS.add('.anchored');
-  const isCodeAnnotation = (el) => {
-    for (const clz of el.classList) {
-      if (clz.startsWith('code-annotation-')) {                     
-        return true;
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
       }
+      return false;
     }
-    return false;
-  }
-  const clipboard = new window.ClipboardJS('.code-copy-button', {
-    text: function(trigger) {
-      const codeEl = trigger.previousElementSibling.cloneNode(true);
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
       for (const childEl of codeEl.children) {
         if (isCodeAnnotation(childEl)) {
           childEl.remove();
@@ -973,197 +1029,377 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
       }
       return codeEl.innerText;
     }
-  });
-  clipboard.on('success', function(e) {
-    // button target
-    const button = e.trigger;
-    // don't keep focus
-    button.blur();
-    // flash "checked"
-    button.classList.add('code-copy-button-checked');
-    var currentTitle = button.getAttribute("title");
-    button.setAttribute("title", "Copied!");
-    let tooltip;
-    if (window.bootstrap) {
-      button.setAttribute("data-bs-toggle", "tooltip");
-      button.setAttribute("data-bs-placement", "left");
-      button.setAttribute("data-bs-title", "Copied!");
-      tooltip = new bootstrap.Tooltip(button, 
-        { trigger: "manual", 
-          customClass: "code-copy-button-tooltip",
-          offset: [0, -8]});
-      tooltip.show();    
-    }
-    setTimeout(function() {
-      if (tooltip) {
-        tooltip.hide();
-        button.removeAttribute("data-bs-title");
-        button.removeAttribute("data-bs-toggle");
-        button.removeAttribute("data-bs-placement");
-      }
-      button.setAttribute("title", currentTitle);
-      button.classList.remove('code-copy-button-checked');
-    }, 1000);
-    // clear code selection
-    e.clearSelection();
-  });
-  function tippyHover(el, contentFn) {
-    const config = {
-      allowHTML: true,
-      content: contentFn,
-      maxWidth: 500,
-      delay: 100,
-      arrow: false,
-      appendTo: function(el) {
-          return el.parentElement;
-      },
-      interactive: true,
-      interactiveBorder: 10,
-      theme: 'quarto',
-      placement: 'bottom-start'
-    };
-    window.tippy(el, config); 
-  }
-  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
-  for (var i=0; i<noterefs.length; i++) {
-    const ref = noterefs[i];
-    tippyHover(ref, function() {
-      // use id or data attribute instead here
-      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
-      try { href = new URL(href).hash; } catch {}
-      const id = href.replace(/^#\/?/, "");
-      const note = window.document.getElementById(id);
-      return note.innerHTML;
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
     });
-  }
-      let selectedAnnoteEl;
-      const selectorForAnnotation = ( cell, annotation) => {
-        let cellAttr = 'data-code-cell="' + cell + '"';
-        let lineAttr = 'data-code-annotation="' +  annotation + '"';
-        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
-        return selector;
-      }
-      const selectCodeLines = (annoteEl) => {
-        const doc = window.document;
-        const targetCell = annoteEl.getAttribute("data-target-cell");
-        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
-        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
-        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
-        const lineIds = lines.map((line) => {
-          return targetCell + "-" + line;
-        })
-        let top = null;
-        let height = null;
-        let parent = null;
-        if (lineIds.length > 0) {
-            //compute the position of the single el (top and bottom and make a div)
-            const el = window.document.getElementById(lineIds[0]);
-            top = el.offsetTop;
-            height = el.offsetHeight;
-            parent = el.parentElement.parentElement;
-          if (lineIds.length > 1) {
-            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
-            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
-            height = bottom - top;
-          }
-          if (top !== null && height !== null && parent !== null) {
-            // cook up a div (if necessary) and position it 
-            let div = window.document.getElementById("code-annotation-line-highlight");
-            if (div === null) {
-              div = window.document.createElement("div");
-              div.setAttribute("id", "code-annotation-line-highlight");
-              div.style.position = 'absolute';
-              parent.appendChild(div);
-            }
-            div.style.top = top - 2 + "px";
-            div.style.height = height + 4 + "px";
-            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
-            if (gutterDiv === null) {
-              gutterDiv = window.document.createElement("div");
-              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
-              gutterDiv.style.position = 'absolute';
-              const codeCell = window.document.getElementById(targetCell);
-              const gutter = codeCell.querySelector('.code-annotation-gutter');
-              gutter.appendChild(gutterDiv);
-            }
-            gutterDiv.style.top = top - 2 + "px";
-            gutterDiv.style.height = height + 4 + "px";
-          }
-          selectedAnnoteEl = annoteEl;
-        }
-      };
-      const unselectCodeLines = () => {
-        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
-        elementsIds.forEach((elId) => {
-          const div = window.document.getElementById(elId);
-          if (div) {
-            div.remove();
-          }
-        });
-        selectedAnnoteEl = undefined;
-      };
-      // Attach click handler to the DT
-      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
-      for (const annoteDlNode of annoteDls) {
-        annoteDlNode.addEventListener('click', (event) => {
-          const clickedEl = event.target;
-          if (clickedEl !== selectedAnnoteEl) {
-            unselectCodeLines();
-            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
-            if (activeEl) {
-              activeEl.classList.remove('code-annotation-active');
-            }
-            selectCodeLines(clickedEl);
-            clickedEl.classList.add('code-annotation-active');
-          } else {
-            // Unselect the line
-            unselectCodeLines();
-            clickedEl.classList.remove('code-annotation-active');
-          }
-        });
-      }
-  const findCites = (el) => {
-    const parentEl = el.parentElement;
-    if (parentEl) {
-      const cites = parentEl.dataset.cites;
-      if (cites) {
-        return {
-          el,
-          cites: cites.split(' ')
-        };
-      } else {
-        return findCites(el.parentElement)
-      }
-    } else {
-      return undefined;
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
     }
-  };
-  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
-  for (var i=0; i<bibliorefs.length; i++) {
-    const ref = bibliorefs[i];
-    const citeInfo = findCites(ref);
-    if (citeInfo) {
-      tippyHover(citeInfo.el, function() {
-        var popup = window.document.createElement('div');
-        citeInfo.cites.forEach(function(cite) {
-          var citeDiv = window.document.createElement('div');
-          citeDiv.classList.add('hanging-indent');
-          citeDiv.classList.add('csl-entry');
-          var biblioDiv = window.document.getElementById('ref-' + cite);
-          if (biblioDiv) {
-            citeDiv.innerHTML = biblioDiv.innerHTML;
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("http:\/\/quantdev\.blog");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
           }
-          popup.appendChild(citeDiv);
-        });
-        return popup.innerHTML;
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
       });
     }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="light">
+<input type="hidden" id="giscus-alt-theme" value="dark">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "quasar-chunawala/quantdev";
+    script.dataset.repoId = "R_kgDOL2t5-A";
+    script.dataset.category = "General";
+    script.dataset.categoryId = "DIC_kwDOL2t5-M4ClndQ";
+    script.dataset.mapping = "title";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
   }
-});
-</script>
-<script src="https://giscus.app/client.js" data-repo="quasar-chunawala/quantdev" data-repo-id="R_kgDOL2t5-A" data-category="General" data-category-id="DIC_kwDOL2t5-M4ClndQ" data-mapping="title" data-reactions-enabled="1" data-emit-metadata="0" data-input-position="top" data-theme="light" data-lang="en" crossorigin="anonymous" async="">
+  loadGiscus();
 </script>
 </div> <!-- /content -->
+
 
 
 
