@@ -301,6 +301,48 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb3-25"><a href="#cb3-25"></a>    <span class="ex">20:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND sigaction@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
 <span id="cb3-26"><a href="#cb3-26"></a>    <span class="ex">21:</span> 0000000000000000     0 FUNC    GLOBAL DEFAU</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>To summarize, <code>.dynamic</code> and <code>.dynsym</code> are separate buckets of lib names and symbol names.</p>
+<p>Schematically, a linux binary speaks to the loader in very different terms. It tells the loader - here are the libraries, I want you to map into the process. And here’s the bucket of symbols, I ask you locate anywhere within these libraries.</p>
+<pre><code>Linux Binary (ELF)
+  ┌──────────────────────────────────────────────────────────────────────────────┐
+  │                                                                              │
+  │  .code section                                                               │
+  │  ┌────────────────────────────────────────────────────────────────────────┐  │
+  │  │  .text   (executable instructions)                                     │  │
+  │  │  .rodata (read-only data, string literals, ...)                        │  │
+  │  │  PLT     (per-symbol call stubs → resolved via GOT at runtime)         │  │
+  │  └────────────────────────────────────────────────────────────────────────┘  │
+  │                                                                              │
+  │  .data section                                                               │
+  │  ┌────────────────────────────────────────────────────────────────────────┐  │
+  │  │  .data   (initialised global/static variables)                         │  │
+  │  │  .bss    (uninitialised global/static variables)                       │  │
+  │  │  GOT     (per-symbol address slots, patched by loader at runtime)      │  │
+  │  └────────────────────────────────────────────────────────────────────────┘  │
+  │                                                                              │
+  │  .dynamic section                                                            │
+  │  ┌────────────────────────────────────────────────────────────────────────┐  │
+  │  │  NEEDED  libcap.so.2                                                   │  │
+  │  │  NEEDED  libc.so.6                                                     │  │
+  │  │  (library names only — no symbol information)                          │  │
+  │  └────────────────────────────────────────────────────────────────────────┘  │
+  │                                                                              │
+  │  .dynsym section                                                             │
+  │  ┌────────────────────────────────────────────────────────────────────────┐  │
+  │  │  Ndx  Name                         Bind    Source                      │  │
+  │  │  ───  ───────────────────────────  ──────  ──────────────────────────  │  │
+  │  │  UND  __ctype_toupper_loc          GLOBAL  GLIBC_2.3                   │  │
+  │  │  UND  getenv                       GLOBAL  GLIBC_2.2.5                 │  │
+  │  │  UND  cap_to_text                  GLOBAL  libcap.so.2                 │  │
+  │  │  UND  sigprocmask                  GLOBAL  GLIBC_2.2.5                 │  │
+  │  │  UND  free                         GLOBAL  GLIBC_2.2.5                 │  │
+  │  │  UND  abort                        GLOBAL  GLIBC_2.2.5                 │  │
+  │  │   :   ...                                                              │  │
+  │  │   9   main                         GLOBAL  (defined in this binary)    │  │
+  │  │  10   some_exported_fn             GLOBAL  (defined in this binary)    │  │
+  │  │   :   ...                                                              │  │
+  │  └────────────────────────────────────────────────────────────────────────┘  │
+  │                                                                              │
+  └──────────────────────────────────────────────────────────────────────────────┘</code></pre>
 
 
 </section>
