@@ -39,9 +39,287 @@
 <p>Now, code typically does lots of function calls. The simplest case is that of from the binary into itself. But, that is not the general case. In general, the process can map shared libraries into its address space and perform calls into functions which are implemented in the shared library. The shared library itself can perform calls into functions implemented in yet other shared libraries. Arguably, the most important job of both the linker and loader is to properly wire these calls. How would might a wiring look like?</p>
 <p>Say, we have a <code>.code</code> section that calls the function <code>foo()</code>, which is implemented in another binary. The <code>.code</code> section itself does not contain the string <code>foo</code>, it contains a <code>call 0x0000</code> instruction into an address yet unknown at link time. So, the <code>.code</code> section contains a placeholder - a string of <code>0</code>s. In addition, the linker generates another section called <code>.reloc</code> for relocation. On Windows, these are sometimes called fixups. A <code>.reloc</code> section is essentially a small TODO item for the loader. The linker says, “<em>Dear loader, please find the function <code>foo</code>, when you do overwrite this placeholder with the address you found.</em>”. This relocation does happen in practice, but it is generally frowned upon, for two reasons. First, modifying the <code>.code</code> section makes the <code>.code</code> section unshareable between processes and second this form of relocation needs to be done once per call site, not once per function, which can amount to a large difference if you have tens of thousands of calls into the same function e.g.&nbsp;a game engine with calls to the math function <code>sqrt()</code>.</p>
 <p>The more typical scheme is to route all calls to the same function through an indirect call into a single placeholder. In this scheme, when the loader reads the <code>.reloc</code> section, it knows it needs to overwrite just a single slot with the function <code>foo()</code>’s address and not all the call sites. This design trades a little bit of run-time performance for a lot of load-time savings. There is an entire section of such placeholders. On win64, it is called the IAT (Import Address Table). In Linux, this is a rough approximation for a section known as the GOT(Global Offset Table). Note already, that this design means that cross-binary calls are indirect. They carry the same overhead as virtual functions do. And this is not the full truth, it is just the first step in our journey towards it.</p>
+<section id="windows-binary" class="level2">
+<h2 class="anchored" data-anchor-id="windows-binary">Windows Binary</h2>
 <p>Let us take a closer look at Windows first. A windows binary contains descriptions of all the imports it consumes in a section called <code>.idata</code> (the <code>i</code> stands for import). The most important data-structure in the <code>.idata</code> section is the directory table. The directory table is a table of entries - one per shared library. Such an entry contains the DLL name, an <strong>import lookup table</strong> (an offset) which contains imported symbol names for the loader’s usage, an offset into the import lookup table, which contains information about which symbols to locate within this library and an offset into an import address table (IAT), which tells the loader where to write the addresses of these located symbols once they are found.</p>
+<p>Schematically, what Windows binary tells the world, tells the loader is, “<em>Dear loader, please load the library <code>lib1</code>, and from it, please locate the symbols <code>f1</code>, <code>f2</code> and <code>f3</code>. Then, load the library <code>lib2</code> and from it, please locate the symbols <code>g1</code>, <code>g2</code> and <code>g3</code>.</em>”.</p>
+</section>
+<section id="linux-import-sections" class="level2">
+<h2 class="anchored" data-anchor-id="linux-import-sections">Linux import sections</h2>
+<p>As we shall see, this is not what happens in Linux. A linux binary contains not one but two sections, encoding almost identical information to that of <code>idata</code> in Windows. A <code>.dynamic</code> section contains a raw list of library names and the <code>.dynsym</code> section contains the more famous symbol table. It contains not just the symbols to be imported, but all the symbols that this binary contains. The ones to be imported are marked in the binary as undefined <code>UND</code>.</p>
+<section id="dynamic-section" class="level4">
+<h4 class="anchored" data-anchor-id="dynamic-section"><code>.dynamic</code> section</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">readelf</span> <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">-d</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">$(</span><span class="fu" style="color: #4758AB;
+background-color: null;
+font-style: inherit;">which</span> ls<span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">)</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">|</span> <span class="fu" style="color: #4758AB;
+background-color: null;
+font-style: inherit;">grep</span> NEEDED</span>
+<span id="cb1-2"> <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">0x0000000000000001</span> <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">NEEDED</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span>             <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">Shared</span> library: <span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">[</span><span class="ss" style="color: #20794D;
+background-color: null;
+font-style: inherit;">libcap.so.2</span><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">]</span></span>
+<span id="cb1-3"> <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">0x0000000000000001</span> <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">NEEDED</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span>             <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">Shared</span> library: <span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">[</span><span class="ss" style="color: #20794D;
+background-color: null;
+font-style: inherit;">libc.so.6</span><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">]</span></span></code></pre></div></div>
+</section>
+<section id="dynsym-section" class="level4">
+<h4 class="anchored" data-anchor-id="dynsym-section"><code>.dynsym</code> section</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2" style="background: #f1f3f5;"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">readelf</span> <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">-W</span> <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">--syms</span> <span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">$(</span><span class="fu" style="color: #4758AB;
+background-color: null;
+font-style: inherit;">which</span> ls<span class="va" style="color: #111111;
+background-color: null;
+font-style: inherit;">)</span></span>
+<span id="cb2-2"></span>
+<span id="cb2-3"><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">Symbol</span> table .dynsym contains 132 entries:</span>
+<span id="cb2-4">   <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">Num:</span>    Value          Size Type    Bind   Vis      Ndx Name</span>
+<span id="cb2-5">     <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">0:</span> 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND </span>
+<span id="cb2-6">     <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">1:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __ctype_toupper_loc@GLIBC_2.3 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">2</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-7">     <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">2:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND getenv@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-8">     <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND cap_to_text</span>
+<span id="cb2-9">     <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">4:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND sigprocmask@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-10">     <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">5:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __snprintf_chk@GLIBC_2.3.4 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">4</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-11">     <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">6:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND raise@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-12">     <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">7:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND free@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-13">     <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">8:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __vfprintf_chk@GLIBC_2.3.4 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">4</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-14">     <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">9:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_start_main@GLIBC_2.34 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">5</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-15">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">10:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __mempcpy_chk@GLIBC_2.3.4 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">4</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-16">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">11:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND abort@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-17">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">12:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __errno_location@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-18">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">13:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND strncmp@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-19">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">14:</span> 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND _ITM_deregisterTMCloneTable</span>
+<span id="cb2-20">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">15:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND localtime_r@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-21">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">16:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND _exit@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-22">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">17:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __fpending@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-23">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">18:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND flistxattr@GLIBC_2.3 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">2</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-24">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">19:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND isatty@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-25">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">20:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND sigaction@GLIBC_2.2.5 <span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">(</span><span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">3</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">)</span></span>
+<span id="cb2-26">    <span class="ex" style="color: null;
+background-color: null;
+font-style: inherit;">21:</span> 0000000000000000     0 FUNC    GLOBAL DEFAU</span></code></pre></div></div>
 
 
+</section>
+</section>
 </section>
 
  ]]></description>

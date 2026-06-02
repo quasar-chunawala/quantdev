@@ -25,6 +25,41 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -168,7 +203,11 @@ ul.task-list li input[type="checkbox"] {
    
   <ul>
   <li><a href="#terminology" id="toc-terminology" class="nav-link active" data-scroll-target="#terminology">Terminology</a></li>
-  <li><a href="#nano-introduction-to-linking" id="toc-nano-introduction-to-linking" class="nav-link" data-scroll-target="#nano-introduction-to-linking">Nano-introduction to Linking</a></li>
+  <li><a href="#nano-introduction-to-linking" id="toc-nano-introduction-to-linking" class="nav-link" data-scroll-target="#nano-introduction-to-linking">Nano-introduction to Linking</a>
+  <ul class="collapse">
+  <li><a href="#windows-binary" id="toc-windows-binary" class="nav-link" data-scroll-target="#windows-binary">Windows Binary</a></li>
+  <li><a href="#linux-import-sections" id="toc-linux-import-sections" class="nav-link" data-scroll-target="#linux-import-sections">Linux import sections</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -197,9 +236,52 @@ ul.task-list li input[type="checkbox"] {
 <p>Now, code typically does lots of function calls. The simplest case is that of from the binary into itself. But, that is not the general case. In general, the process can map shared libraries into its address space and perform calls into functions which are implemented in the shared library. The shared library itself can perform calls into functions implemented in yet other shared libraries. Arguably, the most important job of both the linker and loader is to properly wire these calls. How would might a wiring look like?</p>
 <p>Say, we have a <code>.code</code> section that calls the function <code>foo()</code>, which is implemented in another binary. The <code>.code</code> section itself does not contain the string <code>foo</code>, it contains a <code>call 0x0000</code> instruction into an address yet unknown at link time. So, the <code>.code</code> section contains a placeholder - a string of <code>0</code>s. In addition, the linker generates another section called <code>.reloc</code> for relocation. On Windows, these are sometimes called fixups. A <code>.reloc</code> section is essentially a small TODO item for the loader. The linker says, “<em>Dear loader, please find the function <code>foo</code>, when you do overwrite this placeholder with the address you found.</em>”. This relocation does happen in practice, but it is generally frowned upon, for two reasons. First, modifying the <code>.code</code> section makes the <code>.code</code> section unshareable between processes and second this form of relocation needs to be done once per call site, not once per function, which can amount to a large difference if you have tens of thousands of calls into the same function e.g.&nbsp;a game engine with calls to the math function <code>sqrt()</code>.</p>
 <p>The more typical scheme is to route all calls to the same function through an indirect call into a single placeholder. In this scheme, when the loader reads the <code>.reloc</code> section, it knows it needs to overwrite just a single slot with the function <code>foo()</code>’s address and not all the call sites. This design trades a little bit of run-time performance for a lot of load-time savings. There is an entire section of such placeholders. On win64, it is called the IAT (Import Address Table). In Linux, this is a rough approximation for a section known as the GOT(Global Offset Table). Note already, that this design means that cross-binary calls are indirect. They carry the same overhead as virtual functions do. And this is not the full truth, it is just the first step in our journey towards it.</p>
+<section id="windows-binary" class="level2">
+<h2 class="anchored" data-anchor-id="windows-binary">Windows Binary</h2>
 <p>Let us take a closer look at Windows first. A windows binary contains descriptions of all the imports it consumes in a section called <code>.idata</code> (the <code>i</code> stands for import). The most important data-structure in the <code>.idata</code> section is the directory table. The directory table is a table of entries - one per shared library. Such an entry contains the DLL name, an <strong>import lookup table</strong> (an offset) which contains imported symbol names for the loader’s usage, an offset into the import lookup table, which contains information about which symbols to locate within this library and an offset into an import address table (IAT), which tells the loader where to write the addresses of these located symbols once they are found.</p>
+<p>Schematically, what Windows binary tells the world, tells the loader is, “<em>Dear loader, please load the library <code>lib1</code>, and from it, please locate the symbols <code>f1</code>, <code>f2</code> and <code>f3</code>. Then, load the library <code>lib2</code> and from it, please locate the symbols <code>g1</code>, <code>g2</code> and <code>g3</code>.</em>”.</p>
+</section>
+<section id="linux-import-sections" class="level2">
+<h2 class="anchored" data-anchor-id="linux-import-sections">Linux import sections</h2>
+<p>As we shall see, this is not what happens in Linux. A linux binary contains not one but two sections, encoding almost identical information to that of <code>idata</code> in Windows. A <code>.dynamic</code> section contains a raw list of library names and the <code>.dynsym</code> section contains the more famous symbol table. It contains not just the symbols to be imported, but all the symbols that this binary contains. The ones to be imported are marked in the binary as undefined <code>UND</code>.</p>
+<section id="dynamic-section" class="level4">
+<h4 class="anchored" data-anchor-id="dynamic-section"><code>.dynamic</code> section</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1"></a><span class="ex">readelf</span> <span class="at">-d</span> <span class="va">$(</span><span class="fu">which</span> ls<span class="va">)</span> <span class="kw">|</span> <span class="fu">grep</span> NEEDED</span>
+<span id="cb1-2"><a href="#cb1-2"></a> <span class="ex">0x0000000000000001</span> <span class="er">(</span><span class="ex">NEEDED</span><span class="kw">)</span>             <span class="ex">Shared</span> library: <span class="pp">[</span><span class="ss">libcap.so.2</span><span class="pp">]</span></span>
+<span id="cb1-3"><a href="#cb1-3"></a> <span class="ex">0x0000000000000001</span> <span class="er">(</span><span class="ex">NEEDED</span><span class="kw">)</span>             <span class="ex">Shared</span> library: <span class="pp">[</span><span class="ss">libc.so.6</span><span class="pp">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="dynsym-section" class="level4">
+<h4 class="anchored" data-anchor-id="dynsym-section"><code>.dynsym</code> section</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1"></a><span class="ex">readelf</span> <span class="at">-W</span> <span class="at">--syms</span> <span class="va">$(</span><span class="fu">which</span> ls<span class="va">)</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a></span>
+<span id="cb2-3"><a href="#cb2-3"></a><span class="ex">Symbol</span> table .dynsym contains 132 entries:</span>
+<span id="cb2-4"><a href="#cb2-4"></a>   <span class="ex">Num:</span>    Value          Size Type    Bind   Vis      Ndx Name</span>
+<span id="cb2-5"><a href="#cb2-5"></a>     <span class="ex">0:</span> 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND </span>
+<span id="cb2-6"><a href="#cb2-6"></a>     <span class="ex">1:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __ctype_toupper_loc@GLIBC_2.3 <span class="er">(</span><span class="ex">2</span><span class="kw">)</span></span>
+<span id="cb2-7"><a href="#cb2-7"></a>     <span class="ex">2:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND getenv@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-8"><a href="#cb2-8"></a>     <span class="ex">3:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND cap_to_text</span>
+<span id="cb2-9"><a href="#cb2-9"></a>     <span class="ex">4:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND sigprocmask@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-10"><a href="#cb2-10"></a>     <span class="ex">5:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __snprintf_chk@GLIBC_2.3.4 <span class="er">(</span><span class="ex">4</span><span class="kw">)</span></span>
+<span id="cb2-11"><a href="#cb2-11"></a>     <span class="ex">6:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND raise@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-12"><a href="#cb2-12"></a>     <span class="ex">7:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND free@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-13"><a href="#cb2-13"></a>     <span class="ex">8:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __vfprintf_chk@GLIBC_2.3.4 <span class="er">(</span><span class="ex">4</span><span class="kw">)</span></span>
+<span id="cb2-14"><a href="#cb2-14"></a>     <span class="ex">9:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_start_main@GLIBC_2.34 <span class="er">(</span><span class="ex">5</span><span class="kw">)</span></span>
+<span id="cb2-15"><a href="#cb2-15"></a>    <span class="ex">10:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __mempcpy_chk@GLIBC_2.3.4 <span class="er">(</span><span class="ex">4</span><span class="kw">)</span></span>
+<span id="cb2-16"><a href="#cb2-16"></a>    <span class="ex">11:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND abort@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-17"><a href="#cb2-17"></a>    <span class="ex">12:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __errno_location@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-18"><a href="#cb2-18"></a>    <span class="ex">13:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND strncmp@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-19"><a href="#cb2-19"></a>    <span class="ex">14:</span> 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND _ITM_deregisterTMCloneTable</span>
+<span id="cb2-20"><a href="#cb2-20"></a>    <span class="ex">15:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND localtime_r@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-21"><a href="#cb2-21"></a>    <span class="ex">16:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND _exit@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-22"><a href="#cb2-22"></a>    <span class="ex">17:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __fpending@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-23"><a href="#cb2-23"></a>    <span class="ex">18:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND flistxattr@GLIBC_2.3 <span class="er">(</span><span class="ex">2</span><span class="kw">)</span></span>
+<span id="cb2-24"><a href="#cb2-24"></a>    <span class="ex">19:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND isatty@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-25"><a href="#cb2-25"></a>    <span class="ex">20:</span> 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND sigaction@GLIBC_2.2.5 <span class="er">(</span><span class="ex">3</span><span class="kw">)</span></span>
+<span id="cb2-26"><a href="#cb2-26"></a>    <span class="ex">21:</span> 0000000000000000     0 FUNC    GLOBAL DEFAU</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 
 
+</section>
+</section>
 </section>
 
 </main> <!-- /main -->

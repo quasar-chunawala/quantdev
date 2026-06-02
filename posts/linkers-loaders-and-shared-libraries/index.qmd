@@ -34,4 +34,50 @@ Say, we have a `.code` section that calls the function `foo()`, which is impleme
 
 The more typical scheme is to route all calls to the same function through an indirect call into a single placeholder. In this scheme, when the loader reads the `.reloc` section, it knows it needs to overwrite just a single slot with the function `foo()`'s address and not all the call sites. This design trades a little bit of run-time performance for a lot of load-time savings. There is an entire section of such placeholders. On win64, it is called the IAT (Import Address Table). In Linux, this is a rough approximation for a section known as the GOT(Global Offset Table). Note already, that this design means that cross-binary calls are indirect. They carry the same overhead as virtual functions do. And this is not the full truth, it is just the first step in our journey towards it.  
 
+## Windows Binary 
 Let us take a closer look at Windows first. A windows binary contains descriptions of all the imports it consumes in a section called `.idata` (the `i` stands for import). The most important data-structure in the `.idata` section is the directory table. The directory table is a table of entries - one per shared library. Such an entry contains the DLL name, an **import lookup table** (an offset) which contains imported symbol names for the loader's usage, an offset into the import lookup table, which contains information about which symbols to locate within this library and an offset into an import address table (IAT), which tells the loader where to write the addresses of these located symbols once they are found. 
+
+Schematically, what Windows binary tells the world, tells the loader is, "*Dear loader, please load the library `lib1`, and from it, please locate the symbols `f1`, `f2` and `f3`. Then, load the library `lib2` and from it, please locate the symbols `g1`, `g2` and `g3`.*". 
+
+## Linux import sections
+
+As we shall see, this is not what happens in Linux. A linux binary contains not one but two sections, encoding almost identical information to that of `idata` in Windows. A `.dynamic` section contains a raw list of library names and the `.dynsym` section contains the more famous symbol table. It contains not just the symbols to be imported, but all the symbols that this binary contains. The ones to be imported are marked in the binary as undefined `UND`. 
+
+#### `.dynamic` section
+
+```bash
+readelf -d $(which ls) | grep NEEDED
+ 0x0000000000000001 (NEEDED)             Shared library: [libcap.so.2]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+```
+
+#### `.dynsym` section
+
+```bash
+readelf -W --syms $(which ls)
+
+Symbol table .dynsym contains 132 entries:
+   Num:    Value          Size Type    Bind   Vis      Ndx Name
+     0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
+     1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __ctype_toupper_loc@GLIBC_2.3 (2)
+     2: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND getenv@GLIBC_2.2.5 (3)
+     3: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND cap_to_text
+     4: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND sigprocmask@GLIBC_2.2.5 (3)
+     5: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __snprintf_chk@GLIBC_2.3.4 (4)
+     6: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND raise@GLIBC_2.2.5 (3)
+     7: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND free@GLIBC_2.2.5 (3)
+     8: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __vfprintf_chk@GLIBC_2.3.4 (4)
+     9: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_start_main@GLIBC_2.34 (5)
+    10: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __mempcpy_chk@GLIBC_2.3.4 (4)
+    11: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND abort@GLIBC_2.2.5 (3)
+    12: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __errno_location@GLIBC_2.2.5 (3)
+    13: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND strncmp@GLIBC_2.2.5 (3)
+    14: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND _ITM_deregisterTMCloneTable
+    15: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND localtime_r@GLIBC_2.2.5 (3)
+    16: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND _exit@GLIBC_2.2.5 (3)
+    17: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __fpending@GLIBC_2.2.5 (3)
+    18: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND flistxattr@GLIBC_2.3 (2)
+    19: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND isatty@GLIBC_2.2.5 (3)
+    20: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND sigaction@GLIBC_2.2.5 (3)
+    21: 0000000000000000     0 FUNC    GLOBAL DEFAU
+```
