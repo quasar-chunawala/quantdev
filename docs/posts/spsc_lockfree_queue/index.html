@@ -260,7 +260,7 @@ window.Quarto = {
 <h1>Designing the <code>spsc_queue</code> data-structure</h1>
 <p>I would like to present my implementation for an SPSC lock-free queue in this blog-post.</p>
 <div class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1"></a><span class="op">%</span>load_ext itikz</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>load_ext itikz</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <section id="what-makes-an-operation-atomic" class="level2">
 <h2 class="anchored" data-anchor-id="what-makes-an-operation-atomic">What makes an operation atomic?</h2>
@@ -287,32 +287,32 @@ window.Quarto = {
 <div class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Show the code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
-<span id="cb2-2"><a href="#cb2-2"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
-<span id="cb2-3"><a href="#cb2-3"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
-<span id="cb2-4"><a href="#cb2-4"></a>    <span class="op">%</span> Title</span>
-<span id="cb2-5"><a href="#cb2-5"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (Empty)}}<span class="op">;</span></span>
-<span id="cb2-6"><a href="#cb2-6"></a>    </span>
-<span id="cb2-7"><a href="#cb2-7"></a>    <span class="op">%</span> Index labels</span>
-<span id="cb2-8"><a href="#cb2-8"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
-<span id="cb2-9"><a href="#cb2-9"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
-<span id="cb2-10"><a href="#cb2-10"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
-<span id="cb2-11"><a href="#cb2-11"></a>    }</span>
-<span id="cb2-12"><a href="#cb2-12"></a>    </span>
-<span id="cb2-13"><a href="#cb2-13"></a>    <span class="op">%</span> Buffer cells</span>
-<span id="cb2-14"><a href="#cb2-14"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
-<span id="cb2-15"><a href="#cb2-15"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
-<span id="cb2-16"><a href="#cb2-16"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb2-17"><a href="#cb2-17"></a>    }</span>
-<span id="cb2-18"><a href="#cb2-18"></a>    </span>
-<span id="cb2-19"><a href="#cb2-19"></a>    <span class="op">%</span> Pointers</span>
-<span id="cb2-20"><a href="#cb2-20"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb2-21"><a href="#cb2-21"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_head <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
-<span id="cb2-22"><a href="#cb2-22"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.6</span>) {m\_tail <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
-<span id="cb2-23"><a href="#cb2-23"></a>    </span>
-<span id="cb2-24"><a href="#cb2-24"></a>    <span class="op">%</span> Status</span>
-<span id="cb2-25"><a href="#cb2-25"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">4.2</span>) {Status: Empty (m\_head <span class="op">==</span> m\_tail)}<span class="op">;</span></span>
-<span id="cb2-26"><a href="#cb2-26"></a>\end{tikzpicture}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Title</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (Empty)}}<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Index labels</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Buffer cells</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Pointers</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_head <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.6</span>) {m\_tail <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Status</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">4.2</span>) {Status: Empty (m\_head <span class="op">==</span> m\_tail)}<span class="op">;</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>\end{tikzpicture}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-display" data-execution_count="2">
 <div>
@@ -329,38 +329,38 @@ window.Quarto = {
 <div class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Show the code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
-<span id="cb3-2"><a href="#cb3-2"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
-<span id="cb3-3"><a href="#cb3-3"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
-<span id="cb3-4"><a href="#cb3-4"></a>    <span class="op">%</span> Title</span>
-<span id="cb3-5"><a href="#cb3-5"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">1</span> element)}}<span class="op">;</span></span>
-<span id="cb3-6"><a href="#cb3-6"></a>    </span>
-<span id="cb3-7"><a href="#cb3-7"></a>    <span class="op">%</span> m_head pointer (above)</span>
-<span id="cb3-8"><a href="#cb3-8"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
-<span id="cb3-9"><a href="#cb3-9"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
-<span id="cb3-10"><a href="#cb3-10"></a>    </span>
-<span id="cb3-11"><a href="#cb3-11"></a>    <span class="op">%</span> Index labels</span>
-<span id="cb3-12"><a href="#cb3-12"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
-<span id="cb3-13"><a href="#cb3-13"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
-<span id="cb3-14"><a href="#cb3-14"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
-<span id="cb3-15"><a href="#cb3-15"></a>    }</span>
-<span id="cb3-16"><a href="#cb3-16"></a>    </span>
-<span id="cb3-17"><a href="#cb3-17"></a>    <span class="op">%</span> Buffer cells</span>
-<span id="cb3-18"><a href="#cb3-18"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
-<span id="cb3-19"><a href="#cb3-19"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
-<span id="cb3-20"><a href="#cb3-20"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb3-21"><a href="#cb3-21"></a>    }</span>
-<span id="cb3-22"><a href="#cb3-22"></a>    <span class="op">%</span> Fill first cell</span>
-<span id="cb3-23"><a href="#cb3-23"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb3-24"><a href="#cb3-24"></a>    \node at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">1</span>}<span class="op">;</span></span>
-<span id="cb3-25"><a href="#cb3-25"></a>    </span>
-<span id="cb3-26"><a href="#cb3-26"></a>    <span class="op">%</span> m_tail pointer (below)</span>
-<span id="cb3-27"><a href="#cb3-27"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">1</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb3-28"><a href="#cb3-28"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">1</span>}<span class="op">;</span></span>
-<span id="cb3-29"><a href="#cb3-29"></a>    </span>
-<span id="cb3-30"><a href="#cb3-30"></a>    <span class="op">%</span> Status</span>
-<span id="cb3-31"><a href="#cb3-31"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.8</span>) {Status: <span class="dv">1</span> element (m\_tail <span class="op">&gt;</span> m\_head)}<span class="op">;</span></span>
-<span id="cb3-32"><a href="#cb3-32"></a>\end{tikzpicture}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Title</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">1</span> element)}}<span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> m_head pointer (above)</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Index labels</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Buffer cells</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Fill first cell</span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">1</span>}<span class="op">;</span></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> m_tail pointer (below)</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">1</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">1</span>}<span class="op">;</span></span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Status</span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.8</span>) {Status: <span class="dv">1</span> element (m\_tail <span class="op">&gt;</span> m\_head)}<span class="op">;</span></span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>\end{tikzpicture}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-display" data-execution_count="3">
 <div>
@@ -376,44 +376,44 @@ window.Quarto = {
 <div class="cell" data-execution_count="4">
 <details class="code-fold">
 <summary>Show the code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
-<span id="cb4-2"><a href="#cb4-2"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
-<span id="cb4-3"><a href="#cb4-3"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
-<span id="cb4-4"><a href="#cb4-4"></a>    <span class="op">%</span> Title</span>
-<span id="cb4-5"><a href="#cb4-5"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">4</span> elements)}}<span class="op">;</span></span>
-<span id="cb4-6"><a href="#cb4-6"></a>    </span>
-<span id="cb4-7"><a href="#cb4-7"></a>    <span class="op">%</span> m_head pointer (above)</span>
-<span id="cb4-8"><a href="#cb4-8"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
-<span id="cb4-9"><a href="#cb4-9"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
-<span id="cb4-10"><a href="#cb4-10"></a>    </span>
-<span id="cb4-11"><a href="#cb4-11"></a>    <span class="op">%</span> Index labels</span>
-<span id="cb4-12"><a href="#cb4-12"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
-<span id="cb4-13"><a href="#cb4-13"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
-<span id="cb4-14"><a href="#cb4-14"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
-<span id="cb4-15"><a href="#cb4-15"></a>    }</span>
-<span id="cb4-16"><a href="#cb4-16"></a>    </span>
-<span id="cb4-17"><a href="#cb4-17"></a>    <span class="op">%</span> Buffer cells</span>
-<span id="cb4-18"><a href="#cb4-18"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
-<span id="cb4-19"><a href="#cb4-19"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
-<span id="cb4-20"><a href="#cb4-20"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb4-21"><a href="#cb4-21"></a>    }</span>
-<span id="cb4-22"><a href="#cb4-22"></a>    <span class="op">%</span> Fill cells <span class="dv">0</span><span class="op">-</span><span class="dv">3</span></span>
-<span id="cb4-23"><a href="#cb4-23"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb4-24"><a href="#cb4-24"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">0.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">1.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb4-25"><a href="#cb4-25"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">2.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb4-26"><a href="#cb4-26"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">2.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">3.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb4-27"><a href="#cb4-27"></a>    \node at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">1</span>}<span class="op">;</span></span>
-<span id="cb4-28"><a href="#cb4-28"></a>    \node at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">2</span>}<span class="op">;</span></span>
-<span id="cb4-29"><a href="#cb4-29"></a>    \node at (<span class="dv">2</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">3</span>}<span class="op">;</span></span>
-<span id="cb4-30"><a href="#cb4-30"></a>    \node at (<span class="dv">3</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">5</span>}<span class="op">;</span></span>
-<span id="cb4-31"><a href="#cb4-31"></a>    </span>
-<span id="cb4-32"><a href="#cb4-32"></a>    <span class="op">%</span> m_tail pointer (below)</span>
-<span id="cb4-33"><a href="#cb4-33"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb4-34"><a href="#cb4-34"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">4</span>}<span class="op">;</span></span>
-<span id="cb4-35"><a href="#cb4-35"></a>    </span>
-<span id="cb4-36"><a href="#cb4-36"></a>    <span class="op">%</span> Status</span>
-<span id="cb4-37"><a href="#cb4-37"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.8</span>) {Status: <span class="dv">4</span> elements (m\_tail <span class="op">&gt;</span> m\_head)}<span class="op">;</span></span>
-<span id="cb4-38"><a href="#cb4-38"></a>\end{tikzpicture}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Title</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">4</span> elements)}}<span class="op">;</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> m_head pointer (above)</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Index labels</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Buffer cells</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Fill cells <span class="dv">0</span><span class="op">-</span><span class="dv">3</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">0.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">1.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">2.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">2.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">3.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">1</span>}<span class="op">;</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">2</span>}<span class="op">;</span></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">2</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">3</span>}<span class="op">;</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">3</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">5</span>}<span class="op">;</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> m_tail pointer (below)</span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">4</span>}<span class="op">;</span></span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Status</span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.8</span>) {Status: <span class="dv">4</span> elements (m\_tail <span class="op">&gt;</span> m\_head)}<span class="op">;</span></span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>\end{tikzpicture}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-display" data-execution_count="4">
 <div>
@@ -433,43 +433,43 @@ window.Quarto = {
 <div class="cell" data-execution_count="5">
 <details class="code-fold">
 <summary>Show the code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
-<span id="cb5-2"><a href="#cb5-2"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
-<span id="cb5-3"><a href="#cb5-3"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
-<span id="cb5-4"><a href="#cb5-4"></a>    <span class="op">%</span> Title</span>
-<span id="cb5-5"><a href="#cb5-5"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">3</span> elements)}}<span class="op">;</span></span>
-<span id="cb5-6"><a href="#cb5-6"></a>    </span>
-<span id="cb5-7"><a href="#cb5-7"></a>    <span class="op">%</span> m_head pointer (above)</span>
-<span id="cb5-8"><a href="#cb5-8"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">1</span>}<span class="op">;</span></span>
-<span id="cb5-9"><a href="#cb5-9"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
-<span id="cb5-10"><a href="#cb5-10"></a>    </span>
-<span id="cb5-11"><a href="#cb5-11"></a>    <span class="op">%</span> Index labels</span>
-<span id="cb5-12"><a href="#cb5-12"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
-<span id="cb5-13"><a href="#cb5-13"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
-<span id="cb5-14"><a href="#cb5-14"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
-<span id="cb5-15"><a href="#cb5-15"></a>    }</span>
-<span id="cb5-16"><a href="#cb5-16"></a>    </span>
-<span id="cb5-17"><a href="#cb5-17"></a>    <span class="op">%</span> Buffer cells</span>
-<span id="cb5-18"><a href="#cb5-18"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
-<span id="cb5-19"><a href="#cb5-19"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
-<span id="cb5-20"><a href="#cb5-20"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb5-21"><a href="#cb5-21"></a>    }</span>
-<span id="cb5-22"><a href="#cb5-22"></a>    <span class="op">%</span> Fill cells <span class="dv">1</span><span class="op">-</span><span class="dv">3</span></span>
-<span id="cb5-23"><a href="#cb5-23"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">0.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">1.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb5-24"><a href="#cb5-24"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">2.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb5-25"><a href="#cb5-25"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">2.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">3.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb5-26"><a href="#cb5-26"></a>    \node at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">2</span>}<span class="op">;</span></span>
-<span id="cb5-27"><a href="#cb5-27"></a>    \node at (<span class="dv">2</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">3</span>}<span class="op">;</span></span>
-<span id="cb5-28"><a href="#cb5-28"></a>    \node at (<span class="dv">3</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">5</span>}<span class="op">;</span></span>
-<span id="cb5-29"><a href="#cb5-29"></a>    </span>
-<span id="cb5-30"><a href="#cb5-30"></a>    <span class="op">%</span> m_tail pointer (below)</span>
-<span id="cb5-31"><a href="#cb5-31"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb5-32"><a href="#cb5-32"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">4</span>}<span class="op">;</span></span>
-<span id="cb5-33"><a href="#cb5-33"></a>    </span>
-<span id="cb5-34"><a href="#cb5-34"></a>    <span class="op">%</span> Status</span>
-<span id="cb5-35"><a href="#cb5-35"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.8</span>) {Status: <span class="dv">3</span> elements (m\_tail <span class="op">&gt;</span> m\_head)}<span class="op">;</span></span>
-<span id="cb5-36"><a href="#cb5-36"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">4.2</span>) {Note: Index <span class="dv">0</span> <span class="kw">is</span> now <span class="st">"stale"</span> (logically removed)}<span class="op">;</span></span>
-<span id="cb5-37"><a href="#cb5-37"></a>\end{tikzpicture}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Title</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">3</span> elements)}}<span class="op">;</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> m_head pointer (above)</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">1</span>}<span class="op">;</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Index labels</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Buffer cells</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Fill cells <span class="dv">1</span><span class="op">-</span><span class="dv">3</span></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">0.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">1.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">2.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">2.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">3.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">2</span>}<span class="op">;</span></span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">2</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">3</span>}<span class="op">;</span></span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">3</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">5</span>}<span class="op">;</span></span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> m_tail pointer (below)</span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">4</span>}<span class="op">;</span></span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Status</span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">3.8</span>) {Status: <span class="dv">3</span> elements (m\_tail <span class="op">&gt;</span> m\_head)}<span class="op">;</span></span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">4.2</span>) {Note: Index <span class="dv">0</span> <span class="kw">is</span> now <span class="st">"stale"</span> (logically removed)}<span class="op">;</span></span>
+<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>\end{tikzpicture}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-display" data-execution_count="5">
 <div>
@@ -485,47 +485,47 @@ window.Quarto = {
 <div class="cell" data-execution_count="6">
 <details class="code-fold">
 <summary>Show the code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
-<span id="cb6-2"><a href="#cb6-2"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
-<span id="cb6-3"><a href="#cb6-3"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
-<span id="cb6-4"><a href="#cb6-4"></a>    <span class="op">%</span> Title</span>
-<span id="cb6-5"><a href="#cb6-5"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">7</span> elements)}}<span class="op">;</span></span>
-<span id="cb6-6"><a href="#cb6-6"></a>    </span>
-<span id="cb6-7"><a href="#cb6-7"></a>    <span class="op">%</span> m_head pointer (above)</span>
-<span id="cb6-8"><a href="#cb6-8"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">1</span>}<span class="op">;</span></span>
-<span id="cb6-9"><a href="#cb6-9"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
-<span id="cb6-10"><a href="#cb6-10"></a>    </span>
-<span id="cb6-11"><a href="#cb6-11"></a>    <span class="op">%</span> Index labels</span>
-<span id="cb6-12"><a href="#cb6-12"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
-<span id="cb6-13"><a href="#cb6-13"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
-<span id="cb6-14"><a href="#cb6-14"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
-<span id="cb6-15"><a href="#cb6-15"></a>    }</span>
-<span id="cb6-16"><a href="#cb6-16"></a>    </span>
-<span id="cb6-17"><a href="#cb6-17"></a>    <span class="op">%</span> Buffer cells</span>
-<span id="cb6-18"><a href="#cb6-18"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
-<span id="cb6-19"><a href="#cb6-19"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
-<span id="cb6-20"><a href="#cb6-20"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb6-21"><a href="#cb6-21"></a>    }</span>
-<span id="cb6-22"><a href="#cb6-22"></a>    <span class="op">%</span> Fill cells <span class="dv">1</span><span class="op">-</span><span class="dv">7</span></span>
-<span id="cb6-23"><a href="#cb6-23"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">0.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">1.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb6-24"><a href="#cb6-24"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">2.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb6-25"><a href="#cb6-25"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">2.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">3.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb6-26"><a href="#cb6-26"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">3.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">4.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb6-27"><a href="#cb6-27"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">4.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">5.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb6-28"><a href="#cb6-28"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">5.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">6.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb6-29"><a href="#cb6-29"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">6.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">7.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb6-30"><a href="#cb6-30"></a>    \node at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">2</span>}<span class="op">;</span></span>
-<span id="cb6-31"><a href="#cb6-31"></a>    \node at (<span class="dv">2</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">3</span>}<span class="op">;</span></span>
-<span id="cb6-32"><a href="#cb6-32"></a>    \node at (<span class="dv">3</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">5</span>}<span class="op">;</span></span>
-<span id="cb6-33"><a href="#cb6-33"></a>    \node at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">8</span>}<span class="op">;</span></span>
-<span id="cb6-34"><a href="#cb6-34"></a>    \node at (<span class="dv">5</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">13</span>}<span class="op">;</span></span>
-<span id="cb6-35"><a href="#cb6-35"></a>    \node at (<span class="dv">6</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">21</span>}<span class="op">;</span></span>
-<span id="cb6-36"><a href="#cb6-36"></a>    \node at (<span class="dv">7</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">34</span>}<span class="op">;</span></span>
-<span id="cb6-37"><a href="#cb6-37"></a>    </span>
-<span id="cb6-38"><a href="#cb6-38"></a>    <span class="op">%</span> m_tail pointer (below)</span>
-<span id="cb6-39"><a href="#cb6-39"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
-<span id="cb6-40"><a href="#cb6-40"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
-<span id="cb6-41"><a href="#cb6-41"></a>\end{tikzpicture}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>\begin{tikzpicture}[font<span class="op">=</span>\small\ttfamily]</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    \fill[white] (<span class="op">-</span><span class="dv">2</span>, <span class="fl">0.5</span>) rectangle (<span class="fl">8.5</span>, <span class="op">-</span><span class="fl">4.8</span>)<span class="op">;</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Title</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">4</span>, <span class="dv">0</span>) {\textbf{SPSC Ring Buffer (<span class="dv">7</span> elements)}}<span class="op">;</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> m_head pointer (above)</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>south] at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">0.8</span>) {m\_head <span class="op">=</span> <span class="dv">1</span>}<span class="op">;</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.0</span>) <span class="op">--</span> (<span class="dv">1</span>, <span class="op">-</span><span class="fl">1.4</span>)<span class="op">;</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Index labels</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">1.5</span>) {Index:}<span class="op">;</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>        \node at (\i, <span class="op">-</span><span class="fl">1.5</span>) {\i}<span class="op">;</span></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Buffer cells</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>east] at (<span class="op">-</span><span class="fl">0.2</span>, <span class="op">-</span><span class="fl">2.5</span>) {Buffer:}<span class="op">;</span></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>    \foreach \i <span class="kw">in</span> {<span class="dv">0</span>,...,<span class="dv">7</span>} {</span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>        \draw (\i<span class="op">-</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (\i<span class="op">+</span><span class="fl">0.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> Fill cells <span class="dv">1</span><span class="op">-</span><span class="dv">7</span></span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">0.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">1.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">2.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">2.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">3.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">3.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">4.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">4.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">5.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">5.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">6.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>    \fill[lightgray<span class="op">!</span><span class="dv">30</span>] (<span class="fl">6.6</span>, <span class="op">-</span><span class="fl">2.2</span>) rectangle (<span class="fl">7.4</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">1</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">2</span>}<span class="op">;</span></span>
+<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">2</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">3</span>}<span class="op">;</span></span>
+<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">3</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">5</span>}<span class="op">;</span></span>
+<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">4</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">8</span>}<span class="op">;</span></span>
+<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">5</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">13</span>}<span class="op">;</span></span>
+<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">6</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">21</span>}<span class="op">;</span></span>
+<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a>    \node at (<span class="dv">7</span>, <span class="op">-</span><span class="fl">2.5</span>) {<span class="dv">34</span>}<span class="op">;</span></span>
+<span id="cb6-37"><a href="#cb6-37" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb6-38"><a href="#cb6-38" aria-hidden="true" tabindex="-1"></a>    <span class="op">%</span> m_tail pointer (below)</span>
+<span id="cb6-39"><a href="#cb6-39" aria-hidden="true" tabindex="-1"></a>    \draw[<span class="op">-&gt;</span>, thick] (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) <span class="op">--</span> (<span class="dv">0</span>, <span class="op">-</span><span class="fl">2.8</span>)<span class="op">;</span></span>
+<span id="cb6-40"><a href="#cb6-40" aria-hidden="true" tabindex="-1"></a>    \node[anchor<span class="op">=</span>north] at (<span class="dv">0</span>, <span class="op">-</span><span class="fl">3.2</span>) {m\_tail <span class="op">=</span> <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb6-41"><a href="#cb6-41" aria-hidden="true" tabindex="-1"></a>\end{tikzpicture}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-display" data-execution_count="6">
 <div>
@@ -538,62 +538,62 @@ window.Quarto = {
 </div>
 <p>As we’ll see, it turns out that the indices <code>m_head</code> and <code>m_tail</code> will need to be <code>atomic</code> objects. We’ll understand why this is the case.</p>
 <p>The storage for a ring buffer consists of a fixed-capacity array of elements and the indices for <code>head</code> and <code>tail</code>. We shall write <code>spsc_queue</code> as a templated class having the capacity as a template parameter.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="dt">size_t</span> capacity<span class="op">&gt;</span></span>
-<span id="cb7-2"><a href="#cb7-2"></a><span class="kw">class</span> spsc_queue<span class="op">{</span></span>
-<span id="cb7-3"><a href="#cb7-3"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb7-4"><a href="#cb7-4"></a>    <span class="co">// The capacity must be a power of two.</span></span>
-<span id="cb7-5"><a href="#cb7-5"></a>    <span class="kw">static_assert</span><span class="op">((</span>capacity <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">))</span> <span class="op">==</span> <span class="dv">0</span><span class="op">);</span>    </span>
-<span id="cb7-6"><a href="#cb7-6"></a>    T <span class="va">m_buffer</span><span class="op">[</span>capacity<span class="op">];</span></span>
-<span id="cb7-7"><a href="#cb7-7"></a>    <span class="dt">size_t</span> <span class="va">m_head</span><span class="op">;</span></span>
-<span id="cb7-8"><a href="#cb7-8"></a>    <span class="dt">size_t</span> <span class="va">m_tail</span><span class="op">;</span></span>
-<span id="cb7-9"><a href="#cb7-9"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb7-10"><a href="#cb7-10"></a>        <span class="co">/* ... */</span></span>
-<span id="cb7-11"><a href="#cb7-11"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="dt">size_t</span> capacity<span class="op">&gt;</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> spsc_queue<span class="op">{</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The capacity must be a power of two.</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">static_assert</span><span class="op">((</span>capacity <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">))</span> <span class="op">==</span> <span class="dv">0</span><span class="op">);</span>    </span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    T <span class="va">m_buffer</span><span class="op">[</span>capacity<span class="op">];</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">size_t</span> <span class="va">m_head</span><span class="op">;</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">size_t</span> <span class="va">m_tail</span><span class="op">;</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>        <span class="co">/* ... */</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>We would like to enforce the capacity to be a power of <span class="math inline">\(2\)</span> for efficiency reasons. Remember, that with this design, there’s always atleast one unused element in the array, because <code>m_head == m_tail + 1</code> is the queue full condition. So, the effective capacity equals <code>capacity - 1</code>.</p>
 </section>
 <section id="the-class-interface" class="level2">
 <h2 class="anchored" data-anchor-id="the-class-interface">The <code>class</code> interface</h2>
 <p>Here is the class interface:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="dt">size_t</span> capacity<span class="op">&gt;</span></span>
-<span id="cb8-2"><a href="#cb8-2"></a><span class="kw">class</span> spsc_queue<span class="op">{</span></span>
-<span id="cb8-3"><a href="#cb8-3"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb8-4"><a href="#cb8-4"></a>    <span class="co">// The capacity must be a power of two.</span></span>
-<span id="cb8-5"><a href="#cb8-5"></a>    <span class="kw">static_assert</span><span class="op">((</span>capacity <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">))</span> <span class="op">==</span> <span class="dv">0</span><span class="op">);</span>    </span>
-<span id="cb8-6"><a href="#cb8-6"></a>    T <span class="va">m_buffer</span><span class="op">[</span>capacity<span class="op">];</span></span>
-<span id="cb8-7"><a href="#cb8-7"></a>    <span class="dt">size_t</span> <span class="va">m_head</span><span class="op">;</span></span>
-<span id="cb8-8"><a href="#cb8-8"></a>    <span class="dt">size_t</span> <span class="va">m_tail</span><span class="op">;</span></span>
-<span id="cb8-9"><a href="#cb8-9"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb8-10"><a href="#cb8-10"></a>        <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
-<span id="cb8-11"><a href="#cb8-11"></a>        spsc_queue<span class="op">();</span></span>
-<span id="cb8-12"><a href="#cb8-12"></a>        <span class="dt">bool</span> is_empty<span class="op">()</span> <span class="at">const</span><span class="op">;</span></span>
-<span id="cb8-13"><a href="#cb8-13"></a>        <span class="dt">bool</span> is_full<span class="op">()</span> <span class="at">const</span><span class="op">;</span></span>
-<span id="cb8-14"><a href="#cb8-14"></a>        <span class="dt">bool</span> push_back<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> item<span class="op">);</span></span>
-<span id="cb8-15"><a href="#cb8-15"></a>        <span class="dt">bool</span> pop_front<span class="op">();</span></span>
-<span id="cb8-16"><a href="#cb8-16"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="dt">size_t</span> capacity<span class="op">&gt;</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> spsc_queue<span class="op">{</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The capacity must be a power of two.</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">static_assert</span><span class="op">((</span>capacity <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">))</span> <span class="op">==</span> <span class="dv">0</span><span class="op">);</span>    </span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    T <span class="va">m_buffer</span><span class="op">[</span>capacity<span class="op">];</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">size_t</span> <span class="va">m_head</span><span class="op">;</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">size_t</span> <span class="va">m_tail</span><span class="op">;</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>        <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>        spsc_queue<span class="op">();</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> is_empty<span class="op">()</span> <span class="at">const</span><span class="op">;</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> is_full<span class="op">()</span> <span class="at">const</span><span class="op">;</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> push_back<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> item<span class="op">);</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> pop_front<span class="op">();</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
 <section id="push_back-and-pop_front-take-1" class="level1">
 <h1><code>push_back()</code> and <code>pop_front()</code> take 1</h1>
 <p>Here’s a first attempt at implementing <code>pop()</code>:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1"></a><span class="dt">size_t</span> next<span class="op">(</span><span class="dt">size_t</span> idx<span class="op">)</span></span>
-<span id="cb9-2"><a href="#cb9-2"></a><span class="op">{</span></span>
-<span id="cb9-3"><a href="#cb9-3"></a>    <span class="cf">if</span><span class="op">(++</span>idx <span class="op">&gt;=</span> <span class="va">m_size</span><span class="op">)</span></span>
-<span id="cb9-4"><a href="#cb9-4"></a>        idx <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb9-5"><a href="#cb9-5"></a>    <span class="cf">return</span> idx<span class="op">;</span></span>
-<span id="cb9-6"><a href="#cb9-6"></a><span class="op">}</span></span>
-<span id="cb9-7"><a href="#cb9-7"></a></span>
-<span id="cb9-8"><a href="#cb9-8"></a><span class="dt">bool</span> pop_front<span class="op">()</span></span>
-<span id="cb9-9"><a href="#cb9-9"></a><span class="op">{</span></span>
-<span id="cb9-10"><a href="#cb9-10"></a>    <span class="dt">value_type</span> v<span class="op">;</span></span>
-<span id="cb9-11"><a href="#cb9-11"></a>    <span class="cf">if</span><span class="op">(!</span>is_empty<span class="op">()){</span></span>
-<span id="cb9-12"><a href="#cb9-12"></a>        v <span class="op">=</span> <span class="va">m_buffer</span><span class="op">[</span><span class="va">m_head</span><span class="op">];</span></span>
-<span id="cb9-13"><a href="#cb9-13"></a>        <span class="va">m_head</span> <span class="op">=</span> next<span class="op">(</span><span class="va">m_head</span><span class="op">);</span></span>
-<span id="cb9-14"><a href="#cb9-14"></a>        <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
-<span id="cb9-15"><a href="#cb9-15"></a>    <span class="op">}</span></span>
-<span id="cb9-16"><a href="#cb9-16"></a>    <span class="cf">else</span><span class="op">{</span></span>
-<span id="cb9-17"><a href="#cb9-17"></a>        <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
-<span id="cb9-18"><a href="#cb9-18"></a>    <span class="op">}</span></span>
-<span id="cb9-19"><a href="#cb9-19"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> next<span class="op">(</span><span class="dt">size_t</span> idx<span class="op">)</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span><span class="op">(++</span>idx <span class="op">&gt;=</span> <span class="va">m_size</span><span class="op">)</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>        idx <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> idx<span class="op">;</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="dt">bool</span> pop_front<span class="op">()</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">value_type</span> v<span class="op">;</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span><span class="op">(!</span>is_empty<span class="op">()){</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>        v <span class="op">=</span> <span class="va">m_buffer</span><span class="op">[</span><span class="va">m_head</span><span class="op">];</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>        <span class="va">m_head</span> <span class="op">=</span> next<span class="op">(</span><span class="va">m_head</span><span class="op">);</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">else</span><span class="op">{</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Unfortunately, this section of code for advancing <code>m_head</code> has a couple of problems. The increment of <code>m_head</code> could be pre-empted in the middle. And that’s a problem because the <code>push</code> thread also reads the <code>m_head</code> index in order to figure out, whether the queue is full.</p>
 <p>Note that, <code>push_back()</code> is always called by the producer thread while <code>pop_front()</code> is always called by the consumer thread.</p>
 <p>That’s why, the <code>spsc_queue</code>’s design depends on:</p>
@@ -602,93 +602,93 @@ window.Quarto = {
 <li>Having only one producer thread and one consumer thread.</li>
 </ul>
 <p>if the consumer thread is pre-empted while writing <code>m_head</code>, the producer thread may read a half-written nonsense value.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1"></a><span class="dt">bool</span> push_back<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> v<span class="op">)</span></span>
-<span id="cb10-2"><a href="#cb10-2"></a><span class="op">{</span></span>
-<span id="cb10-3"><a href="#cb10-3"></a>    <span class="cf">if</span><span class="op">(!</span>is_full<span class="op">()){</span></span>
-<span id="cb10-4"><a href="#cb10-4"></a>        <span class="va">m_buffer</span><span class="op">[</span><span class="va">m_tail</span><span class="op">]</span> <span class="op">=</span> v<span class="op">;</span></span>
-<span id="cb10-5"><a href="#cb10-5"></a>        <span class="va">m_tail</span> <span class="op">=</span> next<span class="op">(</span><span class="va">m_tail</span><span class="op">);</span></span>
-<span id="cb10-6"><a href="#cb10-6"></a>        <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
-<span id="cb10-7"><a href="#cb10-7"></a>    <span class="op">}</span></span>
-<span id="cb10-8"><a href="#cb10-8"></a>    <span class="cf">else</span><span class="op">{</span></span>
-<span id="cb10-9"><a href="#cb10-9"></a>        <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
-<span id="cb10-10"><a href="#cb10-10"></a>    <span class="op">}</span></span>
-<span id="cb10-11"><a href="#cb10-11"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="dt">bool</span> push_back<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> v<span class="op">)</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span><span class="op">(!</span>is_full<span class="op">()){</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>        <span class="va">m_buffer</span><span class="op">[</span><span class="va">m_tail</span><span class="op">]</span> <span class="op">=</span> v<span class="op">;</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>        <span class="va">m_tail</span> <span class="op">=</span> next<span class="op">(</span><span class="va">m_tail</span><span class="op">);</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">else</span><span class="op">{</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>If the producer thread is pre-empted while writing <code>m_tail</code>, the consumer thread may read a half-written nonsense value.</p>
 <section id="using-atomic-indices" class="level2">
 <h2 class="anchored" data-anchor-id="using-atomic-indices">Using atomic indices</h2>
 <p>This is my implementation for SPSC lock-free queue with atomic indices.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
-<span id="cb11-2"><a href="#cb11-2"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
-<span id="cb11-3"><a href="#cb11-3"></a></span>
-<span id="cb11-4"><a href="#cb11-4"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="dt">size_t</span> capacity<span class="op">&gt;</span></span>
-<span id="cb11-5"><a href="#cb11-5"></a><span class="kw">class</span> spsc_queue<span class="op">{</span></span>
-<span id="cb11-6"><a href="#cb11-6"></a>    <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb11-7"><a href="#cb11-7"></a>    <span class="co">// The capacity must be a power of two.</span></span>
-<span id="cb11-8"><a href="#cb11-8"></a>    <span class="kw">static_assert</span><span class="op">((</span>capacity <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">))</span> <span class="op">==</span> <span class="dv">0</span><span class="op">);</span>    </span>
-<span id="cb11-9"><a href="#cb11-9"></a>    T <span class="va">m_buffer</span><span class="op">[</span>capacity<span class="op">];</span></span>
-<span id="cb11-10"><a href="#cb11-10"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="bu">std::</span>hardware_destructive_interference_size<span class="op">)</span> <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">&gt;</span> <span class="va">m_head</span><span class="op">;</span></span>
-<span id="cb11-11"><a href="#cb11-11"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="bu">std::</span>hardware_destructive_interference_size<span class="op">)</span> <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">&gt;</span> <span class="va">m_tail</span><span class="op">;</span></span>
-<span id="cb11-12"><a href="#cb11-12"></a></span>
-<span id="cb11-13"><a href="#cb11-13"></a>    <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb11-14"><a href="#cb11-14"></a>        <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
-<span id="cb11-15"><a href="#cb11-15"></a>        spsc_queue<span class="op">()</span></span>
-<span id="cb11-16"><a href="#cb11-16"></a>        <span class="op">:</span> <span class="va">m_buffer</span><span class="op">{}</span></span>
-<span id="cb11-17"><a href="#cb11-17"></a>        <span class="op">,</span> <span class="va">m_head</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
-<span id="cb11-18"><a href="#cb11-18"></a>        <span class="op">,</span> <span class="va">m_tail</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
-<span id="cb11-19"><a href="#cb11-19"></a>        <span class="op">{}</span></span>
-<span id="cb11-20"><a href="#cb11-20"></a></span>
-<span id="cb11-21"><a href="#cb11-21"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">bool</span> is_empty<span class="op">()</span> <span class="at">const</span><span class="op">{</span></span>
-<span id="cb11-22"><a href="#cb11-22"></a>            <span class="cf">return</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">()</span></span>
-<span id="cb11-23"><a href="#cb11-23"></a>                <span class="op">==</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">();</span></span>
-<span id="cb11-24"><a href="#cb11-24"></a>        <span class="op">}</span></span>
-<span id="cb11-25"><a href="#cb11-25"></a></span>
-<span id="cb11-26"><a href="#cb11-26"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">bool</span> is_full<span class="op">()</span> <span class="at">const</span><span class="op">{</span></span>
-<span id="cb11-27"><a href="#cb11-27"></a>            <span class="cf">return</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">()</span> <span class="op">+</span> <span class="dv">1</span> <span class="op">==</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">();</span></span>
-<span id="cb11-28"><a href="#cb11-28"></a>        <span class="op">}</span></span>
-<span id="cb11-29"><a href="#cb11-29"></a></span>
-<span id="cb11-30"><a href="#cb11-30"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">size_t</span> get_size<span class="op">(){</span></span>
-<span id="cb11-31"><a href="#cb11-31"></a>            <span class="cf">return</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">()</span> <span class="op">-</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">()</span> <span class="op">+</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb11-32"><a href="#cb11-32"></a>        <span class="op">}</span></span>
-<span id="cb11-33"><a href="#cb11-33"></a></span>
-<span id="cb11-34"><a href="#cb11-34"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">size_t</span> get_capacity<span class="op">(){</span></span>
-<span id="cb11-35"><a href="#cb11-35"></a>            <span class="cf">return</span> capacity <span class="op">-</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb11-36"><a href="#cb11-36"></a>        <span class="op">}</span></span>
-<span id="cb11-37"><a href="#cb11-37"></a></span>
-<span id="cb11-38"><a href="#cb11-38"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">size_t</span> next<span class="op">(</span><span class="dt">size_t</span> current_idx<span class="op">)</span></span>
-<span id="cb11-39"><a href="#cb11-39"></a>        <span class="op">{</span></span>
-<span id="cb11-40"><a href="#cb11-40"></a>            <span class="dt">size_t</span> next_idx <span class="op">=</span> current_idx <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">);</span></span>
-<span id="cb11-41"><a href="#cb11-41"></a>            <span class="cf">return</span> next_idx<span class="op">;</span></span>
-<span id="cb11-42"><a href="#cb11-42"></a>        <span class="op">}</span></span>
-<span id="cb11-43"><a href="#cb11-43"></a></span>
-<span id="cb11-44"><a href="#cb11-44"></a>        <span class="dt">bool</span> push_back<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> item<span class="op">){</span></span>
-<span id="cb11-45"><a href="#cb11-45"></a>            <span class="dt">size_t</span> tail <span class="op">=</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">);</span></span>
-<span id="cb11-46"><a href="#cb11-46"></a>            <span class="dt">size_t</span> next_write_index <span class="op">=</span> next<span class="op">(</span>tail<span class="op">);</span></span>
-<span id="cb11-47"><a href="#cb11-47"></a>            <span class="cf">if</span><span class="op">(</span>next_write_index <span class="op">==</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
-<span id="cb11-48"><a href="#cb11-48"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
-<span id="cb11-49"><a href="#cb11-49"></a></span>
-<span id="cb11-50"><a href="#cb11-50"></a>            <span class="va">m_buffer</span><span class="op">[</span>tail<span class="op">]</span> <span class="op">=</span> item<span class="op">;</span></span>
-<span id="cb11-51"><a href="#cb11-51"></a>            <span class="va">m_tail</span><span class="op">.</span>store<span class="op">(</span>next_write_index<span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb11-52"><a href="#cb11-52"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
-<span id="cb11-53"><a href="#cb11-53"></a>        <span class="op">}</span></span>
-<span id="cb11-54"><a href="#cb11-54"></a></span>
-<span id="cb11-55"><a href="#cb11-55"></a>        <span class="dt">bool</span> pop_front<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> v<span class="op">){</span></span>
-<span id="cb11-56"><a href="#cb11-56"></a>            <span class="dt">size_t</span> head <span class="op">=</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">);</span></span>
-<span id="cb11-57"><a href="#cb11-57"></a>            <span class="cf">if</span><span class="op">(</span>head <span class="op">==</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
-<span id="cb11-58"><a href="#cb11-58"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
-<span id="cb11-59"><a href="#cb11-59"></a></span>
-<span id="cb11-60"><a href="#cb11-60"></a>            v <span class="op">=</span> <span class="va">m_buffer</span><span class="op">[</span>head<span class="op">];</span></span>
-<span id="cb11-61"><a href="#cb11-61"></a>            <span class="dt">size_t</span> next_read_index <span class="op">=</span> next<span class="op">(</span><span class="va">m_head</span><span class="op">);</span></span>
-<span id="cb11-62"><a href="#cb11-62"></a>            <span class="va">m_head</span><span class="op">.</span>store<span class="op">(</span>next_read_index<span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
-<span id="cb11-63"><a href="#cb11-63"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
-<span id="cb11-64"><a href="#cb11-64"></a>        <span class="op">}</span></span>
-<span id="cb11-65"><a href="#cb11-65"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;thread&gt;</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="dt">size_t</span> capacity<span class="op">&gt;</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> spsc_queue<span class="op">{</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The capacity must be a power of two.</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">static_assert</span><span class="op">((</span>capacity <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">))</span> <span class="op">==</span> <span class="dv">0</span><span class="op">);</span>    </span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>    T <span class="va">m_buffer</span><span class="op">[</span>capacity<span class="op">];</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="bu">std::</span>hardware_destructive_interference_size<span class="op">)</span> <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">&gt;</span> <span class="va">m_head</span><span class="op">;</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="bu">std::</span>hardware_destructive_interference_size<span class="op">)</span> <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">&gt;</span> <span class="va">m_tail</span><span class="op">;</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>        <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> T<span class="op">;</span></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>        spsc_queue<span class="op">()</span></span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>        <span class="op">:</span> <span class="va">m_buffer</span><span class="op">{}</span></span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>        <span class="op">,</span> <span class="va">m_head</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>        <span class="op">,</span> <span class="va">m_tail</span><span class="op">{</span><span class="dv">0</span><span class="op">}</span></span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>        <span class="op">{}</span></span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">bool</span> is_empty<span class="op">()</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">()</span></span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>                <span class="op">==</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">();</span></span>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb11-25"><a href="#cb11-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-26"><a href="#cb11-26" aria-hidden="true" tabindex="-1"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">bool</span> is_full<span class="op">()</span> <span class="at">const</span><span class="op">{</span></span>
+<span id="cb11-27"><a href="#cb11-27" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">()</span> <span class="op">+</span> <span class="dv">1</span> <span class="op">==</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">();</span></span>
+<span id="cb11-28"><a href="#cb11-28" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb11-29"><a href="#cb11-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-30"><a href="#cb11-30" aria-hidden="true" tabindex="-1"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">size_t</span> get_size<span class="op">(){</span></span>
+<span id="cb11-31"><a href="#cb11-31" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">()</span> <span class="op">-</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">()</span> <span class="op">+</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb11-32"><a href="#cb11-32" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb11-33"><a href="#cb11-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-34"><a href="#cb11-34" aria-hidden="true" tabindex="-1"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">size_t</span> get_capacity<span class="op">(){</span></span>
+<span id="cb11-35"><a href="#cb11-35" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> capacity <span class="op">-</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb11-36"><a href="#cb11-36" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb11-37"><a href="#cb11-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-38"><a href="#cb11-38" aria-hidden="true" tabindex="-1"></a>        <span class="op">[[</span><span class="at">nodiscard</span><span class="op">]]</span> <span class="dt">size_t</span> next<span class="op">(</span><span class="dt">size_t</span> current_idx<span class="op">)</span></span>
+<span id="cb11-39"><a href="#cb11-39" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span></span>
+<span id="cb11-40"><a href="#cb11-40" aria-hidden="true" tabindex="-1"></a>            <span class="dt">size_t</span> next_idx <span class="op">=</span> current_idx <span class="op">&amp;</span> <span class="op">(</span>capacity <span class="op">-</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb11-41"><a href="#cb11-41" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> next_idx<span class="op">;</span></span>
+<span id="cb11-42"><a href="#cb11-42" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb11-43"><a href="#cb11-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-44"><a href="#cb11-44" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> push_back<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> item<span class="op">){</span></span>
+<span id="cb11-45"><a href="#cb11-45" aria-hidden="true" tabindex="-1"></a>            <span class="dt">size_t</span> tail <span class="op">=</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">);</span></span>
+<span id="cb11-46"><a href="#cb11-46" aria-hidden="true" tabindex="-1"></a>            <span class="dt">size_t</span> next_write_index <span class="op">=</span> next<span class="op">(</span>tail<span class="op">);</span></span>
+<span id="cb11-47"><a href="#cb11-47" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span><span class="op">(</span>next_write_index <span class="op">==</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
+<span id="cb11-48"><a href="#cb11-48" aria-hidden="true" tabindex="-1"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb11-49"><a href="#cb11-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-50"><a href="#cb11-50" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_buffer</span><span class="op">[</span>tail<span class="op">]</span> <span class="op">=</span> item<span class="op">;</span></span>
+<span id="cb11-51"><a href="#cb11-51" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_tail</span><span class="op">.</span>store<span class="op">(</span>next_write_index<span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb11-52"><a href="#cb11-52" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb11-53"><a href="#cb11-53" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb11-54"><a href="#cb11-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-55"><a href="#cb11-55" aria-hidden="true" tabindex="-1"></a>        <span class="dt">bool</span> pop_front<span class="op">(</span><span class="dt">value_type</span><span class="op">&amp;</span> v<span class="op">){</span></span>
+<span id="cb11-56"><a href="#cb11-56" aria-hidden="true" tabindex="-1"></a>            <span class="dt">size_t</span> head <span class="op">=</span> <span class="va">m_head</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_relaxed<span class="op">);</span></span>
+<span id="cb11-57"><a href="#cb11-57" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span><span class="op">(</span>head <span class="op">==</span> <span class="va">m_tail</span><span class="op">.</span>load<span class="op">(</span><span class="bu">std::</span>memory_order_acquire<span class="op">))</span></span>
+<span id="cb11-58"><a href="#cb11-58" aria-hidden="true" tabindex="-1"></a>                <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb11-59"><a href="#cb11-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-60"><a href="#cb11-60" aria-hidden="true" tabindex="-1"></a>            v <span class="op">=</span> <span class="va">m_buffer</span><span class="op">[</span>head<span class="op">];</span></span>
+<span id="cb11-61"><a href="#cb11-61" aria-hidden="true" tabindex="-1"></a>            <span class="dt">size_t</span> next_read_index <span class="op">=</span> next<span class="op">(</span><span class="va">m_head</span><span class="op">);</span></span>
+<span id="cb11-62"><a href="#cb11-62" aria-hidden="true" tabindex="-1"></a>            <span class="va">m_head</span><span class="op">.</span>store<span class="op">(</span>next_read_index<span class="op">,</span> <span class="bu">std::</span>memory_order_release<span class="op">);</span></span>
+<span id="cb11-63"><a href="#cb11-63" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb11-64"><a href="#cb11-64" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb11-65"><a href="#cb11-65" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <section id="why-do-we-use-a-power-of-2-buffer-size" class="level3">
 <h3 class="anchored" data-anchor-id="why-do-we-use-a-power-of-2-buffer-size">Why do we use a power of <span class="math inline">\(2\)</span> buffer size?</h3>
 <p>For a buffer of fixed capacity <span class="math inline">\(N\)</span>, with current index <code>idx</code>, the index to the next element can be calculated as:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1"></a>next_idx <span class="op">=</span> <span class="op">(</span>curr_idx <span class="op">+</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> N</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>next_idx <span class="op">=</span> <span class="op">(</span>curr_idx <span class="op">+</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> N</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This is because our queue is a ring buffer, so after the last slot, we will go back to the zeroeth one, then the first one and so on.</p>
 <p>We can use the above method to get the next index for any buffer size <span class="math inline">\(N\)</span>. Why do we then only use capacity that are powers of <span class="math inline">\(2\)</span>? The answer is easy: performance. The modulo (<code>%</code>) operator requires a division instruction, which is expensive. When the size <span class="math inline">\(N\)</span> is a power of <span class="math inline">\(2\)</span>, we can just do the following:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1"></a><span class="dt">size_t</span> next_index <span class="op">=</span> curr_index <span class="op">&amp;</span> <span class="op">(</span>N <span class="op">-</span> <span class="dv">1</span><span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> next_index <span class="op">=</span> curr_index <span class="op">&amp;</span> <span class="op">(</span>N <span class="op">-</span> <span class="dv">1</span><span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="buffer-access-synchronization" class="level3">
 <h3 class="anchored" data-anchor-id="buffer-access-synchronization">Buffer access synchronization</h3>
