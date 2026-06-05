@@ -214,3 +214,59 @@ In particular, the executable is consulte before the current library. This is th
                                     └───────────────┘
 ```
 
+## Can a shared-library symbol be overriden from an executable?
+
+Can a shared-library symbol be overriden from an executable? In Windows, the answer is no. In Linux, the answer is yes, thanks to Interposition. This is exactly what Interposition does. In Mac, the answer is yes, but not by default. 
+
+## C++ `new` operator
+
+Here is a quote from the C++ standard. 
+
+> [replacement.functions]: A C++ program may provide the definition for any of the following dynamic memory allocation function signatures declared in the header `<new>`. 
+> - `operator new(std::size_t)`
+> - `operator new(std::size_t, std::align_val_t)`
+> - ...
+>
+> The program's definitions are used instead of the default versions supplied by the C++ standard library.
+
+That is what happens on Linux, thanks to interposition. That is not what happens on Windows. 
+
+```
+                    ┌─────────────────────┐
+                    │          exe        │
+                    | operator new(size_t)|
+                    └───────────┬─────────┘
+            ┌───────────────────┴────────────────────┐
+            │                                        │
+    ┌───────┴───────┐                   ┌────────────┴─────────┐
+    │     glibc     │                   │       libc++         │
+    |               |                   | operator new(size_t) |
+    +---------------+                   +----------------------+
+```
+
+In fact, Windows can't do that. Strictly speaking, Windows does not conform to this clause of the standard. 
+
+# Symbol Resolution Time
+
+Let's discuss another mechanism that supports interposition. The default behavior is governed by the default switch `--allow-shlib-undefined`. If we have the below tree of dependencies
+
+
+```
+                    ┌───────────────┐
+                    │      exe      │ 
+                    └───────┬───────┘
+                    ┌───────┴───────┐
+                    │   LD_PRELOAD  │  
+                    └───────┬───────┘
+            ┌───────────────┴───────────────┐
+            │                               │
+    ┌───────┴───────┐               ┌───────┴───────┐
+    │     lib1      │               │     lib2      │
+    └───────┬───────┘               └───────┬───────┘
+    ┌───────┴───────┐                       │
+    │               │                       │
+┌───┴───────┐ ┌─────┴─────┐         ┌───────┴───────┐
+│   lib3    │ │   lib4    │         │     lib5      │
+└───────────┘ └───────────┘         │  defines foo  │
+                                    └───────────────┘
+```
