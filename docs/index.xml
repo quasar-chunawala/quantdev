@@ -44,27 +44,27 @@
 <p>Let us take a closer look at Windows first. A windows binary contains descriptions of all the imports it consumes in a section called <code>.idata</code> (the <code>i</code> stands for import). The most important data-structure in the <code>.idata</code> section is the directory table. The directory table is a table of entries - one per shared library. Such an entry contains the DLL name, an <strong>import lookup table</strong> (an offset) which contains imported symbol names for the loader’s usage, an offset into the import lookup table, which contains information about which symbols to locate within this library and an offset into an import address table (IAT), which tells the loader where to write the addresses of these located symbols once they are found.</p>
 <p>Schematically, what Windows binary tells the world, tells the loader is, “<em>Dear loader, please load the library <code>lib1</code>, and from it, please locate the symbols <code>f1</code>, <code>f2</code> and <code>f3</code>. Then, load the library <code>lib2</code> and from it, please locate the symbols <code>g1</code>, <code>g2</code> and <code>g3</code>.</em>”.</p>
 <pre><code>Windows Binary (.exe / .dll)
-  +-----------------------------------------------------------------------------+
-  │  .idata section                                                             │
-  │  ┌──────────────────────────┐                                               │
-  │  │     Directory table      │                                               │
-  │  │                          │                                               │
-  │  │  ┌────────────────────┐  │   ILT (symbol names)    IAT (addresses)       │
-  │  │  │  Entry: lib1.dll   │──┼──► ┌──────────────┐    ┌──────────────┐       │
-  │  │  │  name / ILT / IAT  │  │    │  f1          │    │  ← addr(f1)  │       │
-  │  │  └────────────────────┘  │ ┌─►│  f2          │    │  ← addr(f2)  │       │
-  │  │           │              │ │  │  f3          │    │  ← addr(f3)  │       │
-  │  │           └──────────────┼─┘  └──────────────┘    └──────────────┘       │
-  │  │                          │              ▲                   ▲            │
-  │  │  ┌────────────────────┐  │   ILT        │        IAT        │            │
-  │  │  │  Entry: lib2.dll   │──┼──► ┌──────────────┐    ┌──────────────┐       │
-  │  │  │  name / ILT / IAT  │  │    │  g1          │    │  ← addr(g1)  │       │
-  │  │  └────────────────────┘  │ ┌─►│  g2          │    │  ← addr(g2)  │       │
-  │  │           │              │ │  │  g3          │    │  ← addr(g3)  │       │
-  │  │           └──────────────┼─┘  └──────────────┘    └──────────────┘       │
-  │  └──────────────────────────┘              │                   │            │
-  │                                            └─────────┬─────────┘            │
-  +-----------------------------------------------------------------------------+</code></pre>
++------------------------------------------------------------------------------+
+|  .idata section                                                              |
+|  +--------------------------+                                                |
+|  |     Directory table      |                                                |
+|  |                          |                                                |
+|  |  +--------------------+  |   ILT (symbol names)    IAT (addresses)        |
+|  |  |  Entry: lib1.dll   |--+--&gt; +--------------+    +--------------+        |
+|  |  |  name / ILT / IAT  |  |    |  f1          |    |  &lt;- addr(f1) |        |
+|  |  +--------------------+  | +-&gt;|  f2          |    |  &lt;- addr(f2) |        |
+|  |           |              | |  |  f3          |    |  &lt;- addr(f3) |        |
+|  |           +--------------+-+  +--------------+    +--------------+        |
+|  |                          |              ^                   ^             |
+|  |  +--------------------+  |   ILT        |        IAT        |             |
+|  |  |  Entry: lib2.dll   |--+--&gt; +--------------+    +--------------+        |
+|  |  |  name / ILT / IAT  |  |    |  g1          |    |  &lt;- addr(g1) |        |
+|  |  +--------------------+  | +-&gt;|  g2          |    |  &lt;- addr(g2) |        |
+|  |           |              | |  |  g3          |    |  &lt;- addr(g3) |        |
+|  |           +--------------+-+  +--------------+    +--------------+        |
+|  +--------------------------+              |                   |             |
+|                                            +---------+---------+             |
++------------------------------------------------------------------------------+</code></pre>
 </section>
 <section id="linux-import-sections" class="level2">
 <h2 class="anchored" data-anchor-id="linux-import-sections">Linux import sections</h2>
@@ -341,46 +341,46 @@ font-style: inherit;">21:</span> 0000000000000000     0 FUNC    GLOBAL DEFAU</sp
 <p>To summarize, <code>.dynamic</code> and <code>.dynsym</code> are separate buckets of lib names and symbol names.</p>
 <p>Schematically, a linux binary speaks to the loader in very different terms. It tells the loader - here are the libraries, I want you to map into the process. And here’s the bucket of symbols, I ask you locate anywhere within these libraries.</p>
 <pre><code>Linux Binary (ELF)
-  ┌──────────────────────────────────────────────────────────────────────────────┐
-  │                                                                              │
-  │  .code section                                                               │
-  │  ┌────────────────────────────────────────────────────────────────────────┐  │
-  │  │  .text   (executable instructions)                                     │  │
-  │  │  .rodata (read-only data, string literals, ...)                        │  │
-  │  │  PLT     (per-symbol call stubs → resolved via GOT at runtime)         │  │
-  │  └────────────────────────────────────────────────────────────────────────┘  │
-  │                                                                              │
-  │  .data section                                                               │
-  │  ┌────────────────────────────────────────────────────────────────────────┐  │
-  │  │  .data   (initialised global/static variables)                         │  │
-  │  │  .bss    (uninitialised global/static variables)                       │  │
-  │  │  GOT     (per-symbol address slots, patched by loader at runtime)      │  │
-  │  └────────────────────────────────────────────────────────────────────────┘  │
-  │                                                                              │
-  │  .dynamic section                                                            │
-  │  ┌────────────────────────────────────────────────────────────────────────┐  │
-  │  │  NEEDED  libcap.so.2                                                   │  │
-  │  │  NEEDED  libc.so.6                                                     │  │
-  │  │  (library names only — no symbol information)                          │  │
-  │  └────────────────────────────────────────────────────────────────────────┘  │
-  │                                                                              │
-  │  .dynsym section                                                             │
-  │  ┌────────────────────────────────────────────────────────────────────────┐  │
-  │  │  Ndx  Name                         Bind    Source                      │  │
-  │  │  ───  ───────────────────────────  ──────  ──────────────────────────  │  │
-  │  │  UND  __ctype_toupper_loc          GLOBAL  GLIBC_2.3                   │  │
-  │  │  UND  getenv                       GLOBAL  GLIBC_2.2.5                 │  │
-  │  │  UND  cap_to_text                  GLOBAL  libcap.so.2                 │  │
-  │  │  UND  sigprocmask                  GLOBAL  GLIBC_2.2.5                 │  │
-  │  │  UND  free                         GLOBAL  GLIBC_2.2.5                 │  │
-  │  │  UND  abort                        GLOBAL  GLIBC_2.2.5                 │  │
-  │  │   :   ...                                                              │  │
-  │  │   9   main                         GLOBAL  (defined in this binary)    │  │
-  │  │  10   some_exported_fn             GLOBAL  (defined in this binary)    │  │
-  │  │   :   ...                                                              │  │
-  │  └────────────────────────────────────────────────────────────────────────┘  │
-  │                                                                              │
-  └──────────────────────────────────────────────────────────────────────────────┘</code></pre>
+ +------------------------------------------------------------------------------+
+|                                                                              |
+|  .code section                                                               |
+|  +------------------------------------------------------------------------+  |
+|  |  .text   (executable instructions)                                     |  |
+|  |  .rodata (read-only data, string literals, ...)                        |  |
+|  |  PLT     (per-symbol call stubs -&gt; resolved via GOT at runtime)        |  |
+|  +------------------------------------------------------------------------+  |
+|                                                                              |
+|  .data section                                                               |
+|  +------------------------------------------------------------------------+  |
+|  |  .data   (initialised global/static variables)                         |  |
+|  |  .bss    (uninitialised global/static variables)                       |  |
+|  |  GOT     (per-symbol address slots, patched by loader at runtime)      |  |
+|  +------------------------------------------------------------------------+  |
+|                                                                              |
+|  .dynamic section                                                            |
+|  +------------------------------------------------------------------------+  |
+|  |  NEEDED  libcap.so.2                                                   |  |
+|  |  NEEDED  libc.so.6                                                     |  |
+|  |  (library names only -- no symbol information)                         |  |
+|  +------------------------------------------------------------------------+  |
+|                                                                              |
+|  .dynsym section                                                             |
+|  +------------------------------------------------------------------------+  |
+|  |  Ndx  Name                         Bind    Source                      |  |
+|  |  ---  ---------------------------  ------  --------------------------  |  |
+|  |  UND  __ctype_toupper_loc          GLOBAL  GLIBC_2.3                   |  |
+|  |  UND  getenv                       GLOBAL  GLIBC_2.2.5                 |  |
+|  |  UND  cap_to_text                  GLOBAL  libcap.so.2                 |  |
+|  |  UND  sigprocmask                  GLOBAL  GLIBC_2.2.5                 |  |
+|  |  UND  free                         GLOBAL  GLIBC_2.2.5                 |  |
+|  |  UND  abort                        GLOBAL  GLIBC_2.2.5                 |  |
+|  |   :   ...                                                              |  |
+|  |   9   main                         GLOBAL  (defined in this binary)    |  |
+|  |  10   some_exported_fn             GLOBAL  (defined in this binary)    |  |
+|  |   :   ...                                                              |  |
+|  +------------------------------------------------------------------------+  |
+|                                                                              |
++------------------------------------------------------------------------------+</code></pre>
 <p>These seemingly benign differences in the architecture have far-reaching consequences. A symbol in Linux can be resolved from any of these libraries. The one that you intended it to be, or another. On the plus side, this might be an intentional behavior. It might have imported some third-party library and you want to override some implementation of the function with your own. This design enables it. This is an iceberg tip of much deeper design decisions.</p>
 </section>
 </section>
@@ -485,6 +485,7 @@ font-style: inherit;">21:</span> 0000000000000000     0 FUNC    GLOBAL DEFAU</sp
 <section id="c-impliciation-how-to-form-a-process-wide-singleton" class="level1">
 <h1>C++ Impliciation : How to form a process-wide singleton?</h1>
 <p>Let’s discuss a developer facing implication of this. Can we have a process-wide singleton? By singleton, I mean the Meyers singleton design pattern - a single object which has a unique instance which is usable by all the code in the process, from all binaries.</p>
+<p>In Windows, the usual singleton design pattern would create a per-binary singleton.</p>
 
 
 </section>
