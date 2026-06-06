@@ -16,150 +16,9 @@ Constants, by their simplest definition are values that do not change. `const` c
 
 We should add `const` early and often. Back-patching `const` correctness results in a snowball effect: every `const` over here requires four more to be added over there.
 
-## `const` functions
+## `const` member functions
 
 You can declare a non-static member function `const` if it doesn't change the value of the underlying object. 
-
-In case a function has two overloaded versions where one is `const` and the other is not, the compiler will choose which one to call based on whether the object itself is `const` or not.
-
-```cpp
-#include <iostream>
-#include <initializer_list>
-#include <print>
-
-struct Point{
-    double m_x;
-    double m_y;
-
-    explicit Point(double x, double y)
-    : m_x{ x }
-    , m_y{ y }
-    {}
-
-    double& x(){ 
-        std::println("double& x()");
-        std::println("x = {}", m_x);
-        return m_x; 
-    }
-    const double& x() const{ 
-        std::println("const double& x() const"); 
-        std::println("x = {}", m_x);
-        return m_x; 
-    }
-    double& y(){ 
-        std::println("double& y()");
-        std::println("y = {}", m_y);
-        return m_y; 
-    }
-    const double& y() const{ 
-        std::println("const double& y() const");
-        std::println("y = {}", m_y);
-        return m_y; 
-    }
-};
-
-void print(const Point& p){
-
-}
-int main(){
-    Point p(3.0, 4.0);
-    p.x();
-    p.y();
-
-    const Point p2(1.0, -1.0);
-    p2.x();
-    p2.y();
-    return 0;
-}
-```
-[Compiler Explorer](https://compiler-explorer.com/z/sbbff5nYY)
-
-Output:
-
-```shell
-double& x()
-x = 3
-double& y()
-y = 4
-const double& x() const
-x = 1
-const double& y() const
-y = -1
-```
-
-## `const` variables
-
-If you add the `const` qualifier to the type of a local variable, the local variable is immutable. Declaring variables as `const` also helps the compiler to perform some optimizations. 
-
-A member of a `const`-qualified `struct` or `union` type acquires the qualification of the type it belongs to. 
-
-```cpp
-struct S{
-    int i; 
-    const int ci;
-};
-
-const S cs;
-// the types of cs.i and cs.ci are 
-// both const int
-```
-
-If an array type is declared with the `const` type qualifier, it's elements are considered `const`. 
-
-```cpp
-const A a[6] = {1, 2, 3, 4, 5, 6};
-
-// int* pi = a[0]; // a[0] is const int*
-```
-
-A pointer to a non-`const` type can be implicitly converted to a pointer to const-qualified version of the same. The reverse conversion requires a cast expression. 
-
-## `const` members
-
-Having `const` local variables is good. Having `const` as a member variable is never a good idea. You cannot copy assign or move assign to the objects of such a type.
-
-## `const` return types
-
-When returning objects by value, it is not recommended to use the `const` qualifier. It would be misleading to return a value by `const` object. RVO(Return Value Optimization) only kicks in when you return an object by value without the `const` qualifier. 
-
-Imagine that we need the unit vectors $\hat{i} = (1,0)$ and $\hat{j} = (0,1)$ in the physics engine in our game. We might specify these vectors as:
-
-```cpp
-const Point unit_vector_i(1,0);
-const Point unit_vector_j(0,1);
-```
-
-When an object is declared `const`, all its subobjects are `const`. This aligns with our intuition. Being able to modify the coordinates of the basis vectors should be an illegal and makes no sense. 
-
-Hence, the `x()` and `y()` getter methods should have a `const` version, that operates on `const Point` objects and returns a constant reference.
-
-## `const` function parameters
-
-Consider the following code:
-
-```cpp
-void f(int);        // declaration of f(int)
-void f(const int);  // re-declaration of f(int)
-void f(int){ /*...*/ } // defintion of f(int)
-void f(const int){ /*...*/ } //re-definition of f(int)
-```
-
-A function declaration tells the compiler the function's signature and return type. One line 2, the `const`ness of the function's parameter type is ignored. Similarly, line 4 is a definition of the same function `f(int)`, which will result in an error at link time. Multiple declarations are allowed, but only a single definition is permitted. 
-
-### Meaning of `const` in function declarations
-
-Not all `const` qualifications in function declarations are ignored. To quote from from the C++ standard,
-
-> *`const` type-specifiers buried within a parameter type specification are significant and can be used to distinguish overloaded function declarations.*
-
-```cpp
-void f(const int* x);                  // 1
-void f(const int& x);                  // 2
-void f(std::unique_ptr<const int> x);  // 3
-void f(int* x);                        // 4
-```
-
-In all of the above examples, the parameter `x` itself is never declared `const`. `const` is buried inside the parameter type, hence each has a declaration has a different parameter type, forming an overload set. 
 
 # `constexpr` 
 
@@ -167,21 +26,15 @@ In all of the above examples, the parameter `x` itself is never declared `const`
 
 Let's review the definition of a literal type. According to the [standard](https://eel.is/c++draft/basic.types.general#10):
 
-A literal type is one whose layout can be determined at compile time. The following are the literal types:
+> A literal type is one whose layout can be determined at compile time. The following are the literal types:
+>
+> - `void`
+> - Scalar types
+> - References
+> - Arrays of void, scalar types or references
+> - A class that has a `constexpr` destructor, and one or more constexpr constructors that are not move or copy  constructors. Additionally, all its non-static data members and base classes must be literal types and not volatile.
 
-- `void`
-- Scalar types
-- References
-- Arrays of void, scalar types or references
-- A class that has a `constexpr` destructor, and one or more constexpr constructors that are not move or copy constructors. Additionally, all its non-static data members and base classes must be literal types and not volatile.
-
-The primary difference between `const` and `constexpr` variable is that the initialization of a `const` variable can be deferred to compile-time. A `constexpr` variable must be initialized at compile time. All `constexpr` variables are `const`, but the converse is not true. 
-
-- A variable can be declared with `constexpr`, when it has a literal type and is initialized. If the initialization is performed by a constructor, the constructor must be declared as `constexpr`.
-
--  A reference may be declared as `constexpr` if and only if the referenced object is initialized by a constant expression. 
-
-- All declarations of a `constexpr` variable or function must have `constexpr` specifier.
+A `const` variable is immutable. The initialization of a `const` variable may be deferred to run-time. A `constexpr` variable must be initialized with a value that is known at compile-time. All `constexpr` variables are `const`, but the converse is not true. 
 
 ```cpp
 constexpr float c = 3.0e8;
@@ -190,52 +43,154 @@ constexpr float G = 6.67430e-11;
 
 ## `constexpr` functions
 
-A `constexpr` function is one whose return value is computable at compile time. The caller(consuming code) requires the return value at compile-time to initialize a `constexpr` variable, or to provide a non-type template argument. When a `constexpr` function is passed arguments known at compile-time, it produces function produces a compile-time constant. When called with non-`constexpr` arguments, or when its return value isn't required at compile-time, it produces a value at run time like a regular function. This dual behavior saves you from having to write `constexpr` and non-`constexpr` versions of the same function. It follows that, you cannot specify `constexpr` on the variables in the parameter list of a `constexpr` function. Recall, `constexpr` variables must be initialized at compile-time. 
+A `constexpr` function `foo()` is one that may be evaluated at compile-time or run-time. If a function marked `constexpr` is called in a constant expression context, only then, the function is evaluted at compile-time. We have roughly four options for doing so: 
 
-A `constexpr` function or constructor is implicitly `inline`. The `inline` keyword suggests to the compiler to substitute the code within the function definition in place of each call to the function.
+- Assign the result of `foo` to a `constexpr` variable.
+- Use `foo` as a non-type template argument.
+- Use `foo` as the size of the array.
+- Call `foo` in another `constexpr` function that is evaluated in a constant evaluation. 
 
-The following rules apply to `constexpr` functions:
-
-- A `constexpr` function must accept and return only literal types.
-- The body can be defined as `=default` or `=delete`. This also applies to constructors and destructors.
-- The body cannot contain `try` blocks.
+Here are the four cases in code:
 
 ```cpp
-#include <iostream>
-#include <print>
-#include <array>
-#include <cstdlib>
+constexpr std::size_t double_up(std::size_t n){
+    return 2 * n;
+}
+
+constexpr std::size_t other(std::size_t n){
+    return double_up(n);
+}
+
+constexpr std::size_t result = double_up(5);
+std::array<int, double_up(3)> a{1, 2, 3, 4, 5, 6};
+char buffer[double_up(10)];
+constexpr auto value{other(4)};
+```
+
+# `if constexpr`
+
+`if constexpr` is a `constexpr` if statement where the predicate is evaluated is compile-time. It can be used to modify the behavior of the enclosing function. So, the resulting binary will include one branch and not the other. Generally, you wouldn't use this outside of a template function.
+
+```cpp
 #include <cmath>
+#include <optional>
 
-// Point is a literal type
-struct Point {
-    double x { 0 };
-    double y { 0 };
-
-    constexpr int distance(const Point& other) const { 
-        return sqrt(pow(x - other.x,2) + pow((y-other.y),2)); 
+template<typename T>
+bool isEqual(T a, T b, std::optional<double> epsilon = 1e-7){
+    if constexpr(std::is_same_v<T, float> || std::is_same_v<T, double>){
+        return std::abs(a - b) < epsilon;
+    }else{
+        return a == b;
     }
-};
-
-// Line is not a literal type. 
-// Its destructor is not constexpr.
-struct Line{
-    Point m_head;
-    Point m_tail;
-
-    ~Line(){}
-};
-
-int main(){
-    constexpr Point p(3.0, 4.0);
-    constexpr Point o(0.0, 0.0);
-    constexpr double d = p.distance(o);
-    std::cout << "Distance from origin to (3.0,4.0) = "
-              << d << "\n";
-    return 0;
 }
 ```
-[Compiler Explorer](https://compiler-explorer.com/z/5GvPWaazd)
+[Compiler Explorer](https://godbolt.org/z/r5vs64W8K)
+
+# `consteval` functions
+
+A function marked `consteval` is called an *immediate function*. Immediate here means that the funtion is evaluated at the compiler front-end, yielding only a value that the compiler back-end uses. Such a function never goes into your binary. A `consteval`-function must be evaluated at compile-time or compilation fails. 
+
+A call to a `consteval` function must be a constant-expression. 
+
+```cpp
+consteval int sqr(int n){
+    return n * n;
+}
+
+constexpr int r = sqr(100); // Okay
+int x = 100;
+// int r2 = sqr(x); //Error: Not a constant expression
+```
+
+There is one exception to the rule that a call to a `consteval` function must be a constant-expression: if the call appears in another `consteval` function, it need not be a constant-expression (since the call to the enclosing function would ultimately have to produce a core constant expression). 
+
+```cpp
+consteval int sqrsqr(int n) {
+  return sqr(sqr(n)); // Not a constant-expression at this  point,
+}                     // but that's okay.
+
+//constexpr int dblsqr(int n) {
+//  return 2*sqr(n); // Error: Enclosing function is not
+//}    
+```
+
+# `std::is_constant_evaluated()`
+
+`std::is_constant_evaluated()` is a magic library function to check if the current evaluation context is constant evaluation. 
+
+Despite the fact that support for both `consteval` functions and `std::is_constant_evaluation` were introduced in C++20, these features interact poorly.
+
+# `if consteval`
+
+## Interaction between `constexpr` and `consteval`
+
+Consider the interplay between the magic library function `std::is_constant_evaluated()` and the new `consteval`. Consider the following example:
+
+```cpp
+consteval int f(int i) { return i; }
+
+// The constexpr function g() does not compile
+// constexpr int g(int i) {
+//     if (std::is_constant_evaluated()) {
+//         return f(i) + 1; // <==
+//     } else {
+//         return 42;
+//     }
+// }
+
+consteval int h(int i) {
+    return f(i) + 1;
+}
+```
+[Compiler Explorer](https://godbolt.org/z/K5TPG9nf9)
+
+The function `h` here is basically a lifted, constant-evaluation-only version of the function `g`. At constant evaluation time, they do the same thing, except that during runtime, you cannot call `h`, and `g` has this extra path. Maybe this code started with just `h` and someone decided a runtime version would also be useful and turned it into `g`.
+
+Unfortunately, `h` is well-formed, while `g` is ill-formed. The call to `f()` inside `g()` is an *immediate invocation*. You cannot make a call to `f` from inside of `g` (the location marked with an arrow). During the static analysis phase, the compiler front-end requires that the call to `f()` inside `g()`, an immediate invocation, must be a constant expression and it is not. 
+
+## The `if constexpr(std::is_constant_evaluated())` problem
+
+What happens, if we modify the simple `if` statement to `if constexpr`? Consider the below code: Because the predicate of `if constexpr` is evaluated at compile-time, `if constexpr(std::is_constant_evaluated())` is trivially true and is buggy code. 
+
+```cpp
+constexpr int foo(int i) {
+    if constexpr (std::is_constant_evaluated()) {
+        /* ... */
+    } else {
+        return 42;
+    }
+}
+```
+
+## The `if consteval` statment
+
+The `if consteval` is exactly the same as
+
+```cpp
+if(std::is_constant_evaluated())
+```
+
+with one key difference: we can use `if consteval` to invoke immediate functions. According to the standard:
+
+> An expression or conversion is in an immediate function context if it is potentially evaluated and its innermost non-block scope is a function parameter scope of an immediate function. An expression or conversion is an immediate invocation if it is an explicit or implicit invocation of an immediate function and is not in an immediate function context. An immediate invocation shall be a constant expression.
+
+```cpp
+consteval int f(int i) { return i; }
+
+constexpr int g(int i) {
+    if consteval {
+        return f(i) + 1; // ok: immediate function context
+    } else {
+        return 42;
+    }
+}
+
+consteval int h(int i) {
+    return f(i) + 1; // ok: immediate function context
+}
+```
+[Compiler Explorer](https://godbolt.org/z/Gdroev6ox)
+
 
 ## Challenge puzzle
 
