@@ -163,7 +163,7 @@ Interposition is the ability of overriding a symbol in one binary from another. 
 
 You might come across alleged motivation for this. There are some claims online that say, the ELF pioneers designed it this way, so dynamic shared libraries would mimic the behavior of earlier static libs. Supposedly, in static libraries, if several libraries implement the same symbol, then the first definition encountered is used and it shadows the later ones. However, that is not entirely true. It might be the case, but you might also get a linker error complaining about ODR violations. The exact behavior depends upon which members are extracted from the static archives.
 
-A different conjectured motivation is that the canonical model in the minds of the ELF architects was the library `libc`. `libc` is beyond ubiquitous, it is universal. It is loaded by practically all applications and it is huge. Therefore, it is reasonable to anticipate that users might want to override some of its implementations. Therefore, this capability was baked into the architecture. But this is guesswork. We have internal knowledge about the motivation. 
+A different conjectured motivation is that the canonical model in the minds of the ELF architects was the library `libc`. `libc` is beyond ubiquitous, it is universal. It is loaded by practically all applications and it is huge. Therefore, it is reasonable to anticipate that users might want to override some of its implementations. Therefore, this capability was baked into the architecture. But this is guesswork. We have no internal knowledge about the motivation. 
 
 So, we have discussed one facility that enables interposition - that is the separation of library names from list of symbols to consume. Let's discuss another - library search order.
 
@@ -278,10 +278,20 @@ This behavior can be controlled with some switches. The easiest would be linking
 
 Let's discuss a developer facing implication of this. Can we have a process-wide singleton? By singleton, I mean the Meyers singleton design pattern - a single object which has a unique instance which is usable by all the code in the process, from all binaries. 
 
-In Windows, the usual singleton design pattern would create a per-binary singleton. You would need to export the singleton variable from a shared library and and you need to have all the binaries in the process link against that single shared library that implements this singleton and consume it from there.
+In Windows, the usual singleton design pattern would create a per-binary singleton. To form a process-wide singleton, that is visible by all binaries in the process, you would need to export the singleton variable from a shared library and and you need to have all the binaries in the process link against that single shared library that implements this singleton and consume it from there.
 
-In Linux, you just need to code your singleton and put it in the executable. 
+In Linux, you just need to code your singleton and put it in the executable. It'll be picked up from there by whichever binary is trying to use it.
 
 # C++ Implication #2 : Can you have circular library dependencies?
 
-Can we have circular binary dependencies? That is to say, 
+Can we have circular binary dependencies? That is to say, can we have `lib1` that uses symbols from `lib2` and at the same time `lib2` that uses symbols from `lib1`? In Linux, the answer is yes. You don't have to do anything special for this. Both libraries would be very happy to link with the symbols being undefined at link-time, and resolved only by the loader.
+
+In Windows, the short answer is no. Not by design, you'd have to hack pretty hard to get there. 
+
+However, note that one should put considerable thought in architecting the libraries well and not be sloppy. Here is a quote from Fangrui Song aka maskray, the main `lld` maintainer today:
+
+> This [`allowed-shlib-undefined`] is an unfortunate default for shared libraries. Changing it may be disruptive today. Mach-O and PE/COFF have many problems, but this may be a place where they got it right. 
+
+# Position Independent Code : GOT(Global Offset Table)
+
+The best way to explain position independent code is to understand, *what isn't position independent code*. 
