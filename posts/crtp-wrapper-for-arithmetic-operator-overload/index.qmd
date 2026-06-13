@@ -1,0 +1,82 @@
+---
+title: "A CRTP Wrapper for overloading arithmetic operators"
+author: "`dev::author`"
+date: "2026-06-13"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Introduction. 
+
+You often encounter POD types / structs that we want to aggregate across. For example, in linear algebra, we may want to add `Complex{ x, y }` numbers, `Vec3D{ x, y, z }` or `Quaternion{ w, x, y, z }` types. In quantitative finance, we may want to aggregate `Greeks{ delta, gamma, vega, theta }` type across the portfolio, or an `MtMVector` across grid points. An audio engine typically defines `StereoSample{ sampleValueLeft, sampleValueRight }` objects, that needed to be added for mixing.
+
+## Code Listing
+
+```cpp
+#include <tuple>
+#include <vector>
+#include <concepts>
+#include <iostream>
+
+template<typename T>
+concept ImplementsAsTuple = requires(T obj, const T obj_c){
+    obj.as_tuple();
+    obj_c.as_tuple();
+};
+
+template<typename Derived>
+struct OperatorOverloadBase{
+
+    Derived& operator+=(const Derived& other)
+    requires ImplementsAsTuple<Derived>
+    {
+        std::apply([&](auto&&... lhsElements){
+            std::apply([&](auto&&... rhsElements){
+                ((lhsElements += rhsElements),...);
+            }, other.as_tuple());
+        }, self().as_tuple());  
+        return self();      
+    }
+
+    friend Derived operator+(Derived& lhs, Derived& rhs){
+        lhs += rhs;
+        return lhs;
+    }
+
+    protected:
+    Derived& self(){
+        return *static_cast<Derived*>(this);
+    }
+};
+
+struct Point2D : OperatorOverloadBase<Point2D>{
+    double x_;
+    double y_;
+
+    Point2D(double x, double y): x_{x}, y_{y}{}
+    auto as_tuple(){
+        return std::tie(x_, y_);
+    }
+    auto as_tuple() const{
+        return std::tie(x_, y_);
+    }
+};
+
+struct Curve{
+    std::vector<Point2D> knots;
+};
+
+int main(){
+    Point2D p1{3.0, 4.0};
+    Point2D p2{1.0, -1.0};
+    p1 += p2;
+    std::cout << "p1.x = " << p1.x_ << ", p1.y = " << p1.y_ << "\n";
+}
+```
+[Compiler Explorer](https://compiler-explorer.com/z/cW38r3eEK)
+
+You can write a very nice CRTP wrapper class that accepts a type that obeys the `as_tuple` concept and adds a functionality to it - in this case the overloaded arithmetic operators, such as `operator+()` and `operator+=()`. This wrapper class can live in a Commons library separate from business logic and reduces boilerplate.
+
+The basic mechanics. `std::tuple` ctor / `std::make_tuple` decays each of the types it receives, so `T&`, `const T&`, `T&&` decay to `T`. A `std::tuple` always stores the `value_type`. So, if you pass lvalue references to `std::tuple`, the arguments will be copied. We want to avoid any temporaries. To actually create a tuple of references instead, you use `std::tie(args...)`. `std::apply(Func&&, Tuple&&)` unpacks a tuple and applies `func` to each of the elements. Thus, we can unpack the tuple by passing it to a lambda function that accepts a variadic pack. We can do this once for the `lhs`, once for the `rhs`. Finally, we can use a comma-fold expression to add the corresponding arguments. Since we are constantly dealing with references, this is all we need.
