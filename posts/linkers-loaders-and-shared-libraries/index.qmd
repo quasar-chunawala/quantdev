@@ -347,6 +347,8 @@ binary loaded at
      |  +----------------------+  |
      |  |  ...                 |  |
      |  |                      |  |
+     |  |                      |  |
+     |  |  call [.got+42]      |  |          
      |  |  ...                 |  |
      |  |                      |  |
      |  |  call [.got+42]      |  |
@@ -410,4 +412,60 @@ Recall, that executable symbols are not interposable. Nothing comes before the e
 
 # Lazy Binding a.k.a. delayed loading
 
-Let's discuss lazy binding. This is probably the most technically demanding topic in this post. **Lazy binding** is the practice of postponing the resolution of the symbol not just to the load time, but actually to the first call time. The motivation being that, if you have a large binary with tonnes of symbols but your particular invocation only uses a few of them, then potentially a lot of resolution work would go to waste. This can amount to tangible delay in load time that is not necessary. So, *the ELF designers devised a plot to only resolve what you actually use in the first time*.
+Let's discuss lazy binding. This is probably the most technically demanding topic in this post. **Lazy binding** is the practice of postponing the resolution of the symbol not just to the load time, but actually to the first call time. The motivation being that, if you have a large binary with tonnes of symbols but your particular invocation only uses a few of them, then potentially a lot of resolution work would go to waste. This can amount to tangible delay in load time that is not necessary. So, *the ELF designers devised a plot to only resolve what you actually use in the first time*. If you type `gcc --version`, the responsiveness is amazing, it is instantaneous. `gcc` is one large binary with millions of symbols. This is the way it is achieved, by lazy binding. 
+
+## Lazy bind by default
+
+By default, linux uses lazy binding. If you do not intervene, symbols are lazy bound. You can intervene with some linker switches `-no-plt`, `-z now` or at a function granularity with the function attribute `noplt` or with an environment variable `LD_BIND_NOW`. In Windows, by default lazy binding is off. In Windows lingo, this is called delayed load, and to enjoy it, you need to specify after the `DELAYLOAD` switch, the list of DLLs you want to lazy bind to.
+
+```
+/DELAYLOAD:<your_dll.dll>
+```
+
+## The true flow of `call` in linux
+
+Recall that, this is where we left off, in our pursuit of a true `call` in Linux. To understand lazy binding, let's take a closer look at it. To have lazy binding, obviously the address of the function in the `.got` slot will have to change at run-time. 
+
+```
++----------------------------+        +---------------+
+| .code                      |        |      lib      |
+| +----------------------+   |        +---------------+
+| | f();                 |   |        |               |
+| |   call [got_slot_42] |   |        | f:            |
+| +----------------------+.  |        |   //Defn      |   
+|                            |        |               |
+|                            |        +---------------+
+|                            |
+| .got                       |
+| +----------------------+   |
+| | got_slot_42:         |   |
+| | ...                  |   |
+| +----------------------+   |
+|                            |
++----------------------------+
+```
+
+Initially, the address in `got_slot_42` would have to route the execution into someone that performs the actual resolution. And this someone, would have to overwrite the address with the resolved address of `f(){ /*...*/ }`. So, this is how it is achieved. The call in fact not an indirect call into the the `.got` slot. It is a direct call into a procedure lookup stub. Refer the image below.
+
+```
++--------------------------------------+        +---------------+
+| .code                                |        |      lib      |
+| +--------------------------------+   |        +---------------+
+| | f();                           |   |        |               |
+| |   call procedure_lookup_stub_42|   |        | f:            |
+| +----------------------|---------+.  |        |   //Defn      |   
+|                        |             |        |               |
+|              +-------------------+   |        +---------------+
+|              | jmp [got_slot_42] |   |    
+|              +-------------------+   |    
+|                                      |
+| .got                                 | 
+| +--------------------------------+   |
+| | got_slot_42: &"resolve42"      |   |
+| | ...                            |   |
+| +--------------------------------+   |
+|                                      |
++--------------------------------------+
+```
+
+This stub starts with an indirect jump to the `got` slot. As we mentioned, initially, this slot contains the address of somewhere that performs the resolution. And this somewhere is exactly the next instruction in the stub. 
