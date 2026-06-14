@@ -392,3 +392,22 @@ This is the default implementation in all of the shared libraries unless you emp
 ## Performance implications
 
 Consider the below toy code where the function `f()` is called from the function `g()`.
+
+```cpp
+void f(){ /*...*/ }
+void g(){ f(); }
+```
+
+If you place the above code into an executable, `f()` would most probably be inlined into `g()`. That is not the case, if you put the same code in a shared library. 
+
+If you put this code in shared library, the compiler is no longer free to assume that the `f()` implementation it sees right there, is the `f()` implementation that would be used at run-time. Interposition might kick-in and pre-empt this implementation - in particular, inlining is off the table. But, even more then that, all attributes that the compiler could have deduced about `f()` are thrown away.
+
+## Position Independent Code - switches
+
+To build a shared library that is position independent, you have no choice but to use the `-fPIC` flag. To build an executable as position independent, you use a different switch with slightly different semantics. 
+
+Recall, that executable symbols are not interposable. Nothing comes before the executable in the search order. But, in recent decades, the executable is relocatable, since ASLR(Address Space Layout Randomization) hit the scene, executables can be loaded at varying addresses. To support that, the executable must be built with `fPIE` (Position Independent Executable) flag.
+
+# Lazy Binding a.k.a. delayed loading
+
+Let's discuss lazy binding. This is probably the most technically demanding topic in this post. **Lazy binding** is the practice of postponing the resolution of the symbol not just to the load time, but actually to the first call time. The motivation being that, if you have a large binary with tonnes of symbols but your particular invocation only uses a few of them, then potentially a lot of resolution work would go to waste. This can amount to tangible delay in load time that is not necessary. So, *the ELF designers devised a plot to only resolve what you actually use in the first time*.
