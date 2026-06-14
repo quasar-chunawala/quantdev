@@ -448,24 +448,26 @@ Recall that, this is where we left off, in our pursuit of a true `call` in Linux
 Initially, the address in `got_slot_42` would have to route the execution into someone that performs the actual resolution. And this someone, would have to overwrite the address with the resolved address of `f(){ /*...*/ }`. So, this is how it is achieved. The call in fact not an indirect call into the the `.got` slot. It is a direct call into a procedure lookup stub. Refer the image below.
 
 ```
-+--------------------------------------+        +---------------+
-| .code                                |        |      lib      |
-| +--------------------------------+   |        +---------------+
-| | f();                           |   |        |               |
-| |   call procedure_lookup_stub_42|   |        | f:            |
-| +----------------------|---------+.  |        |   //Defn      |   
-|                        |             |        |               |
-|              +-------------------+   |        +---------------+
-|              | jmp [got_slot_42] |   |    
-|              +-------------------+   |    
-|                                      |
-| .got                                 | 
-| +--------------------------------+   |
-| | got_slot_42: &"resolve42"      |   |
-| | ...                            |   |
-| +--------------------------------+   |
-|                                      |
-+--------------------------------------+
++-------------------------------------------+        +---------------+
+|   .code                                   |        |      lib      |
+|   +---------------------------------+     |        +---------------+
+|   | f();                            |     |        |               |
+|   |   call procedure_lookup_stub_42 |     |        | f:            |
+|   +--------|------------------------+     |        |   //Defn      |   
+|            |                              |        |               |
+|            |   +--------------------+     |        +---------------+
+|            +---|->jmp [got_slot_42] |-+   |    
+|            +---|->push 42           | |   |
+|            |   |  jmp <ldr resolver>| |   | 
+|            |   +--------------------+ |   |    
+|            |                          |   |
+|   .got     +---------+                |   | 
+|   +------------------|--------------+ |   |
+|   | got_slot_42: &"resolve42"    <--|-+   |
+|   | ...                             |     |
+|   +---------------------------------+     |
+|                                           |
++-------------------------------------------+
 ```
 
-This stub starts with an indirect jump to the `got` slot. As we mentioned, initially, this slot contains the address of somewhere that performs the resolution. And this somewhere is exactly the next instruction in the stub. 
+This stub starts with an indirect jump to the `got` slot. As we mentioned, initially, this slot contains the address of somewhere that performs the resolution. And incidentally, this somewhere is exactly the next instruction in the stub. So, on first call, `jmp [got_slot_42]` causes the control to jump exactly to the next instruction. This next instruct sets up the arguments to the resolver and calls the resolver. The resolver is part of the loader, which is a different binary which is still loaded into the process address space. 
