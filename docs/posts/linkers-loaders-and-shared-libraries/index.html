@@ -602,27 +602,49 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 |                            |
 +----------------------------+</code></pre>
 <p>Initially, the address in <code>got_slot_42</code> would have to route the execution into someone that performs the actual resolution. And this someone, would have to overwrite the address with the resolved address of <code>f(){ /*...*/ }</code>. So, this is how it is achieved. The call in fact not an indirect call into the the <code>.got</code> slot. It is a direct call into a procedure lookup stub. Refer the image below.</p>
-<pre><code>+-------------------------------------------+        +---------------+
-|   .code                                   |        |      lib      |
-|   +---------------------------------+     |        +---------------+
-|   | f();                            |     |        |               |
-|   |   call procedure_lookup_stub_42 |     |        | f:            |
-|   +--------|------------------------+     |        |   //Defn      |   
-|            |                              |        |               |
-|            |   +--------------------+     |        +---------------+
-|            +---|-&gt;jmp [got_slot_42] |-+   |    
-|            +---|-&gt;push 42           | |   |
-|            |   |  jmp &lt;ldr resolver&gt;| |   | 
-|            |   +--------------------+ |   |    
-|            |                          |   |
-|   .got     +---------+                |   | 
-|   +------------------|--------------+ |   |
-|   | got_slot_42: &amp;"resolve42"    &lt;--|-+   |
-|   | ...                             |     |
-|   +---------------------------------+     |
-|                                           |
+<pre><code>+-------------------------------------------+        +---------------------+
+|   .code                                   |        |         lib         |
+|   +---------------------------------+     |        +---------------------+
+|   | f();                            |     |        |                     |
+|   |   call procedure_lookup_stub_42 |     |        | f:                  |
+|   +--------|------------------------+     |        |      //Defn         |   
+|            |                              |        |                     |
+|            |   +--------------------+     |        +---------------------+
+|            +---|-&gt;jmp [got_slot_42] |-+   |          
+|            +---|-&gt;push 42           | |   |      
+|            |   |  jmp &lt;ldr resolver&gt;|-|---|---+    +---------------------+
+|            |   +--------------------+ |   |   |    |       loader        |
+|            |                          |   |   |    +---------------------+
+|   .got     +---------+                |   |   |    |                     |
+|   +------------------|--------------+ |   |   +----|-&gt; &lt;ldr resolver&gt;:{  |
+|   | got_slot_42: &amp;"resolve42"    &lt;--|-+   |        |     //Definition    |
+|   | ...                             |     |        |   }                 |
+|   +---------------------------------+     |        |                     |
+|                                           |        +---------------------+
 +-------------------------------------------+</code></pre>
-<p>This stub starts with an indirect jump to the <code>got</code> slot. As we mentioned, initially, this slot contains the address of somewhere that performs the resolution. And incidentally, this somewhere is exactly the next instruction in the stub. So, on first call, <code>jmp [got_slot_42]</code> causes the control to jump exactly to the next instruction.</p>
+<p>This stub starts with an indirect jump to the <code>got</code> slot. As we mentioned, initially, this slot contains the address of somewhere that performs the resolution. And incidentally, this somewhere is exactly the next instruction in the stub. So, on first call, <code>jmp [got_slot_42]</code> causes the control to jump exactly to the next instruction. This next instruct sets up the arguments to the resolver and calls the resolver. The resolver is part of the loader, which is a different binary which is still loaded into the process address space.</p>
+<p>This resolver performs the resolution - thus it’s magic, locates the function and overwrites the <code>got</code> slot with the address it found. Don’t forget that, after all this, we must delegate the execution to <code>f()</code> itself - all this was part of an <code>f()</code> call. This is how the first call to the function <code>f</code> which was lazily bound looks like.</p>
+<pre><code>+-------------------------------------------+        +---------------------+
+|   .code                                   |        |         lib         |
+|   +---------------------------------+     |        +---------------------+
+|   | f();                            |     |        |                     |
+|   |   call procedure_lookup_stub_42 |     |   0x789| f:                  |
+|   +--------|------------------------+     |        |      //Defn         |   
+|            |                              |        |                     |
+|            |   +--------------------+     |        +---------------------+
+|            +---|-&gt;jmp [got_slot_42] |-+   |          
+|            +---|-&gt;push 42           | |   |      
+|            |   |  jmp &lt;ldr resolver&gt;|-|---|---+    +---------------------+
+|            |   +--------------------+ |   |   |    |       loader        |
+|            |                          |   |   |    +---------------------+
+|   .got     +---------+                |   |   |    |                     |
+|   +------------------|--------------+ |   |   +----|-&gt; &lt;ldr resolver&gt;:{  |
+|   | got_slot_42: 0x789           &lt;--|-+   |        |     //Definition    |
+|   | ...                             |     |        |   }                 |
+|   +---------------------------------+     |        |                     |
+|                                           |        +---------------------+
++-------------------------------------------+</code></pre>
+<p>After the first call, things are much simpler.</p>
 
 
 </section>

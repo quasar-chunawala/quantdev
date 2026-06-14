@@ -448,26 +448,53 @@ Recall that, this is where we left off, in our pursuit of a true `call` in Linux
 Initially, the address in `got_slot_42` would have to route the execution into someone that performs the actual resolution. And this someone, would have to overwrite the address with the resolved address of `f(){ /*...*/ }`. So, this is how it is achieved. The call in fact not an indirect call into the the `.got` slot. It is a direct call into a procedure lookup stub. Refer the image below.
 
 ```
-+-------------------------------------------+        +---------------+
-|   .code                                   |        |      lib      |
-|   +---------------------------------+     |        +---------------+
-|   | f();                            |     |        |               |
-|   |   call procedure_lookup_stub_42 |     |        | f:            |
-|   +--------|------------------------+     |        |   //Defn      |   
-|            |                              |        |               |
-|            |   +--------------------+     |        +---------------+
-|            +---|->jmp [got_slot_42] |-+   |    
-|            +---|->push 42           | |   |
-|            |   |  jmp <ldr resolver>| |   | 
-|            |   +--------------------+ |   |    
-|            |                          |   |
-|   .got     +---------+                |   | 
-|   +------------------|--------------+ |   |
-|   | got_slot_42: &"resolve42"    <--|-+   |
-|   | ...                             |     |
-|   +---------------------------------+     |
-|                                           |
++-------------------------------------------+        +---------------------+
+|   .code                                   |        |         lib         |
+|   +---------------------------------+     |        +---------------------+
+|   | f();                            |     |        |                     |
+|   |   call procedure_lookup_stub_42 |     |        | f:                  |
+|   +--------|------------------------+     |        |      //Defn         |   
+|            |                              |        |                     |
+|            |   +--------------------+     |        +---------------------+
+|            +---|->jmp [got_slot_42] |-+   |          
+|            +---|->push 42           | |   |      
+|            |   |  jmp <ldr resolver>|-|---|---+    +---------------------+
+|            |   +--------------------+ |   |   |    |       loader        |
+|            |                          |   |   |    +---------------------+
+|   .got     +---------+                |   |   |    |                     |
+|   +------------------|--------------+ |   |   +----|-> <ldr resolver>:{  |
+|   | got_slot_42: &"resolve42"    <--|-+   |        |     //Definition    |
+|   | ...                             |     |        |   }                 |
+|   +---------------------------------+     |        |                     |
+|                                           |        +---------------------+
 +-------------------------------------------+
 ```
 
 This stub starts with an indirect jump to the `got` slot. As we mentioned, initially, this slot contains the address of somewhere that performs the resolution. And incidentally, this somewhere is exactly the next instruction in the stub. So, on first call, `jmp [got_slot_42]` causes the control to jump exactly to the next instruction. This next instruct sets up the arguments to the resolver and calls the resolver. The resolver is part of the loader, which is a different binary which is still loaded into the process address space. 
+
+This resolver performs the resolution - thus it's magic, locates the function and overwrites the `got` slot with the address it found. Don't forget that, after all this, we must delegate the execution to `f()` itself - all this was part of an `f()` call. This is how the first call to the function `f` which was lazily bound looks like.
+
+```
++-------------------------------------------+        +---------------------+
+|   .code                                   |        |         lib         |
+|   +---------------------------------+     |        +---------------------+
+|   | f();                            |     |        |                     |
+|   |   call procedure_lookup_stub_42 |     |   0x789| f:                  |
+|   +--------|------------------------+     |        |      //Defn         |   
+|            |                              |        |                     |
+|            |   +--------------------+     |        +---------------------+
+|            +---|->jmp [got_slot_42] |-+   |          
+|            +---|->push 42           | |   |      
+|            |   |  jmp <ldr resolver>|-|---|---+    +---------------------+
+|            |   +--------------------+ |   |   |    |       loader        |
+|            |                          |   |   |    +---------------------+
+|   .got     +---------+                |   |   |    |                     |
+|   +------------------|--------------+ |   |   +----|-> <ldr resolver>:{  |
+|   | got_slot_42: 0x789           <--|-+   |        |     //Definition    |
+|   | ...                             |     |        |   }                 |
+|   +---------------------------------+     |        |                     |
+|                                           |        +---------------------+
++-------------------------------------------+
+```
+
+After the first call, things are much simpler. 
