@@ -1176,7 +1176,29 @@ font-style: inherit;">}</span></span></code></pre></div></div>
 | |     0x1234      |    |   |  |     0x1234      |    |
 | +-----------------+    |   |  +-----------------+    |
 +------------------------+   +-------------------------+</code></pre>
-<p>How can function pointers in different binaries compare equal?</p>
+<p>How can function pointers in different binaries compare equal? Well, Linux sweats quite a bit to get this done. What happens is that, in a state where both the executable and the library both reference <code>f</code>, and say the library takes its address, the address is actually stored in the symbol table of the executable as the value of the symbol <code>f</code>.</p>
+<pre><code>exe                          lib1
+      +----------------------+     +----------------------+
+      |                      |     |                      |
+0x1234| void f() { ... }     |     |   auto* pf = &amp;f;  --+----.
+      |                      |     |                      |    |
+      +----------------------+     |                      |    |
+      |                      |     +----------------------+    |
+.plt+8| .plt_exe             |     |                      |    |
+      |   jmp [.got+4]       |     |                      |    |
+      |                      |     +----------------------+    |
+      +----------------------+                                 |
+      |                      |                                 |
+.got+4| .got_exe             |                                 |
+      |   0x1234             |                                 |
+      |                      |                                 |
+      +----------------------+                                 |
+      |                      |                                 |
+      | .dynsym              |                                 |
+      |   f: .plt_exe+8  &lt;--++---------------------------------'
+      |                      |
+      +----------------------+</code></pre>
+<p>When the loader needs to resolve the address of <code>f</code> here, it actually takes it from the symbol table in the executable. This way, both the executable and lib1 would get the same address for <code>f</code> and in fact, it would be a valid function pointer.</p>
 
 
 </section>

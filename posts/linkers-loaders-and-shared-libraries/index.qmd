@@ -552,4 +552,30 @@ However, after learning about the PLT and GOT design : it seems like magic that 
 +------------------------+   +-------------------------+
 ```
 
-How can function pointers in different binaries compare equal?
+How can function pointers in different binaries compare equal? Well, Linux sweats quite a bit to get this done. What happens is that, in a state where both the executable and the library both reference `f`, and say the library takes its address, the address is actually stored in the symbol table of the executable as the value of the symbol `f`. 
+
+```
+exe                          lib1
+      +----------------------+     +----------------------+
+      |                      |     |                      |
+0x1234| void f() { ... }     |     |   auto* pf = &f;  --+----.
+      |                      |     |                      |    |
+      +----------------------+     |                      |    |
+      |                      |     +----------------------+    |
+.plt+8| .plt_exe             |     |                      |    |
+      |   jmp [.got+4]       |     |                      |    |
+      |                      |     +----------------------+    |
+      +----------------------+                                 |
+      |                      |                                 |
+.got+4| .got_exe             |                                 |
+      |   0x1234             |                                 |
+      |                      |                                 |
+      +----------------------+                                 |
+      |                      |                                 |
+      | .dynsym              |                                 |
+      |   f: .plt_exe+8  <--++---------------------------------'
+      |                      |
+      +----------------------+
+```
+
+When the loader needs to resolve the address of `f` here, it actually takes it from the symbol table in the executable. This way, both the executable and lib1 would get the same address for `f` and in fact, it would be a valid function pointer.
