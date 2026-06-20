@@ -8,6 +8,38 @@ toc: true
 toc-depth: 3
 ---
 
-# Type punning
+# Introduction
 
-An area where a C++ programmer can get into trouble is **type punning**.
+Suppose we have $2$ distinct types - we have a `Widget` and we have a `Gizmo`, those are different types. There is no inheritance going on here. Each one of them has a function that prints something. We are creating a `Gizmo` and we are casting it to a `Widget` and calling its `.doSomething()` method. 
+
+```cpp
+#include <print>
+
+struct Widget{
+    virtual void doSomething(){
+        std::println("Widget");
+    }
+};
+
+struct Gizmo{
+    virtual void doSomethingCompletelyDifferent(){
+        std::println("Gizmo");
+    }
+}
+
+int main(){
+    Gizmo gizmo;
+    Widget* widget = (Widget*)(&gizmo); // [1]
+    widget->doSomething();
+}
+```
+
+`[1]` compiles - this is a C-style cast. If you look at the standard, what a C-style cast does, it says that, well it says that a C-style cast is going to try all these things : first it's going to try `const_cast`, then it's going to try `static_cast`, and if all these things fail, then it will try a `reinterpret_cast`. If that succeeds, then, that's what you get. So, the above code is going to compile and run. The question is what is it going to do?
+
+This is undefined behavior(UB). You can't just cast `Gizmo` to `Widget`. If you run this code snippet on `clang` with optimizations on, it prints `Gizmo`. If you try it on `gcc`, the compiler detects that this is a gizmo, you cannot reach this line of code, this cannot happen and then it optimizes away everything before it that lead to it, which is basically the whole program - so it doesn't produce any output. 
+
+# What is type punning?
+
+Type punning is a technique to subvert the language's type system. There are recommended ways to perform type punning and others that you should actively seek to avoid. 
+
+A very common one is : you have an object of one type
