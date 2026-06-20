@@ -341,7 +341,24 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><a href="https://compiler-explorer.com/z/fdq4qYaKE">Compiler Explorer</a></p>
 <p>Note that, even though this example displays a message when <code>std::bad_cast</code> ism thrown, this is in no way what we could call exception handling; we did not solve the problem, and code execution continues in a potentially corrupt state, which could make things worse in more serious code. In a toy example such as this, just letting the code fail and stop executing would also have been a more reasonable choice.</p>
-<p>Note that, the use of <code>dynamic_cast</code> requires binaries to be compiled with <strong>runtime type information(RTTI)</strong> included, leading to larger binaries. Unsurprisingly; due to these costs, some application domains will tend to avoid this cost.</p>
+<p>Note that, the below code is UB. <code>B</code> and <code>D</code> are non-polymorphic types(they are not bound by the <code>virtual</code> keyword). Hence, upcast will work and behave similar to <code>static_cast</code>, Downcasting will give a compiler error, since no vptr/vtable would exist to fetch runtime type information(RTTI) from.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> B<span class="op">{};</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> D <span class="op">:</span> B<span class="op">{};</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    D d1<span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    B<span class="op">*</span> b1 <span class="op">=</span> <span class="kw">dynamic_cast</span><span class="op">&lt;</span>B<span class="op">*&gt;(&amp;</span>d1<span class="op">);</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span><span class="op">(!</span>b1<span class="op">)</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"Failed to downcast"</span><span class="op">;</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    B b2<span class="op">;</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    D<span class="op">*</span> d2 <span class="op">=</span> <span class="kw">dynamic_cast</span><span class="op">&lt;</span>D<span class="op">*&gt;(&amp;</span>b2<span class="op">);</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span><span class="op">(!</span>d2<span class="op">)</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"Failed to upcast"</span><span class="op">;</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="playing-tricks-with-safety---const_cast" class="level2">
 <h2 class="anchored" data-anchor-id="playing-tricks-with-safety---const_cast">Playing tricks with safety - <code>const_cast</code></h2>
@@ -352,30 +369,30 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>Sometimes, you just have to make the compiler believe you. For example, knowing <code>sizeof(int) == 4</code> on your platform, you might want to treat <code>int</code> as <code>char[4]</code> to interoperate with an existing API that expects that type. Note that, you should ensure that this property holds (maybe through <code>static_assert</code>), rather than relying on the belief that the property holds on all platforms (it does not).</p>
 <p>That’s what <code>reinterpret_cast</code> gives you - the ability to cast a pointer of some type to a pointer of an unrelated type. This can be used in situations where you seek to benefit from pointer-interconvertibility, just as this this can be used to lie to the type system in several rather dangerous and non-portable ways.</p>
 <p>Also note that, <code>reinterpret_cast</code> only changes the type associated with an expression - for example, it does not perform the slight address adjustments, that <code>static_cast</code> would make when converting from a derived class to a base class in multiple inheritance situations.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> B0<span class="op">{</span> <span class="dt">int</span> n<span class="op">{</span> <span class="dv">3</span> <span class="op">};</span> <span class="op">};</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> B1<span class="op">{</span> <span class="dt">float</span> f<span class="op">{</span><span class="fl">3.5</span><span class="bu">f</span><span class="op">};</span> <span class="op">};</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co">// B0 is the first base subobject of D</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> D <span class="op">:</span> <span class="kw">public</span> B0<span class="op">,</span> <span class="kw">public</span> B1 <span class="op">{</span> <span class="op">};</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    D d<span class="op">;</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="co">// b0 and &amp;d point to the same address</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">// b1 and &amp;d do not point to the same address</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    B0<span class="op">*</span> b0 <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>B0<span class="op">*&gt;(&amp;</span>d<span class="op">);</span></span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    B1<span class="op">*</span> b1 <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>B1<span class="op">*&gt;(&amp;</span>d<span class="op">);</span></span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> n0 <span class="op">=</span> b0<span class="op">-&gt;</span>n<span class="op">;</span> <span class="co">// Ok</span></span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> f0 <span class="op">=</span> d0<span class="op">-&gt;</span>f<span class="op">;</span> <span class="co">// Ok</span></span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    <span class="co">// r0 and &amp;d point to the same address</span></span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    <span class="co">// r1 and &amp;d point to the same address. Oops!</span></span>
-<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>    B0<span class="op">*</span> r0 <span class="op">=</span> <span class="kw">reinterpret_cast</span><span class="op">&lt;</span>B0<span class="op">*&gt;(&amp;</span>d<span class="op">);</span> <span class="co">// Fragile</span></span>
-<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>    B1<span class="op">*</span> r1 <span class="op">=</span> <span class="kw">reinterpret_cast</span><span class="op">&lt;</span>B1<span class="op">*&gt;(&amp;</span>d<span class="op">);</span> <span class="co">// Bad idea</span></span>
-<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> nr0 <span class="op">=</span> r0<span class="op">-&gt;</span>n<span class="op">;</span>    <span class="co">// Ok but fragile</span></span>
-<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> fr0 <span class="op">=</span> r1<span class="op">-&gt;</span>f<span class="op">;</span>  <span class="co">// UB</span></span>
-<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> B0<span class="op">{</span> <span class="dt">int</span> n<span class="op">{</span> <span class="dv">3</span> <span class="op">};</span> <span class="op">};</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> B1<span class="op">{</span> <span class="dt">float</span> f<span class="op">{</span><span class="fl">3.5</span><span class="bu">f</span><span class="op">};</span> <span class="op">};</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">// B0 is the first base subobject of D</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> D <span class="op">:</span> <span class="kw">public</span> B0<span class="op">,</span> <span class="kw">public</span> B1 <span class="op">{</span> <span class="op">};</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    D d<span class="op">;</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="co">// b0 and &amp;d point to the same address</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">// b1 and &amp;d do not point to the same address</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    B0<span class="op">*</span> b0 <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>B0<span class="op">*&gt;(&amp;</span>d<span class="op">);</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    B1<span class="op">*</span> b1 <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>B1<span class="op">*&gt;(&amp;</span>d<span class="op">);</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> n0 <span class="op">=</span> b0<span class="op">-&gt;</span>n<span class="op">;</span> <span class="co">// Ok</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> f0 <span class="op">=</span> d0<span class="op">-&gt;</span>f<span class="op">;</span> <span class="co">// Ok</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    <span class="co">// r0 and &amp;d point to the same address</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    <span class="co">// r1 and &amp;d point to the same address. Oops!</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    B0<span class="op">*</span> r0 <span class="op">=</span> <span class="kw">reinterpret_cast</span><span class="op">&lt;</span>B0<span class="op">*&gt;(&amp;</span>d<span class="op">);</span> <span class="co">// Fragile</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    B1<span class="op">*</span> r1 <span class="op">=</span> <span class="kw">reinterpret_cast</span><span class="op">&lt;</span>B1<span class="op">*&gt;(&amp;</span>d<span class="op">);</span> <span class="co">// Bad idea</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> nr0 <span class="op">=</span> r0<span class="op">-&gt;</span>n<span class="op">;</span>    <span class="co">// Ok but fragile</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> fr0 <span class="op">=</span> r1<span class="op">-&gt;</span>f<span class="op">;</span>  <span class="co">// UB</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Use <code>reinterpret_cast</code> sparingly. Relatively safe uses include converting a pointer to an integral representation, when given a sufficiently wide integral type.</p>
 </section>
 <section id="i-know-the-bits-are-right---stdbit_cast" class="level2">
