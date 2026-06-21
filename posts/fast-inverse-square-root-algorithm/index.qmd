@@ -60,13 +60,144 @@ $$
 
 These bits can be viewed as the floating point representation of a real number, or thinking only of bits, as an integer. Thus, $M$ will be considered a real number in $I$ or as an integer, depending on context. $M$ as a real number is $M$ divided by $2^{23}$.
 
-## The algorithm.
+## The algorithm
 
 The central idea is to use an iterative root solver such as Newton-Raphson and the magic constant is used to compute a good initial guess. Given the floating point value $x > 0$, we want to compute $\frac{1}{\sqrt{x}}$. We let:
 
 $$
 \begin{align*}
 y &= \frac{1}{\sqrt{x}}\\
-y^2 &= \frac{1}{x}
+y^2 &= \frac{1}{x}\\
+\frac{1}{y^2} - x &= 0
 \end{align*}
 $$
+
+Thus, we set the real-value function $f$ to be:
+
+$$
+f(y) = \frac{1}{y^2} - x
+$$
+
+We are interested to find the roots of $f$. Given a suitable approximation of the root $y_n$, Newton's method gives a better one $y_{n+1}$ using:
+
+$$
+y_{n+1} = y_n - \frac{f(y_n)}{f'(y_n)}
+$$
+
+We have:
+
+$$
+\begin{align*}
+f(y_n) &= \frac{1}{y_n^2} - x\\
+f'(y_n) &= -\frac{2}{y_n^3}
+\end{align*}
+$$
+
+Consequently,
+
+$$
+\begin{align*}
+y_{n+1} &= y_n - \frac{\frac{1}{y_n^2} - x}{-\frac{2}{y_n^3}}\\
+&= y_n + \frac{y_n-xy_n^3}{2}\\
+&= y_n\left(\frac{3}{2}-\frac{1}{2}xy_n^2\right)
+\end{align*}
+$$
+
+which corresponds to the line of code `x = x * (1.5f - xhalf * x * x)`, where `x` is the initial guess, which hereafter will be called $y_0$.
+
+The line of code `i = 0x5f3759df - (i >> 1)` computes this initial guess $y_0$,roughly by multiplying the exponent for $x$ by $-1/2$ and then picking bits to minimize the error.
+
+## The magic number
+
+An excellent outline of how to pick an initial guess is described in the [Fast Inverse Square root](https://www.lomont.org/papers/2003/InvSqrt.pdf) paper, *by Chris Lomont*. I encourage you to go give it a read.
+
+We are left with finding an initial guess. Suppose we are given a floating point value $x > 0$, corresponding to the $32$-bits
+
+```
++---+---+---+
+| 0 | E | M |
++---+---+---+
+```
+
+as above. Suppose we have a normalized real number $x$. Then, 
+
+$$
+x = (-1)^{S_x} (1 + m_x) \cdot 2^{e_x}
+$$
+
+where:
+
+- $S_x$ is the sign bit, $0$ if $x$ is positive and $1$ if $x$ is negative.
+- $E_x = e_x + B$, is the biased exponent, $B = 127$
+- $M_x = m_x \times L$ where $L = 2^{23}$ ($23$-bits).
+
+The fields are packed, left to right on a 32-bit computer.
+
+Thus, given any real number $x$, we can look at its bits and pretend its an integer $I_x$ or a real number $x$.
+
+$$
+\begin{align*}
+I_x &= E_x \cdot L + M_x \\
+x = (-1)^0 2^{e_x} (1 + m_x)
+\end{align*}
+$$
+
+We can therefore write:
+
+$$
+\begin{align*}
+y &= \frac{1}{\sqrt{x}}\\
+\log_2(y) = -\frac{1}{2}\log_2(x)
+\end{align*}
+$$
+
+Also, we know that:
+
+$$
+\begin{align*}
+x &= 2^{e_x}(1 + m_x)\\
+\log_2(x) &= e_x + \log_2(1 + m_x) \\
+&\approx e_x + m_x + \sigma
+\end{align*}
+$$
+
+where $\sigma$ is a parameter chosen to fine-tune to approximation. Interpreting the floating point bit-pattern of $x$ as an integer $I_x$ yields:
+
+$$
+\begin{align*}
+I_x &= E_x L + M_x \\
+&= L(e_x + B) + L m_x \\
+&= L(e_x + m_x + B) \\
+&= L(e_x + m_x + \sigma + B - \sigma) \\
+&\approx L\log_2(x) + L(B - \sigma)
+\end{align*}
+$$
+
+It then appears that $I_x$ is a scaled and shifted piecewise-linear approximation $\log_2(x)$. In other words, $\log_2(x)$ can be written as:
+
+$$
+\begin{align*}
+\log_2(x) \approx \frac{I_x}{L} - (B - \sigma)
+\end{align*}
+$$
+
+Since $\log_2(y) = -\frac{1}{2}\log_2(x), using the approximation of logarithm obtained above:
+
+$$
+\frac{I_y}{L} - (B - \sigma) \approx -\frac{1}{2}\left(\frac{I_x}{L} - (B-\sigma)\right)
+$$
+
+Thus, an approximation of $I_y$ is:
+
+$$
+I_y \approx \frac{3}{2}(B - \sigma)L - \frac{I_x}{2}
+$$
+
+which is written in the code as the line:
+
+```cpp
+i = 0x5f3759df - (i >> 1)
+```
+# References {.appendix}
+
+- *[Fast Inverse Square Root](https://www.lomont.org/papers/2003/InvSqrt.pdf), Chris Lomont*

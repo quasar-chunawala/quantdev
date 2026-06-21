@@ -235,8 +235,10 @@ window.Quarto = {
   <li><a href="#the-quake-3-fast-inverse-square-root-algorithm" id="toc-the-quake-3-fast-inverse-square-root-algorithm" class="nav-link active" data-scroll-target="#the-quake-3-fast-inverse-square-root-algorithm">The Quake-3 fast inverse square root algorithm</a>
   <ul class="collapse">
   <li><a href="#background" id="toc-background" class="nav-link" data-scroll-target="#background">Background</a></li>
-  <li><a href="#the-algorithm." id="toc-the-algorithm." class="nav-link" data-scroll-target="#the-algorithm.">The algorithm.</a></li>
+  <li><a href="#the-algorithm" id="toc-the-algorithm" class="nav-link" data-scroll-target="#the-algorithm">The algorithm</a></li>
+  <li><a href="#the-magic-number" id="toc-the-magic-number" class="nav-link" data-scroll-target="#the-magic-number">The magic number</a></li>
   </ul></li>
+  
   </ul>
 </nav>
     </div>
@@ -263,7 +265,7 @@ window.Quarto = {
 <h2 class="anchored" data-anchor-id="background">Background</h2>
 <p>This blog post assumes 32-bit architecture. In particular, the floating point representation is IEEE 754. The above code is reported to be endian-neutral.</p>
 <p><span class="math inline">\(32\)</span>-bit floating-point numbers are stored in the following format:</p>
-<div id="d1f478e9" class="cell" data-execution_count="2">
+<div id="2a34ac82" class="cell" data-execution_count="2">
 <div class="cell-output cell-output-display" data-execution_count="2">
 <div>
 <figure class="figure">
@@ -278,21 +280,120 @@ x = (-1)^s(1+M)2^{E-127}
 \]</span></p>
 <p>These bits can be viewed as the floating point representation of a real number, or thinking only of bits, as an integer. Thus, <span class="math inline">\(M\)</span> will be considered a real number in <span class="math inline">\(I\)</span> or as an integer, depending on context. <span class="math inline">\(M\)</span> as a real number is <span class="math inline">\(M\)</span> divided by <span class="math inline">\(2^{23}\)</span>.</p>
 </section>
-<section id="the-algorithm." class="level2">
-<h2 class="anchored" data-anchor-id="the-algorithm.">The algorithm.</h2>
+<section id="the-algorithm" class="level2">
+<h2 class="anchored" data-anchor-id="the-algorithm">The algorithm</h2>
 <p>The central idea is to use an iterative root solver such as Newton-Raphson and the magic constant is used to compute a good initial guess. Given the floating point value <span class="math inline">\(x &gt; 0\)</span>, we want to compute <span class="math inline">\(\frac{1}{\sqrt{x}}\)</span>. We let:</p>
 <p><span class="math display">\[
 \begin{align*}
 y &amp;= \frac{1}{\sqrt{x}}\\
-y^2 &amp;= \frac{1}{x}
+y^2 &amp;= \frac{1}{x}\\
+\frac{1}{y^2} - x &amp;= 0
 \end{align*}
 \]</span></p>
-
-
+<p>Thus, we set the real-value function <span class="math inline">\(f\)</span> to be:</p>
+<p><span class="math display">\[
+f(y) = \frac{1}{y^2} - x
+\]</span></p>
+<p>We are interested to find the roots of <span class="math inline">\(f\)</span>. Given a suitable approximation of the root <span class="math inline">\(y_n\)</span>, Newton’s method gives a better one <span class="math inline">\(y_{n+1}\)</span> using:</p>
+<p><span class="math display">\[
+y_{n+1} = y_n - \frac{f(y_n)}{f'(y_n)}
+\]</span></p>
+<p>We have:</p>
+<p><span class="math display">\[
+\begin{align*}
+f(y_n) &amp;= \frac{1}{y_n^2} - x\\
+f'(y_n) &amp;= -\frac{2}{y_n^3}
+\end{align*}
+\]</span></p>
+<p>Consequently,</p>
+<p><span class="math display">\[
+\begin{align*}
+y_{n+1} &amp;= y_n - \frac{\frac{1}{y_n^2} - x}{-\frac{2}{y_n^3}}\\
+&amp;= y_n + \frac{y_n-xy_n^3}{2}\\
+&amp;= y_n\left(\frac{3}{2}-\frac{1}{2}xy_n^2\right)
+\end{align*}
+\]</span></p>
+<p>which corresponds to the line of code <code>x = x * (1.5f - xhalf * x * x)</code>, where <code>x</code> is the initial guess, which hereafter will be called <span class="math inline">\(y_0\)</span>.</p>
+<p>The line of code <code>i = 0x5f3759df - (i &gt;&gt; 1)</code> computes this initial guess <span class="math inline">\(y_0\)</span>,roughly by multiplying the exponent for <span class="math inline">\(x\)</span> by <span class="math inline">\(-1/2\)</span> and then picking bits to minimize the error.</p>
+</section>
+<section id="the-magic-number" class="level2">
+<h2 class="anchored" data-anchor-id="the-magic-number">The magic number</h2>
+<p>An excellent outline of how to pick an initial guess is described in the <a href="https://www.lomont.org/papers/2003/InvSqrt.pdf">Fast Inverse Square root</a> paper, <em>by Chris Lomont</em>. I encourage you to go give it a read.</p>
+<p>We are left with finding an initial guess. Suppose we are given a floating point value <span class="math inline">\(x &gt; 0\)</span>, corresponding to the <span class="math inline">\(32\)</span>-bits</p>
+<pre><code>+---+---+---+
+| 0 | E | M |
++---+---+---+</code></pre>
+<p>as above. Suppose we have a normalized real number <span class="math inline">\(x\)</span>. Then,</p>
+<p><span class="math display">\[
+x = (-1)^{S_x} (1 + m_x) \cdot 2^{e_x}
+\]</span></p>
+<p>where:</p>
+<ul>
+<li><span class="math inline">\(S_x\)</span> is the sign bit, <span class="math inline">\(0\)</span> if <span class="math inline">\(x\)</span> is positive and <span class="math inline">\(1\)</span> if <span class="math inline">\(x\)</span> is negative.</li>
+<li><span class="math inline">\(E_x = e_x + B\)</span>, is the biased exponent, <span class="math inline">\(B = 127\)</span></li>
+<li><span class="math inline">\(M_x = m_x \times L\)</span> where <span class="math inline">\(L = 2^{23}\)</span> (<span class="math inline">\(23\)</span>-bits).</li>
+</ul>
+<p>The fields are packed, left to right on a 32-bit computer.</p>
+<p>Thus, given any real number <span class="math inline">\(x\)</span>, we can look at its bits and pretend its an integer <span class="math inline">\(I_x\)</span> or a real number <span class="math inline">\(x\)</span>.</p>
+<p><span class="math display">\[
+\begin{align*}
+I_x &amp;= E_x \cdot L + M_x \\
+x = (-1)^0 2^{e_x} (1 + m_x)
+\end{align*}
+\]</span></p>
+<p>We can therefore write:</p>
+<p><span class="math display">\[
+\begin{align*}
+y &amp;= \frac{1}{\sqrt{x}}\\
+\log_2(y) = -\frac{1}{2}\log_2(x)
+\end{align*}
+\]</span></p>
+<p>Also, we know that:</p>
+<p><span class="math display">\[
+\begin{align*}
+x &amp;= 2^{e_x}(1 + m_x)\\
+\log_2(x) &amp;= e_x + \log_2(1 + m_x) \\
+&amp;\approx e_x + m_x + \sigma
+\end{align*}
+\]</span></p>
+<p>where <span class="math inline">\(\sigma\)</span> is a parameter chosen to fine-tune to approximation. Interpreting the floating point bit-pattern of <span class="math inline">\(x\)</span> as an integer <span class="math inline">\(I_x\)</span> yields:</p>
+<p><span class="math display">\[
+\begin{align*}
+I_x &amp;= E_x L + M_x \\
+&amp;= L(e_x + B) + L m_x \\
+&amp;= L(e_x + m_x + B) \\
+&amp;= L(e_x + m_x + \sigma + B - \sigma) \\
+&amp;\approx L\log_2(x) + L(B - \sigma)
+\end{align*}
+\]</span></p>
+<p>It then appears that <span class="math inline">\(I_x\)</span> is a scaled and shifted piecewise-linear approximation <span class="math inline">\(\log_2(x)\)</span>. In other words, <span class="math inline">\(\log_2(x)\)</span> can be written as:</p>
+<p><span class="math display">\[
+\begin{align*}
+\log_2(x) \approx \frac{I_x}{L} - (B - \sigma)
+\end{align*}
+\]</span></p>
+<p>Since $_2(y) = -_2(x), using the approximation of logarithm obtained above:</p>
+<p><span class="math display">\[
+\frac{I_y}{L} - (B - \sigma) \approx -\frac{1}{2}\left(\frac{I_x}{L} - (B-\sigma)\right)
+\]</span></p>
+<p>Thus, an approximation of <span class="math inline">\(I_y\)</span> is:</p>
+<p><span class="math display">\[
+I_y \approx \frac{3}{2}(B - \sigma)L - \frac{I_x}{2}
+\]</span></p>
+<p>which is written in the code as the line:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>i <span class="op">=</span> <span class="bn">0x5f3759df</span> <span class="op">-</span> <span class="op">(</span>i <span class="op">&gt;&gt;</span> <span class="dv">1</span><span class="op">)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
 
-</main> <!-- /main -->
+
+<div id="quarto-appendix" class="default"><section id="references" class="level1 appendix"><h2 class="anchored quarto-appendix-heading">References</h2><div class="quarto-appendix-contents">
+
+<ul>
+<li><em><a href="https://www.lomont.org/papers/2003/InvSqrt.pdf">Fast Inverse Square Root</a>, Chris Lomont</em></li>
+</ul>
+
+
+</div></section></div></main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
   window.document.addEventListener("DOMContentLoaded", function (event) {
     const icon = "";

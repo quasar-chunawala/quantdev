@@ -121,7 +121,7 @@ font-style: inherit;">}</span></span></code></pre></div></div>
 <h2 class="anchored" data-anchor-id="background">Background</h2>
 <p>This blog post assumes 32-bit architecture. In particular, the floating point representation is IEEE 754. The above code is reported to be endian-neutral.</p>
 <p><img src="https://latex.codecogs.com/png.latex?32">-bit floating-point numbers are stored in the following format:</p>
-<div id="d1f478e9" class="cell" data-execution_count="2">
+<div id="2a34ac82" class="cell" data-execution_count="2">
 <div class="cell-output cell-output-display" data-execution_count="2">
 <div>
 <figure class="figure">
@@ -134,16 +134,79 @@ font-style: inherit;">}</span></span></code></pre></div></div>
 <p><img src="https://latex.codecogs.com/png.latex?%0Ax%20=%20(-1)%5Es(1+M)2%5E%7BE-127%7D%0A"></p>
 <p>These bits can be viewed as the floating point representation of a real number, or thinking only of bits, as an integer. Thus, <img src="https://latex.codecogs.com/png.latex?M"> will be considered a real number in <img src="https://latex.codecogs.com/png.latex?I"> or as an integer, depending on context. <img src="https://latex.codecogs.com/png.latex?M"> as a real number is <img src="https://latex.codecogs.com/png.latex?M"> divided by <img src="https://latex.codecogs.com/png.latex?2%5E%7B23%7D">.</p>
 </section>
-<section id="the-algorithm." class="level2">
-<h2 class="anchored" data-anchor-id="the-algorithm.">The algorithm.</h2>
+<section id="the-algorithm" class="level2">
+<h2 class="anchored" data-anchor-id="the-algorithm">The algorithm</h2>
 <p>The central idea is to use an iterative root solver such as Newton-Raphson and the magic constant is used to compute a good initial guess. Given the floating point value <img src="https://latex.codecogs.com/png.latex?x%20%3E%200">, we want to compute <img src="https://latex.codecogs.com/png.latex?%5Cfrac%7B1%7D%7B%5Csqrt%7Bx%7D%7D">. We let:</p>
-<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0Ay%20&amp;=%20%5Cfrac%7B1%7D%7B%5Csqrt%7Bx%7D%7D%5C%5C%0Ay%5E2%20&amp;=%20%5Cfrac%7B1%7D%7Bx%7D%0A%5Cend%7Balign*%7D%0A"></p>
-
-
+<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0Ay%20&amp;=%20%5Cfrac%7B1%7D%7B%5Csqrt%7Bx%7D%7D%5C%5C%0Ay%5E2%20&amp;=%20%5Cfrac%7B1%7D%7Bx%7D%5C%5C%0A%5Cfrac%7B1%7D%7By%5E2%7D%20-%20x%20&amp;=%200%0A%5Cend%7Balign*%7D%0A"></p>
+<p>Thus, we set the real-value function <img src="https://latex.codecogs.com/png.latex?f"> to be:</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0Af(y)%20=%20%5Cfrac%7B1%7D%7By%5E2%7D%20-%20x%0A"></p>
+<p>We are interested to find the roots of <img src="https://latex.codecogs.com/png.latex?f">. Given a suitable approximation of the root <img src="https://latex.codecogs.com/png.latex?y_n">, Newton’s method gives a better one <img src="https://latex.codecogs.com/png.latex?y_%7Bn+1%7D"> using:</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0Ay_%7Bn+1%7D%20=%20y_n%20-%20%5Cfrac%7Bf(y_n)%7D%7Bf'(y_n)%7D%0A"></p>
+<p>We have:</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0Af(y_n)%20&amp;=%20%5Cfrac%7B1%7D%7By_n%5E2%7D%20-%20x%5C%5C%0Af'(y_n)%20&amp;=%20-%5Cfrac%7B2%7D%7By_n%5E3%7D%0A%5Cend%7Balign*%7D%0A"></p>
+<p>Consequently,</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0Ay_%7Bn+1%7D%20&amp;=%20y_n%20-%20%5Cfrac%7B%5Cfrac%7B1%7D%7By_n%5E2%7D%20-%20x%7D%7B-%5Cfrac%7B2%7D%7By_n%5E3%7D%7D%5C%5C%0A&amp;=%20y_n%20+%20%5Cfrac%7By_n-xy_n%5E3%7D%7B2%7D%5C%5C%0A&amp;=%20y_n%5Cleft(%5Cfrac%7B3%7D%7B2%7D-%5Cfrac%7B1%7D%7B2%7Dxy_n%5E2%5Cright)%0A%5Cend%7Balign*%7D%0A"></p>
+<p>which corresponds to the line of code <code>x = x * (1.5f - xhalf * x * x)</code>, where <code>x</code> is the initial guess, which hereafter will be called <img src="https://latex.codecogs.com/png.latex?y_0">.</p>
+<p>The line of code <code>i = 0x5f3759df - (i &gt;&gt; 1)</code> computes this initial guess <img src="https://latex.codecogs.com/png.latex?y_0">,roughly by multiplying the exponent for <img src="https://latex.codecogs.com/png.latex?x"> by <img src="https://latex.codecogs.com/png.latex?-1/2"> and then picking bits to minimize the error.</p>
+</section>
+<section id="the-magic-number" class="level2">
+<h2 class="anchored" data-anchor-id="the-magic-number">The magic number</h2>
+<p>An excellent outline of how to pick an initial guess is described in the <a href="https://www.lomont.org/papers/2003/InvSqrt.pdf">Fast Inverse Square root</a> paper, <em>by Chris Lomont</em>. I encourage you to go give it a read.</p>
+<p>We are left with finding an initial guess. Suppose we are given a floating point value <img src="https://latex.codecogs.com/png.latex?x%20%3E%200">, corresponding to the <img src="https://latex.codecogs.com/png.latex?32">-bits</p>
+<pre><code>+---+---+---+
+| 0 | E | M |
++---+---+---+</code></pre>
+<p>as above. Suppose we have a normalized real number <img src="https://latex.codecogs.com/png.latex?x">. Then,</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0Ax%20=%20(-1)%5E%7BS_x%7D%20(1%20+%20m_x)%20%5Ccdot%202%5E%7Be_x%7D%0A"></p>
+<p>where:</p>
+<ul>
+<li><img src="https://latex.codecogs.com/png.latex?S_x"> is the sign bit, <img src="https://latex.codecogs.com/png.latex?0"> if <img src="https://latex.codecogs.com/png.latex?x"> is positive and <img src="https://latex.codecogs.com/png.latex?1"> if <img src="https://latex.codecogs.com/png.latex?x"> is negative.</li>
+<li><img src="https://latex.codecogs.com/png.latex?E_x%20=%20e_x%20+%20B">, is the biased exponent, <img src="https://latex.codecogs.com/png.latex?B%20=%20127"></li>
+<li><img src="https://latex.codecogs.com/png.latex?M_x%20=%20m_x%20%5Ctimes%20L"> where <img src="https://latex.codecogs.com/png.latex?L%20=%202%5E%7B23%7D"> (<img src="https://latex.codecogs.com/png.latex?23">-bits).</li>
+</ul>
+<p>The fields are packed, left to right on a 32-bit computer.</p>
+<p>Thus, given any real number <img src="https://latex.codecogs.com/png.latex?x">, we can look at its bits and pretend its an integer <img src="https://latex.codecogs.com/png.latex?I_x"> or a real number <img src="https://latex.codecogs.com/png.latex?x">.</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0AI_x%20&amp;=%20E_x%20%5Ccdot%20L%20+%20M_x%20%5C%5C%0Ax%20=%20(-1)%5E0%202%5E%7Be_x%7D%20(1%20+%20m_x)%0A%5Cend%7Balign*%7D%0A"></p>
+<p>We can therefore write:</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0Ay%20&amp;=%20%5Cfrac%7B1%7D%7B%5Csqrt%7Bx%7D%7D%5C%5C%0A%5Clog_2(y)%20=%20-%5Cfrac%7B1%7D%7B2%7D%5Clog_2(x)%0A%5Cend%7Balign*%7D%0A"></p>
+<p>Also, we know that:</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0Ax%20&amp;=%202%5E%7Be_x%7D(1%20+%20m_x)%5C%5C%0A%5Clog_2(x)%20&amp;=%20e_x%20+%20%5Clog_2(1%20+%20m_x)%20%5C%5C%0A&amp;%5Capprox%20e_x%20+%20m_x%20+%20%5Csigma%0A%5Cend%7Balign*%7D%0A"></p>
+<p>where <img src="https://latex.codecogs.com/png.latex?%5Csigma"> is a parameter chosen to fine-tune to approximation. Interpreting the floating point bit-pattern of <img src="https://latex.codecogs.com/png.latex?x"> as an integer <img src="https://latex.codecogs.com/png.latex?I_x"> yields:</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0AI_x%20&amp;=%20E_x%20L%20+%20M_x%20%5C%5C%0A&amp;=%20L(e_x%20+%20B)%20+%20L%20m_x%20%5C%5C%0A&amp;=%20L(e_x%20+%20m_x%20+%20B)%20%5C%5C%0A&amp;=%20L(e_x%20+%20m_x%20+%20%5Csigma%20+%20B%20-%20%5Csigma)%20%5C%5C%0A&amp;%5Capprox%20L%5Clog_2(x)%20+%20L(B%20-%20%5Csigma)%0A%5Cend%7Balign*%7D%0A"></p>
+<p>It then appears that <img src="https://latex.codecogs.com/png.latex?I_x"> is a scaled and shifted piecewise-linear approximation <img src="https://latex.codecogs.com/png.latex?%5Clog_2(x)">. In other words, <img src="https://latex.codecogs.com/png.latex?%5Clog_2(x)"> can be written as:</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cbegin%7Balign*%7D%0A%5Clog_2(x)%20%5Capprox%20%5Cfrac%7BI_x%7D%7BL%7D%20-%20(B%20-%20%5Csigma)%0A%5Cend%7Balign*%7D%0A"></p>
+<p>Since $_2(y) = -_2(x), using the approximation of logarithm obtained above:</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0A%5Cfrac%7BI_y%7D%7BL%7D%20-%20(B%20-%20%5Csigma)%20%5Capprox%20-%5Cfrac%7B1%7D%7B2%7D%5Cleft(%5Cfrac%7BI_x%7D%7BL%7D%20-%20(B-%5Csigma)%5Cright)%0A"></p>
+<p>Thus, an approximation of <img src="https://latex.codecogs.com/png.latex?I_y"> is:</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0AI_y%20%5Capprox%20%5Cfrac%7B3%7D%7B2%7D(B%20-%20%5Csigma)L%20-%20%5Cfrac%7BI_x%7D%7B2%7D%0A"></p>
+<p>which is written in the code as the line:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb3-1">i <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bn" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0x5f3759df</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>i <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;&gt;</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span></span></code></pre></div></div>
 </section>
 </section>
 
- ]]></description>
+
+<div id="quarto-appendix" class="default"><section id="references" class="level1 appendix"><h2 class="anchored quarto-appendix-heading">References</h2><div class="quarto-appendix-contents">
+
+<ul>
+<li><em><a href="https://www.lomont.org/papers/2003/InvSqrt.pdf">Fast Inverse Square Root</a>, Chris Lomont</em></li>
+</ul>
+
+
+</div></section></div> ]]></description>
   <category>C++</category>
   <guid>http://quantdev.blog/posts/fast-inverse-square-root-algorithm/</guid>
   <pubDate>Sat, 20 Jun 2026 23:00:00 GMT</pubDate>
