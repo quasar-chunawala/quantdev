@@ -9,7 +9,7 @@
 <meta name="author" content="dev::author">
 <meta name="dcterms.date" content="2026-06-20">
 
-<title>Type punning – quantdev.blog</title>
+<title>Quake-3 fast inverse square root algorithm – quantdev.blog</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -196,7 +196,7 @@ window.Quarto = {
 <header id="title-block-header" class="quarto-title-block default page-columns page-full">
   <div class="quarto-title-banner page-columns page-full">
     <div class="quarto-title column-body">
-      <h1 class="title">Type punning</h1>
+      <h1 class="title">Quake-3 fast inverse square root algorithm</h1>
                                 <div class="quarto-categories">
                 <div class="quarto-category">C++</div>
               </div>
@@ -232,14 +232,11 @@ window.Quarto = {
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#what-is-type-punning" id="toc-what-is-type-punning" class="nav-link active" data-scroll-target="#what-is-type-punning">What is type punning?</a>
-  <ul class="collapse">
-  <li><a href="#type-punning-and-the-quake-3-fast-inverse-square-root-algorithm" id="toc-type-punning-and-the-quake-3-fast-inverse-square-root-algorithm" class="nav-link" data-scroll-target="#type-punning-and-the-quake-3-fast-inverse-square-root-algorithm">Type punning and the Quake-3 fast inverse square root algorithm</a>
+  <li><a href="#the-quake-3-fast-inverse-square-root-algorithm" id="toc-the-quake-3-fast-inverse-square-root-algorithm" class="nav-link active" data-scroll-target="#the-quake-3-fast-inverse-square-root-algorithm">The Quake-3 fast inverse square root algorithm</a>
   <ul class="collapse">
   <li><a href="#background" id="toc-background" class="nav-link" data-scroll-target="#background">Background</a></li>
+  <li><a href="#the-algorithm." id="toc-the-algorithm." class="nav-link" data-scroll-target="#the-algorithm.">The algorithm.</a></li>
   </ul></li>
-  </ul></li>
-  <li><a href="#c-style-casts" id="toc-c-style-casts" class="nav-link" data-scroll-target="#c-style-casts">C-style casts</a></li>
   </ul>
 </nav>
     </div>
@@ -250,52 +247,23 @@ window.Quarto = {
 
 
 
-<section id="what-is-type-punning" class="level1">
-<h1>What is type punning?</h1>
-<p>Type punning is like poking holes - a technique to subvert the language’s type system. There are recommended ways to perform type punning and others that you should actively seek to avoid.</p>
-<p>A very common task is the following : you have an object of one type - let’s say a <code>float</code> and then you want to pretend that the bytes of this object are actually an <code>int</code> or vice versa.</p>
-<pre><code>        +--+--+--+--+
-float   |F0|00|80|01|
-        +--+--+--+--+
-
-        +--+--+--+--+
-int     |F0|00|80|01|
-        +--+--+--+--+ </code></pre>
-<p>Another class of type punning is the following. You have an object and you either want to look at the raw bytes of the object or the other way round, you just have a blob of bytes and you want to pretend, that they are an object of some type. Whereas in reality, it’s just a bunch of bytes.</p>
-<pre><code>            +--+--+--+--+
-float       |F0|00|80|01|
-            +--+--+--+--+
-
-            +--+ +--+ +--+ +--+
-char*       |F0| |00| |80| |01|
-std::byte*  +--+ +--+ +--+ +--+ 
-</code></pre>
-<p>And then there is this third case, which is a bit weird, where you wanna look at an object as if it were several other objects. So, the sizes don’t match.</p>
-<pre><code>            +--+--+--+--+
-float       |F0|00|80|01|
-            +--+--+--+--+
-
-            +--+--+ +--+--+
-short[2]    |F0|00| |80|01|
-            +--+--+ +--+--+ 
-</code></pre>
-<section id="type-punning-and-the-quake-3-fast-inverse-square-root-algorithm" class="level2">
-<h2 class="anchored" data-anchor-id="type-punning-and-the-quake-3-fast-inverse-square-root-algorithm">Type punning and the Quake-3 fast inverse square root algorithm</h2>
-<p>Let’s say you have a <code>float</code> and you want to look at it as an <code>int</code>. Why would you want to do that? Turns out, this is pretty common, especially in low-latency applications - here’s a snippet of code which is probably the most famous example of this.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Fast inverse square root algorithm from Quake III Arena</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> Q_rsqrt<span class="op">(</span><span class="dt">float</span> x<span class="op">){</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> xhalf <span class="op">=</span> <span class="fl">0.5</span><span class="bu">f</span> <span class="op">*</span> x<span class="op">;</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> i <span class="op">=</span> <span class="op">*(</span><span class="dt">int</span><span class="op">*)(&amp;</span>x<span class="op">);</span>        <span class="co">// get bits for floating value</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    i <span class="op">=</span> <span class="bn">0x5f3759df</span> <span class="op">-</span> <span class="op">(</span>i <span class="op">&gt;&gt;</span> <span class="dv">1</span><span class="op">);</span>  <span class="co">// gives an initial guess y_0</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> <span class="op">*(</span><span class="dt">float</span><span class="op">*)&amp;</span>i<span class="op">;</span>            <span class="co">// convert bits back to float</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> x<span class="op">*(</span><span class="fl">1.5</span><span class="bu">f</span> <span class="op">-</span> xhalf <span class="op">*</span> x <span class="op">*</span> x<span class="op">);</span>   <span class="co">// Newton step, repeating increases accuracy.</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>This algorithm computes the inverse square root <span class="math inline">\(1/\sqrt{x}\)</span> and it appears in the source code for <em>Quake-3</em>, written by the legendary game programmer <a href="https://en.wikipedia.org/wiki/John_Carmack">John Carmack</a>. This code works roughly <span class="math inline">\(4\)</span> times faster than the naive <code>1.0/sqrt(x)</code>, and the maximum relative error over all floating point numbers is <span class="math inline">\(0.175228\)</span> percent. How does it work? What bit master designed such an incredible hack?</p>
-<section id="background" class="level3">
-<h3 class="anchored" data-anchor-id="background">Background</h3>
+<section id="the-quake-3-fast-inverse-square-root-algorithm" class="level1">
+<h1>The Quake-3 fast inverse square root algorithm</h1>
+<p>How do you compute <span class="math inline">\(\frac{1}{\sqrt{x}}\)</span> quickly and efficiently? There’s a cool piece of code found in <em>Quake III</em> source code attributed to the legendary game programmer <a href="https://en.wikipedia.org/wiki/John_Carmack">John Carmack</a>. It actually goes back to SGI, 3dfx and was first written in mid 1980s by Greg Walsh.</p>
+<p>This code works roughly <span class="math inline">\(4\)</span> times faster than the naive <code>1.0/sqrt(x)</code>, and the maximum relative error over all floating point numbers is <span class="math inline">\(0.175228\)</span> percent. How does it work? What bit master designed such an incredible hack?</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Fast inverse square root algorithm from Quake III Arena</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> Q_rsqrt<span class="op">(</span><span class="dt">float</span> x<span class="op">){</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> xhalf <span class="op">=</span> <span class="fl">0.5</span><span class="bu">f</span> <span class="op">*</span> x<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> i <span class="op">=</span> <span class="op">*(</span><span class="dt">int</span><span class="op">*)(&amp;</span>x<span class="op">);</span>        <span class="co">// get bits for floating value</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    i <span class="op">=</span> <span class="bn">0x5f3759df</span> <span class="op">-</span> <span class="op">(</span>i <span class="op">&gt;&gt;</span> <span class="dv">1</span><span class="op">);</span>  <span class="co">// gives an initial guess y_0</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> <span class="op">*(</span><span class="dt">float</span><span class="op">*)&amp;</span>i<span class="op">;</span>            <span class="co">// convert bits back to float</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> x<span class="op">*(</span><span class="fl">1.5</span><span class="bu">f</span> <span class="op">-</span> xhalf <span class="op">*</span> x <span class="op">*</span> x<span class="op">);</span>   <span class="co">// Newton step, repeating increases accuracy.</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="background" class="level2">
+<h2 class="anchored" data-anchor-id="background">Background</h2>
 <p>This blog post assumes 32-bit architecture. In particular, the floating point representation is IEEE 754. The above code is reported to be endian-neutral.</p>
-<p>Floating-point numbers are stored in the following format:</p>
-<div id="c1b8e5cd" class="cell" data-execution_count="2">
+<p><span class="math inline">\(32\)</span>-bit floating-point numbers are stored in the following format:</p>
+<div id="b00a245c" class="cell" data-execution_count="2">
 <div class="cell-output cell-output-display" data-execution_count="2">
 <div>
 <figure class="figure">
@@ -304,35 +272,17 @@ short[2]    |F0|00| |80|01|
 </div>
 </div>
 </div>
+<p>where <span class="math inline">\(s\)</span> is a <span class="math inline">\(1\)</span>-bit sign(<span class="math inline">\(1\)</span> denotes negative), <span class="math inline">\(E\)</span> is an <span class="math inline">\(8\)</span>-bit exponent, and <span class="math inline">\(M\)</span> is a <span class="math inline">\(23\)</span>-bit mantissa. The exponent is biased by <span class="math inline">\(127\)</span> to accomodate positive and negative exponents, and the mantissa does not store the leading <span class="math inline">\(1\)</span>, so think of <span class="math inline">\(M\)</span> as a binary number with the decimal point to the left, thus <span class="math inline">\(M\)</span> is a value in <span class="math inline">\(I=[0,1)\)</span>. The represented value is:</p>
+<p><span class="math display">\[
+x = (-1)^s(1+M)2^{E-127}
+\]</span></p>
+<p>These bits can be viewed as the floating point representation of a real number, or thinking only of bits, as an integer. Thus, <span class="math inline">\(M\)</span> will be considered a real number in <span class="math inline">\(I\)</span> or as an integer, depending on context. <span class="math inline">\(M\)</span> as a real number is <span class="math inline">\(M\)</span> divided by <span class="math inline">\(2^{23}\)</span>.</p>
 </section>
-</section>
-</section>
-<section id="c-style-casts" class="level1">
-<h1>C-style casts</h1>
-<p>Suppose we have <span class="math inline">\(2\)</span> distinct types - we have a <code>Widget</code> and we have a <code>Gizmo</code>, those are different types. There is no inheritance going on here. Each one of them has a function that prints something. We are creating a <code>Gizmo</code> and we are casting it to a <code>Widget</code> and calling its <code>.doSomething()</code> method.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Widget<span class="op">{</span></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">virtual</span> <span class="dt">void</span> doSomething<span class="op">(){</span></span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Widget"</span><span class="op">);</span></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Gizmo<span class="op">{</span></span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">virtual</span> <span class="dt">void</span> doSomethingCompletelyDifferent<span class="op">(){</span></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>println<span class="op">(</span><span class="st">"Gizmo"</span><span class="op">);</span></span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    Gizmo gizmo<span class="op">;</span></span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    Widget<span class="op">*</span> widget <span class="op">=</span> <span class="op">(</span>Widget<span class="op">*)(&amp;</span>gizmo<span class="op">);</span> <span class="co">// [1]</span></span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>    widget<span class="op">-&gt;</span>doSomething<span class="op">();</span></span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p><code>[1]</code> compiles - this is a C-style cast. If you look at the standard, what a C-style cast does, it says that, well it says that a C-style cast is going to try all these things : first it’s going to try <code>const_cast</code>, then it’s going to try <code>static_cast</code>, and if all these things fail, then it will try a <code>reinterpret_cast</code>. If that succeeds, then, that’s what you get. So, the above code is going to compile and run. The question is what is it going to do?</p>
-<p>This is undefined behavior(UB). You can’t just cast <code>Gizmo</code> to <code>Widget</code>. If you run this code snippet on <code>clang</code> with optimizations on, it prints <code>Gizmo</code>. If you try it on <code>gcc</code>, the compiler detects that this is a gizmo, you cannot reach this line of code, this cannot happen and then it optimizes away everything before it that lead to it, which is basically the whole program - so it doesn’t produce any output.</p>
+<section id="the-algorithm." class="level2">
+<h2 class="anchored" data-anchor-id="the-algorithm.">The algorithm.</h2>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->
