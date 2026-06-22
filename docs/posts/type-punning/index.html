@@ -241,6 +241,7 @@ window.Quarto = {
   <li><a href="#why-do-we-have-these-rules" id="toc-why-do-we-have-these-rules" class="nav-link" data-scroll-target="#why-do-we-have-these-rules">Why do we have these rules?</a>
   <ul class="collapse">
   <li><a href="#aliasing-rules" id="toc-aliasing-rules" class="nav-link" data-scroll-target="#aliasing-rules">Aliasing rules</a></li>
+  <li><a href="#object-lifetime-rules" id="toc-object-lifetime-rules" class="nav-link" data-scroll-target="#object-lifetime-rules">Object lifetime rules</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -395,6 +396,44 @@ short[2]    |F0|00| |80|01|
 <span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x<span class="op">;</span></span>
 <span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>You might think, is this valid C++? Yes, it is and the program is going to return <span class="math inline">\(4\)</span>. Here, we have this case where the two pointers are aliasing each other - they are pointing to the same object. And that is okay, because the pointers are of the same type. You have an <code>int</code> and you access it through a pointer that is also <code>int*</code>. So, that’s fine.</p>
+<p>In C++, aliasing is fine, if we have pointers to the same types. Aliasing is not fine, if we have pointer to different types. If you do something like this, you get UB.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> test<span class="op">(</span><span class="dt">int</span><span class="op">*</span> a<span class="op">,</span> <span class="dt">float</span><span class="op">*</span> b<span class="op">){</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>a <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>b <span class="op">=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>a <span class="op">+=</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">int</span><span class="op">&gt;(*</span>b<span class="op">);</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> x<span class="op">{</span><span class="dv">0</span><span class="op">};</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    test<span class="op">(&amp;</span>x<span class="op">,</span> reinterprete_cast<span class="op">&lt;</span><span class="dt">float</span><span class="op">*&gt;(&amp;</span>x<span class="op">));</span>  <span class="co">// Undefined behavior</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x<span class="op">;</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This is called as the strict aliasing rule.</p>
+</section>
+<section id="object-lifetime-rules" class="level2">
+<h2 class="anchored" data-anchor-id="object-lifetime-rules">Object lifetime rules</h2>
+<p>For this, let’s look at the second category of type puns. Specially, the direction, where we have an array of bytes and we want to type pun the bytes into an object.</p>
+<pre><code>            +--+--+--+--+
+float       |F0|00|80|01|
+            +--+--+--+--+
+
+            +--+ +--+ +--+ +--+
+char*       |F0| |00| |80| |01|
+std::byte*  +--+ +--+ +--+ +--+ 
+</code></pre>
+<p>One way of doing this is the following.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> X<span class="op">{</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> a<span class="op">;</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> b<span class="op">;</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>X<span class="op">*</span> make_x<span class="op">(){</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    X<span class="op">*</span> p <span class="op">=</span> <span class="op">(</span>X<span class="op">*)</span>malloc<span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span><span class="kw">struct</span> X<span class="op">));</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    p <span class="op">-&gt;</span> a <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>    p <span class="op">-&gt;</span> b <span class="op">=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> p<span class="op">;</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 
 
 </section>
