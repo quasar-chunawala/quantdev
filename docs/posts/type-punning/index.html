@@ -320,7 +320,12 @@ short[2]    |F0|00| |80|01|
 <p>This algorithm computes the inverse square root <span class="math inline">\(1/\sqrt{x}\)</span> and it appears in the source code for <em>Quake-3</em>, written by the legendary game programmer <a href="https://en.wikipedia.org/wiki/John_Carmack">John Carmack</a>. This code works roughly <span class="math inline">\(4\)</span> times faster than the naive <code>1.0/sqrt(x)</code>, and the maximum relative error over all floating point numbers is <span class="math inline">\(0.175228\)</span> percent.</p>
 <p>You have these two casts in there, which are <code>reinterpret_cast</code>s. You take a <code>float</code> and look at it as if its an <code>int</code>. Of course, this is undefined behavior(UB). The above is actually C code and this is actually undefined behavior even in C. Let’s look into the C++ standard to see, why is this undefined behavior.</p>
 <blockquote class="blockquote">
-<p>If a program attempts to access the stored value of an object through a <em>glvalue</em> whose type is not similar to one of the following types, the behavior is undefined: - the dynamic type of the object - a type that signed or unsigned type corresponding to the dynamic type of the object. - a <code>char</code>, <code>unsigned char</code> or <code>std::byte</code> type.</p>
+<p>If a program attempts to access the stored value of an object through a <em>glvalue</em> whose type is not similar to one of the following types, the behavior is undefined:</p>
+<ul>
+<li>the dynamic type of the object</li>
+<li>a type that signed or unsigned type corresponding to the dynamic type of the object.</li>
+<li>a <code>char</code>, <code>unsigned char</code> or <code>std::byte</code> type.</li>
+</ul>
 </blockquote>
 <p>The dynamic type of the object in quake-3 example is <code>float</code> and we are accessing it through an <code>int*</code> pointer. So, it is UB.</p>
 </section>
@@ -339,13 +344,42 @@ short[2]    |F0|00| |80|01|
 </section>
 <section id="why-do-we-have-these-rules" class="level1">
 <h1>Why do we have these rules?</h1>
-<p>Why does C++ disallow type puns?</p>
+<p>Why does C++ disallow type puns? There are broadly speaking <span class="math inline">\(4\)</span> rules that you need to keep in mind:</p>
+<ul>
+<li>Strict aliasing rules</li>
+<li>Object lifetime rules</li>
+<li>Alignment rules</li>
+<li>Rules for valid value representations</li>
+</ul>
+<p>These are basically the rules, why you can’t do this stuff.</p>
 <section id="aliasing-rules" class="level2">
 <h2 class="anchored" data-anchor-id="aliasing-rules">Aliasing rules</h2>
-<p>If you look again at this piece from the standard which says:</p>
+<p>Let’s start with aliasing rules. If you look again at this piece from the standard which says:</p>
 <blockquote class="blockquote">
-<p>If a program attempts to access the stored value of an object through a <em>glvalue</em></p>
+<p>If a program attempts to access the stored value of an object through a <em>glvalue</em> whose type is not similar to one of the following types, the behavior is undefined:</p>
+<ul>
+<li>the dynamic type of the object.</li>
+<li>a type that is signed or unsigned type corresponding to the dynamic type of the object.</li>
+<li>a <code>char</code>, <code>unsigned char</code> or <code>std::byte</code> type.</li>
+</ul>
 </blockquote>
+<p>So, according to the standard, if you attempt to access a type through a reference or pointer to another type, its UB. And then there is this footnote which says:</p>
+<p><em>The intent of this list is to specify circumstances in which an object may or may not be aliased.</em></p>
+<p>What does that mean? Let’s look at this code:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> test<span class="op">(</span><span class="dt">int</span><span class="op">*</span> a<span class="op">,</span> <span class="dt">int</span><span class="op">*</span> b<span class="op">){</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>a <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>b <span class="op">=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>a <span class="op">+=</span> <span class="op">*</span>b<span class="op">;</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> x <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> y <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>    test<span class="op">(&amp;</span>x<span class="op">,</span> <span class="op">&amp;</span>y<span class="op">);</span>   <span class="co">// [1]</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x<span class="op">;</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>We call the function <code>test(int*, int*)</code> in <code>[1]</code>. So, we have <span class="math inline">\(2\)</span> integers <code>x</code> and <code>y</code>, we pass pointers to these integers to this function <code>test()</code> and then we return the result. This program is going to return <code>3</code>.</p>
 
 
 </section>

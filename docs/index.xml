@@ -454,7 +454,12 @@ font-style: inherit;">}</span></span></code></pre></div></div>
 <p>This algorithm computes the inverse square root <img src="https://latex.codecogs.com/png.latex?1/%5Csqrt%7Bx%7D"> and it appears in the source code for <em>Quake-3</em>, written by the legendary game programmer <a href="https://en.wikipedia.org/wiki/John_Carmack">John Carmack</a>. This code works roughly <img src="https://latex.codecogs.com/png.latex?4"> times faster than the naive <code>1.0/sqrt(x)</code>, and the maximum relative error over all floating point numbers is <img src="https://latex.codecogs.com/png.latex?0.175228"> percent.</p>
 <p>You have these two casts in there, which are <code>reinterpret_cast</code>s. You take a <code>float</code> and look at it as if its an <code>int</code>. Of course, this is undefined behavior(UB). The above is actually C code and this is actually undefined behavior even in C. Let’s look into the C++ standard to see, why is this undefined behavior.</p>
 <blockquote class="blockquote">
-<p>If a program attempts to access the stored value of an object through a <em>glvalue</em> whose type is not similar to one of the following types, the behavior is undefined: - the dynamic type of the object - a type that signed or unsigned type corresponding to the dynamic type of the object. - a <code>char</code>, <code>unsigned char</code> or <code>std::byte</code> type.</p>
+<p>If a program attempts to access the stored value of an object through a <em>glvalue</em> whose type is not similar to one of the following types, the behavior is undefined:</p>
+<ul>
+<li>the dynamic type of the object</li>
+<li>a type that signed or unsigned type corresponding to the dynamic type of the object.</li>
+<li>a <code>char</code>, <code>unsigned char</code> or <code>std::byte</code> type.</li>
+</ul>
 </blockquote>
 <p>The dynamic type of the object in quake-3 example is <code>float</code> and we are accessing it through an <code>int*</code> pointer. So, it is UB.</p>
 </section>
@@ -531,13 +536,121 @@ font-style: inherit;">;</span></span></code></pre></div></div>
 </section>
 <section id="why-do-we-have-these-rules" class="level1">
 <h1>Why do we have these rules?</h1>
-<p>Why does C++ disallow type puns?</p>
+<p>Why does C++ disallow type puns? There are broadly speaking <img src="https://latex.codecogs.com/png.latex?4"> rules that you need to keep in mind:</p>
+<ul>
+<li>Strict aliasing rules</li>
+<li>Object lifetime rules</li>
+<li>Alignment rules</li>
+<li>Rules for valid value representations</li>
+</ul>
+<p>These are basically the rules, why you can’t do this stuff.</p>
 <section id="aliasing-rules" class="level2">
 <h2 class="anchored" data-anchor-id="aliasing-rules">Aliasing rules</h2>
-<p>If you look again at this piece from the standard which says:</p>
+<p>Let’s start with aliasing rules. If you look again at this piece from the standard which says:</p>
 <blockquote class="blockquote">
-<p>If a program attempts to access the stored value of an object through a <em>glvalue</em></p>
+<p>If a program attempts to access the stored value of an object through a <em>glvalue</em> whose type is not similar to one of the following types, the behavior is undefined:</p>
+<ul>
+<li>the dynamic type of the object.</li>
+<li>a type that is signed or unsigned type corresponding to the dynamic type of the object.</li>
+<li>a <code>char</code>, <code>unsigned char</code> or <code>std::byte</code> type.</li>
+</ul>
 </blockquote>
+<p>So, according to the standard, if you attempt to access a type through a reference or pointer to another type, its UB. And then there is this footnote which says:</p>
+<p><em>The intent of this list is to specify circumstances in which an object may or may not be aliased.</em></p>
+<p>What does that mean? Let’s look at this code:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> test<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> a<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> b<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">){</span></span>
+<span id="cb7-2">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>a <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb7-3">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>b <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb7-4">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>a <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>b<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb7-5"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb7-6"></span>
+<span id="cb7-7"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb7-8">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> x <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb7-9">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> y <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb7-10"></span>
+<span id="cb7-11">    test<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span>y<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// [1]</span></span>
+<span id="cb7-12">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">return</span> x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb7-13"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div></div>
+<p>We call the function <code>test(int*, int*)</code> in <code>[1]</code>. So, we have <img src="https://latex.codecogs.com/png.latex?2"> integers <code>x</code> and <code>y</code>, we pass pointers to these integers to this function <code>test()</code> and then we return the result. This program is going to return <code>3</code>.</p>
 
 
 </section>

@@ -101,6 +101,7 @@ This algorithm computes the inverse square root $1/\sqrt{x}$ and it appears in t
 You have these two casts in there, which are `reinterpret_cast`s. You take a `float` and look at it as if its an `int`. Of course, this is undefined behavior(UB). The above is actually C code and this is actually undefined behavior even in C. Let's look into the C++ standard to see, why is this undefined behavior.
 
 > If a program attempts to access the stored value of an object through a *glvalue* whose type is not similar to one of the following types, the behavior is undefined:
+>
 > - the dynamic type of the object
 > - a type that signed or unsigned type corresponding to the dynamic type of the object.
 > - a `char`, `unsigned char` or `std::byte` type.
@@ -125,10 +126,46 @@ This is performing a type pun through a union. In C++, this code has undefined b
 
 # Why do we have these rules?
 
-Why does C++ disallow type puns?
+Why does C++ disallow type puns? There are broadly speaking $4$ rules that you need to keep in mind:
+
+- Strict aliasing rules
+- Object lifetime rules
+- Alignment rules
+- Rules for valid value representations
+
+These are basically the rules, why you can't do this stuff. 
 
 ## Aliasing rules
 
-If you look again at this piece from the standard which says:
+Let's start with aliasing rules. If you look again at this piece from the standard which says:
 
-> If a program attempts to access the stored value of an object through a *glvalue* 
+> If a program attempts to access the stored value of an object through a *glvalue* whose type is not similar to one of the following types, the behavior is undefined:
+>
+> - the dynamic type of the object.
+> - a type that is signed or unsigned type corresponding to the dynamic type of the object.
+> - a `char`, `unsigned char` or `std::byte` type.
+
+So, according to the standard, if you attempt to access a type through a reference or pointer to another type, its UB. And then there is this footnote which says:
+
+*The intent of this list is to specify circumstances in which an object may or may not be aliased.*
+
+What does that mean? Let's look at this code:
+
+```cpp
+void test(int* a, int* b){
+    *a = 1;
+    *b = 2;
+    *a += *b;
+}
+
+int main(){
+    int x = 0;
+    int y = 0;
+
+    test(&x, &y);   // [1]
+    return x;
+}
+```
+
+We call the function `test(int*, int*)` in `[1]`. So, we have $2$ integers `x` and `y`, we pass pointers to these integers to this function `test()` and then we return the result. This program is going to return `3`.
+
