@@ -9,6 +9,36 @@ toc: true
 toc-depth: 3
 ---
 
+# Introduction
+
+Suppose we have $2$ distinct types - we have a `Widget` and we have a `Gizmo`, those are different types. There is no inheritance going on here. Each one of them has a function that prints something. We are creating a `Gizmo` and we are casting it to a `Widget` and calling its `.doSomething()` method. 
+
+```cpp
+#include <print>
+
+struct Widget{
+    virtual void doSomething(){
+        std::println("Widget");
+    }
+};
+
+struct Gizmo{
+    virtual void doSomethingCompletelyDifferent(){
+        std::println("Gizmo");
+    }
+}
+
+int main(){
+    Gizmo gizmo;
+    Widget* widget = (Widget*)(&gizmo); // [1]
+    widget->doSomething();
+}
+```
+
+`[1]` compiles - this is a C-style cast. If you look at the standard, what a C-style cast does, it says that, well it says that a C-style cast is going to try all these things : first it's going to try `const_cast`, then it's going to try `static_cast`, and if all these things fail, then it will try a `reinterpret_cast`. If that succeeds, then, that's what you get. So, the above code is going to compile and run. The question is what is it going to do?
+
+This is undefined behavior(UB). You can't just cast `Gizmo` to `Widget`. If you run this code snippet on `clang` with optimizations on, it prints `Gizmo`. If you try it on `gcc`, the compiler detects that this is a gizmo, you cannot reach this line of code, this cannot happen and then it optimizes away everything before it that lead to it, which is basically the whole program - so it doesn't produce any output. 
+
 # What is type punning?
 
 Type punning is like poking holes - a technique to subvert the language's type system. There are recommended ways to perform type punning and others that you should actively seek to avoid. 
@@ -59,43 +89,46 @@ Let's say you have a `float` and you want to look at it as an `int`. Why would y
 // Fast inverse square root algorithm from Quake III Arena
 float Q_rsqrt(float x){
     float xhalf = 0.5f * x;
-    int i = *(int*)(&x);        // get bits for floating value
+    int i = *(int*)(&x);        // [1] get bits for floating value
     i = 0x5f3759df - (i >> 1);  // gives an initial guess y_0
-    x = *(float*)&i;            // convert bits back to float
+    x = *(float*)&i;            // [2] convert bits back to float
     x = x*(1.5f - xhalf * x * x);   // Newton step, repeating increases accuracy.
 }
 ```
 
 This algorithm computes the inverse square root $1/\sqrt{x}$ and it appears in the source code for *Quake-3*, written by the legendary game programmer [John Carmack](https://en.wikipedia.org/wiki/John_Carmack). This code works roughly $4$ times faster than the naive `1.0/sqrt(x)`, and the maximum relative error over all floating point numbers is $0.175228$ percent. 
 
+You have these two casts in there, which are `reinterpret_cast`s. You take a `float` and look at it as if its an `int`. Of course, this is undefined behavior(UB). The above is actually C code and this is actually undefined behavior even in C. Let's look into the C++ standard to see, why is this undefined behavior.
 
-# C-style casts
+> If a program attempts to access the stored value of an object through a *glvalue* whose type is not similar to one of the following types, the behavior is undefined:
+> - the dynamic type of the object
+> - a type that signed or unsigned type corresponding to the dynamic type of the object.
+> - a `char`, `unsigned char` or `std::byte` type.
 
-Suppose we have $2$ distinct types - we have a `Widget` and we have a `Gizmo`, those are different types. There is no inheritance going on here. Each one of them has a function that prints something. We are creating a `Gizmo` and we are casting it to a `Widget` and calling its `.doSomething()` method. 
+The dynamic type of the object in quake-3 example is `float` and we are accessing it through an `int*` pointer. So, it is UB.
+
+# Using unions
+
+Consider the following code snippet:
 
 ```cpp
-#include <print>
+static_assert(sizeof(float) == sizeof(int));
 
-struct Widget{
-    virtual void doSomething(){
-        std::println("Widget");
-    }
-};
-
-struct Gizmo{
-    virtual void doSomethingCompletelyDifferent(){
-        std::println("Gizmo");
-    }
-}
-
-int main(){
-    Gizmo gizmo;
-    Widget* widget = (Widget*)(&gizmo); // [1]
-    widget->doSomething();
-}
+union U{
+    float f;
+    int i;
+} u = { 1.0f };
+int i = u.i;
 ```
 
-`[1]` compiles - this is a C-style cast. If you look at the standard, what a C-style cast does, it says that, well it says that a C-style cast is going to try all these things : first it's going to try `const_cast`, then it's going to try `static_cast`, and if all these things fail, then it will try a `reinterpret_cast`. If that succeeds, then, that's what you get. So, the above code is going to compile and run. The question is what is it going to do?
+This is performing a type pun through a union. In C++, this code has undefined behavior. Because, the standard says, in a union, only $1$ member can be active at a time. 
 
-This is undefined behavior(UB). You can't just cast `Gizmo` to `Widget`. If you run this code snippet on `clang` with optimizations on, it prints `Gizmo`. If you try it on `gcc`, the compiler detects that this is a gizmo, you cannot reach this line of code, this cannot happen and then it optimizes away everything before it that lead to it, which is basically the whole program - so it doesn't produce any output. 
+# Why do we have these rules?
 
+Why does C++ disallow type puns?
+
+## Aliasing rules
+
+If you look again at this piece from the standard which says:
+
+> If a program attempts to access the stored value of an object through a *glvalue* 
