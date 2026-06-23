@@ -240,8 +240,13 @@ window.Quarto = {
   <li><a href="#using-unions" id="toc-using-unions" class="nav-link" data-scroll-target="#using-unions">Using unions</a></li>
   <li><a href="#why-do-we-have-these-rules" id="toc-why-do-we-have-these-rules" class="nav-link" data-scroll-target="#why-do-we-have-these-rules">Why do we have these rules?</a>
   <ul class="collapse">
-  <li><a href="#aliasing-rules" id="toc-aliasing-rules" class="nav-link" data-scroll-target="#aliasing-rules">Aliasing rules</a></li>
-  <li><a href="#object-lifetime-rules" id="toc-object-lifetime-rules" class="nav-link" data-scroll-target="#object-lifetime-rules">Object lifetime rules</a></li>
+  <li><a href="#strict-aliasing-rules" id="toc-strict-aliasing-rules" class="nav-link" data-scroll-target="#strict-aliasing-rules">Strict aliasing rules</a></li>
+  <li><a href="#object-lifetime-rules" id="toc-object-lifetime-rules" class="nav-link" data-scroll-target="#object-lifetime-rules">Object lifetime rules</a>
+  <ul class="collapse">
+  <li><a href="#what-is-object-lifetime" id="toc-what-is-object-lifetime" class="nav-link" data-scroll-target="#what-is-object-lifetime">What is object lifetime?</a></li>
+  <li><a href="#variable-declaration" id="toc-variable-declaration" class="nav-link" data-scroll-target="#variable-declaration">Variable declaration</a></li>
+  <li><a href="#storage-duration" id="toc-storage-duration" class="nav-link" data-scroll-target="#storage-duration">Storage Duration</a></li>
+  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -353,8 +358,8 @@ short[2]    |F0|00| |80|01|
 <li>Rules for valid value representations</li>
 </ul>
 <p>These are basically the rules, why you can’t do this stuff.</p>
-<section id="aliasing-rules" class="level2">
-<h2 class="anchored" data-anchor-id="aliasing-rules">Aliasing rules</h2>
+<section id="strict-aliasing-rules" class="level2">
+<h2 class="anchored" data-anchor-id="strict-aliasing-rules">Strict aliasing rules</h2>
 <p>Let’s start with aliasing rules. If you look again at this piece from the standard which says:</p>
 <blockquote class="blockquote">
 <p>If a program attempts to access the stored value of an object through a <em>glvalue</em> whose type is not similar to one of the following types, the behavior is undefined:</p>
@@ -422,22 +427,50 @@ float       |F0|00|80|01|
 char*       |F0| |00| |80| |01|
 std::byte*  +--+ +--+ +--+ +--+ 
 </code></pre>
-<p>One way of doing this is the following.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> X<span class="op">{</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> a<span class="op">;</span></span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> b<span class="op">;</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>X<span class="op">*</span> make_x<span class="op">(){</span></span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    X<span class="op">*</span> p <span class="op">=</span> <span class="op">(</span>X<span class="op">*)</span>malloc<span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span><span class="kw">struct</span> X<span class="op">));</span></span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    p <span class="op">-&gt;</span> a <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>    p <span class="op">-&gt;</span> b <span class="op">=</span> <span class="dv">2</span><span class="op">;</span></span>
-<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> p<span class="op">;</span></span>
-<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>We have a type - we have a <code>struct X</code> and then you have some memory - some bytes, which come from somewhere, in this case, I am just allocating them with <code>malloc</code> and then you cast them to an <code>X</code>. I guess, I now have a pointer to an <code>X</code> now, which is great. I can set the members of <code>X</code> and return that object.</p>
-<p>However, in C++, the above code is UB.</p>
+<section id="what-is-object-lifetime" class="level3">
+<h3 class="anchored" data-anchor-id="what-is-object-lifetime">What is object lifetime?</h3>
+<p>The lifetime of an object can be described as follows:</p>
+<ul>
+<li>The storage is allocated.</li>
+<li>An object is constructed and initialized, the lifetime starts.</li>
+<li>An object is used; its value is changed or read.</li>
+<li>An object is destroyed; the lifetime ends.</li>
+<li>The storage is deallocated.</li>
+</ul>
+<p>This is in a nutshell, what every object goes through.</p>
+<p>A short note about terminology. Objects can be created. This does not necessarily mean that their lifetime starts. It simply means that now we have got a thing with a bunch of properties that we can talk about.</p>
+<p>However, the standard also says that objects can be destroyed. This ends the lifetime.</p>
+<p>Lifetime is something that the standard invented to describe the semantics on the abstract machine. It has got nothing to do with the physical machine your code actually executes on. We are talking about details on the abstract machine and nothing on the physical CPU.</p>
+</section>
+<section id="variable-declaration" class="level3">
+<h3 class="anchored" data-anchor-id="variable-declaration">Variable declaration</h3>
+<p>The standard says that an object is created by a definition.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> x <span class="op">=</span> <span class="dv">11</span><span class="op">;</span> <span class="co">// Creates the object, </span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>                <span class="co">// allocates storage and starts lifetime.</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>print<span class="op">(</span><span class="st">"x = </span><span class="sc">{}\n</span><span class="st">"</span><span class="op">,</span> x<span class="op">);</span>  <span class="co">// Use the object</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">++</span>x<span class="op">;</span>                        <span class="co">// Use the object</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>print<span class="op">(</span><span class="st">"x = </span><span class="sc">{}\n</span><span class="st">"</span><span class="op">,</span> x<span class="op">);</span>  <span class="co">// use the object</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span>   <span class="co">// destroy the object, end the liftetime</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>    <span class="co">// deallocate storage</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="storage-duration" class="level3">
+<h3 class="anchored" data-anchor-id="storage-duration">Storage Duration</h3>
+<blockquote class="blockquote">
+<p>The storage duration is the property of an object that defines the minimum potential lifetime of the storage containing the object. The storage duration is determined by the construct used to create the object.</p>
+</blockquote>
+<p>Variables that belong to a <strong><em>block or parameter scope</em></strong> and are not explicitly declared <code>static</code>, <code>thread_local</code> or <code>extern</code> have <em>automatic storage duration</em>. The storage for these entities lasts until the block in which they are created exits. The storage for these entitities lasts until the block in which they are created exits.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> a<span class="op">;</span>  <span class="co">// allocation of a</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> b<span class="op">;</span>  <span class="co">// allocation of b</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> c<span class="op">;</span>  <span class="co">// allocation of c</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span>   <span class="co">// deallocation of c</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span>   <span class="co">// deallocation of a and b</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 
 
+</section>
 </section>
 </section>
 
