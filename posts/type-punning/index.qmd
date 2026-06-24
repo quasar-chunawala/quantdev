@@ -322,7 +322,7 @@ For static variables, the answer to the question, when does the lifetime start i
 - `constinit` vs. dynamic initialization.
 - nifty counters, module dependency graph and `inline` variables. 
 
-## Object lifetime and initial value
+### Object lifetime and initial value
 
 In general, an object can have its lifetime start without a known value. 
 
@@ -358,11 +358,106 @@ C++26 introduces the concept of *erroneous behavior*: behavior that is known to 
 
 > [[intro.abstract]/6](https://eel.is/c++draft/intro.abstract#6.sentence-5) If the execution of operation results in erroneous behavior, the implementation is permitted to issue a diagnostic and terminate the execution of the program. 
 
-# `new` and `delete`
+### `new` and `delete`
 
 An object is created by a `new` expression.
 
 > [[intro.object]/1](https://eel.is/c++draft/intro.object#1) An object is created by a definition, by a `new` expression, by an operation that implicitly creates objects, or when a temporary object is created. An object occupies a region of storage in its period of construction, throughout it's lifetime and in its period of destruction. 
+
+> [[expr.delete]/1](https://eel.is/c++draft/expr.delete#1) The delete-expression operator destroys the most derived object or array created by a new-expression. 
+
+```cpp
+int main(){
+    int* ptr = new int(11); // create the object and start the lifetime
+    std::print("*ptr = {}\n", *ptr);    // use the object
+    ++*ptr;  // use the object
+    std::print("*ptr = {}\n", *ptr);    // use the object
+    delete ptr; // destroy the object and end the lifetime
+}
+```
+
+It is also possible to create one with indeterminate values, which can lead to undefined behavior:
+
+```cpp
+int main(){
+    int* ptr = new int; // create the object 
+                        // and start the lifetime with indeterminate value
+    std::print("*ptr = {}\n", *ptr); // UB
+    *ptr = 11;
+    std::print("*ptr = {}\n", *ptr); // okay
+}
+```
+
+### Temporary objects
+
+An object is created when a temporary object is created. An example is the following:
+
+```cpp
+void f(const int& ref);
+
+int main(){
+    f(42);
+}
+```
+
+When a temporary is created, its lifetime starts. 
+
+> [[class.temporary]/4](https://eel.is/c++draft/class.temporary#4) Temporary objects are destroyed as the last step in evaluating the full-expression that (lexically) contains the point where they were created.
+
+```cpp
+void f(auto&&... args);
+
+int g();
+
+int main(){
+    f(11, g());  // two temporary objects were created
+    //         ^  temporaries are destroyed here
+}
+```
+
+This means that it is safe to use the temporary objects within the function.
+
+### Temporary lifetime extension
+
+When a reference is bound to a temporary, the lifetime of the temporary is extended to the lifetime of the reference. 
+
+```cpp
+int main(){
+    const int& ref = 42;    // temporary created here
+    std::println("ref = {}", ref);
+} // temporary destroyed here when ref is destroyed
+```
+
+This is really subtle however. It only happens if we bind directly to a temporary. Consider the following example:
+
+```cpp
+std::vector<std::string> get_strings();
+
+int main(){
+    const auto& strings = get_strings(); // [1] extended
+    const auto& string = get_strings()[0];  // [2] not extended
+}
+
+T& std::vector<T>::operator[](std::size_t idx);
+```
+
+On line `[1]`, we have got a temporary lifetime extension, because we bind a reference to a temporary, but then in the second case on line `[2]`, we are calling the square bracket operator `operator[]`  which returns a reference. So, we are not binding a reference to a *prvalue*, but we are binding a reference to a reference. So, we create a temporary object to call the `operator[]`, then we return a reference, that reference is bound to the other reference `string`, but when we reach the semi-colon, we destroy the temporary object we have created and immediately we have a dangling reference. 
+
+All temporaries created within the range expression of `for` are destroy after the loop:
+
+```cpp
+std::vector<std::string> get_strings();
+
+int main(){
+    for(auto&& str : get_strings()){
+        std::println("{}", str);
+    }// temporaru destroyed here
+
+    for(auto&& c : get_strings()[0]){
+        std::print("{}", c);
+    }// also okay, temporary destroyed here.
+}
+```
 
 # References
 
