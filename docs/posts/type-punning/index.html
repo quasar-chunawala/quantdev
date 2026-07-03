@@ -251,6 +251,10 @@ window.Quarto = {
   <li><a href="#new-and-delete" id="toc-new-and-delete" class="nav-link" data-scroll-target="#new-and-delete"><code>new</code> and <code>delete</code></a></li>
   <li><a href="#temporary-objects" id="toc-temporary-objects" class="nav-link" data-scroll-target="#temporary-objects">Temporary objects</a></li>
   <li><a href="#temporary-lifetime-extension" id="toc-temporary-lifetime-extension" class="nav-link" data-scroll-target="#temporary-lifetime-extension">Temporary lifetime extension</a></li>
+  <li><a href="#placement-new" id="toc-placement-new" class="nav-link" data-scroll-target="#placement-new">Placement <code>new</code></a></li>
+  <li><a href="#explicitly-destroy-an-object" id="toc-explicitly-destroy-an-object" class="nav-link" data-scroll-target="#explicitly-destroy-an-object">Explicitly destroy an object</a></li>
+  <li><a href="#how-to-allocate-memory-without-creating-objects" id="toc-how-to-allocate-memory-without-creating-objects" class="nav-link" data-scroll-target="#how-to-allocate-memory-without-creating-objects">How to allocate memory without creating objects?</a></li>
+  <li><a href="#be-careful-when-re-using-memory" id="toc-be-careful-when-re-using-memory" class="nav-link" data-scroll-target="#be-careful-when-re-using-memory">Be careful when re-using memory</a></li>
   </ul></li>
   </ul></li>
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
@@ -477,7 +481,7 @@ std::byte*  +--+ +--+ +--+ +--+
 <section id="static-storage-duration" class="level4">
 <h4 class="anchored" data-anchor-id="static-storage-duration">Static storage duration</h4>
 <blockquote class="blockquote">
-<p>[basic.stc.static]/1 All variables which belong to a <strong>namespace scope</strong> or are first declared with the <code>static</code> or <code>extern</code> keywords have <strong>static storage duration</strong>. The storage for these entities lasts for the duration of the program.</p>
+<p><a href="https://eel.is/c++draft/basic.stc#static">[basic.stc.static]/1</a> All variables which belong to a <strong>namespace scope</strong> or are first declared with the <code>static</code> or <code>extern</code> keywords have <strong>static storage duration</strong>. The storage for these entities lasts for the duration of the program.</p>
 </blockquote>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> global<span class="op">;</span> <span class="co">//static storage</span></span>
 <span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> <span class="dt">int</span> static_global<span class="op">;</span>  <span class="co">// static storage</span></span>
@@ -631,6 +635,121 @@ std::byte*  +--+ +--+ +--+ +--+
 <span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>print<span class="op">(</span><span class="st">"</span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> c<span class="op">);</span></span>
 <span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span><span class="co">// also okay, temporary destroyed here.</span></span>
 <span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="placement-new" class="level3">
+<h3 class="anchored" data-anchor-id="placement-new">Placement <code>new</code></h3>
+<p>The creation of an object can be broken down into <span class="math inline">\(2\)</span> steps - allocation of storage followed by construction of an object. We can allocate storage using <code>operator new(sizeof(T))</code>. If the storage allocation is successful, we can manually construct an object into this pre-existing storage using placement <code>new</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb23"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="co">// 1. allocation</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span><span class="op">*</span> raw_mem <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">int</span><span class="op">*&gt;(::</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span><span class="dt">int</span><span class="op">)));</span> </span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a><span class="co">// 2. placement new creates an object in raw_mem</span></span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span><span class="op">*</span> ptr <span class="op">=</span> <span class="op">::</span><span class="kw">new</span><span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">void</span><span class="op">*&gt;(</span>raw_mem<span class="op">))</span> <span class="dt">int</span><span class="op">(</span><span class="dv">42</span><span class="op">);</span>  </span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The C++ standard library also provides a <code>constexpr</code> wrapper over placement <code>new</code>- <code>std::construct_at</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> std<span class="op">{</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">,</span> <span class="kw">typename</span><span class="op">...</span> Args<span class="op">&gt;</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">constexpr</span> T<span class="op">*</span> construct_at<span class="op">(</span>T<span class="op">*</span> ptr<span class="op">,</span> Args<span class="op">&amp;&amp;...</span> args<span class="op">){</span></span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="op">::</span><span class="kw">new</span><span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">void</span><span class="op">*&gt;(</span>ptr<span class="op">))</span> T<span class="op">(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>Args<span class="op">&gt;(</span>args<span class="op">)...);</span></span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="explicitly-destroy-an-object" class="level3">
+<h3 class="anchored" data-anchor-id="explicitly-destroy-an-object">Explicitly destroy an object</h3>
+<p>If we manually create an object using placement <code>new</code>, it means that, we also need to manually destroy the object. For this, we can explicitly call the destructor.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>x<span class="op">.~</span>T<span class="op">();</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>We can also use the standalone function <code>std::destroy_at</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> std<span class="op">{</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> destroy_at<span class="op">(</span>T<span class="op">*</span> ptr<span class="op">){</span></span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>        ptr<span class="op">-&gt;~</span>T<span class="op">();</span></span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="how-to-allocate-memory-without-creating-objects" class="level3">
+<h3 class="anchored" data-anchor-id="how-to-allocate-memory-without-creating-objects">How to allocate memory without creating objects?</h3>
+<p>We can use <code>std::malloc</code>. <code>malloc</code> gived us storage, it does not give us the object, so we need to use placement <code>new</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span><span class="op">*</span> raw_mem <span class="op">=</span> <span class="bu">std::</span>malloc<span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span><span class="dt">int</span><span class="op">));</span>   <span class="co">// allocate storage</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span><span class="op">*</span> ptr <span class="op">=</span> <span class="op">::</span><span class="kw">new</span><span class="op">(</span>raw_mem<span class="op">)</span> <span class="dt">int</span><span class="op">(</span><span class="dv">11</span><span class="op">);</span>  <span class="co">// start lifetime</span></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>print<span class="op">(</span><span class="st">"*ptr = </span><span class="sc">{}\n</span><span class="st">"</span><span class="op">,</span> <span class="op">*</span>ptr<span class="op">);</span>    <span class="co">// use the object</span></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>destroy_at<span class="op">(</span>ptr<span class="op">);</span>   <span class="co">// end lifetime</span></span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>free<span class="op">(</span>raw_mem<span class="op">);</span>     <span class="co">// deallocate storage</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Here, we have the object lifecycle completely explicit.</p>
+<p>Similarly, we have got the global <code>::operator new</code> which is the C++ version of <code>malloc</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb28"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span><span class="op">*</span> raw_mem <span class="op">=</span> <span class="op">::</span><span class="kw">operator</span> <span class="kw">new</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span><span class="dt">int</span><span class="op">));</span>   <span class="co">// allocate storage</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="co">// ...</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a><span class="op">::</span><span class="kw">operator</span> <span class="kw">delete</span><span class="op">(</span>raw_mem<span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>More interesting is the array of <code>unsigned char</code> or <code>std::byte</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb29"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="dt">int</span><span class="op">)</span> <span class="bu">std::</span>byte buffer<span class="op">[</span><span class="kw">sizeof</span><span class="op">(</span><span class="dt">int</span><span class="op">)];</span> <span class="co">// allocate storage</span></span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span><span class="op">*</span> ptr <span class="op">=</span> <span class="op">::</span><span class="kw">new</span><span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">void</span><span class="op">*&gt;(&amp;</span>buffer<span class="op">))</span> <span class="dt">int</span><span class="op">(</span><span class="dv">11</span><span class="op">);</span>  <span class="co">//start lifetime</span></span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>println<span class="op">(</span><span class="st">"*ptr = </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> <span class="op">*</span>ptr<span class="op">);</span>    <span class="co">// use the object</span></span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>destroy_at<span class="op">(</span>ptr<span class="op">);</span>   <span class="co">// end lifetime</span></span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span>   <span class="co">// deallocate storage</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><a href="https://compiler-explorer.com/z/c6vhzfnc8">Compiler Explorer</a></p>
+<p>We can also do something more interesting. We can reuse the memory of an existing object.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb30"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> x <span class="op">=</span> <span class="dv">11</span><span class="op">;</span>             <span class="co">// create an object</span></span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>destroy_at<span class="op">(&amp;</span>x<span class="op">);</span>    <span class="co">// end the lifetime</span></span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span><span class="op">*</span> ptr <span class="op">=</span> <span class="op">::</span><span class="kw">new</span><span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">void</span><span class="op">*&gt;(&amp;</span>x<span class="op">))</span> <span class="dt">int</span><span class="op">(</span><span class="dv">42</span><span class="op">);</span>   <span class="co">// start lifetime</span></span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>println<span class="op">(</span><span class="st">"*ptr = </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> <span class="op">*</span>ptr<span class="op">);</span>    <span class="co">// use the object</span></span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="co">// end the lifetime and deallocate</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>We can reuse the memory of an existing object, but we have to be really careful.</p>
+</section>
+<section id="be-careful-when-re-using-memory" class="level3">
+<h3 class="anchored" data-anchor-id="be-careful-when-re-using-memory">Be careful when re-using memory</h3>
+<p>For starters, <code>const</code> means immutable.</p>
+<blockquote class="blockquote">
+<p><a href="https://eel.is/c++draft/basic.life#9">[basic.life]/9</a> An object <code>o1</code> is transparently replaceable by another object <code>o2</code> if either:</p>
+<ul>
+<li><code>o1</code> is not <code>const</code>.</li>
+<li>the storage that <code>o2</code> occupies exactly overlaps the storage that <code>o1</code> occupies.</li>
+<li><code>o1</code> and <code>o2</code> are the same type.</li>
+</ul>
+</blockquote>
+<blockquote class="blockquote">
+<p><a href="https://eel.is/c++draft/basic.life#10">[basic.life]/10</a> After the lifetime of an object has ended, and before the storage which the object occupied is reused or released, if a new object is created at the storage location which the original object occupied and the original object was transparently replaceable by the new object, a pointer or reference to the original object will automatically refer to the new object, and once the lifetime of the new object is started, can be used to manipulate the new object.</p>
+</blockquote>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb31"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> X<span class="op">{</span> <span class="dt">int</span> i<span class="op">;</span> <span class="op">};</span></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a>    X x<span class="op">(</span><span class="dv">10</span><span class="op">);</span> </span>
+<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>    X<span class="op">&amp;</span> xref <span class="op">=</span> x<span class="op">;</span></span>
+<span id="cb31-9"><a href="#cb31-9" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>destroy_at<span class="op">(&amp;</span>x<span class="op">);</span></span>
+<span id="cb31-10"><a href="#cb31-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">// transparent replacement of int</span></span>
+<span id="cb31-11"><a href="#cb31-11" aria-hidden="true" tabindex="-1"></a>    <span class="op">::</span><span class="kw">new</span><span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">void</span><span class="op">*&gt;(</span><span class="kw">const_cast</span><span class="op">&lt;</span><span class="dt">int</span><span class="op">*&gt;(&amp;</span>x<span class="op">)))</span> X<span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
+<span id="cb31-12"><a href="#cb31-12" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>println<span class="op">(</span><span class="st">"xref.i = </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> xref<span class="op">.</span>i<span class="op">);</span></span>
+<span id="cb31-13"><a href="#cb31-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><a href="https://godbolt.org/z/YdobYbKKv">Compiler Explorer</a></p>
+<p>If these conditions are violated, we have UB.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb32"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> X<span class="op">{</span> <span class="dt">int</span> i<span class="op">;</span> <span class="op">};</span></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">const</span> <span class="dt">int</span> x <span class="op">=</span> <span class="dv">11</span><span class="op">;</span></span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">const</span> <span class="dt">int</span><span class="op">*</span> ptr <span class="op">=</span> <span class="op">&amp;</span>x<span class="op">;</span></span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>destroy_at<span class="op">(</span>ptr<span class="op">);</span></span>
+<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">::</span><span class="kw">new</span><span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">void</span><span class="op">*&gt;(</span><span class="kw">const_cast</span><span class="op">&lt;</span><span class="dt">int</span><span class="op">*&gt;(</span>ptr<span class="op">)))</span> <span class="dt">int</span><span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
+<span id="cb32-11"><a href="#cb32-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>println<span class="op">(</span><span class="st">"*ptr = </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> <span class="op">*</span>ptr<span class="op">);</span> <span class="co">// Undefined behavior</span></span>
+<span id="cb32-12"><a href="#cb32-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>However, it is well-defined, if we have an object on the heap.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb33"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> X<span class="op">{</span> <span class="dt">int</span> i<span class="op">;</span> <span class="op">};</span></span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">const</span> <span class="dt">int</span><span class="op">*</span> ptr <span class="op">=</span> <span class="kw">new</span> <span class="dt">int</span><span class="op">(</span><span class="dv">11</span><span class="op">);</span></span>
+<span id="cb33-8"><a href="#cb33-8" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>destroy_at<span class="op">(</span>ptr<span class="op">);</span></span>
+<span id="cb33-9"><a href="#cb33-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">::</span><span class="kw">new</span><span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">void</span><span class="op">*&gt;(</span><span class="kw">const_cast</span><span class="op">&lt;</span><span class="dt">int</span><span class="op">*&gt;(</span>ptr<span class="op">)))</span> <span class="dt">int</span><span class="op">(</span><span class="dv">42</span><span class="op">);</span></span>
+<span id="cb33-10"><a href="#cb33-10" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>println<span class="op">(</span><span class="st">"*ptr = </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> <span class="op">*</span>ptr<span class="op">);</span> <span class="co">// Well-defined</span></span>
+<span id="cb33-11"><a href="#cb33-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
 </section>

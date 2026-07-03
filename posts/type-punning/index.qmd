@@ -275,7 +275,7 @@ int main(){
 ```
 #### Static storage duration
 
-> [basic.stc.static]/1 All variables which belong to a **namespace scope** or are first declared with the `static` or `extern` keywords have **static storage duration**. The storage for these entities lasts for the duration of the program.
+> [[basic.stc.static]/1](https://eel.is/c++draft/basic.stc#static) All variables which belong to a **namespace scope** or are first declared with the `static` or `extern` keywords have **static storage duration**. The storage for these entities lasts for the duration of the program.
 
 ```cpp
 int global; //static storage
@@ -458,6 +458,161 @@ int main(){
     }// also okay, temporary destroyed here.
 }
 ```
+
+### Placement `new`
+
+The creation of an object can be broken down into $2$ steps - allocation of storage followed by construction of an object. We can allocate storage using `operator new(sizeof(T))`. If the storage allocation is successful, we can manually construct an object into this pre-existing storage using placement `new`.
+
+```cpp
+// 1. allocation
+int* raw_mem = static_cast<int*>(::operator new(sizeof(int))); 
+
+// 2. placement new creates an object in raw_mem
+int* ptr = ::new(static_cast<void*>(raw_mem)) int(42);  
+```
+
+The C++ standard library also provides a `constexpr` wrapper over placement `new`- `std::construct_at`.
+
+```cpp
+namespace std{
+    template<typename T, typename... Args>
+    constexpr T* construct_at(T* ptr, Args&&... args){
+        return ::new(static_cast<void*>(ptr)) T(std::forward<Args>(args)...);
+    }
+}
+```
+
+### Explicitly destroy an object
+
+If we manually create an object using placement `new`, it means that, we also need to manually destroy the object. For this, we can explicitly call the destructor.
+
+```cpp
+x.~T();
+```
+
+We can also use the standalone function `std::destroy_at`.
+
+```cpp
+namespace std{
+    template<typename T>
+    void destroy_at(T* ptr){
+        ptr->~T();
+    }
+}
+```
+
+### How to allocate memory without creating objects?
+
+We can use `std::malloc`. `malloc` gived us storage, it does not give us the object, so we need to use placement `new`. 
+
+```cpp
+void* raw_mem = std::malloc(sizeof(int));   // allocate storage
+int* ptr = ::new(raw_mem) int(11);  // start lifetime
+std::print("*ptr = {}\n", *ptr);    // use the object
+std::destroy_at(ptr);   // end lifetime
+std::free(raw_mem);     // deallocate storage
+```
+
+Here, we have the object lifecycle completely explicit. 
+
+Similarly, we have got the global `::operator new` which is the C++ version of `malloc`.
+
+```cpp
+void* raw_mem = ::operator new(sizeof(int));   // allocate storage
+// ...
+::operator delete(raw_mem);
+```
+
+More interesting is the array of `unsigned char` or `std::byte`. 
+
+```cpp
+#include <print>
+#include <memory>
+
+int main(){
+    alignas(int) std::byte buffer[sizeof(int)]; // allocate storage
+    int* ptr = ::new(static_cast<void*>(&buffer)) int(11);  //start lifetime
+    std::println("*ptr = {}", *ptr);    // use the object
+    std::destroy_at(ptr);   // end lifetime
+}   // deallocate storage
+```
+[Compiler Explorer](https://compiler-explorer.com/z/c6vhzfnc8)
+
+We can also do something more interesting. We can reuse the memory of an existing object.
+
+```cpp
+int main(){
+    int x = 11;             // create an object
+    std::destroy_at(&x);    // end the lifetime
+    int* ptr = ::new(static_cast<void*>(&x)) int(42);   // start lifetime
+    std::println("*ptr = {}", *ptr);    // use the object
+} // end the lifetime and deallocate
+```
+
+We can reuse the memory of an existing object, but we have to be really careful.
+
+### Be careful when re-using memory
+
+For starters, `const` means immutable.
+
+> [[basic.life]/9](https://eel.is/c++draft/basic.life#9) An object `o1` is transparently replaceable by another object `o2` if either:
+>
+> - `o1` is not `const`.
+> - the storage that `o2` occupies exactly overlaps the storage that `o1` occupies.
+> - `o1` and `o2` are the same type.
+
+> [[basic.life]/10](https://eel.is/c++draft/basic.life#10) After the lifetime of an object has ended, and before the storage which the object occupied is reused or released, if a new object is created at the storage location which the original object occupied and the original object was transparently replaceable by the new object, a pointer or reference to the original object will automatically refer to the new object, and once the lifetime of the new object is started, can be used to manipulate the new object.
+
+```cpp
+#include <memory>
+#include <print>
+
+struct X{ int i; };
+
+int main(){
+    X x(10); 
+    X& xref = x;
+    std::destroy_at(&x);
+    // transparent replacement of int
+    ::new(static_cast<void*>(const_cast<int*>(&x))) X(42);
+    std::println("xref.i = {}", xref.i);
+}
+```
+[Compiler Explorer](https://godbolt.org/z/YdobYbKKv)
+
+If these conditions are violated, we have UB.
+
+```cpp
+#include <memory>
+#include <print>
+
+struct X{ int i; };
+
+int main(){
+    const int x = 11;
+    const int* ptr = &x;
+    std::destroy_at(ptr);
+    ::new(static_cast<void*>(const_cast<int*>(ptr))) int(42);
+    std::println("*ptr = {}", *ptr); // Undefined behavior
+}
+```
+
+However, it is well-defined, if we have an object on the heap.
+
+```cpp
+#include <memory>
+#include <print>
+
+struct X{ int i; };
+
+int main(){
+    const int* ptr = new int(11);
+    std::destroy_at(ptr);
+    ::new(static_cast<void*>(const_cast<int*>(ptr))) int(42);
+    std::println("*ptr = {}", *ptr); // Well-defined
+}
+```
+
 
 # References
 
