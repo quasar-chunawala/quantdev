@@ -548,12 +548,13 @@ font-style: inherit;">;</span></span></code></pre></div></div>
 <h2 class="anchored" data-anchor-id="strict-aliasing-rules">Strict aliasing rules</h2>
 <p>Let’s start with aliasing rules. If you look again at this piece from the standard which says:</p>
 <blockquote class="blockquote">
-<p>If a program attempts to access the stored value of an object through a <em>glvalue</em> whose type is not similar to one of the following types, the behavior is undefined:</p>
+<p><a href="https://eel.is/c++draft/basic.lval#11">[basic.lval]/11.3</a> An object of dynamic type <img src="https://latex.codecogs.com/png.latex?T_%7Bobj%7D"> is <em>type-accessible</em> through a reference of <img src="https://latex.codecogs.com/png.latex?T_%7Bref%7D"> if <img src="https://latex.codecogs.com/png.latex?T_%7Bref%7D"> is similar to:</p>
 <ul>
 <li>the dynamic type of the object.</li>
 <li>a type that is signed or unsigned type corresponding to the dynamic type of the object.</li>
 <li>a <code>char</code>, <code>unsigned char</code> or <code>std::byte</code> type.</li>
 </ul>
+<p>If a program attempts to access the stored value of an object through a reference that is not type-accessible, the behavior is undefined.</p>
 </blockquote>
 <p>So, according to the standard, if you attempt to access a type through a reference or pointer to another type, its UB. And then there is this footnote which says:</p>
 <p><em>The intent of this list is to specify circumstances in which an object may or may not be aliased.</em></p>
@@ -2854,7 +2855,7 @@ font-style: inherit;">}</span></span></code></pre></div></div>
 </section>
 <section id="implicit-lifetime-types" class="level3">
 <h3 class="anchored" data-anchor-id="implicit-lifetime-types">Implicit lifetime types</h3>
-<p>According to the standard, implicit object creation works for implicit lifetime types.</p>
+<p>According to the standard, implicit object creation <strong>only</strong> applies to implicit lifetime types.</p>
 <blockquote class="blockquote">
 <p><a href="">[basic.types.general]/9</a> Scalar types, implicit-lifetime class types, array types, array types are collectively called implicit-lifetime types.</p>
 </blockquote>
@@ -2963,7 +2964,7 @@ background-color: null;
 font-style: inherit;">11</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span></code></pre></div></div>
-<p><code>std::memcpy</code> and <code>std::memmove</code> implicitly create an object.</p>
+<p><code>std::memcpy</code> and <code>std::memmove</code> implicitly create an objects, if their type is an implicit lifetime type.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb39" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb39-1"><span class="kw" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
@@ -3200,7 +3201,7 @@ font-style: inherit;">}</span></span></code></pre></div></div>
 </section>
 <section id="explicitly-starting-the-lifetime-of-an-object" class="level3">
 <h3 class="anchored" data-anchor-id="explicitly-starting-the-lifetime-of-an-object">Explicitly starting the lifetime of an object</h3>
-<p>Consider the canonical example on <a href="https://en.cppreference.com/cpp/memory/start_lifetime_as">cppreference.com</a>. <code>[1]</code> is UB, because it violates strict-aliasing and object lifetime rules. <code>[2]</code> is also UB, because <code>std::launder</code> can’t create an object where none exists in the first place.</p>
+<p>Consider the canonical example on <a href="https://en.cppreference.com/cpp/memory/start_lifetime_as">cppreference.com</a>. <code>[1]</code> is UB, because it violates strict-aliasing and object lifetime rules. <code>[2]</code> is also UB, because <code>std::launder</code> can’t create an object where none exists in the first place. <code>std::start_lifetime_as&lt;T&gt;</code> can be used to explicitly trigger the creation and start the lifetime of an object whose type is an implicit lifetime type.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb41" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb41-1"><span class="kw" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
@@ -3326,6 +3327,7 @@ background-color: null;
 font-style: inherit;">;</span> <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// (0.1, 0.2)</span></span></code></pre></div></div>
+<p>Remember, this does not call <code>complex&lt;float&gt;</code> constructor - it just declares - <em>the bytes here are now to be understood as <code>complex&lt;float&gt;</code></em>.</p>
 </section>
 <section id="implementation-of-stdstart_lifetime_as" class="level3">
 <h3 class="anchored" data-anchor-id="implementation-of-stdstart_lifetime_as">Implementation of <code>std::start_lifetime_as</code></h3>
@@ -3390,11 +3392,105 @@ font-style: inherit;">}</span></span></code></pre></div></div>
 <p><code>memmove</code> just moves the bytes to itself, but also implicitly creates an object in the destination storage. And then we just <code>std::launder</code> to ensure that the pointer <code>ptr</code> can be reused.</p>
 </section>
 </section>
+<section id="alignment-rules" class="level2">
+<h2 class="anchored" data-anchor-id="alignment-rules">Alignment rules</h2>
+<p>Consider the following code snippet:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb43" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb43-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">struct</span> X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb43-2">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> a<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb43-3">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> b<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb43-4"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb43-5"></span>
+<span id="cb43-6">X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> make_x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb43-7">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">char</span> storage<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)];</span>   <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// allocate storage</span></span>
+<span id="cb43-8">    X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> p <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">new</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>storage<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>     <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// create a new object</span></span>
+<span id="cb43-9">    p <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> a <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>                <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// initialization</span></span>
+<span id="cb43-10">    p <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span> b <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb43-11">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">return</span> p<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb43-12"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div></div>
+<p>This code is, in general, undefined behavior(UB). The problem with this code is alignment.</p>
+<blockquote class="blockquote">
+<p><a href="https://eel.is/c++draft/basic.align">[basic.align]/6.8.3</a> Object types have <em>alignment requirements</em> which place restrictions on the addresses at which an object of the that type may be allocated. An <em>alignment</em> is an implementation-defined integer value representing the number of bytes between successive addresses at which a given object can be allocated.</p>
+<p>An object type imposes alignment requirements on every object of that type; stricter alignment can be requested using the <code>alignas</code> specifier.</p>
+</blockquote>
+</section>
 </section>
 <section id="references" class="level1">
 <h1>References</h1>
 <ul>
-<li><a href="https://www.youtube.com/watch?v=oZyhq4D-QL4&amp;t=618s">A deep dive into C++ object lifetimes</a> by C++ Now 2024, Jonathan Muller.</li>
+<li><a href="https://www.youtube.com/watch?v=oZyhq4D-QL4&amp;t=618s">A deep dive into C++ object lifetimes</a> by Jonathan Muller, C++ Now 2024.</li>
+<li><a href="https://www.youtube.com/watch?v=_qzMpk-22cc">Type punning in modern C++</a> by Timur Doumer, CppCon 2019.</li>
 </ul>
 
 

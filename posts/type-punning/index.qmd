@@ -139,11 +139,13 @@ These are basically the rules, why you can't do this stuff.
 
 Let's start with aliasing rules. If you look again at this piece from the standard which says:
 
-> If a program attempts to access the stored value of an object through a *glvalue* whose type is not similar to one of the following types, the behavior is undefined:
+> [[basic.lval]/11.3](https://eel.is/c++draft/basic.lval#11) An object of dynamic type $T_{obj}$ is *type-accessible* through a reference of $T_{ref}$ if $T_{ref}$ is similar to:
 >
 > - the dynamic type of the object.
 > - a type that is signed or unsigned type corresponding to the dynamic type of the object.
 > - a `char`, `unsigned char` or `std::byte` type.
+>
+> If a program attempts to access the stored value of an object through a reference that is not type-accessible, the behavior is undefined.
 
 So, according to the standard, if you attempt to access a type through a reference or pointer to another type, its UB. And then there is this footnote which says:
 
@@ -675,7 +677,7 @@ X* make_x(){
 
 ### Implicit lifetime types
 
-According to the standard, implicit object creation works for implicit lifetime types.
+According to the standard, implicit object creation **only** applies to implicit lifetime types.
 
 > [[basic.types.general]/9]() Scalar types, implicit-lifetime class types, array types, array types are collectively called implicit-lifetime types.
 
@@ -703,7 +705,7 @@ int* ptr = reinterpret_cast<int*>(&buffer);
 *ptr = 11;
 ```
 
-`std::memcpy` and `std::memmove` implicitly create an object.
+`std::memcpy` and `std::memmove` implicitly create an objects, if their type is an implicit lifetime type.
 
 ```cpp
 alignas(int) char buffer[sizeof(int)];  // creates nothing
@@ -737,7 +739,7 @@ Its important to point out that we are talking about the abstract machine. This 
 ### Explicitly starting the lifetime of an object
 
 Consider the canonical example on [cppreference.com](https://en.cppreference.com/cpp/memory/start_lifetime_as). `[1]` is UB, because it violates strict-aliasing and object lifetime rules.
-`[2]` is also UB, because `std::launder` can't create an object where none exists in the first place.
+`[2]` is also UB, because `std::launder` can't create an object where none exists in the first place. `std::start_lifetime_as<T>` can be used to explicitly trigger the creation and start the lifetime of an object whose type is an implicit lifetime type.
 
 
 ```cpp
@@ -755,6 +757,8 @@ auto d2 = *std::start_lifetime_as<std::complex<float>>(network_data); // [3] : O
 std::cout << d2 << '\n'; // (0.1, 0.2)
 ```
 
+Remember, this does not call `complex<float>` constructor - it just declares - *the bytes here are now to be understood as `complex<float>`*.
+
 ### Implementation of `std::start_lifetime_as`
 
 ```cpp
@@ -767,8 +771,33 @@ T* start_lifetime_as(void* ptr){
 
 `memmove` just moves the bytes to itself, but also implicitly creates an object in the destination storage. And then we just `std::launder` to ensure that the pointer `ptr` can be reused.
 
+## Alignment rules
+
+Consider the following code snippet:
+
+```cpp
+struct X{
+    int a;
+    int b;
+}
+
+X* make_x(){
+    char storage[sizeof(X)];   // allocate storage
+    X* p = new(storage) X;     // create a new object
+    p -> a = 1;                // initialization
+    p -> b = 2;
+    return p;
+}
+```
+
+This code is, in general, undefined behavior(UB). The problem with this code is alignment. 
+
+> [[basic.align]/6.8.3](https://eel.is/c++draft/basic.align) Object types have *alignment requirements* which place restrictions on the addresses at which an object of the that type may be allocated. An *alignment* is an implementation-defined integer value representing the number of bytes between successive addresses at which a given object can be allocated. 
+>
+> An object type imposes alignment requirements on every object of that type; stricter alignment can be requested using the `alignas` specifier.
+
+
 # References
 
-- [A deep dive into C++ object lifetimes](https://www.youtube.com/watch?v=oZyhq4D-QL4&t=618s) by C++ Now 2024, Jonathan Muller.
-
-
+- [A deep dive into C++ object lifetimes](https://www.youtube.com/watch?v=oZyhq4D-QL4&t=618s) by Jonathan Muller, C++ Now 2024.
+- [Type punning in modern C++](https://www.youtube.com/watch?v=_qzMpk-22cc) by Timur Doumer, CppCon 2019.

@@ -263,6 +263,7 @@ window.Quarto = {
   <li><a href="#explicitly-starting-the-lifetime-of-an-object" id="toc-explicitly-starting-the-lifetime-of-an-object" class="nav-link" data-scroll-target="#explicitly-starting-the-lifetime-of-an-object">Explicitly starting the lifetime of an object</a></li>
   <li><a href="#implementation-of-stdstart_lifetime_as" id="toc-implementation-of-stdstart_lifetime_as" class="nav-link" data-scroll-target="#implementation-of-stdstart_lifetime_as">Implementation of <code>std::start_lifetime_as</code></a></li>
   </ul></li>
+  <li><a href="#alignment-rules" id="toc-alignment-rules" class="nav-link" data-scroll-target="#alignment-rules">Alignment rules</a></li>
   </ul></li>
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
   </ul>
@@ -379,12 +380,13 @@ short[2]    |F0|00| |80|01|
 <h2 class="anchored" data-anchor-id="strict-aliasing-rules">Strict aliasing rules</h2>
 <p>Let’s start with aliasing rules. If you look again at this piece from the standard which says:</p>
 <blockquote class="blockquote">
-<p>If a program attempts to access the stored value of an object through a <em>glvalue</em> whose type is not similar to one of the following types, the behavior is undefined:</p>
+<p><a href="https://eel.is/c++draft/basic.lval#11">[basic.lval]/11.3</a> An object of dynamic type <span class="math inline">\(T_{obj}\)</span> is <em>type-accessible</em> through a reference of <span class="math inline">\(T_{ref}\)</span> if <span class="math inline">\(T_{ref}\)</span> is similar to:</p>
 <ul>
 <li>the dynamic type of the object.</li>
 <li>a type that is signed or unsigned type corresponding to the dynamic type of the object.</li>
 <li>a <code>char</code>, <code>unsigned char</code> or <code>std::byte</code> type.</li>
 </ul>
+<p>If a program attempts to access the stored value of an object through a reference that is not type-accessible, the behavior is undefined.</p>
 </blockquote>
 <p>So, according to the standard, if you attempt to access a type through a reference or pointer to another type, its UB. And then there is this footnote which says:</p>
 <p><em>The intent of this list is to specify circumstances in which an object may or may not be aliased.</em></p>
@@ -809,7 +811,7 @@ std::byte*  +--+ +--+ +--+ +--+
 </section>
 <section id="implicit-lifetime-types" class="level3">
 <h3 class="anchored" data-anchor-id="implicit-lifetime-types">Implicit lifetime types</h3>
-<p>According to the standard, implicit object creation works for implicit lifetime types.</p>
+<p>According to the standard, implicit object creation <strong>only</strong> applies to implicit lifetime types.</p>
 <blockquote class="blockquote">
 <p><a href="">[basic.types.general]/9</a> Scalar types, implicit-lifetime class types, array types, array types are collectively called implicit-lifetime types.</p>
 </blockquote>
@@ -831,7 +833,7 @@ std::byte*  +--+ +--+ +--+ +--+
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb38"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="kw">alignas</span><span class="op">(</span><span class="dt">int</span><span class="op">)</span> <span class="bu">std::</span>byte buffer<span class="op">[</span><span class="kw">sizeof</span><span class="op">(</span><span class="dt">int</span><span class="op">)];</span>  <span class="co">// implicitly creates an int</span></span>
 <span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span><span class="op">*</span> ptr <span class="op">=</span> <span class="kw">reinterpret_cast</span><span class="op">&lt;</span><span class="dt">int</span><span class="op">*&gt;(&amp;</span>buffer<span class="op">);</span></span>
 <span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a><span class="op">*</span>ptr <span class="op">=</span> <span class="dv">11</span><span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p><code>std::memcpy</code> and <code>std::memmove</code> implicitly create an object.</p>
+<p><code>std::memcpy</code> and <code>std::memmove</code> implicitly create an objects, if their type is an implicit lifetime type.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb39"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="kw">alignas</span><span class="op">(</span><span class="dt">int</span><span class="op">)</span> <span class="dt">char</span> buffer<span class="op">[</span><span class="kw">sizeof</span><span class="op">(</span><span class="dt">int</span><span class="op">)];</span>  <span class="co">// creates nothing</span></span>
 <span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>memcpy<span class="op">(</span>buffer<span class="op">,</span> <span class="op">&amp;</span>some_int<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="dt">int</span><span class="op">));</span>   <span class="co">// creates an int</span></span>
 <span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span><span class="op">*</span> ptr <span class="op">=</span> reinterprete_cast<span class="op">&lt;</span><span class="dt">int</span><span class="op">*&gt;(</span>buffer<span class="op">);</span> </span>
@@ -856,7 +858,7 @@ std::byte*  +--+ +--+ +--+ +--+
 </section>
 <section id="explicitly-starting-the-lifetime-of-an-object" class="level3">
 <h3 class="anchored" data-anchor-id="explicitly-starting-the-lifetime-of-an-object">Explicitly starting the lifetime of an object</h3>
-<p>Consider the canonical example on <a href="https://en.cppreference.com/cpp/memory/start_lifetime_as">cppreference.com</a>. <code>[1]</code> is UB, because it violates strict-aliasing and object lifetime rules. <code>[2]</code> is also UB, because <code>std::launder</code> can’t create an object where none exists in the first place.</p>
+<p>Consider the canonical example on <a href="https://en.cppreference.com/cpp/memory/start_lifetime_as">cppreference.com</a>. <code>[1]</code> is UB, because it violates strict-aliasing and object lifetime rules. <code>[2]</code> is also UB, because <code>std::launder</code> can’t create an object where none exists in the first place. <code>std::start_lifetime_as&lt;T&gt;</code> can be used to explicitly trigger the creation and start the lifetime of an object whose type is an implicit lifetime type.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb41"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="kw">alignas</span><span class="op">(</span><span class="bu">std::</span>complex<span class="op">&lt;</span><span class="dt">float</span><span class="op">&gt;)</span> <span class="dt">unsigned</span> <span class="dt">char</span> network_data<span class="op">[</span><span class="kw">sizeof</span><span class="op">(</span><span class="bu">std::</span>complex<span class="op">&lt;</span><span class="dt">float</span><span class="op">&gt;)]</span> <span class="op">{</span></span>
 <span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a>    <span class="bn">0xcd</span><span class="op">,</span> <span class="bn">0xcc</span><span class="op">,</span> <span class="bn">0xcc</span><span class="op">,</span> <span class="bn">0x3d</span><span class="op">,</span> <span class="bn">0xcd</span><span class="op">,</span> <span class="bn">0xcc</span><span class="op">,</span> <span class="bn">0x4c</span><span class="op">,</span> <span class="bn">0x3e</span></span>
 <span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
@@ -869,6 +871,7 @@ std::byte*  +--+ +--+ +--+ +--+
 <span id="cb41-10"><a href="#cb41-10" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb41-11"><a href="#cb41-11" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> d2 <span class="op">=</span> <span class="op">*</span><span class="bu">std::</span>start_lifetime_as<span class="op">&lt;</span><span class="bu">std::</span>complex<span class="op">&lt;</span><span class="dt">float</span><span class="op">&gt;&gt;(</span>network_data<span class="op">);</span> <span class="co">// [3] : OK</span></span>
 <span id="cb41-12"><a href="#cb41-12" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> d2 <span class="op">&lt;&lt;</span> <span class="ch">'</span><span class="sc">\n</span><span class="ch">'</span><span class="op">;</span> <span class="co">// (0.1, 0.2)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Remember, this does not call <code>complex&lt;float&gt;</code> constructor - it just declares - <em>the bytes here are now to be understood as <code>complex&lt;float&gt;</code></em>.</p>
 </section>
 <section id="implementation-of-stdstart_lifetime_as" class="level3">
 <h3 class="anchored" data-anchor-id="implementation-of-stdstart_lifetime_as">Implementation of <code>std::start_lifetime_as</code></h3>
@@ -880,11 +883,33 @@ std::byte*  +--+ +--+ +--+ +--+
 <p><code>memmove</code> just moves the bytes to itself, but also implicitly creates an object in the destination storage. And then we just <code>std::launder</code> to ensure that the pointer <code>ptr</code> can be reused.</p>
 </section>
 </section>
+<section id="alignment-rules" class="level2">
+<h2 class="anchored" data-anchor-id="alignment-rules">Alignment rules</h2>
+<p>Consider the following code snippet:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb43"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> X<span class="op">{</span></span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> a<span class="op">;</span></span>
+<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> b<span class="op">;</span></span>
+<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-6"><a href="#cb43-6" aria-hidden="true" tabindex="-1"></a>X<span class="op">*</span> make_x<span class="op">(){</span></span>
+<span id="cb43-7"><a href="#cb43-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">char</span> storage<span class="op">[</span><span class="kw">sizeof</span><span class="op">(</span>X<span class="op">)];</span>   <span class="co">// allocate storage</span></span>
+<span id="cb43-8"><a href="#cb43-8" aria-hidden="true" tabindex="-1"></a>    X<span class="op">*</span> p <span class="op">=</span> <span class="kw">new</span><span class="op">(</span>storage<span class="op">)</span> X<span class="op">;</span>     <span class="co">// create a new object</span></span>
+<span id="cb43-9"><a href="#cb43-9" aria-hidden="true" tabindex="-1"></a>    p <span class="op">-&gt;</span> a <span class="op">=</span> <span class="dv">1</span><span class="op">;</span>                <span class="co">// initialization</span></span>
+<span id="cb43-10"><a href="#cb43-10" aria-hidden="true" tabindex="-1"></a>    p <span class="op">-&gt;</span> b <span class="op">=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb43-11"><a href="#cb43-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> p<span class="op">;</span></span>
+<span id="cb43-12"><a href="#cb43-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This code is, in general, undefined behavior(UB). The problem with this code is alignment.</p>
+<blockquote class="blockquote">
+<p><a href="https://eel.is/c++draft/basic.align">[basic.align]/6.8.3</a> Object types have <em>alignment requirements</em> which place restrictions on the addresses at which an object of the that type may be allocated. An <em>alignment</em> is an implementation-defined integer value representing the number of bytes between successive addresses at which a given object can be allocated.</p>
+<p>An object type imposes alignment requirements on every object of that type; stricter alignment can be requested using the <code>alignas</code> specifier.</p>
+</blockquote>
+</section>
 </section>
 <section id="references" class="level1">
 <h1>References</h1>
 <ul>
-<li><a href="https://www.youtube.com/watch?v=oZyhq4D-QL4&amp;t=618s">A deep dive into C++ object lifetimes</a> by C++ Now 2024, Jonathan Muller.</li>
+<li><a href="https://www.youtube.com/watch?v=oZyhq4D-QL4&amp;t=618s">A deep dive into C++ object lifetimes</a> by Jonathan Muller, C++ Now 2024.</li>
+<li><a href="https://www.youtube.com/watch?v=_qzMpk-22cc">Type punning in modern C++</a> by Timur Doumer, CppCon 2019.</li>
 </ul>
 
 
