@@ -534,6 +534,10 @@ background-color: null;
 font-style: inherit;">;</span></span></code></pre></div></div>
 <p>This is performing a type pun through a union. In C++, this code has undefined behavior. Because, the standard says, in a union, only <img src="https://latex.codecogs.com/png.latex?1"> member can be active at a time.</p>
 </section>
+<section id="using-stdbit_cast" class="level1">
+<h1>Using <code>std::bit_cast</code></h1>
+<p>Suppose we are looking at the bit representation of an <code>float</code> and want to pretend, it’s an <code>int</code>, the correct way to do this in C++ is <code>std::bit_cast</code>. I allude to this discussion at length further ahead.</p>
+</section>
 <section id="why-do-we-have-these-rules" class="level1">
 <h1>Why do we have these rules?</h1>
 <p>Why does C++ disallow type puns? There are broadly speaking <img src="https://latex.codecogs.com/png.latex?4"> rules that you need to keep in mind:</p>
@@ -3501,6 +3505,123 @@ font-style: inherit;">}</span></span></code></pre></div></div>
 |4A|FE|17|63|9B|00|D0|8C|
 +--+--+--+--+--+--+--+--+</code></pre>
 <p>Objects can only live at certain positions. For example, if we have a <code>float</code> which is <img src="https://latex.codecogs.com/png.latex?4">-bytes, then it has to be aligned on a <img src="https://latex.codecogs.com/png.latex?4">-byte boundary. So it can live at the address <code>0x08</code> or <code>0x18</code>. If you have a <code>char[5]</code> array, it has an alignment requirement of only <img src="https://latex.codecogs.com/png.latex?1"> byte, which means it can live at any address for instance <code>0x07</code>.</p>
+</section>
+<section id="what-is-stdbit_cast" class="level2">
+<h2 class="anchored" data-anchor-id="what-is-stdbit_cast">What is <code>std::bit_cast</code>?</h2>
+<p>Suppose we are looking at the bit representation of an <code>float</code> and want to pretend, it’s an <code>int</code>, the correct way to do this in C++ is <code>std::bit_cast</code>. <code>std::bit_cast</code> is a <code>constexpr</code> wrapper over <code>std::memcpy</code>. <code>memcpy</code> is the fastest library routine for memory-to-memory copy. The compiler intrinsic <code>__builtin_memcpy</code> compiles down to a single machine instruction <code>load_aligned</code>, or <code>load_unaligned</code> in case the source is unaligned.</p>
+<p><code>std::memcpy</code> doesn’t work for all types - there are some restrictions. Both the types <code>From</code> and <code>To</code> must be trivially copyable.</p>
+<p><code>std::bit_cast</code> is a drop-in replacement for <code>reinterpret_cast</code>.</p>
+</section>
+<section id="rules-for-valid-value-representations" class="level2">
+<h2 class="anchored" data-anchor-id="rules-for-valid-value-representations">Rules for valid value representations</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb45" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb45-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">typename</span> To<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span></span>
+<span id="cb45-2">         <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">typename</span> From<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span></span>
+<span id="cb45-3">         <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">typename</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>enable_if_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span></span>
+<span id="cb45-4">         <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>To<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">==</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>From<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">))</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;</span></span>
+<span id="cb45-5">         <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>is_trivially_copyable_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>From<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;</span></span>
+<span id="cb45-6">         <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>is_trivially_copyable_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>To<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;&gt;&gt;</span></span>
+<span id="cb45-7">To bit_cast<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> From<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span> src<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">noexcept</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb45-8">    To dst<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb45-9">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>memcpy<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(&amp;</span>dst<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;</span>src<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">sizeof</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>To<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">));</span></span>
+<span id="cb45-10">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">return</span> dst<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb45-11"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div></div>
 </section>
 </section>
 <section id="references" class="level1">

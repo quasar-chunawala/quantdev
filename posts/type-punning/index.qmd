@@ -124,6 +124,10 @@ int i = u.i;
 
 This is performing a type pun through a union. In C++, this code has undefined behavior. Because, the standard says, in a union, only $1$ member can be active at a time. 
 
+# Using `std::bit_cast`
+
+Suppose we are looking at the bit representation of an `float` and want to pretend, it's an `int`, the correct way to do this in C++ is `std::bit_cast`. I allude to this discussion at length further ahead.
+
 # Why do we have these rules?
 
 Why does C++ disallow type puns? There are broadly speaking $4$ rules that you need to keep in mind:
@@ -817,6 +821,32 @@ Byte
 ```
 
 Objects can only live at certain positions. For example, if we have a `float` which is $4$-bytes, then it has to be aligned on a $4$-byte boundary. So it can live at the address `0x08` or `0x18`. If you have a `char[5]` array, it has an alignment requirement of only $1$ byte, which means it can live at any address for instance `0x07`. 
+
+## What is `std::bit_cast`?
+
+Suppose we are looking at the bit representation of an `float` and want to pretend, it's an `int`, the correct way to do this in C++ is `std::bit_cast`. `std::bit_cast` is a `constexpr` wrapper over `std::memcpy`. `memcpy` is the fastest library routine for memory-to-memory copy. The compiler intrinsic `__builtin_memcpy` compiles down to a single machine instruction `load_aligned`, or `load_unaligned` in case the source is unaligned.
+
+`std::memcpy` doesn't work for all types - there are some restrictions. Both the types `From` and `To` must be trivially copyable. 
+
+`std::bit_cast` is a drop-in replacement for `reinterpret_cast`. 
+
+## Rules for valid value representations
+
+
+
+```cpp
+template<typename To,
+         typename From,
+         typename = std::enable_if_t<
+         (sizeof(To) == sizeof(From)) &&
+         std::is_trivially_copyable_v<From> &&
+         std::is_trivially_copyable_v<To>>>
+To bit_cast(const From& src) noexcept{
+    To dst;
+    std::memcpy(&dst, &src, sizeof(To));
+    return dst;
+}
+```
 
 # References
 

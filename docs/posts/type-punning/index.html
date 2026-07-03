@@ -238,6 +238,7 @@ window.Quarto = {
   <li><a href="#type-punning-and-the-quake-3-fast-inverse-square-root-algorithm" id="toc-type-punning-and-the-quake-3-fast-inverse-square-root-algorithm" class="nav-link" data-scroll-target="#type-punning-and-the-quake-3-fast-inverse-square-root-algorithm">Type punning and the Quake-3 fast inverse square root algorithm</a></li>
   </ul></li>
   <li><a href="#using-unions" id="toc-using-unions" class="nav-link" data-scroll-target="#using-unions">Using unions</a></li>
+  <li><a href="#using-stdbit_cast" id="toc-using-stdbit_cast" class="nav-link" data-scroll-target="#using-stdbit_cast">Using <code>std::bit_cast</code></a></li>
   <li><a href="#why-do-we-have-these-rules" id="toc-why-do-we-have-these-rules" class="nav-link" data-scroll-target="#why-do-we-have-these-rules">Why do we have these rules?</a>
   <ul class="collapse">
   <li><a href="#strict-aliasing-rules" id="toc-strict-aliasing-rules" class="nav-link" data-scroll-target="#strict-aliasing-rules">Strict aliasing rules</a></li>
@@ -264,6 +265,8 @@ window.Quarto = {
   <li><a href="#implementation-of-stdstart_lifetime_as" id="toc-implementation-of-stdstart_lifetime_as" class="nav-link" data-scroll-target="#implementation-of-stdstart_lifetime_as">Implementation of <code>std::start_lifetime_as</code></a></li>
   </ul></li>
   <li><a href="#alignment-rules" id="toc-alignment-rules" class="nav-link" data-scroll-target="#alignment-rules">Alignment rules</a></li>
+  <li><a href="#what-is-stdbit_cast" id="toc-what-is-stdbit_cast" class="nav-link" data-scroll-target="#what-is-stdbit_cast">What is <code>std::bit_cast</code>?</a></li>
+  <li><a href="#rules-for-valid-value-representations" id="toc-rules-for-valid-value-representations" class="nav-link" data-scroll-target="#rules-for-valid-value-representations">Rules for valid value representations</a></li>
   </ul></li>
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
   </ul>
@@ -365,6 +368,10 @@ short[2]    |F0|00| |80|01|
 <span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> u <span class="op">=</span> <span class="op">{</span> <span class="fl">1.0</span><span class="bu">f</span> <span class="op">};</span></span>
 <span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> i <span class="op">=</span> u<span class="op">.</span>i<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This is performing a type pun through a union. In C++, this code has undefined behavior. Because, the standard says, in a union, only <span class="math inline">\(1\)</span> member can be active at a time.</p>
+</section>
+<section id="using-stdbit_cast" class="level1">
+<h1>Using <code>std::bit_cast</code></h1>
+<p>Suppose we are looking at the bit representation of an <code>float</code> and want to pretend, it’s an <code>int</code>, the correct way to do this in C++ is <code>std::bit_cast</code>. I allude to this discussion at length further ahead.</p>
 </section>
 <section id="why-do-we-have-these-rules" class="level1">
 <h1>Why do we have these rules?</h1>
@@ -920,6 +927,26 @@ std::byte*  +--+ +--+ +--+ +--+
 |4A|FE|17|63|9B|00|D0|8C|
 +--+--+--+--+--+--+--+--+</code></pre>
 <p>Objects can only live at certain positions. For example, if we have a <code>float</code> which is <span class="math inline">\(4\)</span>-bytes, then it has to be aligned on a <span class="math inline">\(4\)</span>-byte boundary. So it can live at the address <code>0x08</code> or <code>0x18</code>. If you have a <code>char[5]</code> array, it has an alignment requirement of only <span class="math inline">\(1\)</span> byte, which means it can live at any address for instance <code>0x07</code>.</p>
+</section>
+<section id="what-is-stdbit_cast" class="level2">
+<h2 class="anchored" data-anchor-id="what-is-stdbit_cast">What is <code>std::bit_cast</code>?</h2>
+<p>Suppose we are looking at the bit representation of an <code>float</code> and want to pretend, it’s an <code>int</code>, the correct way to do this in C++ is <code>std::bit_cast</code>. <code>std::bit_cast</code> is a <code>constexpr</code> wrapper over <code>std::memcpy</code>. <code>memcpy</code> is the fastest library routine for memory-to-memory copy. The compiler intrinsic <code>__builtin_memcpy</code> compiles down to a single machine instruction <code>load_aligned</code>, or <code>load_unaligned</code> in case the source is unaligned.</p>
+<p><code>std::memcpy</code> doesn’t work for all types - there are some restrictions. Both the types <code>From</code> and <code>To</code> must be trivially copyable.</p>
+<p><code>std::bit_cast</code> is a drop-in replacement for <code>reinterpret_cast</code>.</p>
+</section>
+<section id="rules-for-valid-value-representations" class="level2">
+<h2 class="anchored" data-anchor-id="rules-for-valid-value-representations">Rules for valid value representations</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb45"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> To<span class="op">,</span></span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>         <span class="kw">typename</span> From<span class="op">,</span></span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a>         <span class="kw">typename</span> <span class="op">=</span> <span class="bu">std::</span>enable_if_t<span class="op">&lt;</span></span>
+<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a>         <span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>To<span class="op">)</span> <span class="op">==</span> <span class="kw">sizeof</span><span class="op">(</span>From<span class="op">))</span> <span class="op">&amp;&amp;</span></span>
+<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a>         <span class="bu">std::</span>is_trivially_copyable_v<span class="op">&lt;</span>From<span class="op">&gt;</span> <span class="op">&amp;&amp;</span></span>
+<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a>         <span class="bu">std::</span>is_trivially_copyable_v<span class="op">&lt;</span>To<span class="op">&gt;&gt;&gt;</span></span>
+<span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a>To bit_cast<span class="op">(</span><span class="at">const</span> From<span class="op">&amp;</span> src<span class="op">)</span> <span class="kw">noexcept</span><span class="op">{</span></span>
+<span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a>    To dst<span class="op">;</span></span>
+<span id="cb45-9"><a href="#cb45-9" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>memcpy<span class="op">(&amp;</span>dst<span class="op">,</span> <span class="op">&amp;</span>src<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>To<span class="op">));</span></span>
+<span id="cb45-10"><a href="#cb45-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> dst<span class="op">;</span></span>
+<span id="cb45-11"><a href="#cb45-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
 <section id="references" class="level1">

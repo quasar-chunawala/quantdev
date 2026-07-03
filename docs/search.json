@@ -4079,5 +4079,19 @@
     "title": "Type punning",
     "section": "Alignment rules",
     "text": "Alignment rules\nConsider the following code snippet:\nstruct X{\n    int a;\n    int b;\n}\n\nX* make_x(){\n    char storage[sizeof(X)];   // allocate storage\n    X* p = new(storage) X;     // create a new object\n    p -&gt; a = 1;                // initialization\n    p -&gt; b = 2;\n    return p;\n}\nThis code is, in general, undefined behavior(UB). The problem with this code is alignment.\n\n[basic.align]/6.8.3 Object types have alignment requirements which place restrictions on the addresses at which an object of the that type may be allocated. An alignment is an implementation-defined integer value representing the number of bytes between successive addresses at which a given object can be allocated.\nAn object type imposes alignment requirements on every object of that type; stricter alignment can be requested using the alignas specifier.\n\nA more realistic mental model of the memory looks like this. If you have a \\(64\\)-bit machine, then you the word size = \\(8\\) bytes and memory actually looks like this.\nByte\n0  1  2  3  4  5  6  7 \n+--+--+--+--+--+--+--+--+\n|0F|1A|5C|1B|00|00|3A|80|\n+--+--+--+--+--+--+--+--+\n|E2|47|9C|00|FF|FF|01|33|\n+--+--+--+--+--+--+--+--+\n|88|00|00|00|C4|2D|71|09|\n+--+--+--+--+--+--+--+--+\n|00|00|00|00|B8|4F|A6|1E|\n+--+--+--+--+--+--+--+--+\n|D3|91|22|58|00|00|00|00|\n+--+--+--+--+--+--+--+--+\n|4A|FE|17|63|9B|00|D0|8C|\n+--+--+--+--+--+--+--+--+\nObjects can only live at certain positions. For example, if we have a float which is \\(4\\)-bytes, then it has to be aligned on a \\(4\\)-byte boundary. So it can live at the address 0x08 or 0x18. If you have a char[5] array, it has an alignment requirement of only \\(1\\) byte, which means it can live at any address for instance 0x07."
+  },
+  {
+    "objectID": "posts/type-punning/index.html#what-is-stdbit_cast",
+    "href": "posts/type-punning/index.html#what-is-stdbit_cast",
+    "title": "Type punning",
+    "section": "What is std::bit_cast?",
+    "text": "What is std::bit_cast?\nSuppose we are looking at the bit representation of an float and want to pretend, it’s an int, the correct way to do this in C++ is std::bit_cast. std::bit_cast is a constexpr wrapper over std::memcpy. memcpy is the fastest library routine for memory-to-memory copy. The compiler intrinsic __builtin_memcpy compiles down to a single machine instruction load_aligned, or load_unaligned in case the source is unaligned.\nstd::memcpy doesn’t work for all types - there are some restrictions. Both the types From and To must be trivially copyable.\nstd::bit_cast is a drop-in replacement for reinterpret_cast."
+  },
+  {
+    "objectID": "posts/type-punning/index.html#rules-for-valid-value-representations",
+    "href": "posts/type-punning/index.html#rules-for-valid-value-representations",
+    "title": "Type punning",
+    "section": "Rules for valid value representations",
+    "text": "Rules for valid value representations\ntemplate&lt;typename To,\n         typename From,\n         typename = std::enable_if_t&lt;\n         (sizeof(To) == sizeof(From)) &&\n         std::is_trivially_copyable_v&lt;From&gt; &&\n         std::is_trivially_copyable_v&lt;To&gt;&gt;&gt;\nTo bit_cast(const From& src) noexcept{\n    To dst;\n    std::memcpy(&dst, &src, sizeof(To));\n    return dst;\n}"
   }
 ]
