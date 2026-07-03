@@ -574,7 +574,7 @@ int main(){
     X& xref = x;
     std::destroy_at(&x);
     // transparent replacement of int
-    ::new(static_cast<void*>(const_cast<int*>(&x))) X(42);
+    ::new(static_cast<void*>(&x)) X(42);
     std::println("xref.i = {}", xref.i);
 }
 ```
@@ -597,7 +597,9 @@ int main(){
 }
 ```
 
-However, it is well-defined, if we have an object on the heap.
+Because, the compiler thinks `x` is `const`, it performs various optimizations. 
+
+However, the above is well-defined, if we have an object on the heap.
 
 ```cpp
 #include <memory>
@@ -608,10 +610,50 @@ struct X{ int i; };
 int main(){
     const int* ptr = new int(11);
     std::destroy_at(ptr);
-    ::new(static_cast<void*>(const_cast<int*>(ptr))) int(42);
-    std::println("*ptr = {}", *ptr); // Well-defined
+    int* new_ptr = ::new(static_cast<void*>(const_cast<int*>(ptr))) const int(42);
+    std::println("*new_ptr = {}", *new_ptr); // Well-defined
+    std::println("*ptr = {}", *ptr); // Undefined
 }
 ```
+
+Note that, for the purposes of the above discussion, you can `const_cast` the pointer away, as the type of the pointer does not matter, it's the dynamic type of the object that matters. 
+
+So, the fix to these issues is `std::launder`. `std::launder` is a magic identity function. While money laundering is used to prevent people from tracing where you got money from, memory laundering is to prevent the compiler from tracing, where you got your memory from. `std::launder` is used to break the optimization chain. It is simply implemented as:
+
+```cpp
+namespace std{
+    template<typename T>
+    T* launder(T* ptr) noexcept;  // magic identity function
+}
+```
+
+### When do I need to use `std::launder`
+
+You use `std::launder` when you want to re-use the storage of:
+
+- `const` heap objects.
+- base classes
+- `[[no_unique_address]]` members.
+
+Remember that, if you have `const` non-heap object, you can't reuse the storage anyway.
+
+```cpp
+#include <memory>
+#include <print>
+
+struct X{ int i; };
+
+int main(){
+    const int* ptr = new int(11);
+    std::destroy_at(ptr);
+    int* new_ptr = ::new(static_cast<void*>(const_cast<int*>(ptr))) const int(42);
+    std::println("*new_ptr = {}", *new_ptr); // Well-defined
+    std::println("*ptr = {}", *std::launder(ptr)); // Okay
+}
+```
+
+### Implicit object creation
+
 
 
 # References

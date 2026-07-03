@@ -2274,18 +2274,9 @@ font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">*&gt;(</span><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">const_cast</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
-background-color: null;
 font-style: inherit;">*&gt;(&amp;</span>x<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">)))</span> X<span class="op" style="color: #5E5E5E;
+font-style: inherit;">))</span> X<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
 background-color: null;
@@ -2432,7 +2423,8 @@ font-style: inherit;">// Undefined behavior</span></span>
 <span id="cb32-12"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span></code></pre></div></div>
-<p>However, it is well-defined, if we have an object on the heap.</p>
+<p>Because, the compiler thinks <code>x</code> is <code>const</code>, it performs various optimizations.</p>
+<p>However, the above is well-defined, if we have an object on the heap.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb33" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb33-1"><span class="pp" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">#include </span><span class="im" style="color: #00769E;
@@ -2489,7 +2481,13 @@ background-color: null;
 font-style: inherit;">(</span>ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="cb33-9">    <span class="op" style="color: #5E5E5E;
+<span id="cb33-9">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> new_ptr <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">::</span><span class="kw" style="color: #003B4F;
 background-color: null;
@@ -2516,7 +2514,9 @@ font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*&gt;(</span>ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">)))</span> <span class="dt" style="color: #AD0000;
+font-style: inherit;">)))</span> <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -2526,6 +2526,25 @@ font-style: inherit;">42</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
 <span id="cb33-10">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"*new_ptr = </span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{}</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>new_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span> <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Well-defined</span></span>
+<span id="cb33-11">    <span class="bu" style="color: null;
 background-color: null;
 font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -2543,8 +2562,194 @@ font-style: inherit;">*</span>ptr<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span> <span class="co" style="color: #5E5E5E;
 background-color: null;
+font-style: inherit;">// Undefined</span></span>
+<span id="cb33-12"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div></div>
+<p>Note that, for the purposes of the above discussion, you can <code>const_cast</code> the pointer away, as the type of the pointer does not matter, it’s the dynamic type of the object that matters.</p>
+<p>So, the fix to these issues is <code>std::launder</code>. <code>std::launder</code> is a magic identity function. While money laundering is used to prevent people from tracing where you got money from, memory laundering is to prevent the compiler from tracing, where you got your memory from. <code>std::launder</code> is used to break the optimization chain. It is simply implemented as:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb34" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb34-1"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">namespace</span> std<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb34-2">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">typename</span> T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span></span>
+<span id="cb34-3">    T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> launder<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">noexcept</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span>  <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// magic identity function</span></span>
+<span id="cb34-4"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span></code></pre></div></div>
+</section>
+<section id="using-stdlaunder" class="level3">
+<h3 class="anchored" data-anchor-id="using-stdlaunder">Using <code>std::launder</code></h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb35" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb35-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;memory&gt;</span></span>
+<span id="cb35-2"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;print&gt;</span></span>
+<span id="cb35-3"></span>
+<span id="cb35-4"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">struct</span> X<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb35-5"></span>
+<span id="cb35-6"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){</span></span>
+<span id="cb35-7">    <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> ptr <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">new</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">11</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb35-8">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>destroy_at<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb35-9">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> new_ptr <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">::</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">new</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">static_cast</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*&gt;(</span><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">const_cast</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*&gt;(</span>ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)))</span> <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">42</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="cb35-10">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"*new_ptr = </span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{}</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span>new_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span> <span class="co" style="color: #5E5E5E;
+background-color: null;
 font-style: inherit;">// Well-defined</span></span>
-<span id="cb33-11"><span class="op" style="color: #5E5E5E;
+<span id="cb35-11">    <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>println<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"*ptr = </span><span class="sc" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{}</span><span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>launder<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">));</span> <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Okay</span></span>
+<span id="cb35-12"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span></code></pre></div></div>
 </section>
