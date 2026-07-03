@@ -699,9 +699,62 @@ Anything that starts the lifetime of an `unsigned char` or `std::byte` array als
 
 ```cpp
 alignas(int) std::byte buffer[sizeof(int)];  // implicitly creates an int
-int* ptr = retinterpret_cast<int*>(&buffer);
+int* ptr = reinterpret_cast<int*>(&buffer);
 *ptr = 11;
 ```
+
+`std::memcpy` and `std::memmove` implicitly create an object.
+
+```cpp
+alignas(int) char buffer[sizeof(int)];  // creates nothing
+std::memcpy(buffer, &some_int, sizeof(int));   // creates an int
+int* ptr = reinterprete_cast<int*>(buffer); 
+std::println("*ptr = {}", ptr);
+```
+
+### How does the compiler know what objects to create?
+
+The answer is easy - it does time travel. Implicit object creation uses time-travel.
+
+```cpp
+static_assert(
+    sizeof(int) == sizeof(float) && alignof(int) == alignof(float)
+);
+
+alignas(int) unsigned char buffer[sizeof(int)];
+if(rand() % 2){
+    *reinterpret_cast<int*>(buffer) = 11;      // [1]
+}
+else{
+    *reinterpret_cast<float*>(buffer) = 3.14f; // [2]
+}
+```
+
+Depending on the result of a coin flip, you need an `int` or a `float`. As soon as we reach one of those lines `[1]` or `[2]`, you can imagine, the compiler travels back in time in order to put the `int` in there, creates a well-formed object and then execution continues.
+
+Its important to point out that we are talking about the abstract machine. This is a voodoo trick that the standards committee came up with to make this workaround. It's only in the head, it isn't in the compiler. 
+
+### Explicitly starting the lifetime of an object
+
+Consider the canonical example on [cppreference.com](https://en.cppreference.com/cpp/memory/start_lifetime_as). `[1]` is UB, because it violates strict-aliasing and object lifetime rules.
+`[2]` is also UB, because `std::launder` can't create an object where none exists in the first place.
+
+
+```cpp
+alignas(std::complex<float>) unsigned char network_data[sizeof(std::complex<float>)] {
+    0xcd, 0xcc, 0xcc, 0x3d, 0xcd, 0xcc, 0x4c, 0x3e
+};
+
+// auto d = *reinterpret_cast<std::complex<float>*>(network_data);  [1]
+// UB: network_data does not point to a complex<float>
+
+// auto d1 = *std::launder(reinterpret_cast<std::complex<float>*>(network_data)); [2]
+// still UB: no object was ever created there
+
+auto d2 = *std::start_lifetime_as<std::complex<float>>(network_data); // [3] : OK
+std::cout << d2 << '\n'; // (0.1, 0.2)
+```
+
 
 # References
 
