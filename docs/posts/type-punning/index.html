@@ -255,7 +255,10 @@ window.Quarto = {
   <li><a href="#explicitly-destroy-an-object" id="toc-explicitly-destroy-an-object" class="nav-link" data-scroll-target="#explicitly-destroy-an-object">Explicitly destroy an object</a></li>
   <li><a href="#how-to-allocate-memory-without-creating-objects" id="toc-how-to-allocate-memory-without-creating-objects" class="nav-link" data-scroll-target="#how-to-allocate-memory-without-creating-objects">How to allocate memory without creating objects?</a></li>
   <li><a href="#be-careful-when-re-using-memory" id="toc-be-careful-when-re-using-memory" class="nav-link" data-scroll-target="#be-careful-when-re-using-memory">Be careful when re-using memory</a></li>
-  <li><a href="#using-stdlaunder" id="toc-using-stdlaunder" class="nav-link" data-scroll-target="#using-stdlaunder">Using <code>std::launder</code></a></li>
+  <li><a href="#when-do-i-need-to-use-stdlaunder" id="toc-when-do-i-need-to-use-stdlaunder" class="nav-link" data-scroll-target="#when-do-i-need-to-use-stdlaunder">When do I need to use <code>std::launder</code></a></li>
+  <li><a href="#implicit-object-creation" id="toc-implicit-object-creation" class="nav-link" data-scroll-target="#implicit-object-creation">Implicit object creation</a></li>
+  <li><a href="#implicit-lifetime-types" id="toc-implicit-lifetime-types" class="nav-link" data-scroll-target="#implicit-lifetime-types">Implicit lifetime types</a></li>
+  <li><a href="#which-operations-implicitly-create-objects" id="toc-which-operations-implicitly-create-objects" class="nav-link" data-scroll-target="#which-operations-implicitly-create-objects">Which operations implicitly create objects?</a></li>
   </ul></li>
   </ul></li>
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
@@ -760,8 +763,15 @@ std::byte*  +--+ +--+ +--+ +--+
 <span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>    T<span class="op">*</span> launder<span class="op">(</span>T<span class="op">*</span> ptr<span class="op">)</span> <span class="kw">noexcept</span><span class="op">;</span>  <span class="co">// magic identity function</span></span>
 <span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="using-stdlaunder" class="level3">
-<h3 class="anchored" data-anchor-id="using-stdlaunder">Using <code>std::launder</code></h3>
+<section id="when-do-i-need-to-use-stdlaunder" class="level3">
+<h3 class="anchored" data-anchor-id="when-do-i-need-to-use-stdlaunder">When do I need to use <code>std::launder</code></h3>
+<p>You use <code>std::launder</code> when you want to re-use the storage of:</p>
+<ul>
+<li><code>const</code> heap objects.</li>
+<li>base classes</li>
+<li><code>[[no_unique_address]]</code> members.</li>
+</ul>
+<p>Remember that, if you have <code>const</code> non-heap object, you can’t reuse the storage anyway.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb35"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;memory&gt;</span></span>
 <span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;print&gt;</span></span>
 <span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -774,6 +784,50 @@ std::byte*  +--+ +--+ +--+ +--+
 <span id="cb35-10"><a href="#cb35-10" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>println<span class="op">(</span><span class="st">"*new_ptr = </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> <span class="op">*</span>new_ptr<span class="op">);</span> <span class="co">// Well-defined</span></span>
 <span id="cb35-11"><a href="#cb35-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>println<span class="op">(</span><span class="st">"*ptr = </span><span class="sc">{}</span><span class="st">"</span><span class="op">,</span> <span class="op">*</span><span class="bu">std::</span>launder<span class="op">(</span>ptr<span class="op">));</span> <span class="co">// Okay</span></span>
 <span id="cb35-12"><a href="#cb35-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="implicit-object-creation" class="level3">
+<h3 class="anchored" data-anchor-id="implicit-object-creation">Implicit object creation</h3>
+<p>The standard says:</p>
+<blockquote class="blockquote">
+<p><a href="https://eel.is/c++draft/intro.object#13">[intro.object]/13</a> Some operations are described as <em>implicitly creating</em> objects in a specified region of storage. For each such operation, that operation implicitly creates and starts the lifetime of a zero or more objects in its specified region of storage, if doing so would result in the program having defined behavior. If no such set of objects would give the program defined behavior, the behavior of the program is undefined.</p>
+</blockquote>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb36"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;cstdlib&gt;</span></span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> X<span class="op">{</span> <span class="dt">int</span> a<span class="op">,</span> b<span class="op">;</span> <span class="op">}</span></span>
+<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-5"><a href="#cb36-5" aria-hidden="true" tabindex="-1"></a>X<span class="op">*</span> make_x<span class="op">(){</span></span>
+<span id="cb36-6"><a href="#cb36-6" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The call to std::malloc implicitly creates an object of type X</span></span>
+<span id="cb36-7"><a href="#cb36-7" aria-hidden="true" tabindex="-1"></a>    <span class="co">// and its subobjects a and b, and returns a pointer that X object</span></span>
+<span id="cb36-8"><a href="#cb36-8" aria-hidden="true" tabindex="-1"></a>    X<span class="op">*</span> ptr <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span>X<span class="op">*&gt;(</span><span class="bu">std::</span>malloc<span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span><span class="kw">struct</span> X<span class="op">)));</span></span>
+<span id="cb36-9"><a href="#cb36-9" aria-hidden="true" tabindex="-1"></a>    ptr<span class="op">-&gt;</span>a <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb36-10"><a href="#cb36-10" aria-hidden="true" tabindex="-1"></a>    ptr<span class="op">-&gt;</span>b <span class="op">=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb36-11"><a href="#cb36-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> ptr<span class="op">;</span></span>
+<span id="cb36-12"><a href="#cb36-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="implicit-lifetime-types" class="level3">
+<h3 class="anchored" data-anchor-id="implicit-lifetime-types">Implicit lifetime types</h3>
+<p>According to the standard, implicit object creation works for implicit lifetime types.</p>
+<blockquote class="blockquote">
+<p><a href="">[basic.types.general]/9</a> Scalar types, implicit-lifetime class types, array types, array types are collectively called implicit-lifetime types.</p>
+</blockquote>
+<blockquote class="blockquote">
+<p>[[class.prop]/9] A class <code>S</code> is an implicit-lifetime class if:</p>
+<ul>
+<li>if it is an <strong>aggregate</strong> whose destructor is not user-supplied.</li>
+<li>it has atleast one trivial eligible constructor and a trivial, non-deleted destructor.</li>
+</ul>
+</blockquote>
+<p>Essentially, a trivial default constructor does nothing. A trivial copy constructor copies the contents of the object member-by-member.</p>
+</section>
+<section id="which-operations-implicitly-create-objects" class="level3">
+<h3 class="anchored" data-anchor-id="which-operations-implicitly-create-objects">Which operations implicitly create objects?</h3>
+<p><code>std::malloc</code> and its variants : <code>::operator new</code>, <code>std::allocator::allocate</code> and other allocation functions implicitly create objects. The below is valid C++ code:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb37"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span><span class="op">*</span> ptr <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">int</span><span class="op">*&gt;(</span><span class="bu">std::</span>malloc<span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span><span class="dt">int</span><span class="op">)));</span>  <span class="co">// implicitly creates an int</span></span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a><span class="op">*</span>ptr <span class="op">=</span> <span class="dv">11</span><span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Anything that starts the lifetime of an <code>unsigned char</code> or <code>std::byte</code> array also implictly creates an <code>int</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb38"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="kw">alignas</span><span class="op">(</span><span class="dt">int</span><span class="op">)</span> <span class="bu">std::</span>byte buffer<span class="op">[</span><span class="kw">sizeof</span><span class="op">(</span><span class="dt">int</span><span class="op">)];</span></span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span><span class="op">*</span> ptr <span class="op">=</span> retinterpret_cast<span class="op">&lt;</span><span class="dt">int</span><span class="op">*&gt;(&amp;</span>buffer<span class="op">);</span></span>
+<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a><span class="op">*</span>ptr <span class="op">=</span> <span class="dv">11</span><span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
 </section>
