@@ -120,6 +120,35 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 <script async="" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9993009899870547" crossorigin="anonymous"></script>
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 </head>
 
@@ -207,6 +236,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#workarounds-for-the-failings-of-stdvector" id="toc-workarounds-for-the-failings-of-stdvector" class="nav-link" data-scroll-target="#workarounds-for-the-failings-of-stdvector">Workarounds for the failings of std::vector</a>
   <ul class="collapse">
   <li><a href="#tombstone" id="toc-tombstone" class="nav-link" data-scroll-target="#tombstone">Tombstone</a></li>
+  <li><a href="#utilizing-a-vector-or-array-of-group-structs" id="toc-utilizing-a-vector-or-array-of-group-structs" class="nav-link" data-scroll-target="#utilizing-a-vector-or-array-of-group-structs">Utilizing a vector (or array) of group structs</a></li>
   </ul></li>
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
   </ul>
@@ -234,18 +264,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="tombstone" class="level2">
 <h2 class="anchored" data-anchor-id="tombstone">Tombstone</h2>
 <p>A tombstone is just a placeholder or marker used in data structures to indicate that a piece of that has been deleted, rather than immediately erasing it. We could, thus, use a boolean flag (or similar) to indicate the inactivity of an object (as opposed to actually erasing the object from the vector). When erasing, we simply adjust the boolean flag, and when iterating, items with the boolean flag set are skipped. External elements refer to elements within the container via indexes rather than pointers. An advantage of this approach is fast erasure.</p>
-<p>The <code>advance</code> / <code>next</code> / <code>operator++</code> method for such a container would have to be implemented as:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> advance<span class="op">(</span><span class="dt">size_t</span> i<span class="op">){</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">do</span><span class="op">{</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>        i <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span><span class="cf">while</span><span class="op">(</span>S<span class="op">[</span>i<span class="op">])</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell" data-fig-width="9" data-fig-height="3" data-layout-align="default">
+<p>Consider the boolean skipfield accompanying an array of <code>10</code> integers of the below form:</p>
+<div class="cell" data-fig-width="8" data-fig-height="2.5" data-layout-align="default">
 <div class="cell-output-display">
 <div>
 <p></p><figure class="figure"><p></p>
 <div>
-<svg width="864" height="288" viewbox="0.00 0.00 381.80 168.80" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" style="; max-width: none; max-height: none">
+<svg width="768" height="240" viewbox="0.00 0.00 381.80 168.80" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" style="; max-width: none; max-height: none">
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(14.4 154.4)">
 <!-- lbl_skip -->
 <g id="node1" class="node">
@@ -387,6 +412,28 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 </div>
+<p>This means that the 2nd, 3rd, 4th and 8th integers must be respectively skipped during the processing of the array. The pseudocode for a single iteration between two unskipped objects in a sequence of integers using a boolean skipfield could be implemented as follows.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> advance<span class="op">(</span><span class="dt">size_t</span> i<span class="op">){</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">do</span><span class="op">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>        i <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span><span class="cf">while</span><span class="op">(</span>S<span class="op">[</span>i<span class="op">])</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Boolean skipfields come with two downsides. As you can see, branching code is necessary for every skipfield read, in order to determine whether to proces or skip an element. This large amount of branching can cause performance issues on processors with deep pipelines and poor branch prediction performance. Also, the standard library requires that a containers support <span class="math inline">\(O(1)\)</span> constant-time <code>++iter</code> iteration performance. An unpredictable number of reads from the skipfield are necessary to ascertain the next unskipped object.</p>
+</section>
+<section id="utilizing-a-vector-or-array-of-group-structs" class="level2">
+<h2 class="anchored" data-anchor-id="utilizing-a-vector-or-array-of-group-structs">Utilizing a vector (or array) of group structs</h2>
+<p>The reference implementation of hive uses a doubly linked-list of <code>group</code> structs. A group consists of (a) a dynamically allocated memory block (b) a dynamically-allocated skipfield and (c) memory block meta data such as <code>size</code> and <code>capacity</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> group<span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">skipfield_pointer_type</span> skipfield<span class="op">;</span>  <span class="co">// skipfield pointer</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    T<span class="op">*</span> elements<span class="op">;</span>                       <span class="co">// pointer to memory block</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">size_t</span> size<span class="op">;</span>                       <span class="co">// meta-data</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">size_t</span> capacity<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    group<span class="op">*</span> next_group<span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    group<span class="op">*</span> previous_group<span class="op">;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Let’s pause to think, what if we used a <code>vector</code> of <code>group</code> structs instead of a doubly linked-list. When a group becomes empty of elements, it must be removed from the vector of groups, because otherwise you end up with highly-variable latency during iteration due to the need to skip over an unknown number of empty groups when traversing from one non-empty group to the next. Merely erasing the group is not sufficient, as this creates a variable amount of latency during the erasure when the group becomes empty, based on the number of groups after that group which need to be relocated backward in the vector. But, even if you <code>swap</code> the to-be-erased group with the back group, and then pop the to-be-erased group off the back, this would not solve the problem, as iterators require a stable pointer to the group they are traversing in order to traverse to the next group in the sequence. If an iterator pointed to an element in the back group, and the back group was swapped with the to-be-erased group, that iterator would be invalidated.</p>
 </section>
 </section>
 <section id="references" class="level1">

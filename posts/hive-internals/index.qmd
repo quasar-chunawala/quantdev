@@ -30,19 +30,11 @@ To meet these requirements, game developers tend to either a) develop their own 
 
 A tombstone is just a placeholder or marker used in data structures to indicate that a piece of that has been deleted, rather than immediately erasing it. We could, thus, use a boolean flag (or similar) to indicate the inactivity of an object (as opposed to actually erasing the object from the vector). When erasing, we simply adjust the boolean flag, and when iterating, items with the boolean flag set are skipped. External elements refer to elements within the container via indexes rather than pointers. An advantage of this approach is fast erasure. 
 
-The `advance` / `next` / `operator++` method for such a container would have to be implemented as:
-
-```cpp
-size_t advance(size_t i){
-    do{
-        i += 1;
-    }while(S[i])
-}
-```
+Consider the boolean skipfield accompanying an array of `10` integers of the below form:
 
 ```{dot}
-//| fig-width: 9
-//| fig-height: 3.0
+//| fig-width: 8
+//| fig-height: 2.5
 //| fig-cap: "Using boolean skipfield"
 digraph {
   bgcolor="transparent"
@@ -81,6 +73,36 @@ digraph {
 }
 ```
 
+This means that the 2nd, 3rd, 4th and 8th integers must be respectively skipped during the processing of the array. The pseudocode for a single iteration between two unskipped objects in a sequence of integers using a boolean skipfield could be implemented as follows.
+
+```cpp
+size_t advance(size_t i){
+    do{
+        i += 1;
+    }while(S[i])
+}
+```
+
+Boolean skipfields come with two downsides. As you can see, branching code is necessary for every skipfield read, in order to determine whether to proces or skip an element. This large amount of branching can cause performance issues on processors with deep pipelines and poor branch prediction performance. Also, the standard library requires that a containers support $O(1)$ constant-time `++iter` iteration performance. An unpredictable number of reads from the skipfield are necessary to ascertain the next unskipped object. 
+
+## Utilizing a vector (or array) of group structs
+
+The reference implementation of hive uses a doubly linked-list of `group` structs. A group consists of (a) a dynamically allocated memory block (b) a dynamically-allocated skipfield and (c) memory block meta data such as `size` and `capacity`. 
+
+```cpp
+template<typename T>
+struct group{
+    skipfield_pointer_type skipfield;  // skipfield pointer
+    T* elements;                       // pointer to memory block
+    size_t size;                       // meta-data
+    size_t capacity;
+
+    group* next_group;
+    group* previous_group;
+};
+```
+
+Let's pause to think, what if we used a `vector` of `group` structs instead of a doubly linked-list. When a group becomes empty of elements, it must be removed from the vector of groups, because otherwise you end up with highly-variable latency during iteration due to the need to skip over an unknown number of empty groups when traversing from one non-empty group to the next. Merely erasing the group is not sufficient, as this creates a variable amount of latency during the erasure when the group becomes empty, based on the number of groups after that group which need to be relocated backward in the vector. But, even if you `swap` the to-be-erased group with the back group, and then pop the to-be-erased group off the back, this would not solve the problem, as iterators require a stable pointer to the group they are traversing in order to traverse to the next group in the sequence. If an iterator pointed to an element in the back group, and the back group was swapped with the to-be-erased group, that iterator would be invalidated.
 
 # References
 
