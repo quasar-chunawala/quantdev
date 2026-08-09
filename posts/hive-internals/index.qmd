@@ -12,27 +12,77 @@ toc-depth: 3
 
 `hive` is a formalization, extension and optimization of what is typically known as *bucket arrays* in game programming circles. Similar data-structures are used in high-performance computing, high performance trading, 3D-simulation, particle simulations, robotics fields. 
 
-In a typical game engine, data is heavily interlinked, iterated often(everytime a frame is rendered) and changing continuously. Most games have an `Entity` class. Entities link to shared resources such as sprites, sounds etc. These shared resources are usually located in separated containers so that they can be reused by multiple entities. Entities in turn are referenced by other superstructures within a game engine, such as quadtrees / octrees, level structures and so forth. 
+In a typical game engine, elements within one container often refer to elements in other separate containers. Data is heavily interlinked, iterated often(everytime a frame is rendered) and changing continuously. Most games have an `Entity` class. Entities link to shared resources such as texture objects, sound data etc. These shared resources are usually located in separate containers so that they can be reused by multiple entities. Entities in turn are referenced by other superstructures within a game engine, such as quadtrees / octrees, level structures and so forth. 
 
-Entities may be erased at any time (for example, a wall gets destroyed and no longer is required to be processed by the game engine) and new entities may also be inserted (for example, a new enemy is spawned). While this is all happening, the links between entities, shared resources and superstructures such as levels and quadtrees, must stay valid in order for the game to run. 
+Erasing entities or otherwise removing or deactivating objects occurs frequently in game and in realtime (for example, a wall gets destroyed and no longer is required to be processed by the game engine). Creating new objects and adding them into the gameworld on-the-fly is also common (for example, a new enemy is spawned). While this is all happening, the links between entities, shared resources and superstructures such as levels and quadtrees, must stay valid in order for the game to run. 
+
+We don't always know in advance how many elements there will be in a container at the beginning of development, or even at the beginning of a level during playback - an example of this being MMORPG(massively multiplayer online role playing games). In a MMORPG, the number of game entities fluctuates based on how many players are playing.
 
 If we use `vector` as a container to store game entities, it loses pointer validity to elements within it upon insertion, and pointer/index validity upon erasure. 
 
 We desire a container that allows constant-time insertion / erasure, fast iteration performance, yet offers pointer stability.
 
-```{dot}
-//| fig-width: 5
-//| fig-height: 1.0
-//| fig-cap: "Skipfield merge"
-digraph {
-  bgcolor="transparent"
-  graph[margin="0" pad="0"]
-  node [shape=record fontname="monospace" color="#8A8A90" fontcolor="#F3EFE6"]
-  edge [color="#8A8A90"]
-  skipfield [label="0|<s2>5|2|0|2|<e6>5|0|0|0|0"]
+# Workarounds for the failings of std::vector
+
+To meet these requirements, game developers tend to either a) develop their own custom containers or b) develop workarounds for the failings of `std::vector`. 
+
+## Tombstone
+
+A tombstone is just a placeholder or marker used in data structures to indicate that a piece of that has been deleted, rather than immediately erasing it. We could, thus, use a boolean flag (or similar) to indicate the inactivity of an object (as opposed to actually erasing the object from the vector). When erasing, we simply adjust the boolean flag, and when iterating, items with the boolean flag set are skipped. External elements refer to elements within the container via indexes rather than pointers. An advantage of this approach is fast erasure. 
+
+The `advance` / `next` / `operator++` method for such a container would have to be implemented as:
+
+```cpp
+size_t advance(size_t i){
+    do{
+        i += 1;
+    }while(S[i])
 }
 ```
+
+```{dot}
+//| fig-width: 8
+//| fig-height: 1.4
+//| fig-cap: "Using boolean skipfield"
+digraph {
+  bgcolor="transparent"
+  graph [margin="0" pad="0.2" rankdir=TB nodesep=0.1 ranksep=0.3]
+  edge  [color="#8A8A90"]
+
+  // label nodes — right-aligned, no border
+  node [shape=plain fontname="monospace" fontcolor="#2c56fc" width=2.0 fixedsize=true]
+  lbl_skip [label="skipfield"]
+  lbl_data [label="data-collection"]
+
+  // array nodes — each cell same fixed width
+  node [shape=record fontname="monospace" color="#8A8A90" fontcolor="#F3EFE6"
+        width=0.4 fixedsize=true]
+  s0[label="0"] s1[label="1"] s2[label="1"] s3[label="1"]
+  s4[label="0"] s5[label="0"] s6[label="0"] s7[label="1"]
+  s8[label="0"] s9[label="0"]
+
+  d0[label="5"]  d1[label="42"] d2[label="17"] d3[label="28"]
+  d4[label="10"] d5[label="6"]  d6[label="3"]  d7[label="4"]
+  d8[label="11"] d9[label="15"]
+
+  // put label + each cell on same rank
+  { lbl_skip }
+  { rank=same s0 s1 s2 s3 s4 s5 s6 s7 s8 s9 }
+  { lbl_data }
+  { rank=same d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 }
+
+  // chain cells together in order (invisible)
+  s0->s1->s2->s3->s4->s5->s6->s7->s8->s9 [style=invis]
+  d0->d1->d2->d3->d4->d5->d6->d7->d8->d9 [style=invis]
+
+  // align the two rows vertically
+  //lbl_skip -> lbl_data [style=invis]
+  lbl_skip -> s0 -> lbl_data -> d0 [style=invis]
+}
+```
+
 
 # References
 
 - [Introduction of `std::hive` to the standard library, proposal](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p0447r21.html), *by Matt Bentley*.
+- [`plf::colony` documentation](https://plflib.org/colony.htm)

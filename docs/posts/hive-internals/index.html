@@ -25,6 +25,41 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -169,6 +204,10 @@ ul.task-list li input[type="checkbox"] {
    
   <ul>
   <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
+  <li><a href="#workarounds-for-the-failings-of-stdvector" id="toc-workarounds-for-the-failings-of-stdvector" class="nav-link" data-scroll-target="#workarounds-for-the-failings-of-stdvector">Workarounds for the failings of std::vector</a>
+  <ul class="collapse">
+  <li><a href="#tombstone" id="toc-tombstone" class="nav-link" data-scroll-target="#tombstone">Tombstone</a></li>
+  </ul></li>
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
   </ul>
 </nav>
@@ -183,53 +222,178 @@ ul.task-list li input[type="checkbox"] {
 <section id="introduction" class="level1">
 <h1>Introduction</h1>
 <p><code>hive</code> is a formalization, extension and optimization of what is typically known as <em>bucket arrays</em> in game programming circles. Similar data-structures are used in high-performance computing, high performance trading, 3D-simulation, particle simulations, robotics fields.</p>
-<p>In a typical game engine, data is heavily interlinked, iterated often(everytime a frame is rendered) and changing continuously. Most games have an <code>Entity</code> class. Entities link to shared resources such as sprites, sounds etc. These shared resources are usually located in separated containers so that they can be reused by multiple entities. Entities in turn are referenced by other superstructures within a game engine, such as quadtrees / octrees, level structures and so forth.</p>
-<p>Entities may be erased at any time (for example, a wall gets destroyed and no longer is required to be processed by the game engine) and new entities may also be inserted (for example, a new enemy is spawned). While this is all happening, the links between entities, shared resources and superstructures such as levels and quadtrees, must stay valid in order for the game to run.</p>
+<p>In a typical game engine, elements within one container often refer to elements in other separate containers. Data is heavily interlinked, iterated often(everytime a frame is rendered) and changing continuously. Most games have an <code>Entity</code> class. Entities link to shared resources such as texture objects, sound data etc. These shared resources are usually located in separate containers so that they can be reused by multiple entities. Entities in turn are referenced by other superstructures within a game engine, such as quadtrees / octrees, level structures and so forth.</p>
+<p>Erasing entities or otherwise removing or deactivating objects occurs frequently in game and in realtime (for example, a wall gets destroyed and no longer is required to be processed by the game engine). Creating new objects and adding them into the gameworld on-the-fly is also common (for example, a new enemy is spawned). While this is all happening, the links between entities, shared resources and superstructures such as levels and quadtrees, must stay valid in order for the game to run.</p>
+<p>We don’t always know in advance how many elements there will be in a container at the beginning of development, or even at the beginning of a level during playback - an example of this being MMORPG(massively multiplayer online role playing games). In a MMORPG, the number of game entities fluctuates based on how many players are playing.</p>
 <p>If we use <code>vector</code> as a container to store game entities, it loses pointer validity to elements within it upon insertion, and pointer/index validity upon erasure.</p>
 <p>We desire a container that allows constant-time insertion / erasure, fast iteration performance, yet offers pointer stability.</p>
-<div class="cell" data-fig-width="5" data-fig-height="1" data-layout-align="default">
+</section>
+<section id="workarounds-for-the-failings-of-stdvector" class="level1">
+<h1>Workarounds for the failings of std::vector</h1>
+<p>To meet these requirements, game developers tend to either a) develop their own custom containers or b) develop workarounds for the failings of <code>std::vector</code>.</p>
+<section id="tombstone" class="level2">
+<h2 class="anchored" data-anchor-id="tombstone">Tombstone</h2>
+<p>A tombstone is just a placeholder or marker used in data structures to indicate that a piece of that has been deleted, rather than immediately erasing it. We could, thus, use a boolean flag (or similar) to indicate the inactivity of an object (as opposed to actually erasing the object from the vector). When erasing, we simply adjust the boolean flag, and when iterating, items with the boolean flag set are skipped. External elements refer to elements within the container via indexes rather than pointers. An advantage of this approach is fast erasure.</p>
+<p>The <code>advance</code> / <code>next</code> / <code>operator++</code> method for such a container would have to be implemented as:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> advance<span class="op">(</span><span class="dt">size_t</span> i<span class="op">){</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">do</span><span class="op">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>        i <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span><span class="cf">while</span><span class="op">(</span>S<span class="op">[</span>i<span class="op">])</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell" data-fig-width="8" data-fig-height="1.4" data-layout-align="default">
 <div class="cell-output-display">
 <div>
 <p></p><figure class="figure"><p></p>
 <div>
-<svg width="480" height="96" viewbox="0.00 0.00 230.00 37.00" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" style="; max-width: none; max-height: none">
-<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(0 37)">
-<!-- skipfield -->
+<svg width="768" height="134" viewbox="0.00 0.00 381.80 168.80" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" style="; max-width: none; max-height: none">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(14.4 154.4)">
+<!-- lbl_skip -->
 <g id="node1" class="node">
-<title>skipfield</title>
-<polygon fill="none" stroke="#8a8a90" points="0,-0.5 0,-36.5 230,-36.5 230,-0.5 0,-0.5"></polygon>
-<text text-anchor="middle" x="11.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
-<polyline fill="none" stroke="#8a8a90" points="23,-0.5 23,-36.5 "></polyline>
-<text text-anchor="middle" x="34.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">5</text>
-<polyline fill="none" stroke="#8a8a90" points="46,-0.5 46,-36.5 "></polyline>
-<text text-anchor="middle" x="57.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">2</text>
-<polyline fill="none" stroke="#8a8a90" points="69,-0.5 69,-36.5 "></polyline>
-<text text-anchor="middle" x="80.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
-<polyline fill="none" stroke="#8a8a90" points="92,-0.5 92,-36.5 "></polyline>
-<text text-anchor="middle" x="103.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">2</text>
-<polyline fill="none" stroke="#8a8a90" points="115,-0.5 115,-36.5 "></polyline>
-<text text-anchor="middle" x="126.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">5</text>
-<polyline fill="none" stroke="#8a8a90" points="138,-0.5 138,-36.5 "></polyline>
-<text text-anchor="middle" x="149.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
-<polyline fill="none" stroke="#8a8a90" points="161,-0.5 161,-36.5 "></polyline>
-<text text-anchor="middle" x="172.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
-<polyline fill="none" stroke="#8a8a90" points="184,-0.5 184,-36.5 "></polyline>
-<text text-anchor="middle" x="195.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
-<polyline fill="none" stroke="#8a8a90" points="207,-0.5 207,-36.5 "></polyline>
-<text text-anchor="middle" x="218.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
+<title>lbl_skip</title>
+<text text-anchor="middle" x="14.5" y="-135.8" font-family="monospace" font-size="14.00" fill="#2c56fc">skipfield</text>
+</g>
+<!-- s0 -->
+<g id="node3" class="node">
+<title>s0</title>
+<polygon fill="none" stroke="#8a8a90" points="0,-81.5 0,-117.5 29,-117.5 29,-81.5 0,-81.5"></polygon>
+<text text-anchor="middle" x="14.5" y="-95.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
+</g>
+<!-- lbl_skip&#45;&gt;s0 -->
+<!-- lbl_data -->
+<g id="node2" class="node">
+<title>lbl_data</title>
+<text text-anchor="middle" x="14.5" y="-54.8" font-family="monospace" font-size="14.00" fill="#2c56fc">data-collection</text>
+</g>
+<!-- d0 -->
+<g id="node13" class="node">
+<title>d0</title>
+<polygon fill="none" stroke="#8a8a90" points="0,-0.5 0,-36.5 29,-36.5 29,-0.5 0,-0.5"></polygon>
+<text text-anchor="middle" x="14.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">5</text>
+</g>
+<!-- lbl_data&#45;&gt;d0 -->
+<!-- s0&#45;&gt;lbl_data -->
+<!-- s1 -->
+<g id="node4" class="node">
+<title>s1</title>
+<polygon fill="none" stroke="#8a8a90" points="36,-81.5 36,-117.5 65,-117.5 65,-81.5 36,-81.5"></polygon>
+<text text-anchor="middle" x="50.5" y="-95.3" font-family="monospace" font-size="14.00" fill="#f3efe6">1</text>
+</g>
+<!-- s2 -->
+<g id="node5" class="node">
+<title>s2</title>
+<polygon fill="none" stroke="#8a8a90" points="72,-81.5 72,-117.5 101,-117.5 101,-81.5 72,-81.5"></polygon>
+<text text-anchor="middle" x="86.5" y="-95.3" font-family="monospace" font-size="14.00" fill="#f3efe6">1</text>
+</g>
+<!-- s3 -->
+<g id="node6" class="node">
+<title>s3</title>
+<polygon fill="none" stroke="#8a8a90" points="108,-81.5 108,-117.5 137,-117.5 137,-81.5 108,-81.5"></polygon>
+<text text-anchor="middle" x="122.5" y="-95.3" font-family="monospace" font-size="14.00" fill="#f3efe6">1</text>
+</g>
+<!-- s4 -->
+<g id="node7" class="node">
+<title>s4</title>
+<polygon fill="none" stroke="#8a8a90" points="144,-81.5 144,-117.5 173,-117.5 173,-81.5 144,-81.5"></polygon>
+<text text-anchor="middle" x="158.5" y="-95.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
+</g>
+<!-- s5 -->
+<g id="node8" class="node">
+<title>s5</title>
+<polygon fill="none" stroke="#8a8a90" points="180,-81.5 180,-117.5 209,-117.5 209,-81.5 180,-81.5"></polygon>
+<text text-anchor="middle" x="194.5" y="-95.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
+</g>
+<!-- s6 -->
+<g id="node9" class="node">
+<title>s6</title>
+<polygon fill="none" stroke="#8a8a90" points="216,-81.5 216,-117.5 245,-117.5 245,-81.5 216,-81.5"></polygon>
+<text text-anchor="middle" x="230.5" y="-95.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
+</g>
+<!-- s7 -->
+<g id="node10" class="node">
+<title>s7</title>
+<polygon fill="none" stroke="#8a8a90" points="252,-81.5 252,-117.5 281,-117.5 281,-81.5 252,-81.5"></polygon>
+<text text-anchor="middle" x="266.5" y="-95.3" font-family="monospace" font-size="14.00" fill="#f3efe6">1</text>
+</g>
+<!-- s8 -->
+<g id="node11" class="node">
+<title>s8</title>
+<polygon fill="none" stroke="#8a8a90" points="288,-81.5 288,-117.5 317,-117.5 317,-81.5 288,-81.5"></polygon>
+<text text-anchor="middle" x="302.5" y="-95.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
+</g>
+<!-- s9 -->
+<g id="node12" class="node">
+<title>s9</title>
+<polygon fill="none" stroke="#8a8a90" points="324,-81.5 324,-117.5 353,-117.5 353,-81.5 324,-81.5"></polygon>
+<text text-anchor="middle" x="338.5" y="-95.3" font-family="monospace" font-size="14.00" fill="#f3efe6">0</text>
+</g>
+<!-- d1 -->
+<g id="node14" class="node">
+<title>d1</title>
+<polygon fill="none" stroke="#8a8a90" points="36,-0.5 36,-36.5 65,-36.5 65,-0.5 36,-0.5"></polygon>
+<text text-anchor="middle" x="50.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">42</text>
+</g>
+<!-- d2 -->
+<g id="node15" class="node">
+<title>d2</title>
+<polygon fill="none" stroke="#8a8a90" points="72,-0.5 72,-36.5 101,-36.5 101,-0.5 72,-0.5"></polygon>
+<text text-anchor="middle" x="86.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">17</text>
+</g>
+<!-- d3 -->
+<g id="node16" class="node">
+<title>d3</title>
+<polygon fill="none" stroke="#8a8a90" points="108,-0.5 108,-36.5 137,-36.5 137,-0.5 108,-0.5"></polygon>
+<text text-anchor="middle" x="122.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">28</text>
+</g>
+<!-- d4 -->
+<g id="node17" class="node">
+<title>d4</title>
+<polygon fill="none" stroke="#8a8a90" points="144,-0.5 144,-36.5 173,-36.5 173,-0.5 144,-0.5"></polygon>
+<text text-anchor="middle" x="158.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">10</text>
+</g>
+<!-- d5 -->
+<g id="node18" class="node">
+<title>d5</title>
+<polygon fill="none" stroke="#8a8a90" points="180,-0.5 180,-36.5 209,-36.5 209,-0.5 180,-0.5"></polygon>
+<text text-anchor="middle" x="194.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">6</text>
+</g>
+<!-- d6 -->
+<g id="node19" class="node">
+<title>d6</title>
+<polygon fill="none" stroke="#8a8a90" points="216,-0.5 216,-36.5 245,-36.5 245,-0.5 216,-0.5"></polygon>
+<text text-anchor="middle" x="230.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">3</text>
+</g>
+<!-- d7 -->
+<g id="node20" class="node">
+<title>d7</title>
+<polygon fill="none" stroke="#8a8a90" points="252,-0.5 252,-36.5 281,-36.5 281,-0.5 252,-0.5"></polygon>
+<text text-anchor="middle" x="266.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">4</text>
+</g>
+<!-- d8 -->
+<g id="node21" class="node">
+<title>d8</title>
+<polygon fill="none" stroke="#8a8a90" points="288,-0.5 288,-36.5 317,-36.5 317,-0.5 288,-0.5"></polygon>
+<text text-anchor="middle" x="302.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">11</text>
+</g>
+<!-- d9 -->
+<g id="node22" class="node">
+<title>d9</title>
+<polygon fill="none" stroke="#8a8a90" points="324,-0.5 324,-36.5 353,-36.5 353,-0.5 324,-0.5"></polygon>
+<text text-anchor="middle" x="338.5" y="-14.3" font-family="monospace" font-size="14.00" fill="#f3efe6">15</text>
 </g>
 </g>
 </svg>
 </div>
-<p></p><figcaption> Skipfield merge</figcaption> </figure><p></p>
+<p></p><figcaption> Using boolean skipfield</figcaption> </figure><p></p>
 </div>
 </div>
 </div>
+</section>
 </section>
 <section id="references" class="level1">
 <h1>References</h1>
 <ul>
 <li><a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p0447r21.html">Introduction of <code>std::hive</code> to the standard library, proposal</a>, <em>by Matt Bentley</em>.</li>
+<li><a href="https://plflib.org/colony.htm"><code>plf::colony</code> documentation</a></li>
 </ul>
 
 
