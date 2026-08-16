@@ -92,13 +92,15 @@ The reference implementation of hive uses a doubly linked-list of `group` struct
 ```cpp
 template<typename T>
 struct group{
-    skipfield_pointer_type skipfield;  // skipfield pointer
-    T* elements;                       // pointer to memory block
-    size_t size;                       // meta-data
+    skipfield_pointer_type skipfield;       // skipfield pointer
+    aligned_struct_pointer_type elements;   // pointer to memory block
+    size_t size;                            // meta-data
     size_t capacity;
 
     group* next_group;
     group* previous_group;
+
+    // ...
 };
 ```
 
@@ -406,6 +408,85 @@ S[s] := S[i-1] &:= i - s\\
 S[i] &:= 0
 \end{align}
 $$
+
+# Low-level design
+
+The `hive` has a book-keeping data-structure that has the following member-fields:
+
+- a pointer `unused_groups_head` to the head of a singly linked-list of all reserved memory blocks created by `reserve()` or retained by `erase()`/`clear()`. 
+- a pointer `erasure_groups_head` to the head of a doubly linked-list of all groups that have erased element memory locations available for re-use.
+- a pair of `begin` and `end` iterators. These iterators are of the type `hive_iterator`. The state of a `hive_iterator` consists of (`group_pointer`,`element_pointer`,`skipfield_pointer`).
+
+
+```
++-------------------------------------------------------------------------+
+|                              hive<T>                                    |
+|                                                                         |
+|  begin_iterator ------+        end_iterator -------+                    |
+|  total_size           |        total_capacity      |                    |
+|  min_block_capacity   |        max_block_capacity  |                    |
+|                       |                            |                    |
+|  erasure_groups_head--+----+   unused_groups_head--+---+                |
+|                       |    |                       |   |                |
++-----------------------+----+-----------------------+---+----------------+
+                         |    |                       |   |
+                         v    |                       v   |
+   +==============+  next_group  +==============+  next_group  +==============+
+   |   group #0   | -----------> |   group #1   | -----------> |   group #2   |  --> NULL
+   |              | <----------- |              | <----------- |              |
+   +==============+  prev_group  +==============+  prev_group  +==============+
+     (this chain = ALL groups, in memory-block/allocation order)
+```
+
+Each `group` consists of:
+
+- a 
+```
+   +--------------------------------------------------------------------+
+   | skipfield ------------> [skipfield array]                          |
+   | next_group / previous_group   // doubly linked list of groups      |
+   | elements --------------> [element storage array]                   |
+   | free_list_head          index of most-recently-erased skipblock    |
+   | capacity                 // element slots in this group            |
+   | size                     // currently-active (non-erased) elems    |
+   | erasures_list_next_group     ----->                                |
+   | erasures_list_previous_group ----->                                |
+   |                                                                    |
+   | group_number             ordinal, used for iterator <,>,<=,>=      |
+   +--------------------------------------------------------------------+
+
+   -- The "groups with erasures" list (a second, independent thread) --
+
+   hive.erasure_groups_head
+            |
+            v
+   +==============+  erasures_list_next_group    +==============+
+   |   group #2   | ----------------------------> |   group #0   |  --> NULL
+   | (has erasures)| <---------------------------- |(has erasures)|
+   +==============+  erasures_list_previous_group +==============+
+     group #1 is NOT in this list -- it has no erased slots currently.
+     This is how insert() finds a reusable slot in O(1), without
+     scanning every group's skipfield.
+
+   -- Inside one group: elements[] + skipfield[] + free list --
+
+   index:        0     1     2     3     4     5     6     7
+                +----+----+----+----+----+----+----+----+
+   elements[]:  | A  | XX | XX | XX | D  | XX | F  | XX |    XX = erased slot
+                +----+----+----+----+----+----+----+----+
+                +----+----+----+----+----+----+----+----+----+
+   skipfield[]: | 0  | 3  | .. | 3  | 0  | 1  | 0  | 1  | 0  |  (n+1 nodes,
+                +----+----+----+----+----+----+----+----+----+   extra 0 at end)
+                  active jump-count run (len 3)   active  jump(1) active jump(1)
+
+   Erased slot's memory is reinterpreted as free-list link data:
+   elements[1] (first slot of the 3-run skipblock) holds:
+        [ prev_skipblock_index | next_skipblock_index ]
+   elements[5] and elements[7] (each a 1-run skipblock) similarly
+   hold their own prev/next skipblock indices -- chained together
+   via free_list_head, forming this group's private free list of
+   reusable skipblocks (separate again from the erasures_list above).
+```
 
 # References
 

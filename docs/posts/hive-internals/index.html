@@ -430,6 +430,7 @@ window.Quarto = {
   <li><a href="#the-node-to-be-modified-is-neither-the-start-nor-the-end-of-a-skipblock" id="toc-the-node-to-be-modified-is-neither-the-start-nor-the-end-of-a-skipblock" class="nav-link" data-scroll-target="#the-node-to-be-modified-is-neither-the-start-nor-the-end-of-a-skipblock">The node to be modified is neither the start nor the end of a skipblock</a></li>
   </ul></li>
   </ul></li>
+  <li><a href="#low-level-design" id="toc-low-level-design" class="nav-link" data-scroll-target="#low-level-design">Low-level design</a></li>
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
   </ul>
 </nav>
@@ -618,14 +619,16 @@ window.Quarto = {
 <p>The reference implementation of hive uses a doubly linked-list of <code>group</code> structs. A group consists of (a) a dynamically allocated memory block (b) a dynamically-allocated skipfield and (c) memory block meta data such as <code>size</code> and <code>capacity</code>.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> group<span class="op">{</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">skipfield_pointer_type</span> skipfield<span class="op">;</span>  <span class="co">// skipfield pointer</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    T<span class="op">*</span> elements<span class="op">;</span>                       <span class="co">// pointer to memory block</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">size_t</span> size<span class="op">;</span>                       <span class="co">// meta-data</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">skipfield_pointer_type</span> skipfield<span class="op">;</span>       <span class="co">// skipfield pointer</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">aligned_struct_pointer_type</span> elements<span class="op">;</span>   <span class="co">// pointer to memory block</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">size_t</span> size<span class="op">;</span>                            <span class="co">// meta-data</span></span>
 <span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">size_t</span> capacity<span class="op">;</span></span>
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    group<span class="op">*</span> next_group<span class="op">;</span></span>
 <span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    group<span class="op">*</span> previous_group<span class="op">;</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="co">// ...</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Let’s pause to think, what if we used a <code>vector</code> of <code>group</code> structs instead of a doubly linked-list. When a group becomes empty of elements, it must be removed from the vector of groups, because otherwise you end up with highly-variable latency during iteration due to the need to skip over an unknown number of empty groups when traversing from one non-empty group to the next. Merely erasing the group is not sufficient, as this creates a variable amount of latency during the erasure when the group becomes empty, based on the number of groups after that group which need to be relocated backward in the vector. But, even if you <code>swap</code> the to-be-erased group with the back group, and then pop the to-be-erased group off the back, this would not solve the problem, as iterators require a stable pointer to the group they are traversing in order to traverse to the next group in the sequence. If an iterator pointed to an element in the back group, and the back group was swapped with the to-be-erased group, that iterator would be invalidated.</p>
 </section>
 <section id="using-a-vector-of-pointers-to-group-structs" class="level2">
@@ -1336,6 +1339,80 @@ S[i] &amp;:= 0
 \]</span></p>
 </section>
 </section>
+</section>
+<section id="low-level-design" class="level1">
+<h1>Low-level design</h1>
+<p>The <code>hive</code> has a book-keeping data-structure that has the following member-fields:</p>
+<ul>
+<li>a pointer <code>unused_groups_head</code> to the head of a singly linked-list of all reserved memory blocks created by <code>reserve()</code> or retained by <code>erase()</code>/<code>clear()</code>.</li>
+<li>a pointer <code>erasure_groups_head</code> to the head of a doubly linked-list of all groups that have erased element memory locations available for re-use.</li>
+<li>a pair of <code>begin</code> and <code>end</code> iterators. These iterators are of the type <code>hive_iterator</code>. The state of a <code>hive_iterator</code> consists of (<code>group_pointer</code>,<code>element_pointer</code>,<code>skipfield_pointer</code>).</li>
+</ul>
+<pre><code>+-------------------------------------------------------------------------+
+|                              hive&lt;T&gt;                                    |
+|                                                                         |
+|  begin_iterator ------+        end_iterator -------+                    |
+|  total_size           |        total_capacity      |                    |
+|  min_block_capacity   |        max_block_capacity  |                    |
+|                       |                            |                    |
+|  erasure_groups_head--+----+   unused_groups_head--+---+                |
+|                       |    |                       |   |                |
++-----------------------+----+-----------------------+---+----------------+
+                         |    |                       |   |
+                         v    |                       v   |
+   +==============+  next_group  +==============+  next_group  +==============+
+   |   group #0   | -----------&gt; |   group #1   | -----------&gt; |   group #2   |  --&gt; NULL
+   |              | &lt;----------- |              | &lt;----------- |              |
+   +==============+  prev_group  +==============+  prev_group  +==============+
+     (this chain = ALL groups, in memory-block/allocation order)</code></pre>
+<p>Each <code>group</code> consists of:</p>
+<ul>
+<li>a</li>
+</ul>
+<pre><code>   +--------------------------------------------------------------------+
+   | skipfield ------------&gt; [skipfield array]                          |
+   | next_group / previous_group   // doubly linked list of groups      |
+   | elements --------------&gt; [element storage array]                   |
+   | free_list_head          index of most-recently-erased skipblock    |
+   | capacity                 // element slots in this group            |
+   | size                     // currently-active (non-erased) elems    |
+   | erasures_list_next_group     -----&gt;                                |
+   | erasures_list_previous_group -----&gt;                                |
+   |                                                                    |
+   | group_number             ordinal, used for iterator &lt;,&gt;,&lt;=,&gt;=      |
+   +--------------------------------------------------------------------+
+
+   -- The "groups with erasures" list (a second, independent thread) --
+
+   hive.erasure_groups_head
+            |
+            v
+   +==============+  erasures_list_next_group    +==============+
+   |   group #2   | ----------------------------&gt; |   group #0   |  --&gt; NULL
+   | (has erasures)| &lt;---------------------------- |(has erasures)|
+   +==============+  erasures_list_previous_group +==============+
+     group #1 is NOT in this list -- it has no erased slots currently.
+     This is how insert() finds a reusable slot in O(1), without
+     scanning every group's skipfield.
+
+   -- Inside one group: elements[] + skipfield[] + free list --
+
+   index:        0     1     2     3     4     5     6     7
+                +----+----+----+----+----+----+----+----+
+   elements[]:  | A  | XX | XX | XX | D  | XX | F  | XX |    XX = erased slot
+                +----+----+----+----+----+----+----+----+
+                +----+----+----+----+----+----+----+----+----+
+   skipfield[]: | 0  | 3  | .. | 3  | 0  | 1  | 0  | 1  | 0  |  (n+1 nodes,
+                +----+----+----+----+----+----+----+----+----+   extra 0 at end)
+                  active jump-count run (len 3)   active  jump(1) active jump(1)
+
+   Erased slot's memory is reinterpreted as free-list link data:
+   elements[1] (first slot of the 3-run skipblock) holds:
+        [ prev_skipblock_index | next_skipblock_index ]
+   elements[5] and elements[7] (each a 1-run skipblock) similarly
+   hold their own prev/next skipblock indices -- chained together
+   via free_list_head, forming this group's private free list of
+   reusable skipblocks (separate again from the erasures_list above).</code></pre>
 </section>
 <section id="references" class="level1">
 <h1>References</h1>
