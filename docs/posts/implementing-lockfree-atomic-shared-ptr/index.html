@@ -25,6 +25,41 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -89,6 +124,35 @@ ul.task-list li input[type="checkbox"] {
 </style>
 <script async="" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9993009899870547" crossorigin="anonymous"></script>
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 </head>
 
@@ -340,6 +404,7 @@ ul.task-list li input[type="checkbox"] {
    
   <ul>
   <li><a href="#a-quick-refresher-on-standard-smart-pointers" id="toc-a-quick-refresher-on-standard-smart-pointers" class="nav-link active" data-scroll-target="#a-quick-refresher-on-standard-smart-pointers">A quick refresher on standard smart pointers</a></li>
+  <li><a href="#prototypical-implementation-of-a-shared_ptr" id="toc-prototypical-implementation-of-a-shared_ptr" class="nav-link" data-scroll-target="#prototypical-implementation-of-a-shared_ptr">Prototypical implementation of a <code>shared_ptr</code></a></li>
   </ul>
 </nav>
     </div>
@@ -354,6 +419,52 @@ ul.task-list li input[type="checkbox"] {
 <section id="a-quick-refresher-on-standard-smart-pointers" class="level1">
 <h1>A quick refresher on standard smart pointers</h1>
 <p>Raw-pointers are low-level facilities that are extremely easy to misuse. It is not possible to infer the responsibility of the pointee - you cannot tell from the source-code, what the semantics are. There’s a huge risk of various programming errors e.g.&nbsp;memory leaks, double deletions etc. The standard smart pointers are an abstraction, a wrapper over raw-pointers that are harder to misuse, and <em>provide clear ownership information</em>.</p>
+<p>Smart-pointers are all about clarifying ownership of the resources(pointee objects).</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>std::unique_ptr&lt;T&gt;</code></td>
+<td><strong>Ownership semantics</strong>: Models sole-ownership of the resource semantics.<br><br><strong>Special Member functions</strong>: Non-copyable. Move c’tor and assignment transfer ownership. The destructor is responsible for destroying the pointee.</td>
+</tr>
+<tr class="even">
+<td><code>std::shared_ptr&lt;T&gt;</code></td>
+<td><strong>Ownership semantics</strong>: Models shared co-ownership of the resource semantics.<br><br><strong>Special Member functions</strong>: Copyable and Movable. The destructor of the last co-owner is responsible for destroying both the pointee and the use-count.</td>
+</tr>
+<tr class="odd">
+<td><code>T*</code></td>
+<td><strong>Ownership semantics</strong>: No ownership is defined in the type system (ownership rules have to be inscribed in source code).</td>
+</tr>
+</tbody>
+</table>
+<p>The main difficulty in writing a <code>shared_ptr&lt;T&gt;</code> is that, its a type with two responsibilities : it <em>co-owns both the pointee and the usage counter</em>, requiring special care. <a href="https://en.wikipedia.org/wiki/Single-responsibility_principle">SRP</a>(Single Responsibility Principle) in classical OOPs states that a type with a single responsibility is super-simple to get right than a type with <span class="math inline">\(2\)</span> or more responsibilities. <code>shared_ptr&lt;T&gt;</code> is responsible for both the raw-underlying pointer <code>T*</code> and a pointer to the reference counter, both of which need to managed and shared between the co-owners.</p>
+</section>
+<section id="prototypical-implementation-of-a-shared_ptr" class="level1">
+<h1>Prototypical implementation of a <code>shared_ptr</code></h1>
+<p>When the last co-owner of the resource is not known apriori, as often happens in concurrent code, we generally use shared pointers.</p>
+<p>Here is a very minimalistic version of a <code>shared_ptr</code>.Basically, the <code>shared_ptr</code> itself is just this pointer to the <code>control_block</code>. The control block contains a pointer to the raw underlying object <code>T* obj_ptr</code> and a reference counter. The reference count is a shared variable between various co-owners, possibly in different threads and thus should be <code>atomic&lt;size_t&gt;</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include</span><span class="im">&lt;atomic&gt;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> dev<span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> shared_ptr<span class="op">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>        <span class="kw">struct</span> control_block<span class="op">{</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>            T<span class="op">*</span> obj <span class="op">{</span><span class="kw">nullptr</span><span class="op">};</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>            <span class="bu">std::</span>atomic<span class="op">&lt;</span><span class="dt">size_t</span><span class="op">&gt;</span> object_count<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>        control_block<span class="op">*</span> <span class="va">m_cb_ptr</span><span class="op">;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>        <span class="co">// ...</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 
 
 </section>

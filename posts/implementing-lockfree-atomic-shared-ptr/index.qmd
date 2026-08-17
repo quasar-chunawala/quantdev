@@ -10,3 +10,36 @@ toc-depth: 3
 # A quick refresher on standard smart pointers
 
 Raw-pointers are low-level facilities that are extremely easy to misuse. It is not possible to infer the responsibility of the pointee - you cannot tell from the source-code, what the semantics are. There's a huge risk of various programming errors e.g. memory leaks, double deletions etc. The standard smart pointers are an abstraction, a wrapper over raw-pointers that are harder to misuse, and *provide clear ownership information*.
+
+Smart-pointers are all about clarifying ownership of the resources(pointee objects).
+
+| Type | Description |
+|---|---|
+| `std::unique_ptr<T>` | **Ownership semantics**: Models sole-ownership of the resource semantics.<br><br>**Special Member functions**: Non-copyable. Move c'tor and assignment transfer ownership. The destructor is responsible for destroying the pointee. |
+| `std::shared_ptr<T>` | **Ownership semantics**: Models shared co-ownership of the resource semantics.<br><br>**Special Member functions**: Copyable and Movable. The destructor of the last co-owner is responsible for destroying both the pointee and the use-count. |
+| `T*` | **Ownership semantics**: No ownership is defined in the type system (ownership rules have to be inscribed in source code). |
+
+The main difficulty in writing a `shared_ptr<T>` is that, its a type with two responsibilities : it *co-owns both the pointee and the usage counter*, requiring special care. [SRP](https://en.wikipedia.org/wiki/Single-responsibility_principle)(Single Responsibility Principle) in classical OOPs states that a type with a single responsibility is super-simple to get right than a type with $2$ or more responsibilities. `shared_ptr<T>` is responsible for both the raw-underlying pointer `T*` and a pointer to the reference counter, both of which need to managed and shared between the co-owners.
+
+# Prototypical implementation of a `shared_ptr`
+
+When the last co-owner of the resource is not known apriori, as often happens in concurrent code, we generally use shared pointers. 
+
+Here is a very minimalistic version of a `shared_ptr`.Basically, the `shared_ptr` itself is just this pointer to the `control_block`. The control block contains a pointer to the raw underlying object `T* obj_ptr` and a reference counter. The reference count is a shared variable between various co-owners, possibly in different threads and thus should be `atomic<size_t>`. 
+
+```cpp
+#include<atomic>
+
+namespace dev{
+    template<typename T>
+    class shared_ptr{
+        struct control_block{
+            T* obj {nullptr};
+            std::atomic<size_t> object_count;
+        }
+        control_block* m_cb_ptr;
+        // ...
+    };
+}
+```
+
