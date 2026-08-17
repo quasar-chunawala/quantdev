@@ -858,7 +858,7 @@ font-style: inherit;">;</span></span>
 <p>We don’t always know in advance how many elements there will be in a container at the beginning of development, or even at the beginning of a level during playback - an example of this being MMORPG(massively multiplayer online role playing games). In a MMORPG, the number of game entities fluctuates based on how many players are playing.</p>
 <p>If we use <code>vector</code> as a container to store game entities, it loses pointer validity to elements within it upon insertion, and pointer/index validity upon erasure.</p>
 <p>We desire a container that allows constant-time insertion / erasure, fast iteration performance, yet offers pointer stability.</p>
-<div id="46d12d52" class="cell" data-execution_count="1">
+<div id="6d2166ec" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">%</span>load_ext itikz</span></code></pre></div></div>
@@ -1805,7 +1805,7 @@ font-style: inherit;">};</span></span></code></pre></div></div>
 <li>a pointer <code>erasure_groups_head</code> to the head of a doubly linked-list of all groups that have erased element memory locations available for re-use.</li>
 <li>a pair of <code>begin</code> and <code>end</code> iterators. These iterators are of the type <code>hive_iterator</code>. The state of a <code>hive_iterator</code> consists of (<code>group_pointer</code>,<code>element_pointer</code>,<code>skipfield_pointer</code>).</li>
 </ul>
-<div id="350c70d8" class="cell" data-execution_count="2">
+<div id="ea4fa8b9" class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4" style="background: #f1f3f5;"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><span class="op" style="color: #5E5E5E;
@@ -2313,50 +2313,367 @@ font-style: inherit;">;</span></span>
 <ul>
 <li>a</li>
 </ul>
-<pre><code>   +--------------------------------------------------------------------+
-   | skipfield ------------&gt; [skipfield array]                          |
-   | next_group / previous_group   // doubly linked list of groups      |
-   | elements --------------&gt; [element storage array]                   |
-   | free_list_head          index of most-recently-erased skipblock    |
-   | capacity                 // element slots in this group            |
-   | size                     // currently-active (non-erased) elems    |
-   | erasures_list_next_group     -----&gt;                                |
-   | erasures_list_previous_group -----&gt;                                |
-   |                                                                    |
-   | group_number             ordinal, used for iterator &lt;,&gt;,&lt;=,&gt;=      |
-   +--------------------------------------------------------------------+
-
-   -- The "groups with erasures" list (a second, independent thread) --
-
-   hive.erasure_groups_head
-            |
-            v
-   +==============+  erasures_list_next_group    +==============+
-   |   group #2   | ----------------------------&gt; |   group #0   |  --&gt; NULL
-   | (has erasures)| &lt;---------------------------- |(has erasures)|
-   +==============+  erasures_list_previous_group +==============+
-     group #1 is NOT in this list -- it has no erased slots currently.
-     This is how insert() finds a reusable slot in O(1), without
-     scanning every group's skipfield.
-
-   -- Inside one group: elements[] + skipfield[] + free list --
-
-   index:        0     1     2     3     4     5     6     7
-                +----+----+----+----+----+----+----+----+
-   elements[]:  | A  | XX | XX | XX | D  | XX | F  | XX |    XX = erased slot
-                +----+----+----+----+----+----+----+----+
-                +----+----+----+----+----+----+----+----+----+
-   skipfield[]: | 0  | 3  | .. | 3  | 0  | 1  | 0  | 1  | 0  |  (n+1 nodes,
-                +----+----+----+----+----+----+----+----+----+   extra 0 at end)
-                  active jump-count run (len 3)   active  jump(1) active jump(1)
-
-   Erased slot's memory is reinterpreted as free-list link data:
-   elements[1] (first slot of the 3-run skipblock) holds:
-        [ prev_skipblock_index | next_skipblock_index ]
-   elements[5] and elements[7] (each a 1-run skipblock) similarly
-   hold their own prev/next skipblock indices -- chained together
-   via free_list_head, forming this group's private free list of
-   reusable skipblocks (separate again from the erasures_list above).</code></pre>
+<div id="d907dd28" class="cell" data-execution_count="3">
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5" style="background: #f1f3f5;"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">%%</span>itikz <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>temp<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">dir</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>tex<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>packages<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>tikz,color <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>tikz<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>libraries<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>arrows.meta <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>implicit<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>standalone</span>
+<span id="cb5-2">\begin{tikzpicture}[scale<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.5</span>,transform shape]</span>
+<span id="cb5-3">  \pagecolor{white}</span>
+<span id="cb5-4">  \fill[yellow<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">78</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span>brown<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">25</span>] (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.48</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5.24</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.27</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-5">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily, minimum width<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">149</span><span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">pt</span>, fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>lime<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">44</span>] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.62</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.25</span>) {group}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-6">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] (node1) at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.2</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.68</span>) {<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>skipfield}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-7">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.66</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.63</span>) {<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>previous\_group}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-8">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.31</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.92</span>) {<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">next</span>\_group}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-9">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] (node2) at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.11</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.34</span>) {<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>elements}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-10">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">7.24</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.35</span>) {elements}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-11">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] (node3) at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">10.12</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.3</span>) {skipfield\_array}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-12">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.62</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.31</span>) {<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>free\_list\_head}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-13">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.1</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.02</span>) {<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>capacity}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-14">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.73</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.33</span>) {<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>size}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-15">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.54</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.72</span>) {<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>erasures\_list\_next\_group}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-16">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.45</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.02</span>) {<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>group\_number}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-17">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>blue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">54</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span>cyan<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">33</span>] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5.67</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.66</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">8.67</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.37</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-18">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>pink<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">88</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span>yellow<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">97</span>] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">8.5</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.65</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">11.52</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.38</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-19">  \draw (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">9.25</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.37</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">9.25</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.63</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-20">  \draw (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">6.34</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.41</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">6.34</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.67</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-21">  \draw[arrows<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>Circle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>Latex] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.32</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.68</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">6</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-22">  \draw[arrows<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>Circle<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>Latex] (node2.east) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">9</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-23">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\itshape] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">8.34</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.78</span>) {contigous block allocated <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">in</span> a single allocation}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-24">\end{tikzpicture}</span></code></pre></div></div>
+</details>
+<div class="cell-output cell-output-display" data-execution_count="3">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="http://quantdev.blog/posts/hive-internals/index_files/figure-html/cell-4-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>The group data-structure</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>– The “groups with erasures” list (a second, independent thread) –</p>
+<p>hive.erasure_groups_head | v +==============+ erasures_list_next_group +==============+ | group #2 | —————————-&gt; | group #0 | –&gt; NULL | (has erasures)| &lt;—————————- |(has erasures)| +==============+ erasures_list_previous_group +==============+ group #1 is NOT in this list – it has no erased slots currently. This is how insert() finds a reusable slot in O(1), without scanning every group’s skipfield.</p>
+<p>– Inside one group: elements[] + skipfield[] + free list –</p>
+<p>index: 0 1 2 3 4 5 6 7 +—-+—-+—-+—-+—-+—-+—-+—-+ elements[]: | A | XX | XX | XX | D | XX | F | XX | XX = erased slot +—-+—-+—-+—-+—-+—-+—-+—-+ +—-+—-+—-+—-+—-+—-+—-+—-+—-+ skipfield[]: | 0 | 3 | .. | 3 | 0 | 1 | 0 | 1 | 0 | (n+1 nodes, +—-+—-+—-+—-+—-+—-+—-+—-+—-+ extra 0 at end) active jump-count run (len 3) active jump(1) active jump(1)</p>
+<p>Erased slot’s memory is reinterpreted as free-list link data: elements[1] (first slot of the 3-run skipblock) holds: [ prev_skipblock_index | next_skipblock_index ] elements[5] and elements[7] (each a 1-run skipblock) similarly hold their own prev/next skipblock indices – chained together via free_list_head, forming this group’s private free list of reusable skipblocks (separate again from the erasures_list above). ```</p>
 </section>
 <section id="references" class="level1">
 <h1>References</h1>
