@@ -25,7 +25,7 @@
 <section id="a-quick-refresher-on-standard-smart-pointers" class="level1">
 <h1>A quick refresher on standard smart pointers</h1>
 <p>Raw-pointers are low-level facilities that are extremely easy to misuse. It is not possible to infer the responsibility of the pointee - you cannot tell from the source-code, what the semantics are. There’s a huge risk of various programming errors e.g.&nbsp;memory leaks, double deletions etc. The standard smart pointers are an abstraction, a wrapper over raw-pointers that are harder to misuse, and <em>provide clear ownership information</em>.</p>
-<div id="8d6504a3" class="cell" data-execution_count="1">
+<div id="1dc2017b" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">%</span>load_ext itikz</span></code></pre></div></div>
@@ -138,7 +138,7 @@ font-style: inherit;">};</span></span>
 <span id="cb2-13"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span></code></pre></div></div>
-<div id="dd0c5507" class="cell" data-execution_count="2">
+<div id="0de29e47" class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3" style="background: #f1f3f5;"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><span class="op" style="color: #5E5E5E;
@@ -327,7 +327,7 @@ font-style: inherit;">;</span></span>
 </div>
 </div>
 <p>Now, what we can do is, we can copy the <code>shared_ptr</code>, which will create a new <code>shared_ptr</code> instance that points to the same control block and it’s going to increase the <code>ref_count</code> to <img src="https://latex.codecogs.com/png.latex?2">.</p>
-<div id="07fb6b8c" class="cell" data-execution_count="3">
+<div id="b2425a27" class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4" style="background: #f1f3f5;"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><span class="op" style="color: #5E5E5E;
@@ -551,6 +551,285 @@ font-style: inherit;">;</span></span>
 </div>
 <p>If a <code>shared_ptr</code> instance goes out of scope, it’s going to decrement the <code>ref_count</code> back to <img src="https://latex.codecogs.com/png.latex?1">. If this is the last co-owner of the pointee, then the <code>ref_count</code> is going to <img src="https://latex.codecogs.com/png.latex?0">, and as soon as that happens, the destructor <code>~shared\_ptr()</code> will invoke <code>delete obj_ptr</code> and deallocates the object.</p>
 <p>The state of the <code>shared_ptr</code> is basically the value of the control block - the object pointer and the reference count. Those are the two things that determine the <code>shared_ptr</code>.</p>
+</section>
+<section id="is-stdshared_ptrt-really-thread-safe" class="level1">
+<h1>Is <code>std::shared_ptr&lt;T&gt;</code> really thread-safe?</h1>
+<p>The C++ standard doesn’t really say very much about whether or not <code>std::shared_ptr&lt;T&gt;</code> is thread-safe. Let’ say that you have a shared pointer with <code>ref_count = 1</code>, and you make a copy of this shared pointer in thread <code>t1</code> and another copy of the shared pointer in thread <code>t2</code>. Both threads <code>t1</code> and <code>t2</code> are going to see the value <code>ref_count = 3</code> and we are not going to have a data-race. This is achieved by making the <code>ref_count</code> atomic.</p>
+<div id="4b6542d4" class="cell" data-execution_count="4">
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5" style="background: #f1f3f5;"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">%%</span>itikz <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>temp<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">dir</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>tex<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>packages<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>tikz,color <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>tikz<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>libraries<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>arrows <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>implicit<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>standalone</span>
+<span id="cb5-2">\begin{tikzpicture}[scale<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.5</span>,transform shape]</span>
+<span id="cb5-3">    \pagecolor{white}</span>
+<span id="cb5-4">    \draw(<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.5</span>) node [] {\ttfamily shared\_ptr<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span>}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-5">    \node[rectangle, fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">20</span>, text centered](A) at (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>) {\ttfamily control\_block<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> cb}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-6">    \node(main) at (<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>) {{\ttfamily main()} thread}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-7">    \draw(<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.5</span>) node [] {\ttfamily control\_block}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-8">    \node[rectangle, fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>red<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">20</span>, text centered, minimum width<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.5</span><span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">cm</span>](B) at (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>) {\ttfamily T<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> obj}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-9">    \draw[<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span>, <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;=</span>stealth, thick] (A) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (B)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-10">    \node[rectangle, fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>blue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">20</span>, text centered, minimum width<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.5</span><span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">cm</span>](C) at (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.5</span>) {\ttfamily  atomic<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>size\_t<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> ref\_count}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-11">    \node (RefCount) at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">7.5</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.5</span>) {\ttfamily <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span>}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-12">    \node[rectangle, fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>yellow<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">50</span>, text centered, minimum width<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.8</span><span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">cm</span>,minimum height<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.5</span><span class="er" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">cm</span>](D) at (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">5</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.0</span>) {\ttfamily obj}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-13"></span>
+<span id="cb5-14">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">%</span> Curved arrow <span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">from</span> B to D</span>
+<span id="cb5-15">    \draw[<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span>, <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;=</span>stealth, thick, bend left<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">45</span>] (B.east) to (D)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-16"></span>
+<span id="cb5-17">    \node(t1) at (<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.5</span>) {thread {\ttfamily t1}}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-18">    \node[ rectangle, fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">20</span>, text centered](F) at (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.5</span>) {\ttfamily control\_block<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> cb}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-19"></span>
+<span id="cb5-20">    \draw[<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span>, <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;=</span>stealth, thick] (F.east) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (B.west)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-21">    </span>
+<span id="cb5-22">    \node(t2) at (<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.0</span>) {thread {\ttfamily t2}}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-23">    \node[rectangle, fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">20</span>, text centered](G) at (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.0</span>) {\ttfamily control\_block<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> cb}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-24"></span>
+<span id="cb5-25">    \draw[<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-&gt;</span>, <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;=</span>stealth, thick] (G.east) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (B.west)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb5-26">\end{tikzpicture}</span></code></pre></div></div>
+</details>
+<div class="cell-output cell-output-display" data-execution_count="4">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="http://quantdev.blog/posts/implementing-lockfree-atomic-shared-ptr/index_files/figure-html/cell-5-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>shared_ptr and multithreading</figcaption>
+</figure>
+</div>
+</div>
+</div>
 
 
 </section>
