@@ -418,7 +418,7 @@ $$
 The `hive` has a book-keeping data-structure that has the following member-fields:
 
 - a pointer `unused_groups_head` to the head of a singly linked-list of all reserved memory blocks created by `reserve()` or retained by `erase()`/`clear()`. 
-- a pointer `erasure_groups_head` to the head of a doubly linked-list of all groups that have erased element memory locations available for re-use.
+- a pointer `erasure_groups_head` to the head of a doubly linked-list of all memory blocks that have erased element memory locations available for re-use.
 - a pair of `begin` and `end` iterators. These iterators are of the type `hive_iterator`. The state of a `hive_iterator` consists of (`group_pointer`,`element_pointer`,`skipfield_pointer`).
 
 ```{python}
@@ -465,7 +465,8 @@ The `hive` has a book-keeping data-structure that has the following member-field
 Each `group` consists of:
 
 - pointers to array of `elements` and the `skipfield` array. A single allocation request is made for both the data-elements and the skip-field array for performance reasons and they reside in contigous block.
-- the `free_list_head` points to the head of an intrusive linked-list 
+- the `free_list_head` index number records the index(within the memory block) of the first element of the last(most recently) created skipblock - the head skipblock.
+- the `erasures_list_next_group` and `erasures_list_prev_group` fields of type `group*` are pointers to the previous and next groups in the doubly linked list of groups with active erased element free lists. 
 
 ```{python}
 # | code-fold: true
@@ -497,38 +498,8 @@ Each `group` consists of:
 \end{tikzpicture}
 ```
 
-   -- The "groups with erasures" list (a second, independent thread) --
+The memory space of the first erased element in each skipblock is `reinterpret_cast`d via pointers as two index numbers, the first giving the index of the previous skipblock in that memory block, the second giving the index of the next skipblock in the sequence.
 
-   hive.erasure_groups_head
-            |
-            v
-   +==============+  erasures_list_next_group    +==============+
-   |   group #2   | ----------------------------> |   group #0   |  --> NULL
-   | (has erasures)| <---------------------------- |(has erasures)|
-   +==============+  erasures_list_previous_group +==============+
-     group #1 is NOT in this list -- it has no erased slots currently.
-     This is how insert() finds a reusable slot in O(1), without
-     scanning every group's skipfield.
-
-   -- Inside one group: elements[] + skipfield[] + free list --
-
-   index:        0     1     2     3     4     5     6     7
-                +----+----+----+----+----+----+----+----+
-   elements[]:  | A  | XX | XX | XX | D  | XX | F  | XX |    XX = erased slot
-                +----+----+----+----+----+----+----+----+
-                +----+----+----+----+----+----+----+----+----+
-   skipfield[]: | 0  | 3  | .. | 3  | 0  | 1  | 0  | 1  | 0  |  (n+1 nodes,
-                +----+----+----+----+----+----+----+----+----+   extra 0 at end)
-                  active jump-count run (len 3)   active  jump(1) active jump(1)
-
-   Erased slot's memory is reinterpreted as free-list link data:
-   elements[1] (first slot of the 3-run skipblock) holds:
-        [ prev_skipblock_index | next_skipblock_index ]
-   elements[5] and elements[7] (each a 1-run skipblock) similarly
-   hold their own prev/next skipblock indices -- chained together
-   via free_list_head, forming this group's private free list of
-   reusable skipblocks (separate again from the erasures_list above).
-```
 
 # References
 
