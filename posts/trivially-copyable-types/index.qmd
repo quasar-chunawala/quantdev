@@ -1,0 +1,110 @@
+---
+title: "What does it mean for a type `T` to be trivially copyable?"
+author: "`dev::author`"
+date: "2026-08-19"
+categories: [C++]      
+image: "cpp.jpg"
+toc: true
+toc-depth: 3
+---
+
+# Introduction
+
+I was recently reading the C++ standard, for what it means for a type `T` to be trivially copyable. Intuitively, a trivially copyable object can be treated as a block of bytes and copied using primitive memory operations(`std::memcpy` and `std::memmove`). The C++ standard defines:
+
+> [[class.prop/11.2](https://eel.is/c++draft/class#prop-1)] A trivially copyable class is a class:
+>
+>- that has at least one of the special members : copy constructor, move constructor, copy assignment operator, or move assignment operator.
+>
+>- where each  copy constructor, move constructor, copy assignment operator, and move assignment operator is trivial, and
+>
+>- that has a trivial, non-deleted destructor.
+
+In addition, every base class and every member variable of the class must be recursively trivially copyable.
+
+```cpp
+#include <iostream>
+#include <type_traits>
+
+struct Point2D{
+    double x,y;
+    ~Point2D() = default;
+    Point2D() = default;
+    Point2D(const Point2D&) = default;
+};
+
+static_assert(std::is_trivially_copyable_v<Point2D>);
+int main(){}
+```
+[Compiler Explorer](https://godbolt.org/z/KzT4P8en1)
+
+The library-writer's intuition is that, when a type is trivially copyable, all of its rule-of-five operations can be lowered to simple `memcpy`s. 
+
+The compiler-writer's intuition is that all types start out as TC, but then get made non-TC in various ways. If any of `T`'s rule-of-five members are user-defined, we mark `T` as non-TC. All of `T`'s member variables should be recursively TC. If it has a sub-object of non-TC type, we mark it non-TC. While this is easy to implement, it doesn't work perfectly, because the set of types actually considered TC by C++ includes some types that violate this paradigm. For example, surprisingly, it is easy to construct a TC type, that has a non-TC data-member.  
+
+# What is an eligible copy/move ctor or assign operator?
+
+There are two important things to keep in mind. In C++, a copy constructor, copy assignment operator is never a template. 
+
+```cpp
+#include <print>
+#include <type_traits>
+
+struct Widget{
+    Widget() = default;
+    ~Widget() = default;
+    Widget(const volatile Widget&){ 
+        std::print("Launching a rocket!");  // non-trivial
+    }
+    template<typename T>
+    Widget(const T& w); // Not a copy constructor
+};
+
+static_assert(!std::is_trivially_copyable_v<Widget>);
+int main(){}
+```
+[Compiler Explorer](https://godbolt.org/z/asvvh59Gq)
+
+# Surprising behaviors
+
+Consider the below code snippet. `Widget` is non-TC. `WidgetMarketPlace` is an aggregate of 2 `Widget`s. Currently, there is an implementation divergence - clang + gcc correctly reports `WidgetMarketPlace` as non-TC, whereas MSVC says `true`. 
+
+David Vandevoorde made a comment on this issue - it is unclear why a `Widget` cannot be `memcpy`ed, but `Widget`s can be `memcpy`ed when embedded in a `WidgetMarketPlace` object. Arthur argues, that to the library writer's intuition, this makes perfect sense : all provided operations in `WidgetMarketPlace` are equivalent to doing a `memcpy`. 
+
+```cpp
+#include <print>
+#include <type_traits>
+
+struct Widget{
+    Widget() = default;
+    ~Widget() = default;
+    Widget(const Widget&){ 
+        std::print("Launching a rocket!");
+    }
+    Widget(Widget&&) = default;
+    Widget& operator=(Widget&&) = default;
+};
+
+struct WidgetsMarketPlace{
+    Widget w1,w2;
+    WidgetsMarketPlace() = default;
+    ~WidgetsMarketPlace() = default;
+    WidgetsMarketPlace(WidgetsMarketPlace&&) = default;
+};
+
+static_assert(!std::is_trivially_copyable_v<Widget>);
+static_assert(std::is_trivially_copyable_v<WidgetsMarketPlace>);
+int main(){}
+```
+[Compiler Explorer](https://godbolt.org/z/x5oj1s7qz)
+
+There are reasons why, `is_trivially_fooable` is not a settled issue. There are multiple papers still battling over the subject. 
+
+# Trivially copyable does not mean trivially copy constructible.
+
+Another implication of the way, `std::is_trivially_copyable_v<T>` is currently imeplemented, is that you can have a type that is not trivially copy constructible / copy assignable and yet it is trivially copyable.
+
+# References
+
+- [Trivially copyable does not mean trivially copy constructible](https://www.foonathan.net/2021/03/trivially-copyable/), Jonathan Muller
+- [What trivially fooable should mean](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3279r0.html) P3279R0, Arthur O Dwyer
