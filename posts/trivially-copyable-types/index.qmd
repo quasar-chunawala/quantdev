@@ -100,6 +100,39 @@ int main(){}
 
 There are reasons why, `is_trivially_fooable` is not a settled issue. There are multiple papers still battling over the subject. 
 
+# Trivially copyable is not the same as trivially copy constructible
+
+A type `T` is said to be trivially copy constructible, if its copy constructor is trivial (implicitly defined or `=default`ed) and each of its data-members are recursively trivially copy constructible. To each special member function copy/move ctor and assignment operator and the destructor, there is a trait `std::is_[default/copy/move]_[constructible/assignable]_v` that allows us to query its existence. Except that, these traits report a different result from an answer to the hypothetical question, *does this special member function exist*? 
+
+- `std::is_default_constructible_v<T>` checks whether `T()` is well-formed.
+- `std::is_copy_constructible_v<T>` checks whether `T(std::declval<const T&()>)` is well-formed.
+- `std::is_copy_assignable_v<T>`  checks whether `T& operator=(std::declval<const T&()>)` is well-formed. 
+- `std::is_move_constructible_v<T>`  checks whether `T(std::declval<T&&()>)` is well-formed. 
+- `std::is_move_assignable_v<T>`  checks whether `T& operator=(std::declval<T&&()>)` is well-formed. 
+- `std::is_destructible_v<T>` checks whether `~T()` is well-formed.
+
+So, for instance, even though `Weird` does not have a copy-constructor special member function, `std::is_copy_constructible_v<T>` reports a false positive.
+
+```cpp
+#include <iostream>
+#include <type_traits>
+
+struct Weird{
+    // delete the implicit copy constructor
+    Weird(const volatile Weird&) = delete;
+
+template<int i = 0>     // not a copy constructor
+    Weird(const Weird&){
+        std::cout << "template method";
+    }
+};
+static_assert(std::is_copy_constructible_v<Weird>);
+int main(){}
+```
+[Compiler Explorer](https://godbolt.org/z/MeW3zjohT)
+
+This can lead to interesting consequences. 
+
 # References
 
 - [Trivially copyable does not mean trivially copy constructible](https://www.foonathan.net/2021/03/trivially-copyable/), Jonathan Muller
