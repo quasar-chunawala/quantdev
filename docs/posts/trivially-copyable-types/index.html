@@ -377,7 +377,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
   <li><a href="#what-is-an-eligible-copymove-ctor-or-assign-operator" id="toc-what-is-an-eligible-copymove-ctor-or-assign-operator" class="nav-link" data-scroll-target="#what-is-an-eligible-copymove-ctor-or-assign-operator">What is an eligible copy/move ctor or assign operator?</a></li>
   <li><a href="#surprising-behaviors" id="toc-surprising-behaviors" class="nav-link" data-scroll-target="#surprising-behaviors">Surprising behaviors</a></li>
-  <li><a href="#trivially-copyable-is-not-the-same-thing-as-trivially-copy-constructible" id="toc-trivially-copyable-is-not-the-same-thing-as-trivially-copy-constructible" class="nav-link" data-scroll-target="#trivially-copyable-is-not-the-same-thing-as-trivially-copy-constructible">Trivially copyable is not the same thing as trivially copy constructible</a></li>
+  <li><a href="#trivially-copyable-is-not-the-same-as-trivially-copy-constructible" id="toc-trivially-copyable-is-not-the-same-as-trivially-copy-constructible" class="nav-link" data-scroll-target="#trivially-copyable-is-not-the-same-as-trivially-copy-constructible">Trivially copyable is not the same as trivially copy constructible</a></li>
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
   </ul>
 </nav>
@@ -468,10 +468,34 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><a href="https://godbolt.org/z/x5oj1s7qz">Compiler Explorer</a></p>
 <p>There are reasons why, <code>is_trivially_fooable</code> is not a settled issue. There are multiple papers still battling over the subject.</p>
 </section>
-<section id="trivially-copyable-is-not-the-same-thing-as-trivially-copy-constructible" class="level1">
-<h1>Trivially copyable is not the same thing as trivially copy constructible</h1>
-<p><code>std::is_trivially_copy_constructible_v&lt;T&gt;</code> performs overload resolution and is the equivalent of writing <code>T a = b;</code>. If the member function invoked is trivial and returns <code>std::true_type</code>. Consider the below snippet:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="trivially-copyable-is-not-the-same-as-trivially-copy-constructible" class="level1">
+<h1>Trivially copyable is not the same as trivially copy constructible</h1>
+<p>A type <code>T</code> is said to be trivially copy constructible, if its copy constructor is trivial (implicitly defined or <code>=default</code>ed) and each of its data-members are recursively trivially copy constructible. The current implementation of <code>𝚜𝚝𝚍::𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎_𝚟&lt;𝚃&gt;</code> in libc++ merely calls the compiler builtin <code>__𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎(𝚃)</code> and clang’s implementation of <code>__𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎(𝚃)</code> in the AST, conforms to the C++ standard. But, there is a key difference between the two categories of traits:</p>
+<ol type="1">
+<li><p><code>𝚜𝚝𝚍::𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢_𝚌𝚘𝚗𝚜𝚝𝚛𝚞𝚌𝚝𝚒𝚋𝚕𝚎_𝚟&lt;𝚃&gt;</code> performs overload resolution equivalent to writing <code>𝚃 𝚊 = 𝚋</code> and determine whether the called special member function is indeed trivial.</p></li>
+<li><p><code>𝚜𝚝𝚍::𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎_𝚟&lt;𝚃&gt;</code> simply looks at whether <code>𝚃(𝚜𝚝𝚍::𝚍𝚎𝚌𝚕𝚟𝚊𝚕&lt;𝚌𝚘𝚗𝚜𝚝 𝚃&amp;()&gt;)</code> is well-formed.</p></li>
+</ol>
+<p>This makes them fundamentally incompatible.</p>
+<p>Consider the below code snippet -</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;iostream&gt;</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;type_traits&gt;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Weird<span class="op">{</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">~</span>Weird<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span> </span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    Weird<span class="op">(</span><span class="at">const</span> <span class="at">volatile</span> Weird<span class="op">&amp;)</span> <span class="op">=</span> <span class="kw">delete</span><span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">template</span><span class="op">&lt;</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">&gt;</span>     <span class="co">// not a copy constructor</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    Weird<span class="op">(</span><span class="at">const</span> Weird<span class="op">&amp;){</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">"template method"</span><span class="op">;</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    Weird<span class="op">(</span>Weird<span class="op">&amp;&amp;)</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_copy_constructible_v<span class="op">&lt;</span>Weird<span class="op">&gt;);</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(!</span><span class="bu">std::</span>is_trivially_copy_constructible_v<span class="op">&lt;</span>Weird<span class="op">&gt;);</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_trivially_copyable_v<span class="op">&lt;</span>Weird<span class="op">&gt;);</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><a href="https://godbolt.org/z/3obGffbvo">Compiler Explorer</a></p>
 </section>
 <section id="references" class="level1">
 <h1>References</h1>

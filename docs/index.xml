@@ -405,10 +405,154 @@ font-style: inherit;">(){}</span></span></code></pre></div></div>
 <p><a href="https://godbolt.org/z/x5oj1s7qz">Compiler Explorer</a></p>
 <p>There are reasons why, <code>is_trivially_fooable</code> is not a settled issue. There are multiple papers still battling over the subject.</p>
 </section>
-<section id="trivially-copyable-is-not-the-same-thing-as-trivially-copy-constructible" class="level1">
-<h1>Trivially copyable is not the same thing as trivially copy constructible</h1>
-<p><code>std::is_trivially_copy_constructible_v&lt;T&gt;</code> performs overload resolution and is the equivalent of writing <code>T a = b;</code>. If the member function invoked is trivial and returns <code>std::true_type</code>. Consider the below snippet:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"></code></pre></div></div>
+<section id="trivially-copyable-is-not-the-same-as-trivially-copy-constructible" class="level1">
+<h1>Trivially copyable is not the same as trivially copy constructible</h1>
+<p>A type <code>T</code> is said to be trivially copy constructible, if its copy constructor is trivial (implicitly defined or <code>=default</code>ed) and each of its data-members are recursively trivially copy constructible. The current implementation of <code>𝚜𝚝𝚍::𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎_𝚟&lt;𝚃&gt;</code> in libc++ merely calls the compiler builtin <code>__𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎(𝚃)</code> and clang’s implementation of <code>__𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎(𝚃)</code> in the AST, conforms to the C++ standard. But, there is a key difference between the two categories of traits:</p>
+<ol type="1">
+<li><p><code>𝚜𝚝𝚍::𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢_𝚌𝚘𝚗𝚜𝚝𝚛𝚞𝚌𝚝𝚒𝚋𝚕𝚎_𝚟&lt;𝚃&gt;</code> performs overload resolution equivalent to writing <code>𝚃 𝚊 = 𝚋</code> and determine whether the called special member function is indeed trivial.</p></li>
+<li><p><code>𝚜𝚝𝚍::𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎_𝚟&lt;𝚃&gt;</code> simply looks at whether <code>𝚃(𝚜𝚝𝚍::𝚍𝚎𝚌𝚕𝚟𝚊𝚕&lt;𝚌𝚘𝚗𝚜𝚝 𝚃&amp;()&gt;)</code> is well-formed.</p></li>
+</ol>
+<p>This makes them fundamentally incompatible.</p>
+<p>Consider the below code snippet -</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;iostream&gt;</span></span>
+<span id="cb4-2"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;type_traits&gt;</span></span>
+<span id="cb4-3"></span>
+<span id="cb4-4"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">struct</span> Weird<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="cb4-5">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">~</span>Weird<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">()</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">default</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> </span>
+<span id="cb4-6">    Weird<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">volatile</span> Weird<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">delete</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb4-7"></span>
+<span id="cb4-8">    <span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> i <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span>     <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// not a copy constructor</span></span>
+<span id="cb4-9">    Weird<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> Weird<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;){</span></span>
+<span id="cb4-10">        <span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>cout <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"template method"</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb4-11">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="cb4-12"></span>
+<span id="cb4-13">    Weird<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>Weird<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="cf" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">default</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb4-14"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">};</span></span>
+<span id="cb4-15"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">static_assert</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>is_copy_constructible_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Weird<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;);</span></span>
+<span id="cb4-16"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">static_assert</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(!</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>is_trivially_copy_constructible_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Weird<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;);</span></span>
+<span id="cb4-17"><span class="kw" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">static_assert</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">std::</span>is_trivially_copyable_v<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span>Weird<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;);</span></span>
+<span id="cb4-18"><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(){}</span></span></code></pre></div></div>
+<p><a href="https://godbolt.org/z/3obGffbvo">Compiler Explorer</a></p>
 </section>
 <section id="references" class="level1">
 <h1>References</h1>

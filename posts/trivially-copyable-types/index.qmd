@@ -102,36 +102,37 @@ There are reasons why, `is_trivially_fooable` is not a settled issue. There are 
 
 # Trivially copyable is not the same as trivially copy constructible
 
-A type `T` is said to be trivially copy constructible, if its copy constructor is trivial (implicitly defined or `=default`ed) and each of its data-members are recursively trivially copy constructible. To each special member function copy/move ctor and assignment operator and the destructor, there is a trait `std::is_[default/copy/move]_[constructible/assignable]_v` that allows us to query its existence. Except that, these traits report a different result from an answer to the hypothetical question, *does this special member function exist*? 
+A type `T` is said to be trivially copy constructible, if its copy constructor is trivial (implicitly defined or `=default`ed) and each of its data-members are recursively trivially copy constructible. The current implementation of `𝚜𝚝𝚍::𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎_𝚟<𝚃>` in libc++ merely calls the compiler builtin `__𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎(𝚃)` and clang's implementation of `__𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎(𝚃)` in the AST, conforms to the C++ standard. But, there is a key difference between the two categories of traits:
 
-- `std::is_default_constructible_v<T>` checks whether `T()` is well-formed.
-- `std::is_copy_constructible_v<T>` checks whether `T(std::declval<const T&()>)` is well-formed.
-- `std::is_copy_assignable_v<T>`  checks whether `T& operator=(std::declval<const T&()>)` is well-formed. 
-- `std::is_move_constructible_v<T>`  checks whether `T(std::declval<T&&()>)` is well-formed. 
-- `std::is_move_assignable_v<T>`  checks whether `T& operator=(std::declval<T&&()>)` is well-formed. 
-- `std::is_destructible_v<T>` checks whether `~T()` is well-formed.
+1. `𝚜𝚝𝚍::𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢_𝚌𝚘𝚗𝚜𝚝𝚛𝚞𝚌𝚝𝚒𝚋𝚕𝚎_𝚟<𝚃>` performs overload resolution equivalent to writing `𝚃 𝚊 = 𝚋` and determine whether the called special member function is indeed trivial.
 
-So, for instance, even though `Weird` does not have a copy-constructor special member function, `std::is_copy_constructible_v<T>` reports a false positive.
+2. `𝚜𝚝𝚍::𝚒𝚜_𝚝𝚛𝚒𝚟𝚒𝚊𝚕𝚕𝚢_𝚌𝚘𝚙𝚢𝚊𝚋𝚕𝚎_𝚟<𝚃>` simply looks at whether `𝚃(𝚜𝚝𝚍::𝚍𝚎𝚌𝚕𝚟𝚊𝚕<𝚌𝚘𝚗𝚜𝚝 𝚃&()>)` is well-formed.
+
+This makes them fundamentally incompatible.
+
+Consider the below code snippet -
 
 ```cpp
 #include <iostream>
 #include <type_traits>
 
 struct Weird{
-    // delete the implicit copy constructor
+    ~Weird() = default; 
     Weird(const volatile Weird&) = delete;
 
-template<int i = 0>     // not a copy constructor
+    template<int i = 0>     // not a copy constructor
     Weird(const Weird&){
         std::cout << "template method";
     }
+
+    Weird(Weird&&) = default;
 };
 static_assert(std::is_copy_constructible_v<Weird>);
+static_assert(!std::is_trivially_copy_constructible_v<Weird>);
+static_assert(std::is_trivially_copyable_v<Weird>);
 int main(){}
 ```
-[Compiler Explorer](https://godbolt.org/z/MeW3zjohT)
-
-This can lead to interesting consequences. 
+[Compiler Explorer](https://godbolt.org/z/3obGffbvo)
 
 # References
 
