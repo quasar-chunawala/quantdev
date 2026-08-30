@@ -17,9 +17,9 @@
         "\n",
         "# Introduction\n",
         "\n",
-        "Hash tables are omniscient in the software world and we use them a lot. I recently watched Matt Kulukundis' CppCon 2017 talk, [Designing a fast, efficient, cache-friendly hash Table, step by step](https://www.youtube.com/watch?v=ncHmEUmJZf4). In this blog-post, I would like to explore the implementation details of the abseil library's `flat_hash_map` data-structure. "
+        "We use hash-tables a lot in software programming and there has been a strong desire for a more space and run-time efficient representation of a `map` among C++ users. I recently watched Matt Kulukundis' CppCon 2017 talk, [Designing a fast, efficient, cache-friendly hash Table, step by step](https://www.youtube.com/watch?v=ncHmEUmJZf4). In this blog-post, I would like to explore the implementation details of the abseil library's `flat_hash_map` data-structure. "
       ],
-      "id": "f735eb63"
+      "id": "ac63786a"
     },
     {
       "cell_type": "code",
@@ -27,7 +27,7 @@
       "source": [
         "%load_ext itikz"
       ],
-      "id": "d6e4b8a8",
+      "id": "26e4e9b0",
       "execution_count": null,
       "outputs": []
     },
@@ -39,7 +39,7 @@
         "\n",
         "Our starting point is the standard library's implementation of a hash-table called the `unordered_set`. Here, we have a table(array) `S`, of size $2^n$. The array elements $S[0],\\ldots,S[2^n - 1]$ are called slots. A new element is inserted into the table by hashing it, to find the correct slot. The element is stored at `hash(item) % capacity()` index. Two elements with the same hash-code, would have to be stored at the same slot; so we need a way to resolve collisions. `unordered_set` uses chaining, so each slot `S[i]` is more like a bucket, it is a linked-list of all items that hash to the same hash-code."
       ],
-      "id": "1a74244b"
+      "id": "e0cbfe56"
     },
     {
       "cell_type": "code",
@@ -107,7 +107,7 @@
         "  \\node[draw=none, node font=\\small] at (2.89,1.58) {Bucket chain};\n",
         "\\end{tikzpicture}"
       ],
-      "id": "58fb2414",
+      "id": "c9038d6f",
       "execution_count": null,
       "outputs": []
     },
@@ -119,7 +119,7 @@
         "\n",
         "The above mental picture is ballpark correct. The actual picture is more like this:"
       ],
-      "id": "02b147a5"
+      "id": "e8b07603"
     },
     {
       "cell_type": "code",
@@ -193,9 +193,96 @@
         "  \\draw[arrows=Circle-Latex] (1.73,1.9) .. controls (1.4,0.73) and (0.18,1.08) .. (1,0.5);\n",
         "\\end{tikzpicture}"
       ],
-      "id": "61e90647",
+      "id": "9cc2024b",
       "execution_count": null,
       "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "If we zoom out and think for a bit, it makes more sense, why it is implemnented like this. Let's rearrange the above picture. \n"
+      ],
+      "id": "896868c3"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# | code-fold: true\n",
+        "# | code-summary: \"Show the code\"\n",
+        "#| fig-cap: \"Implementation details of unordered_set\"\n",
+        "%%itikz --temp-dir --tex-packages=tikz,color --tikz-libraries=arrows.meta --implicit-standalone\n",
+        "\\begin{tikzpicture}[scale=2.5,transform shape]\n",
+        "  \\pagecolor{white}\n",
+        "  \\draw[fill=white!91!blue!90!cyan, rotate=90] (-0.3,1.1) rectangle (0,-2.46);\n",
+        "  \\draw (-0.2,0) -- (-0.2,-0.3);\n",
+        "  \\draw (0.7,0) -- (0.7,-0.3);\n",
+        "  \\draw (0.99,0) -- (0.99,-0.3);\n",
+        "  \\draw (1.3,0) -- (1.3,-0.3);\n",
+        "  \\draw (2.12,0) -- (2.12,-0.3);\n",
+        "  \\draw[fill=pink] (-0.8,0) rectangle (-0.48,-0.3);\n",
+        "  \\draw[fill=pink] (-1.42,1.13) rectangle (-1.12,0.87);\n",
+        "  \\draw[fill=pink] (-1.12,1.13) rectangle (-0.8,0.87);\n",
+        "  \\draw[fill=pink] (-0.8,1.13) rectangle (-0.51,0.87);\n",
+        "  \\draw[fill=pink] (-0.09,1.13) rectangle (0.21,0.87);\n",
+        "  \\draw[fill=pink] (0.21,1.13) rectangle (0.51,0.87);\n",
+        "  \\draw[fill=pink] (0.51,1.13) rectangle (0.81,0.87);\n",
+        "  \\draw[fill=yellow!30] (0.1,0) rectangle (0.41,-0.3);\n",
+        "  \\draw[fill=yellow!30] (1.24,1.15) rectangle (1.54,0.89);\n",
+        "  \\draw[fill=yellow!30] (1.54,1.15) rectangle (1.84,0.89);\n",
+        "  \\draw[fill=yellow!30] (1.84,1.15) rectangle (2.14,0.89);\n",
+        "  \\draw[fill=green!30] (1.56,0) rectangle (1.82,-0.3);\n",
+        "  \\draw[fill=green!30] (2.6,1.13) rectangle (2.9,0.87);\n",
+        "  \\draw[fill=green!30] (2.9,1.13) rectangle (3.2,0.87);\n",
+        "  \\draw[fill=green!30] (3.2,1.13) rectangle (3.5,0.87);\n",
+        "  \\draw[fill=green!30] (3.9,1.13) rectangle (4.2,0.87);\n",
+        "  \\draw[fill=green!30] (4.2,1.13) rectangle (4.5,0.87);\n",
+        "  \\draw[fill=green!30] (4.5,1.13) rectangle (4.8,0.87);\n",
+        "  \\draw[fill=green!30] (5.3,1.13) rectangle (5.6,0.87);\n",
+        "  \\draw[fill=green!30] (5.6,1.13) rectangle (5.9,0.87);\n",
+        "  \\draw[fill=green!30] (5.9,1.13) rectangle (6.2,0.87);\n",
+        "  \\node[draw=none, node font=\\small] at (0.72,-0.55) {$S[0,...,2^n-1]$};\n",
+        "  \\node[draw=none, node font=\\ttfamily] (node4) at (-1.28,0.98) {H};\n",
+        "  \\node[draw=none, node font=\\small] at (6.05,0.99) {$\\phi$};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (1.39,1.01) {H};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (2.75,1.01) {H};\n",
+        "  \\node[draw=none, node font=\\ttfamily] (node1) at (0.05,1) {H};\n",
+        "  \\draw[arrows=-Latex] (-0.69,0.99) -- (-0.04,1);\n",
+        "  \\draw[arrows=-Latex] (-2.09,0.99) -- (-1.44,1);\n",
+        "  \\draw[arrows=-Latex] (0.63,0.99) -- (1.28,1);\n",
+        "  \\draw[arrows=-Latex] (1.96,1) -- (2.61,1.01);\n",
+        "  \\draw[arrows=-Latex] (3.29,1) -- (3.93,1.01);\n",
+        "  \\draw[arrows=-Latex] (4.67,0.98) -- (5.31,0.99);\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (4.07,0.99) {H};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (5.46,1) {H};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (-0.97,0.99) {V};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (1.7,1) {V};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (3.06,1) {V};\n",
+        "  \\node[draw=none, node font=\\ttfamily] (node5) at (0.36,0.99) {V};\n",
+        "  \\node[draw=none, node font=\\ttfamily] (node2) at (4.35,0.98) {V};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (5.75,1) {V};\n",
+        "\n",
+        "\n",
+        "  \\node[draw, node font=\\small, fill=white!97!blue!88!cyan] (node3) at (-2.5,0.98) {head};\n",
+        "  \\draw[arrows=-Latex] (-0.66,-0.15) -- (node3.south);\n",
+        "  \\draw[arrows=-Latex] (0.26,-0.15) -- (-0.09,0.89);\n",
+        "  \\draw[arrows=-Latex] (1.71,-0.15) -- (1.36,0.89);\n",
+        "\\end{tikzpicture}"
+      ],
+      "id": "bad14aeb",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Now, if we look more closely, we are storing both the hash-codes and pointers for each element. That's an extra `16`-bytes per entry. When we iterate across the `unordered_set`, we actually end up walking this linked-list. That takes $O(\\texttt{size})$ runtime. The iteration order of this container is reproducible, for a given insertion order. \n",
+        "\n",
+        "## How does `.find(val)` operate on this table?\n"
+      ],
+      "id": "65eb73ae"
     }
   ],
   "metadata": {

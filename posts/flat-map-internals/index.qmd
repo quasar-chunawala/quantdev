@@ -11,7 +11,7 @@ filters:
 
 # Introduction
 
-Hash tables are omniscient in the software world and we use them a lot. I recently watched Matt Kulukundis' CppCon 2017 talk, [Designing a fast, efficient, cache-friendly hash Table, step by step](https://www.youtube.com/watch?v=ncHmEUmJZf4). In this blog-post, I would like to explore the implementation details of the abseil library's `flat_hash_map` data-structure. 
+We use hash-tables a lot in software programming and there has been a strong desire for a more space and run-time efficient representation of a `map` among C++ users. I recently watched Matt Kulukundis' CppCon 2017 talk, [Designing a fast, efficient, cache-friendly hash Table, step by step](https://www.youtube.com/watch?v=ncHmEUmJZf4). In this blog-post, I would like to explore the implementation details of the abseil library's `flat_hash_map` data-structure. 
 
 ```{python}
 %load_ext itikz
@@ -161,4 +161,72 @@ The above mental picture is ballpark correct. The actual picture is more like th
 ```
 
 If we zoom out and think for a bit, it makes more sense, why it is implemnented like this. Let's rearrange the above picture. 
+
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+#| fig-cap: "Implementation details of unordered_set"
+%%itikz --temp-dir --tex-packages=tikz,color --tikz-libraries=arrows.meta --implicit-standalone
+\begin{tikzpicture}[scale=2.5,transform shape]
+  \pagecolor{white}
+  \draw[fill=white!91!blue!90!cyan, rotate=90] (-0.3,1.1) rectangle (0,-2.46);
+  \draw (-0.2,0) -- (-0.2,-0.3);
+  \draw (0.7,0) -- (0.7,-0.3);
+  \draw (0.99,0) -- (0.99,-0.3);
+  \draw (1.3,0) -- (1.3,-0.3);
+  \draw (2.12,0) -- (2.12,-0.3);
+  \draw[fill=pink] (-0.8,0) rectangle (-0.48,-0.3);
+  \draw[fill=pink] (-1.42,1.13) rectangle (-1.12,0.87);
+  \draw[fill=pink] (-1.12,1.13) rectangle (-0.8,0.87);
+  \draw[fill=pink] (-0.8,1.13) rectangle (-0.51,0.87);
+  \draw[fill=pink] (-0.09,1.13) rectangle (0.21,0.87);
+  \draw[fill=pink] (0.21,1.13) rectangle (0.51,0.87);
+  \draw[fill=pink] (0.51,1.13) rectangle (0.81,0.87);
+  \draw[fill=yellow!30] (0.1,0) rectangle (0.41,-0.3);
+  \draw[fill=yellow!30] (1.24,1.15) rectangle (1.54,0.89);
+  \draw[fill=yellow!30] (1.54,1.15) rectangle (1.84,0.89);
+  \draw[fill=yellow!30] (1.84,1.15) rectangle (2.14,0.89);
+  \draw[fill=green!30] (1.56,0) rectangle (1.82,-0.3);
+  \draw[fill=green!30] (2.6,1.13) rectangle (2.9,0.87);
+  \draw[fill=green!30] (2.9,1.13) rectangle (3.2,0.87);
+  \draw[fill=green!30] (3.2,1.13) rectangle (3.5,0.87);
+  \draw[fill=green!30] (3.9,1.13) rectangle (4.2,0.87);
+  \draw[fill=green!30] (4.2,1.13) rectangle (4.5,0.87);
+  \draw[fill=green!30] (4.5,1.13) rectangle (4.8,0.87);
+  \draw[fill=green!30] (5.3,1.13) rectangle (5.6,0.87);
+  \draw[fill=green!30] (5.6,1.13) rectangle (5.9,0.87);
+  \draw[fill=green!30] (5.9,1.13) rectangle (6.2,0.87);
+  \node[draw=none, node font=\small] at (0.72,-0.55) {$S[0,...,2^n-1]$};
+  \node[draw=none, node font=\ttfamily] (node4) at (-1.28,0.98) {H};
+  \node[draw=none, node font=\small] at (6.05,0.99) {$\phi$};
+  \node[draw=none, node font=\ttfamily] at (1.39,1.01) {H};
+  \node[draw=none, node font=\ttfamily] at (2.75,1.01) {H};
+  \node[draw=none, node font=\ttfamily] (node1) at (0.05,1) {H};
+  \draw[arrows=-Latex] (-0.69,0.99) -- (-0.04,1);
+  \draw[arrows=-Latex] (-2.09,0.99) -- (-1.44,1);
+  \draw[arrows=-Latex] (0.63,0.99) -- (1.28,1);
+  \draw[arrows=-Latex] (1.96,1) -- (2.61,1.01);
+  \draw[arrows=-Latex] (3.29,1) -- (3.93,1.01);
+  \draw[arrows=-Latex] (4.67,0.98) -- (5.31,0.99);
+  \node[draw=none, node font=\ttfamily] at (4.07,0.99) {H};
+  \node[draw=none, node font=\ttfamily] at (5.46,1) {H};
+  \node[draw=none, node font=\ttfamily] at (-0.97,0.99) {V};
+  \node[draw=none, node font=\ttfamily] at (1.7,1) {V};
+  \node[draw=none, node font=\ttfamily] at (3.06,1) {V};
+  \node[draw=none, node font=\ttfamily] (node5) at (0.36,0.99) {V};
+  \node[draw=none, node font=\ttfamily] (node2) at (4.35,0.98) {V};
+  \node[draw=none, node font=\ttfamily] at (5.75,1) {V};
+
+
+  \node[draw, node font=\small, fill=white!97!blue!88!cyan] (node3) at (-2.5,0.98) {head};
+  \draw[arrows=-Latex] (-0.66,-0.15) -- (node3.south);
+  \draw[arrows=-Latex] (0.26,-0.15) -- (-0.09,0.89);
+  \draw[arrows=-Latex] (1.71,-0.15) -- (1.36,0.89);
+\end{tikzpicture}
+```
+
+Now, if we look more closely, we are storing both the hash-codes and pointers for each element. That's an extra `16`-bytes per entry. When we iterate across the `unordered_set`, we actually end up walking this linked-list. That takes $O(\texttt{size})$ runtime. The iteration order of this container is reproducible, for a given insertion order. 
+
+## How does `.find(val)` operate on this table?
 
