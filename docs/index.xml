@@ -10,7 +10,779 @@
 <atom:link href="http://quantdev.blog/index.xml" rel="self" type="application/rss+xml"/>
 <description></description>
 <generator>quarto-1.9.38</generator>
-<lastBuildDate>Mon, 24 Aug 2026 23:00:00 GMT</lastBuildDate>
+<lastBuildDate>Sat, 29 Aug 2026 23:00:00 GMT</lastBuildDate>
+<item>
+  <title>flat_map internals</title>
+  <dc:creator>`dev::author` </dc:creator>
+  <link>http://quantdev.blog/posts/flat-map-internals/</link>
+  <description><![CDATA[ 
+
+
+
+
+
+
+<section id="introduction" class="level1">
+<h1>Introduction</h1>
+<p>Hash tables are omniscient in the software world and we use them a lot. I recently watched Matt Kulukundis’ CppCon 2017 talk, <a href="https://www.youtube.com/watch?v=ncHmEUmJZf4">Designing a fast, efficient, cache-friendly hash Table, step by step</a>. In this blog-post, I would like to explore the implementation details of the abseil library’s <code>flat_hash_map</code> data-structure.</p>
+<div id="4f50464e" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">%</span>load_ext itikz</span></code></pre></div></div>
+</div>
+</section>
+<section id="the-standard-librarys-unordered_set" class="level1">
+<h1>The standard library’s <code>unordered_set</code></h1>
+<p>Our starting point is the standard library’s implementation of a hash-table called the <code>unordered_set</code>. Here, we have a table(array) <code>S</code>, of size <img src="https://latex.codecogs.com/png.latex?2%5En">. The array elements <img src="https://latex.codecogs.com/png.latex?S%5B0%5D,%5Cldots,S%5B2%5En%20-%201%5D"> are called slots. A new element is inserted into the table by hashing it, to find the correct slot. The element is stored at <code>hash(item) % capacity()</code> index. Two elements with the same hash-code, would have to be stored at the same slot; so we need a way to resolve collisions. <code>unordered_set</code> uses chaining, so each slot <code>S[i]</code> is more like a bucket, it is a linked-list of all items that hash to the same hash-code.</p>
+<div id="b5be5b02" class="cell" data-execution_count="2">
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2" style="background: #f1f3f5;"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">%%</span>itikz <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>temp<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">dir</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>tex<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>packages<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>tikz,color <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>tikz<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>libraries<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>arrows.meta <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span>implicit<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span>standalone</span>
+<span id="cb2-2">\begin{tikzpicture}[scale<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span><span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.5</span>,transform shape]</span>
+<span id="cb2-3">  \pagecolor{white}</span>
+<span id="cb2-4">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>white<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">91</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span>blue<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">90</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span>cyan] (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.3</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-5">  \draw (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.25</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.25</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-6">  \draw (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.5</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.5</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-7">  \draw (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.25</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.25</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-8">  \draw (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.3</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-9">  \draw (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.25</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.25</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-10">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>pink] (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.75</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.49</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-11">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>pink] (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.75</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.49</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-12">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>pink] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.75</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.6</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.49</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-13">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>pink] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.6</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.75</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.9</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.49</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-14">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>pink] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.75</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.6</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.49</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-15">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>pink] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.6</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.75</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.9</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.49</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-16">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>pink] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.9</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.75</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.2</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.49</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-17">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>yellow<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.74</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-18">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>yellow<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.74</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-19">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>yellow<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.3</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.6</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.74</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-20">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>yellow<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.6</span>,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.9</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.74</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-21">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.73</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.47</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-22">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.73</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.47</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-23">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.73</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.6</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.47</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-24">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.6</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.73</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.9</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.47</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-25">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.73</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.6</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.47</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-26">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.6</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.73</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.9</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.47</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-27">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.9</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.73</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.2</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.47</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-28">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.7</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.73</span>) rectangle (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.47</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-29">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.73</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.47</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-30">  \draw[fill<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>green<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">!</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">30</span>] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.3</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.73</span>) rectangle (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.6</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.47</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-31">  \draw[arrows<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=-</span>Latex] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.15</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.6</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.05</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.6</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-32">  \draw[arrows<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=-</span>Latex] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.16</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.86</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.06</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.86</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-33">  \draw[arrows<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=-</span>Latex] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.15</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.58</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.05</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.58</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-34">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\small] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.15</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.33</span>) {$S[<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span>,...,<span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">^</span>n<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">-</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1</span>]$}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-35">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.15</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.6</span>) {H}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-36">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\small] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.06</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.62</span>) {$\phi$}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-37">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\small] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.45</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.59</span>) {$\phi$}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-38">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\small] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.74</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.88</span>) {$\phi$}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-39">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.15</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.86</span>) {H}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-40">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.15</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.61</span>) {H}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-41">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] (node1) at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.45</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.62</span>) {H}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-42">  \draw[arrows<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=-</span>Latex] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.72</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.61</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.36</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.62</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-43">  \draw[arrows<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=-</span>Latex] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.69</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.6</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.33</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.61</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-44">  \draw[arrows<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=-</span>Latex] (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.07</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.58</span>) <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">--</span> (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.71</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.59</span>)<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-45">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.47</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.59</span>) {H}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-46">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">3.86</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.6</span>) {H}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-47">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.45</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.61</span>) {V}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-48">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.46</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.85</span>) {V}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-49">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">1.46</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.6</span>) {V}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-50">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.75</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.61</span>) {V}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-51">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">2.75</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.58</span>) {V}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-52">  \node[draw<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>none, node font<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span>\ttfamily] at (<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">4.15</span>,<span class="fl" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0.6</span>) {V}<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="cb2-53">\end{tikzpicture}</span></code></pre></div></div>
+</details>
+<div class="cell-output cell-output-display" data-execution_count="2">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="http://quantdev.blog/posts/flat-map-internals/index_files/figure-html/cell-3-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>The unordered_set</figcaption>
+</figure>
+</div>
+</div>
+</div>
+
+
+</section>
+
+ ]]></description>
+  <category>C++</category>
+  <guid>http://quantdev.blog/posts/flat-map-internals/</guid>
+  <pubDate>Sat, 29 Aug 2026 23:00:00 GMT</pubDate>
+</item>
 <item>
   <title>visit benchmark results</title>
   <dc:creator>`dev::author` </dc:creator>
@@ -408,6 +1180,9 @@ font-style: inherit;">};</span></span></code></pre></div></div>
 <p>Here is the complete code-listing.</p>
 <iframe width="1000px" height="700px" src="https://godbolt.org/e#z:OYLghAFBqd5QCxAYwPYBMCmBRdBLAF1QCcAaPECAMzwBtMA7AQwFtMQByARg9KtQYEAysib0QXACx8BBAKoBnTAAUAHpwAMvAFYTStJg1DIApACYAQuYukl9ZATwDKjdAGFUtAK4sGIM6SuADJ4DJgAcj4ARpjEEpJcpAAOqAqETgwe3r7%2ByanpAiFhkSwxcVKJdpgOGUIETMQEWT5%2BAVU1AnUNBEUR0bHxlfWNzTltwz2hfaUDFQCUtqhexMjsHOYAzKHI3lgA1CYbbgQAnkmYAPoExEyECofYJhoAgpvbu5gHRw03Jw9PrzMWwYOy8%2B0OblC6TEeAAXrELrQ8AoCP8Xm8QR8vm42CwSH8No90UD3mDPhCvI4kac0YDgaDwUcAG4NPCGVGEgEYhnko4MHyxPCmTnE%2BlYiFOFHETCsWnc8VHJLEUIcol00mMtz8YgsJiqrkkzFk7FULwgxwCMRyw087E3BjoVAsOUvZhsBRJJirPYAR1MAHYrC89iG9gB6ABUEYBoZDEb2AAEosrMFQ9s89kjgAgCHsGABafBsBhpS20PY/JgnAB0MdjEbDdZDBEwLCSBhbENO5zdnwAKqQ9ij0CAQGl4Vc9kI4ZhabGpV4HHsUrQThdK39A03Y3s%2B3sWBcol4qFRYiYAKwWafwi8AES%2B95MW/9t8OQdewZ3IbQJZbqiVu7mAAbHsqDnDcRDEBeVjnreEDDqO46XLmeDoKocxPu%2BX5ftKBDLAw%2B6Hsep5QZeqGqHeb7brGT6vsG1GhlgOzdpgEBMJSqBzHsP4opg/7EBWBDwQQI5jjOk6hFg6GYQxOGYHhxAEQeR4nmeZEOnxlEbFh2G0bJewtm2HazkcLG9tWFl7AAkg6QqYPcIoZthTG0CxbEcVxPF/gBerCaJSESRpqiDjZ%2BCrAoFnVnskl2QoGFbp%2B2Ghrh%2BGESpJHQZJmmwdWvkxeFkUYdp%2Bl6YlBwvlR6JlYZ7Z6iZbgBQQkXWbZ4VzqGC5LvgHp6sgCBnglTlfjVxldmcjCsJ8ABiZrIIOZmTc1ABqDlqklKJ6kK3ECLx/EVhxezdZ6BB9RAM0gsBwF7FQg4rZdZhAc1TJxTJZVJV4aRGHsKWKVc42Toc94uW5CEgNqADuDToBC53Ctg1BzH5o7APJEIaA8SNgyQkPENDRx3YSEDPXMcyFUVOlJSGeBpl5fFKpjyIXAok0XEyEI/Qwf3nFcg5MqgqEPPFFOU/OImjqEfMANasaDENQzDs0Y1QCxDmLIAoxybihbFGOy9j8v46tRNxaTFnk/pNEvpgtBKK9Q0i8l8mpaDEuoNLmNy7jCsXYTyuDqDGsQtrbWE3rxA43jbgE/DxOm9W5tvbpFWJyGenFWVafvtuI11WNPaTXssPzeN5mWSt/viU1lnB/Z7Xfjt3kCexRD7kw0sXEdvUIAzQVM5gPpeIwqxB619mRYLdtJRzh3IsdfVnkcNcRRZDyjjnLYzz1J0IN7c17Ct4%2Bcun9ulR%2B9uRtGb3xkmKZpn2/UGbELChGI3FMEog7g/1BHg58DR/7mAgD96BMDTKgNMQDPgsC8K5PAhY8DFlLMwWg1F4wblrFfRs1VWy1U7KZEuBci4GQIWwZaCgK4TirlFKyq1ty0z2s3VArd26mhBBcFca4NwXAQe2HuUk%2B4DyHvVGhh9sBC30tPXU7dO7b13rdZetZQ5qyyqoARg8QTCIURjEmlUT7JzPrGC%2BqDEzJjwKmPYHhfzEEXAQBQFY9hcHQPmDc0UgqYHQHsKIJw8wCHzCxR%2BRk6rLgaJNFsAkg4KNIAAKTrnGJKX9UifBlH1PY1tWyMBQnYpg31qjLDSEyT4ohaDlhblIy4rDkDsM8Jw4gvxuFGVQVg%2B2696oLTYIXWaxd86kLLuQocldmo0IochZqUS%2BltMwM1IQ/daFlXoT5A6ZSLgVKqaudctSqz1N4S7XuShBEaIiaI/2yjdn93UcPI4YyjlThmc1PZL1BrvU%2BsAHJCgYEEABhsIG1RXLjQgEslZHD1l1J4Sgo4RCD4ryUaJFRaihGHIsqQdGhMVb3LJroqeTtFLLmqcCqs7N7LvJ5khcBkUIBjKKo8QMex/lt3KbNVZNSQUNPBZ0/eWjoXi1Ofsi5WtIl7DGdo/2tyzZx0ztuU%2B2ccGjXwd06abKJlkNifMpuiy6XLIZUCjcEBxEpxyQpJS6rAW4q4aCuR7LRF8L4nCg5RwhWq1Eks2Fezzn1VBiyZU7ImbiTZkcUG0o8QFIuMgJk0oqBXAhNHf4KLCoYtDJK/RAIWl5wmj0qKbgxAGCiPQWZzxOq5iWsiQgJA9ggAsZmpg2ax4r0eaGD6oQXkZuKZWnNo4wKxD1CQHVh8s4VWPgCMMYY9gAHEMBRE8AQMtOYCBJAUCAQdwAx0TurCQYAYZYRhkkAwAA0j6TACAfRcC4ACXsPVvR%2BknqGQd6YCKgvSYITaAhQJpiZEW3M9avrQNgfAxBGRX4bnuGVU9npvRfscEWPFm5haxmTbK1NnxC1pEgl0%2BDSrHJJRVftFur6kMQEQ8WqCD0ro4YI/I%2B6j1LLE0vSLRh10GX1CrQ%2BX0yBRwAs1SajZBIo5vpIPIy1Cd7ZJVoxUpjKyGP0FykJZ61YVHdrNnGkWH6XnSjea5T53zmJ/IqR7fWXt8Y8agoTEjkFUVq09pHaOxs446OPg7aKNMG502IAzBQTMWa%2BrcCpolBBeb8zxmI6jdm6Mgh0%2BHA23GkMkAxsZkgpnRLmcjUbYmsbbMO1otbW2tagv6tStpsOEdI0GeiwZuLo4EuG2i3FFL0Gk50UE/G/Rls6uSqqs8FUQ5WDtkuGaamJADz2kdCwCA7WmCDna1EXV9sNqOGQA61jBAuAAE5FsbH9HsFGYQIJRcDP6wwg2O6YFfcPZ8cF4qvlSyGUGPXtQHhVB3ZE1w8BHgtAwCUggHibyEqNzxAnYzT26kJDbHaTO6Ja88PmqFH4oguGBvAXX7tb1OpN2MtGfhMdBhuTCBw9XutZOyN7Pnrq0FQHqQcjovBVv%2BIGSQZhaKkH0rjz172jgqkHFQYnpPDpLEp5yQMGxqxcHPFQOnDO1YerZMzyEgg2cc8J%2BTnnVKLCPQ0ECTAQJT5NdB2VUGjVvpcHR51%2BgFxrt9YuANp0EANCkDML9jqatdfEDMAboy3WGC9Z1GbvbFurc261/bWjTJ9eAwrLU6CxBj2wQU1hphTInfB5%2BGH2nkf%2B1lVo151yTG/SsfeahBBkHRzGYgPpfDkFAtJWgneYb0vXEEC4l%2BfMH2dePa%2Blj6e5gzBV8JyqDCZhafaXKreeneqaKXkr6zonJPa87gb4SObY5m8vNb1igi7fO8y8nz3vvFgB9D/q1%2BCvsE19c4p/QOvIYZ/YDn1KBt5Vt9t970f%2BXp/29vh3xbeNo/D/s8n2NwQZ/z%2BN724L6345bYqr7f6c7d4v794i7D4f4wRwQQGE5IFn4X5X7AFL4GoHAP5IHr56ib6v6wF747gH6IGy5k7c6n4AGz5N7Kgt7Ur34d64HH5VoEEwEvi752akEQBP6YC/5T6hhoG0E36YGpSr68H8FsHb5EFcGf5wQSET74HUGX7CH0F37L7YEd4KEoHQHSEcHv6pxyE8GUF8EsFUFCFAF0GL4MEaHiEmEUEn6YBSFv56oyHYSB68y05lQCbbigxoCUjYgQiaHp65jB7t6BFHCvLvIRFuCaEXhuCva96g6JovDta6ihA6qBYtjQ6w7w4yJI7JG3gcALC0CcDni8B%2BAcBaCkCoCcBuDWDWBDhLArDkhAg8CkCTpVHFELCSwgDngaDVgPSLYaBSA04AAci25454/oGw54%2BgnAkgFRmgvAtRHAvAc6VunRWgCwcAsAMAiAKAToSQdAsQ5AlAaAbYJxcQOwhgwAVw1iDAksfAdAYSc6EAUQyxpAUQL8xAJwnA7R3xzAvxAA8lENoNUJ0e0RccWAQMCQwKuJ8VgEeMAE2jbP8bwFgLqEYOIF0aQPgNKDUAUnOriXxLki2OieQIINbJ8UiMmA0CcB4FgJ8Y9iwBSQUsQOOkoLeK2LcUiEYMsQsOzkwMAAoIWpgODMCT2BSfwIICIGIOwFIDIIIIoCoOoLiboIkAYPyaYJYNYPoE9nOpAAsGBC9sSfmMOIDDqVYJYA9HsPmMCWYCseycqFgIaTqrYGkh0H4BAK4KMH4IkMEFMCUGUHoCkEhhkH6aGfkC9r0MGbMB6fYC9l0CMJ4C0HoO0EmRMLGf0OULYBMJGUMN0NmTMOUAsAoM0asBICUWUUsbiasXsKoGMUBPmEBJINxFqS8hANcGaJLFxBALgARtgRsFwHMLwFsd0aQP1EwFgHEO6aURwIsaQKyf0aQJUdUasesSAJsQKaQLsQcaScgBxGQBQGxMQCKcoIYNbEIAgKgODJUVCUcXQI%2BgwBeWELQNebeWubwBcccfQNcR2fcT2aQD%2BVceEJNJwN%2BY%2BX%2BcCZSB%2BXeZ8Qec8GecSbwAeXUPgJUbwDKcIEUgqdINhSqWoJ8RqfoLcSgA0ZYPqVEG6caUkKaZwOaSJJaRRRYLafaY6TUc6ahPZPAAsA8Y4GwH2KgJ4DRYsMsJWUMBha%2BVeTefBdwLwODDcEkOidWRwOUauZ8asdgKoGSSWo2c2a2e2bcTSt2Y8X2fUbqZRXsAOZBEOSOWOQKT0SAJIIttWDMRoItmMVMf6FwBoJIDTv6PMQubwMuVbl%2BTURBbYFuR0Y5aQL0S5W5RsB5V5dMb5f5WYIFfORsLWeuZFeOSTEFRxeFRuTFV0QVeyUgs5UAA%3D%3D%3D">
 </iframe>
+</section>
+<section id="insights" class="level1">
+<h1>Insights</h1>
 
 
 </section>
@@ -36204,1016 +36979,6 @@ font-style: inherit;">}</span></span></code></pre></div></div>
   <guid>http://quantdev.blog/posts/grouping_lines_together/</guid>
   <pubDate>Tue, 06 Jan 2026 00:00:00 GMT</pubDate>
   <media:content url="http://quantdev.blog/posts/grouping_lines_together/cpp.jpg" medium="image" type="image/jpeg"/>
-</item>
-<item>
-  <title>const, constexpr, consteval and constinit</title>
-  <dc:creator>`dev::author` </dc:creator>
-  <link>http://quantdev.blog/posts/const_vs_constexpr_consteval_vs_constinit/</link>
-  <description><![CDATA[ 
-
-
-
-
-
-
-<section id="const-ness" class="level1">
-<h1><code>const</code>-ness</h1>
-<p>Constants, by their simplest definition are values that do not change. <code>const</code> correctness is the practice of using the <code>const</code> keyword to prevent <code>const</code> objects from getting mutated.</p>
-<blockquote class="blockquote">
-<h3 id="just-make-everything-const-that-you-can" class="anchored">Just make everything <code>const</code> that you can!</h3>
-</blockquote>
-<p>We should add <code>const</code> early and often. Back-patching <code>const</code> correctness results in a snowball effect: every <code>const</code> over here requires four more to be added over there.</p>
-<section id="const-member-functions" class="level2">
-<h2 class="anchored" data-anchor-id="const-member-functions"><code>const</code> member functions</h2>
-<p>You can declare a non-static member function <code>const</code> if it doesn’t change the value of the underlying object.</p>
-</section>
-</section>
-<section id="constexpr" class="level1">
-<h1><code>constexpr</code></h1>
-<section id="constexpr-variables" class="level2">
-<h2 class="anchored" data-anchor-id="constexpr-variables"><code>constexpr</code> variables</h2>
-<p>Let’s review the definition of a literal type. According to the <a href="https://eel.is/c++draft/basic.types.general#10">standard</a>:</p>
-<blockquote class="blockquote">
-<p>A literal type is one whose layout can be determined at compile time. The following are the literal types:</p>
-<ul>
-<li><code>void</code></li>
-<li>Scalar types</li>
-<li>References</li>
-<li>Arrays of void, scalar types or references</li>
-<li>A class that has a <code>constexpr</code> destructor, and one or more constexpr constructors that are not move or copy constructors. Additionally, all its non-static data members and base classes must be literal types and not volatile.</li>
-</ul>
-</blockquote>
-<p>A <code>const</code> variable is immutable. The initialization of a <code>const</code> variable may be deferred to run-time. A <code>constexpr</code> variable must be initialized with a value that is known at compile-time. All <code>constexpr</code> variables are <code>const</code>, but the converse is not true.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb1-1"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">float</span> c <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="fl" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">3.0e8</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb1-2"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">float</span> G <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="fl" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">6.67430e-11</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span></code></pre></div></div>
-</section>
-<section id="constexpr-functions" class="level2">
-<h2 class="anchored" data-anchor-id="constexpr-functions"><code>constexpr</code> functions</h2>
-<p>A <code>constexpr</code> function <code>foo()</code> is one that may be evaluated at compile-time or run-time. If a function marked <code>constexpr</code> is called in a constant expression context, only then, the function is evaluted at compile-time. We have roughly four options for doing so:</p>
-<ul>
-<li>Assign the result of <code>foo</code> to a <code>constexpr</code> variable.</li>
-<li>Use <code>foo</code> as a non-type template argument.</li>
-<li>Use <code>foo</code> as the size of the array.</li>
-<li>Call <code>foo</code> in another <code>constexpr</code> function that is evaluated in a constant evaluation.</li>
-</ul>
-<p>Here are the four cases in code:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb2-1"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t double_up<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t n<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb2-2">    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">2</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">*</span> n<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb2-3"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb2-4"></span>
-<span id="cb2-5"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t other<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t n<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb2-6">    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> double_up<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>n<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb2-7"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb2-8"></span>
-<span id="cb2-9"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>size_t result <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> double_up<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">5</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb2-10"><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> double_up<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)&gt;</span> a<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">4</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">5</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">6</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb2-11"><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">char</span> buffer<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">[</span>double_up<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">10</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)];</span></span>
-<span id="cb2-12"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">auto</span> value<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span>other<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">4</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)};</span></span></code></pre></div></div>
-</section>
-</section>
-<section id="if-constexpr" class="level1">
-<h1><code>if constexpr</code></h1>
-<p><code>if constexpr</code> is a <code>constexpr</code> if statement where the predicate is evaluated is compile-time. It can be used to modify the behavior of the enclosing function. So, the resulting binary will include one branch and not the other. Generally, you wouldn’t use this outside of a template function.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb3-1"><span class="pp" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">#include </span><span class="im" style="color: #00769E;
-background-color: null;
-font-style: inherit;">&lt;cmath&gt;</span></span>
-<span id="cb3-2"><span class="pp" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">#include </span><span class="im" style="color: #00769E;
-background-color: null;
-font-style: inherit;">&lt;optional&gt;</span></span>
-<span id="cb3-3"></span>
-<span id="cb3-4"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">template</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">typename</span> T<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span></span>
-<span id="cb3-5"><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">bool</span> isEqual<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>T a<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> T b<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>optional<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span> epsilon <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="fl" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">1e-7</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb3-6">    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">if</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>is_same_v<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">||</span> <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>is_same_v<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span>T<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">double</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;){</span></span>
-<span id="cb3-7">        <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>abs<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>a <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">-</span> b<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span> epsilon<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb3-8">    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span><span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">else</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb3-9">        <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> a <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">==</span> b<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb3-10">    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb3-11"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span></code></pre></div></div>
-<p><a href="https://godbolt.org/z/r5vs64W8K">Compiler Explorer</a></p>
-</section>
-<section id="consteval-functions" class="level1">
-<h1><code>consteval</code> functions</h1>
-<p>A function marked <code>consteval</code> is called an <em>immediate function</em>. Immediate here means that the funtion is evaluated at the compiler front-end, yielding only a value that the compiler back-end uses. Such a function never goes into your binary. A <code>consteval</code>-function must be evaluated at compile-time or compilation fails.</p>
-<p>A call to a <code>consteval</code> function must be a constant-expression.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb4-1"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">consteval</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> sqr<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> n<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb4-2">    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> n <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">*</span> n<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb4-3"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb4-4"></span>
-<span id="cb4-5"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> r <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> sqr<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">100</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span> <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// Okay</span></span>
-<span id="cb4-6"><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> x <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">100</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb4-7"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// int r2 = sqr(x); //Error: Not a constant expression</span></span></code></pre></div></div>
-<p>There is one exception to the rule that a call to a <code>consteval</code> function must be a constant-expression: if the call appears in another <code>consteval</code> function, it need not be a constant-expression (since the call to the enclosing function would ultimately have to produce a core constant expression).</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb5-1"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">consteval</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> sqrsqr<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> n<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb5-2">  <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> sqr<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>sqr<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>n<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">));</span> <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// Not a constant-expression at this  point,</span></span>
-<span id="cb5-3"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span>                     <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// but that's okay.</span></span>
-<span id="cb5-4"></span>
-<span id="cb5-5"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">//constexpr int dblsqr(int n) {</span></span>
-<span id="cb5-6"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">//  return 2*sqr(n); // Error: Enclosing function is not</span></span>
-<span id="cb5-7"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">//}    </span></span></code></pre></div></div>
-</section>
-<section id="stdis_constant_evaluated" class="level1">
-<h1><code>std::is_constant_evaluated()</code></h1>
-<p><code>std::is_constant_evaluated()</code> is a magic library function to check if the current evaluation context is constant evaluation.</p>
-<p>Despite the fact that support for both <code>consteval</code> functions and <code>std::is_constant_evaluation</code> were introduced in C++20, these features interact poorly.</p>
-</section>
-<section id="if-consteval" class="level1">
-<h1><code>if consteval</code></h1>
-<section id="interaction-between-constexpr-and-consteval" class="level2">
-<h2 class="anchored" data-anchor-id="interaction-between-constexpr-and-consteval">Interaction between <code>constexpr</code> and <code>consteval</code></h2>
-<p>Consider the interplay between the magic library function <code>std::is_constant_evaluated()</code> and the new <code>consteval</code>. Consider the following example:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb6-1"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">consteval</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> f<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span> <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb6-2"></span>
-<span id="cb6-3"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// The constexpr function g() does not compile</span></span>
-<span id="cb6-4"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// constexpr int g(int i) {</span></span>
-<span id="cb6-5"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">//     if (std::is_constant_evaluated()) {</span></span>
-<span id="cb6-6"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">//         return f(i) + 1; // &lt;==</span></span>
-<span id="cb6-7"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">//     } else {</span></span>
-<span id="cb6-8"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">//         return 42;</span></span>
-<span id="cb6-9"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">//     }</span></span>
-<span id="cb6-10"><span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// }</span></span>
-<span id="cb6-11"></span>
-<span id="cb6-12"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">consteval</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> h<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb6-13">    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> f<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb6-14"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span></code></pre></div></div>
-<p><a href="https://godbolt.org/z/K5TPG9nf9">Compiler Explorer</a></p>
-<p>The function <code>h</code> here is basically a lifted, constant-evaluation-only version of the function <code>g</code>. At constant evaluation time, they do the same thing, except that during runtime, you cannot call <code>h</code>, and <code>g</code> has this extra path. Maybe this code started with just <code>h</code> and someone decided a runtime version would also be useful and turned it into <code>g</code>.</p>
-<p>Unfortunately, <code>h</code> is well-formed, while <code>g</code> is ill-formed. The call to <code>f()</code> inside <code>g()</code> is an <em>immediate invocation</em>. You cannot make a call to <code>f</code> from inside of <code>g</code> (the location marked with an arrow). During the static analysis phase, the compiler front-end requires that the call to <code>f()</code> inside <code>g()</code>, an immediate invocation, must be a constant expression and it is not.</p>
-</section>
-<section id="the-if-constexprstdis_constant_evaluated-problem" class="level2">
-<h2 class="anchored" data-anchor-id="the-if-constexprstdis_constant_evaluated-problem">The <code>if constexpr(std::is_constant_evaluated())</code> problem</h2>
-<p>What happens, if we modify the simple <code>if</code> statement to <code>if constexpr</code>? Consider the below code: Because the predicate of <code>if constexpr</code> is evaluated at compile-time, <code>if constexpr(std::is_constant_evaluated())</code> is trivially true and is buggy code.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb7-1"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> foo<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb7-2">    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">if</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>is_constant_evaluated<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">())</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb7-3">        <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">/* ... */</span></span>
-<span id="cb7-4">    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span> <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">else</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb7-5">        <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">42</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb7-6">    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb7-7"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span></code></pre></div></div>
-</section>
-<section id="the-if-consteval-statment" class="level2">
-<h2 class="anchored" data-anchor-id="the-if-consteval-statment">The <code>if consteval</code> statment</h2>
-<p>The <code>if consteval</code> is exactly the same as</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb8-1"><span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">if</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>is_constant_evaluated<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">())</span></span></code></pre></div></div>
-<p>with one key difference: we can use <code>if consteval</code> to invoke immediate functions. According to the standard:</p>
-<blockquote class="blockquote">
-<p>An expression or conversion is in an immediate function context if it is potentially evaluated and its innermost non-block scope is a function parameter scope of an immediate function. An expression or conversion is an immediate invocation if it is an explicit or implicit invocation of an immediate function and is not in an immediate function context. An immediate invocation shall be a constant expression.</p>
-</blockquote>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb9-1"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">consteval</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> f<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span> <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb9-2"></span>
-<span id="cb9-3"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> g<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb9-4">    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">if</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">consteval</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb9-5">        <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> f<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span> <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// ok: immediate function context</span></span>
-<span id="cb9-6">    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span> <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">else</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb9-7">        <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">42</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb9-8">    <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb9-9"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb9-10"></span>
-<span id="cb9-11"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">consteval</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> h<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span></span>
-<span id="cb9-12">    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> f<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span> <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// ok: immediate function context</span></span>
-<span id="cb9-13"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span></code></pre></div></div>
-<p><a href="https://godbolt.org/z/Gdroev6ox">Compiler Explorer</a></p>
-<p><code>if consteval</code> checks if the current function execution is being done at run-time or compile-time, allowing you to pick between a run-time specialized or compile-time specialized version of the same function.</p>
-</section>
-<section id="challenge-puzzle" class="level2">
-<h2 class="anchored" data-anchor-id="challenge-puzzle">Challenge puzzle</h2>
-<p>Which line should we remove to make this program compile successfully?</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb10-1"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> second<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> c<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb10-2">    <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">static_assert</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>c <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb10-3"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb10-4"></span>
-<span id="cb10-5"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> first<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> b<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">){</span></span>
-<span id="cb10-6">    <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> result <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> second<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span>b<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb10-7">    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> result<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb10-8"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb10-9"></span>
-<span id="cb10-10"><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> main<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(){</span></span>
-<span id="cb10-11">    <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> a <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> first<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">4</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">);</span></span>
-<span id="cb10-12">    <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>cout <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;&lt;</span> a<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb10-13"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span></code></pre></div></div>
-<ul>
-<li><ol type="a">
-<li><code>std::cout &lt;&lt; x;</code></li>
-</ol></li>
-<li><ol start="2" type="a">
-<li><code>static_assert(c &gt; 0);</code></li>
-</ol></li>
-<li><ol start="3" type="a">
-<li><code>constexpr int n = first(4);</code></li>
-</ol></li>
-<li><ol start="4" type="a">
-<li><code>int result = second(b);</code></li>
-</ol></li>
-</ul>
-<p>For more such puzzles, visit <a href="https://getcracked.io">getcracked.io</a></p>
-</section>
-</section>
-<section id="constinit-keyword" class="level1">
-<h1><code>constinit</code> keyword</h1>
-<p><code>constinit</code> keyword can be used to force and ensure that a mutable <code>static</code> or global variable is initialized at compile-time. So, roughly speaking the effect is described as :</p>
-<pre><code>constinit = constexpr - const</code></pre>
-<p>A <code>constinit</code> variable is <strong><em>not <code>const</code></em></strong>. The keyword would be better named <code>compileinit</code> or something.</p>
-<p>You can use <code>constinit</code> whenever you declare a static or a global variable. For example,</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb12-1"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constinit</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">auto</span> i<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">42</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb12-2"></span>
-<span id="cb12-3"><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> incrementCounter<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(){</span></span>
-<span id="cb12-4">    <span class="at" style="color: #657422;
-background-color: null;
-font-style: inherit;">static</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constinit</span> <span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span> counter<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb12-5">    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">++</span>counter<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span></span>
-<span id="cb12-6"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb12-7"></span>
-<span id="cb12-8"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="bu" style="color: null;
-background-color: null;
-font-style: inherit;">std::</span>array<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&lt;</span><span class="dt" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">int</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">5</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">&gt;</span> getCollection<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">(){</span></span>
-<span id="cb12-9">    <span class="cf" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">return</span> <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">{</span><span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">1</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">2</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">3</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">4</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
-background-color: null;
-font-style: inherit;">5</span><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">};</span></span>
-<span id="cb12-10"><span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">}</span></span>
-<span id="cb12-11"></span>
-<span id="cb12-12"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constinit</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">auto</span> globalCollection <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> getCollection<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">();</span></span></code></pre></div></div>
-<p>You can still modify the declared values. The effect of using <code>constinit</code> is that the initialization only compiles if the initial value is known at compile-time.</p>
-<p>There are a couple of things to repect when using <code>constinit</code> in practice.</p>
-<p>First, you cannot initialize a <code>constinit</code> value with another <code>constinit</code> value:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb13-1"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constinit</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">auto</span> x <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> f<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">();</span> <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">//f() must be constexpr</span></span>
-<span id="cb13-2"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constinit</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">auto</span> y <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> x<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span>   <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// Error: x is not a constant initializer</span></span></code></pre></div></div>
-<p>The reason is that the initial value must be a constant value known at compile time, but <code>constinit</code> values are not constant. So, <code>x</code> is open for modification at run-time, prior to assigning it to <code>y</code>. The next code snip compiles fine:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14" style="background: #f1f3f5;"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb14-1"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constexpr</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">auto</span> x <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> f<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">();</span> <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">//f() must be a compile-time function</span></span>
-<span id="cb14-2"><span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">constinit</span> <span class="kw" style="color: #003B4F;
-background-color: null;
-font-weight: bold;
-font-style: inherit;">auto</span> y <span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">=</span> x<span class="op" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">;</span>   <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// ok</span></span></code></pre></div></div>
-<p>When initializing objects, a compile-time constructor is required. However, a compile-time destructor is not required.</p>
-<p><code>constinit</code> does not imply inline (this is different from <code>constexpr</code>).</p>
-<section id="how-constinit-solves-the-static-initialization-order-fiasco" class="level2">
-<h2 class="anchored" data-anchor-id="how-constinit-solves-the-static-initialization-order-fiasco">How <code>constinit</code> solves the static initialization order fiasco?</h2>
-<p>In C++, there is a problem called the <em>static initialization order fiasco</em>, which <code>constinit</code> can solve. The problem is that the order of static and global initializations in different translation units is not defined.</p>
-<p>Assume that we have a type with a constructor to initialize the objects and introduce an extern global object of this type:</p>
-</section>
-</section>
-<section id="references" class="level1">
-<h1>References</h1>
-<ul>
-<li><em><a href="https://isocpp.org/wiki/faq/const-correctness#const-ref-alt"><code>const</code> correctness</a>, C++ core guidelines</em>.</li>
-<li><em>C++ 20 - The complete guide, by Nikolai Josuttis</em>.</li>
-</ul>
-
-
-</section>
-
- ]]></description>
-  <category>C++</category>
-  <guid>http://quantdev.blog/posts/const_vs_constexpr_consteval_vs_constinit/</guid>
-  <pubDate>Mon, 29 Dec 2025 00:00:00 GMT</pubDate>
-  <media:content url="http://quantdev.blog/posts/const_vs_constexpr_consteval_vs_constinit/cpp.jpg" medium="image" type="image/jpeg"/>
 </item>
 </channel>
 </rss>

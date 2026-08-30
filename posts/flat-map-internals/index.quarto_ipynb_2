@@ -1,0 +1,120 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"`flat_map` internals\"\n",
+        "author: \"`dev::author`\"\n",
+        "date: \"2026-08-30\"\n",
+        "categories: [C++]\n",
+        "toc: true\n",
+        "toc-depth: 3\n",
+        "filters:\n",
+        "   - include-code-files\n",
+        "---\n",
+        "\n",
+        "# Introduction\n",
+        "\n",
+        "Hash tables are omniscient in the software world and we use them a lot. I recently watched Matt Kulukundis' CppCon 2017 talk, [Designing a fast, efficient, cache-friendly hash Table, step by step](https://www.youtube.com/watch?v=ncHmEUmJZf4). In this blog-post, I would like to explore the implementation details of the abseil library's `flat_hash_map` data-structure. "
+      ],
+      "id": "5ec32b8a"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "%load_ext itikz"
+      ],
+      "id": "11d42fae",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "# The standard library's `unordered_set` \n",
+        "\n",
+        "Our starting point is the standard library's implementation of a hash-table called the `unordered_set`. Here, we have a table(array) `S`, of size $2^n$. The array elements $S[0],\\ldots,S[2^n - 1]$ are called slots. A new element is inserted into the table by hashing it, to find the correct slot. The element is stored at `hash(item) % capacity()` index. Two elements with the same hash-code, would have to be stored at the same slot; so we need a way to resolve collisions. `unordered_set` uses chaining, so each slot `S[i]` is more like a bucket, it is a linked-list of all items that hash to the same hash-code."
+      ],
+      "id": "08382d63"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# | code-fold: true\n",
+        "# | code-summary: \"Show the code\"\n",
+        "#| fig-cap: \"The unordered_set\"\n",
+        "%%itikz --temp-dir --tex-packages=tikz,color --tikz-libraries=arrows.meta --implicit-standalone\n",
+        "\\begin{tikzpicture}[scale=2.5,transform shape]\n",
+        "  \\pagecolor{white}\n",
+        "  \\draw[fill=white!91!blue!90!cyan] (0,3) rectangle (0.3,0);\n",
+        "  \\draw (0,2.25) -- (0.3,2.25);\n",
+        "  \\draw (0,1.5) -- (0.3,1.5);\n",
+        "  \\draw (0,1.25) -- (0.3,1.25);\n",
+        "  \\draw (0,1) -- (0.3,1);\n",
+        "  \\draw (0,0.25) -- (0.3,0.25);\n",
+        "  \\draw[fill=pink] (0,2.75) rectangle (0.3,2.49);\n",
+        "  \\draw[fill=pink] (1,2.75) rectangle (1.3,2.49);\n",
+        "  \\draw[fill=pink] (1.3,2.75) rectangle (1.6,2.49);\n",
+        "  \\draw[fill=pink] (1.6,2.75) rectangle (1.9,2.49);\n",
+        "  \\draw[fill=pink] (2.3,2.75) rectangle (2.6,2.49);\n",
+        "  \\draw[fill=pink] (2.6,2.75) rectangle (2.9,2.49);\n",
+        "  \\draw[fill=pink] (2.9,2.75) rectangle (3.2,2.49);\n",
+        "  \\draw[fill=yellow!30] (0,2) rectangle (0.3,1.74);\n",
+        "  \\draw[fill=yellow!30] (1,2) rectangle (1.3,1.74);\n",
+        "  \\draw[fill=yellow!30] (1.3,2) rectangle (1.6,1.74);\n",
+        "  \\draw[fill=yellow!30] (1.6,2) rectangle (1.9,1.74);\n",
+        "  \\draw[fill=green!30] (0,0.73) rectangle (0.3,0.47);\n",
+        "  \\draw[fill=green!30] (1,0.73) rectangle (1.3,0.47);\n",
+        "  \\draw[fill=green!30] (1.3,0.73) rectangle (1.6,0.47);\n",
+        "  \\draw[fill=green!30] (1.6,0.73) rectangle (1.9,0.47);\n",
+        "  \\draw[fill=green!30] (2.3,0.73) rectangle (2.6,0.47);\n",
+        "  \\draw[fill=green!30] (2.6,0.73) rectangle (2.9,0.47);\n",
+        "  \\draw[fill=green!30] (2.9,0.73) rectangle (3.2,0.47);\n",
+        "  \\draw[fill=green!30] (3.7,0.73) rectangle (4,0.47);\n",
+        "  \\draw[fill=green!30] (4,0.73) rectangle (4.3,0.47);\n",
+        "  \\draw[fill=green!30] (4.3,0.73) rectangle (4.6,0.47);\n",
+        "  \\draw[arrows=-Latex] (0.15,2.6) -- (1.05,2.6);\n",
+        "  \\draw[arrows=-Latex] (0.16,1.86) -- (1.06,1.86);\n",
+        "  \\draw[arrows=-Latex] (0.15,0.58) -- (1.05,0.58);\n",
+        "  \\node[draw=none, node font=\\small] at (0.15,3.33) {$S[0,...,2^n-1]$};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (1.15,2.6) {H};\n",
+        "  \\node[draw=none, node font=\\small] at (3.06,2.62) {$\\phi$};\n",
+        "  \\node[draw=none, node font=\\small] at (4.45,0.59) {$\\phi$};\n",
+        "  \\node[draw=none, node font=\\small] at (1.74,1.88) {$\\phi$};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (1.15,1.86) {H};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (1.15,0.61) {H};\n",
+        "  \\node[draw=none, node font=\\ttfamily] (node1) at (2.45,2.62) {H};\n",
+        "  \\draw[arrows=-Latex] (1.72,2.61) -- (2.36,2.62);\n",
+        "  \\draw[arrows=-Latex] (1.69,0.6) -- (2.33,0.61);\n",
+        "  \\draw[arrows=-Latex] (3.07,0.58) -- (3.71,0.59);\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (2.47,0.59) {H};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (3.86,0.6) {H};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (1.45,2.61) {V};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (1.46,1.85) {V};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (1.46,0.6) {V};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (2.75,2.61) {V};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (2.75,0.58) {V};\n",
+        "  \\node[draw=none, node font=\\ttfamily] at (4.15,0.6) {V};\n",
+        "\\end{tikzpicture}"
+      ],
+      "id": "bdf2501b",
+      "execution_count": null,
+      "outputs": []
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)",
+      "path": "/usr/share/jupyter/kernels/python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}
