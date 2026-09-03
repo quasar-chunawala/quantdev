@@ -550,7 +550,7 @@ In our case, we jump to the next node, because it didn't match. Now, we actually
 
 This required $4$ different memory accesses to find the element highlighted in red. In performance-terms, this is costly, because these nodes might not even be in L1d cache, and every cache miss is expensive. 
 
-# Designing the `flat_map`
+# Design consideration when thinking about an efficient hash-table
 
 ## How might one implement `.insert(val)`  on the hash table?
 
@@ -754,4 +754,52 @@ We can drop the hash code from the ndoes and save ourselves some memory.
 \end{tikzpicture}
 ```
 
-So, what did we lose, when we did this. Now, when the table resizes, we need to recompute the hash, which is potentially expensive, because we have to call the `hash` function on every element in the table. Is that really expensive? It depends on the type `T`. If its an `int` or a `double` computing a hash function is practically free. If its a big complicated type, yes it would be expensive. Its a trade-off. Now, when we run `find()`, we might have to run `operator==()` more often. 
+So, what did we lose, when we did this. Now, when the table resizes, we need to recompute the hash, which is potentially expensive, because we have to call the `hash` function on every element in the table. Is that really expensive? It depends on the type `T`. If its an `int` or a `double` computing a hash function is practically free. If its a big complicated type, yes it would be expensive. Its a trade-off. Now, when we run `find()`, we might have to run `operator==()` more often. The question now is, is equality comparison expensive? It depends on the type. If you're comparing `string`s, then it is expensive. But, if you are comparing `int`s or `double`s, equality is cheap to compute. On the plus side, users can get this back - you can put in a type `T` that defines a `hash(T)` member-function and can hash its own value. So, we didn't technically lose any power, we just lost some convenience. Again, we gained some bytes of memory. 
+
+## A probing hash-table 
+
+We can go one step further and remove the pointers altogether. What we have isn't even a chaining hash-table anymore. This is a probing table. 
+
+```{python}
+# | code-fold: true
+# | code-summary: "Show the code"
+#| fig-cap: "Probing Hash-table"
+%%itikz --temp-dir --tex-packages=tikz,color --tikz-libraries=arrows.meta --implicit-standalone
+\begin{tikzpicture}[scale=2.5,transform shape]
+  \pagecolor{white}
+  \draw[fill=white!91!blue!90!cyan] (0,3) rectangle (0.3,0);
+  \draw (0,2.25) -- (0.3,2.25);
+  \draw (0,1.5) -- (0.3,1.5);
+  \draw (0,1.25) -- (0.3,1.25);
+  \draw (0,1) -- (0.3,1);
+  \draw (0,0.25) -- (0.3,0.25);
+  \draw[fill=pink] (0,2.75) rectangle (0.3,2.49);
+  \draw[fill=pink] (0,2.5) rectangle (0.3,2.24);
+  \draw[fill=pink] (1.05,2.75) rectangle (1.35,2.49);
+  \draw[fill=pink] (1.05,2.5) rectangle (1.35,2.24);
+  \draw[fill=yellow!30] (0,2) rectangle (0.3,1.74);
+  \draw[fill=yellow!30] (1.05,2) rectangle (1.35,1.74);
+  \draw[fill=green!30] (0,0.73) rectangle (0.3,0.47);
+  \draw[fill=green!30] (0,0.22) rectangle (0.3,-0.04);
+  \draw[fill=green!30] (0,0.48) rectangle (0.3,0.22);
+  \draw[fill=green!30] (1.05,0.73) rectangle (1.35,0.47);
+  \draw[fill=green!30] (1.05,0.47) rectangle (1.35,0.21);
+  \draw[fill=green!30] (1.05,0.21) rectangle (1.35,-0.05);
+  \draw[arrows=-Latex] (0.15,2.6) -- (1.05,2.6);
+  \draw[arrows=-Latex] (0.15,2.37) -- (1.05,2.37);
+  \draw[arrows=-Latex] (0.16,1.86) -- (1.06,1.86);
+  \draw[arrows=-Latex] (0.15,0.58) -- (1.05,0.58);
+  \draw[arrows=-Latex] (0.15,0.34) -- (1.05,0.34);
+  \draw[arrows=-Latex] (0.15,0.09) -- (1.05,0.09);
+  \node[draw=none, node font=\small] at (0.15,3.33) {$S[0,...,2^n-1]$};
+  \node[draw=none, node font=\ttfamily] at (1.2,2.61) {V};
+  \node[draw=none, node font=\ttfamily] at (1.21,1.85) {V};
+  \node[draw=none, node font=\ttfamily] at (1.21,0.6) {V};
+  \node[draw=none, node font=\ttfamily] at (1.2,2.36) {V};
+  \node[draw=none, node font=\ttfamily] (node2) at (1.2,0.32) {V};
+  \node[draw=none, node font=\ttfamily] at (1.2,0.08) {V};
+\end{tikzpicture}
+```
+
+# How does `.find()` work on a probing hash-table?
+

@@ -408,11 +408,13 @@ window.Quarto = {
   <ul class="collapse">
   <li><a href="#how-does-.findval-operate-on-this-table" id="toc-how-does-.findval-operate-on-this-table" class="nav-link" data-scroll-target="#how-does-.findval-operate-on-this-table">How does <code>.find(val)</code> operate on this table?</a></li>
   </ul></li>
-  <li><a href="#designing-the-flat_map" id="toc-designing-the-flat_map" class="nav-link" data-scroll-target="#designing-the-flat_map">Designing the <code>flat_map</code></a>
+  <li><a href="#design-consideration-when-thinking-about-an-efficient-hash-table" id="toc-design-consideration-when-thinking-about-an-efficient-hash-table" class="nav-link" data-scroll-target="#design-consideration-when-thinking-about-an-efficient-hash-table">Design consideration when thinking about an efficient hash-table</a>
   <ul class="collapse">
   <li><a href="#how-might-one-implement-.insertval-on-the-hash-table" id="toc-how-might-one-implement-.insertval-on-the-hash-table" class="nav-link" data-scroll-target="#how-might-one-implement-.insertval-on-the-hash-table">How might one implement <code>.insert(val)</code> on the hash table?</a></li>
   <li><a href="#dropping-the-hash-values" id="toc-dropping-the-hash-values" class="nav-link" data-scroll-target="#dropping-the-hash-values">Dropping the hash values</a></li>
+  <li><a href="#a-probing-hash-table" id="toc-a-probing-hash-table" class="nav-link" data-scroll-target="#a-probing-hash-table">A probing hash-table</a></li>
   </ul></li>
+  <li><a href="#how-does-.find-work-on-a-probing-hash-table" id="toc-how-does-.find-work-on-a-probing-hash-table" class="nav-link" data-scroll-target="#how-does-.find-work-on-a-probing-hash-table">How does <code>.find()</code> work on a probing hash-table?</a></li>
   </ul>
 </nav>
     </div>
@@ -427,14 +429,14 @@ window.Quarto = {
 <section id="introduction" class="level1">
 <h1>Introduction</h1>
 <p>We use hash-tables a lot in software programming and there has been a strong desire for a more space and run-time efficient representation of a <code>map</code> among C++ users. I recently watched Matt Kulukundis’ CppCon 2017 talk, <a href="https://www.youtube.com/watch?v=ncHmEUmJZf4">Designing a fast, efficient, cache-friendly hash Table, step by step</a>. In this blog-post, I would like to explore the implementation details of the abseil library’s <code>flat_hash_map</code> data-structure.</p>
-<div id="d5f5fe91" class="cell" data-execution_count="1">
+<div id="ee9314c1" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>load_ext itikz</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </section>
 <section id="the-standard-librarys-unordered_set" class="level1">
 <h1>The standard library’s <code>unordered_set</code></h1>
 <p>Our starting point is the standard library’s implementation of a hash-table called the <code>unordered_set</code>. Here, we have a table(array) <code>S</code>, of size <span class="math inline">\(2^n\)</span>. The array elements <span class="math inline">\(S[0],\ldots,S[2^n - 1]\)</span> are called slots. A new element is inserted into the table by hashing it, to find the correct slot. The element is stored at <code>hash(item) % capacity()</code> index. Two elements with the same hash-code, would have to be stored at the same slot; so we need a way to resolve collisions. <code>unordered_set</code> uses chaining, so each slot <code>S[i]</code> is more like a bucket, it is a linked-list of all items that hash to the same hash-code.</p>
-<div id="53daa706" class="cell" data-execution_count="2">
+<div id="53e2bb81" class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -507,7 +509,7 @@ window.Quarto = {
 </div>
 <p>The <code>H</code> in the diagram is the <em>hash-code</em>. It is <code>64</code>-bits. <code>V</code> is the actual value - the thing that we want to store. Because, each item lives in a separate node, different from the primary data-structure - the bucket array <code>S</code>, we say it has pointer-stability. No matter, what happens to the internals of the hash-table, the value doesn’t move, it lives at the same memory address. This is a property guaranteed by the standard. <span class="math inline">\(\phi\)</span> denotes <code>nullptr</code>; it is used to indicate the end of linked-lists. The green nodes are all in the same bucket chain.</p>
 <p>The above mental picture is ballpark correct. The actual picture is more like this:</p>
-<div id="03246486" class="cell" data-execution_count="3">
+<div id="b22d76a0" class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -585,7 +587,7 @@ window.Quarto = {
 </div>
 </div>
 <p>If we zoom out and think for a bit, it makes more sense, why it is implemnented like this. Let’s rearrange the above picture.</p>
-<div id="9273eed8" class="cell" data-execution_count="4">
+<div id="95084353" class="cell" data-execution_count="4">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -659,7 +661,7 @@ window.Quarto = {
 <section id="how-does-.findval-operate-on-this-table" class="level2">
 <h2 class="anchored" data-anchor-id="how-does-.findval-operate-on-this-table">How does <code>.find(val)</code> operate on this table?</h2>
 <p>We want to find the element highlighted in red; it happens to be the second element in the bucket chain.</p>
-<div id="a49a9e34" class="cell" data-execution_count="5">
+<div id="f5b525a1" class="cell" data-execution_count="5">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -730,7 +732,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We compute the <code>hash(val) % capacity()</code> to figure out the slot in the bucket array.</p>
-<div id="e0668e01" class="cell" data-execution_count="6">
+<div id="21719181" class="cell" data-execution_count="6">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -801,7 +803,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We follow that to the entry before the first entry in the green bucket chain.</p>
-<div id="4389ee71" class="cell" data-execution_count="7">
+<div id="ab512f94" class="cell" data-execution_count="7">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -870,7 +872,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We always just skip this one. Then, we go to the first entry that’s actually there. We compare the computed hash <code>hash(val)</code> against the hash stored in the node. If that matches, we compare the value <code>V</code> against the value that we want.</p>
-<div id="752ec909" class="cell" data-execution_count="8">
+<div id="0396dda0" class="cell" data-execution_count="8">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -939,7 +941,7 @@ window.Quarto = {
 </div>
 </div>
 <p>In our case, we jump to the next node, because it didn’t match. Now, we actually get to the one we want.</p>
-<div id="87d4ad14" class="cell" data-execution_count="9">
+<div id="d1a54e11" class="cell" data-execution_count="9">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -1010,12 +1012,12 @@ window.Quarto = {
 <p>This required <span class="math inline">\(4\)</span> different memory accesses to find the element highlighted in red. In performance-terms, this is costly, because these nodes might not even be in L1d cache, and every cache miss is expensive.</p>
 </section>
 </section>
-<section id="designing-the-flat_map" class="level1">
-<h1>Designing the <code>flat_map</code></h1>
+<section id="design-consideration-when-thinking-about-an-efficient-hash-table" class="level1">
+<h1>Design consideration when thinking about an efficient hash-table</h1>
 <section id="how-might-one-implement-.insertval-on-the-hash-table" class="level2">
 <h2 class="anchored" data-anchor-id="how-might-one-implement-.insertval-on-the-hash-table">How might one implement <code>.insert(val)</code> on the hash table?</h2>
 <p>Let’s get back to our simplified view of <code>unordered_set</code>.</p>
-<div id="ea23017d" class="cell" data-execution_count="10">
+<div id="71d71395" class="cell" data-execution_count="10">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -1087,7 +1089,7 @@ window.Quarto = {
 </div>
 </div>
 <p>One approach to implement <code>insert()</code> is to have a dummy node at the beginning. In order to insert into a singly linked list, we need to have the element before, so we can slice it in appropriately. Now, you could say, why don’t we just put it at the end of bucket-chain? But, then we would have traverse to the end of the linked list. The designers thought that this was unacceptable compromise.</p>
-<div id="751a6f3f" class="cell" data-execution_count="11">
+<div id="f0a7de5a" class="cell" data-execution_count="11">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -1173,7 +1175,7 @@ window.Quarto = {
 <section id="dropping-the-hash-values" class="level2">
 <h2 class="anchored" data-anchor-id="dropping-the-hash-values">Dropping the hash values</h2>
 <p>We can drop the hash code from the ndoes and save ourselves some memory.</p>
-<div id="f1a36a24" class="cell" data-execution_count="12">
+<div id="0435df8f" class="cell" data-execution_count="12">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -1232,10 +1234,65 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<p>So, what did we lose, when we did this. Now, when the table resizes, we need to recompute the hash, which is potentially expensive, because we have to call the <code>hash</code> function on every element in the table. Is that really expensive? It depends on the type <code>T</code>. If its an <code>int</code> or a <code>double</code> computing a hash function is practically free. If its a big complicated type, yes it would be expensive. Its a trade-off. Now, when we run <code>find()</code>, we might have to run <code>operator==()</code> more often.</p>
-
-
+<p>So, what did we lose, when we did this. Now, when the table resizes, we need to recompute the hash, which is potentially expensive, because we have to call the <code>hash</code> function on every element in the table. Is that really expensive? It depends on the type <code>T</code>. If its an <code>int</code> or a <code>double</code> computing a hash function is practically free. If its a big complicated type, yes it would be expensive. Its a trade-off. Now, when we run <code>find()</code>, we might have to run <code>operator==()</code> more often. The question now is, is equality comparison expensive? It depends on the type. If you’re comparing <code>string</code>s, then it is expensive. But, if you are comparing <code>int</code>s or <code>double</code>s, equality is cheap to compute. On the plus side, users can get this back - you can put in a type <code>T</code> that defines a <code>hash(T)</code> member-function and can hash its own value. So, we didn’t technically lose any power, we just lost some convenience. Again, we gained some bytes of memory.</p>
 </section>
+<section id="a-probing-hash-table" class="level2">
+<h2 class="anchored" data-anchor-id="a-probing-hash-table">A probing hash-table</h2>
+<p>We can go one step further and remove the pointers altogether. What we have isn’t even a chaining hash-table anymore. This is a probing table.</p>
+<div id="e3c5c4bf" class="cell" data-execution_count="13">
+<details class="code-fold">
+<summary>Show the code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>\begin{tikzpicture}[scale<span class="op">=</span><span class="fl">2.5</span>,transform shape]</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  \pagecolor{white}</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>white<span class="op">!</span><span class="dv">91</span><span class="op">!</span>blue<span class="op">!</span><span class="dv">90</span><span class="op">!</span>cyan] (<span class="dv">0</span>,<span class="dv">3</span>) rectangle (<span class="fl">0.3</span>,<span class="dv">0</span>)<span class="op">;</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>  \draw (<span class="dv">0</span>,<span class="fl">2.25</span>) <span class="op">--</span> (<span class="fl">0.3</span>,<span class="fl">2.25</span>)<span class="op">;</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>  \draw (<span class="dv">0</span>,<span class="fl">1.5</span>) <span class="op">--</span> (<span class="fl">0.3</span>,<span class="fl">1.5</span>)<span class="op">;</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>  \draw (<span class="dv">0</span>,<span class="fl">1.25</span>) <span class="op">--</span> (<span class="fl">0.3</span>,<span class="fl">1.25</span>)<span class="op">;</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>  \draw (<span class="dv">0</span>,<span class="dv">1</span>) <span class="op">--</span> (<span class="fl">0.3</span>,<span class="dv">1</span>)<span class="op">;</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>  \draw (<span class="dv">0</span>,<span class="fl">0.25</span>) <span class="op">--</span> (<span class="fl">0.3</span>,<span class="fl">0.25</span>)<span class="op">;</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>pink] (<span class="dv">0</span>,<span class="fl">2.75</span>) rectangle (<span class="fl">0.3</span>,<span class="fl">2.49</span>)<span class="op">;</span></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>pink] (<span class="dv">0</span>,<span class="fl">2.5</span>) rectangle (<span class="fl">0.3</span>,<span class="fl">2.24</span>)<span class="op">;</span></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>pink] (<span class="fl">1.05</span>,<span class="fl">2.75</span>) rectangle (<span class="fl">1.35</span>,<span class="fl">2.49</span>)<span class="op">;</span></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>pink] (<span class="fl">1.05</span>,<span class="fl">2.5</span>) rectangle (<span class="fl">1.35</span>,<span class="fl">2.24</span>)<span class="op">;</span></span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>yellow<span class="op">!</span><span class="dv">30</span>] (<span class="dv">0</span>,<span class="dv">2</span>) rectangle (<span class="fl">0.3</span>,<span class="fl">1.74</span>)<span class="op">;</span></span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>yellow<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.05</span>,<span class="dv">2</span>) rectangle (<span class="fl">1.35</span>,<span class="fl">1.74</span>)<span class="op">;</span></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>green<span class="op">!</span><span class="dv">30</span>] (<span class="dv">0</span>,<span class="fl">0.73</span>) rectangle (<span class="fl">0.3</span>,<span class="fl">0.47</span>)<span class="op">;</span></span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>green<span class="op">!</span><span class="dv">30</span>] (<span class="dv">0</span>,<span class="fl">0.22</span>) rectangle (<span class="fl">0.3</span>,<span class="op">-</span><span class="fl">0.04</span>)<span class="op">;</span></span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>green<span class="op">!</span><span class="dv">30</span>] (<span class="dv">0</span>,<span class="fl">0.48</span>) rectangle (<span class="fl">0.3</span>,<span class="fl">0.22</span>)<span class="op">;</span></span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>green<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.05</span>,<span class="fl">0.73</span>) rectangle (<span class="fl">1.35</span>,<span class="fl">0.47</span>)<span class="op">;</span></span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>green<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.05</span>,<span class="fl">0.47</span>) rectangle (<span class="fl">1.35</span>,<span class="fl">0.21</span>)<span class="op">;</span></span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a>  \draw[fill<span class="op">=</span>green<span class="op">!</span><span class="dv">30</span>] (<span class="fl">1.05</span>,<span class="fl">0.21</span>) rectangle (<span class="fl">1.35</span>,<span class="op">-</span><span class="fl">0.05</span>)<span class="op">;</span></span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a>  \draw[arrows<span class="op">=-</span>Latex] (<span class="fl">0.15</span>,<span class="fl">2.6</span>) <span class="op">--</span> (<span class="fl">1.05</span>,<span class="fl">2.6</span>)<span class="op">;</span></span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>  \draw[arrows<span class="op">=-</span>Latex] (<span class="fl">0.15</span>,<span class="fl">2.37</span>) <span class="op">--</span> (<span class="fl">1.05</span>,<span class="fl">2.37</span>)<span class="op">;</span></span>
+<span id="cb13-24"><a href="#cb13-24" aria-hidden="true" tabindex="-1"></a>  \draw[arrows<span class="op">=-</span>Latex] (<span class="fl">0.16</span>,<span class="fl">1.86</span>) <span class="op">--</span> (<span class="fl">1.06</span>,<span class="fl">1.86</span>)<span class="op">;</span></span>
+<span id="cb13-25"><a href="#cb13-25" aria-hidden="true" tabindex="-1"></a>  \draw[arrows<span class="op">=-</span>Latex] (<span class="fl">0.15</span>,<span class="fl">0.58</span>) <span class="op">--</span> (<span class="fl">1.05</span>,<span class="fl">0.58</span>)<span class="op">;</span></span>
+<span id="cb13-26"><a href="#cb13-26" aria-hidden="true" tabindex="-1"></a>  \draw[arrows<span class="op">=-</span>Latex] (<span class="fl">0.15</span>,<span class="fl">0.34</span>) <span class="op">--</span> (<span class="fl">1.05</span>,<span class="fl">0.34</span>)<span class="op">;</span></span>
+<span id="cb13-27"><a href="#cb13-27" aria-hidden="true" tabindex="-1"></a>  \draw[arrows<span class="op">=-</span>Latex] (<span class="fl">0.15</span>,<span class="fl">0.09</span>) <span class="op">--</span> (<span class="fl">1.05</span>,<span class="fl">0.09</span>)<span class="op">;</span></span>
+<span id="cb13-28"><a href="#cb13-28" aria-hidden="true" tabindex="-1"></a>  \node[draw<span class="op">=</span>none, node font<span class="op">=</span>\small] at (<span class="fl">0.15</span>,<span class="fl">3.33</span>) {$S[<span class="dv">0</span>,...,<span class="dv">2</span><span class="op">^</span>n<span class="op">-</span><span class="dv">1</span>]$}<span class="op">;</span></span>
+<span id="cb13-29"><a href="#cb13-29" aria-hidden="true" tabindex="-1"></a>  \node[draw<span class="op">=</span>none, node font<span class="op">=</span>\ttfamily] at (<span class="fl">1.2</span>,<span class="fl">2.61</span>) {V}<span class="op">;</span></span>
+<span id="cb13-30"><a href="#cb13-30" aria-hidden="true" tabindex="-1"></a>  \node[draw<span class="op">=</span>none, node font<span class="op">=</span>\ttfamily] at (<span class="fl">1.21</span>,<span class="fl">1.85</span>) {V}<span class="op">;</span></span>
+<span id="cb13-31"><a href="#cb13-31" aria-hidden="true" tabindex="-1"></a>  \node[draw<span class="op">=</span>none, node font<span class="op">=</span>\ttfamily] at (<span class="fl">1.21</span>,<span class="fl">0.6</span>) {V}<span class="op">;</span></span>
+<span id="cb13-32"><a href="#cb13-32" aria-hidden="true" tabindex="-1"></a>  \node[draw<span class="op">=</span>none, node font<span class="op">=</span>\ttfamily] at (<span class="fl">1.2</span>,<span class="fl">2.36</span>) {V}<span class="op">;</span></span>
+<span id="cb13-33"><a href="#cb13-33" aria-hidden="true" tabindex="-1"></a>  \node[draw<span class="op">=</span>none, node font<span class="op">=</span>\ttfamily] (node2) at (<span class="fl">1.2</span>,<span class="fl">0.32</span>) {V}<span class="op">;</span></span>
+<span id="cb13-34"><a href="#cb13-34" aria-hidden="true" tabindex="-1"></a>  \node[draw<span class="op">=</span>none, node font<span class="op">=</span>\ttfamily] at (<span class="fl">1.2</span>,<span class="fl">0.08</span>) {V}<span class="op">;</span></span>
+<span id="cb13-35"><a href="#cb13-35" aria-hidden="true" tabindex="-1"></a>\end{tikzpicture}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-display" data-execution_count="13">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="index_files/figure-html/cell-14-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Probing Hash-table</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="how-does-.find-work-on-a-probing-hash-table" class="level1">
+<h1>How does <code>.find()</code> work on a probing hash-table?</h1>
+
+
 </section>
 
 </main> <!-- /main -->
