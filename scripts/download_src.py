@@ -34,6 +34,20 @@ FILES = [
         "path": "absl/container/internal/raw_hash_set.h",
         "dest": "../posts/flat-map-internals/raw_hash_set.h",
     },
+    {
+        "owner": "abseil",
+        "repo": "abseil-cpp",
+        "ref": "2c004366e983c5be8334ac1ea3d4420e8fbcbea7",
+        "path": "absl/container/internal/raw_hash_map.h",
+        "dest": "../posts/flat-map-internals/raw_hash_map.h",
+    },
+    {
+        "owner": "abseil",
+        "repo": "abseil-cpp",
+        "ref": "2c004366e983c5be8334ac1ea3d4420e8fbcbea7",
+        "path": "absl/container/flat_hash_map.h",
+        "dest": "../posts/flat-map-internals/flat_hash_map.h",
+    },
     # Add more dicts here as needed.
 ]
 
