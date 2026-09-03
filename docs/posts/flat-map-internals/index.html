@@ -423,14 +423,14 @@ window.Quarto = {
 <section id="introduction" class="level1">
 <h1>Introduction</h1>
 <p>We use hash-tables a lot in software programming and there has been a strong desire for a more space and run-time efficient representation of a <code>map</code> among C++ users. I recently watched Matt Kulukundis’ CppCon 2017 talk, <a href="https://www.youtube.com/watch?v=ncHmEUmJZf4">Designing a fast, efficient, cache-friendly hash Table, step by step</a>. In this blog-post, I would like to explore the implementation details of the abseil library’s <code>flat_hash_map</code> data-structure.</p>
-<div id="26685399" class="cell" data-execution_count="1">
+<div id="f3548fab" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>load_ext itikz</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </section>
 <section id="the-standard-librarys-unordered_set" class="level1">
 <h1>The standard library’s <code>unordered_set</code></h1>
 <p>Our starting point is the standard library’s implementation of a hash-table called the <code>unordered_set</code>. Here, we have a table(array) <code>S</code>, of size <span class="math inline">\(2^n\)</span>. The array elements <span class="math inline">\(S[0],\ldots,S[2^n - 1]\)</span> are called slots. A new element is inserted into the table by hashing it, to find the correct slot. The element is stored at <code>hash(item) % capacity()</code> index. Two elements with the same hash-code, would have to be stored at the same slot; so we need a way to resolve collisions. <code>unordered_set</code> uses chaining, so each slot <code>S[i]</code> is more like a bucket, it is a linked-list of all items that hash to the same hash-code.</p>
-<div id="c7f46eeb" class="cell" data-execution_count="2">
+<div id="80f3dff8" class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -503,7 +503,7 @@ window.Quarto = {
 </div>
 <p>The <code>H</code> in the diagram is the <em>hash-code</em>. It is <code>64</code>-bits. <code>V</code> is the actual value - the thing that we want to store. Because, each item lives in a separate node, different from the primary data-structure - the bucket array <code>S</code>, we say it has pointer-stability. No matter, what happens to the internals of the hash-table, the value doesn’t move, it lives at the same memory address. This is a property guaranteed by the standard. <span class="math inline">\(\phi\)</span> denotes <code>nullptr</code>; it is used to indicate the end of linked-lists. The green nodes are all in the same bucket chain.</p>
 <p>The above mental picture is ballpark correct. The actual picture is more like this:</p>
-<div id="00abf2d4" class="cell" data-execution_count="3">
+<div id="2ecdbf10" class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -581,7 +581,7 @@ window.Quarto = {
 </div>
 </div>
 <p>If we zoom out and think for a bit, it makes more sense, why it is implemnented like this. Let’s rearrange the above picture.</p>
-<div id="eaabc80d" class="cell" data-execution_count="4">
+<div id="1bde5b67" class="cell" data-execution_count="4">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -655,7 +655,7 @@ window.Quarto = {
 <section id="how-does-.findval-operate-on-this-table" class="level2">
 <h2 class="anchored" data-anchor-id="how-does-.findval-operate-on-this-table">How does <code>.find(val)</code> operate on this table?</h2>
 <p>We want to find the element highlighted in red; it happens to be the second element in the bucket chain.</p>
-<div id="60c9190f" class="cell" data-execution_count="5">
+<div id="10b04ac2" class="cell" data-execution_count="5">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -726,7 +726,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We compute the <code>hash(val) % capacity()</code> to figure out the slot in the bucket array.</p>
-<div id="0408f5ef" class="cell" data-execution_count="6">
+<div id="77bd50ac" class="cell" data-execution_count="6">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -797,7 +797,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We follow that to the entry before the first entry in the green bucket chain.</p>
-<div id="32f28ea8" class="cell" data-execution_count="7">
+<div id="3813198b" class="cell" data-execution_count="7">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -866,7 +866,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We always just skip this one. Then, we go to the first entry that’s actually there. We compare the computed hash <code>hash(val)</code> against the hash stored in the node. If that matches, we compare the value <code>V</code> against the value that we want.</p>
-<div id="e12dcd15" class="cell" data-execution_count="8">
+<div id="131a02c4" class="cell" data-execution_count="8">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -935,7 +935,7 @@ window.Quarto = {
 </div>
 </div>
 <p>In our case, we jump to the next node, because it didn’t match. Now, we actually get to the one we want.</p>
-<div id="2717aacd" class="cell" data-execution_count="9">
+<div id="b45d9384" class="cell" data-execution_count="9">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -1018,6 +1018,7 @@ window.Quarto = {
 <li><p>Slower insertion and erasure the standard associative containers.</p></li>
 </ul>
 <p><code>absl::flat_hash_map</code> holds a densely packed array of metadata, containing presence information for entries in the hash table. An extra <code>1</code>-byte of meta-data is stored in the control bytes array per entry in the main array. The array of meta-data and the main array are parallel arrays.</p>
+<p>The <code>flat_hash_map</code> is a class template with the key type <code>typename K</code> ,the value type <code>typename V</code>, the hash-function <code>typename Hash</code>, the equality comparison operator <code>typename Eq</code>, the allocator type <code>Allocator</code> as template parameters. <code>flat_hash_map</code> inherits from a base class which is derived as follows.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10" data-startfrom="139"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 138;"><span id="cb10-139"><a href="#cb10-139" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span> <span class="op">&lt;</span></span>
 <span id="cb10-140"><a href="#cb10-140" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> K<span class="op">,</span> <span class="kw">class</span> V<span class="op">,</span></span>
 <span id="cb10-141"><a href="#cb10-141" aria-hidden="true" tabindex="-1"></a>    <span class="kw">class</span> Hash <span class="op">=</span></span>
