@@ -432,14 +432,14 @@ window.Quarto = {
 <section id="introduction" class="level1">
 <h1>Introduction</h1>
 <p>We use hash-tables a lot in software programming and there has been a strong desire for a more space and run-time efficient representation of a <code>map</code> among C++ users. I recently watched Matt Kulukundis’ CppCon 2017 talk, <a href="https://www.youtube.com/watch?v=ncHmEUmJZf4">Designing a fast, efficient, cache-friendly hash Table, step by step</a>. In this blog-post, I would like to explore the implementation details of the abseil library’s <code>flat_hash_map</code> data-structure.</p>
-<div id="652dc0bc" class="cell" data-execution_count="1">
+<div id="92fa1a42" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>load_ext itikz</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </section>
 <section id="the-standard-librarys-unordered_set" class="level1">
 <h1>The standard library’s <code>unordered_set</code></h1>
 <p>Our starting point is the standard library’s implementation of a hash-table called the <code>unordered_set</code>. Here, we have a table(array) <code>S</code>, of size <span class="math inline">\(2^n\)</span>. The array elements <span class="math inline">\(S[0],\ldots,S[2^n - 1]\)</span> are called slots. A new element is inserted into the table by hashing it, to find the correct slot. The element is stored at <code>hash(item) % capacity()</code> index. Two elements with the same hash-code, would have to be stored at the same slot; so we need a way to resolve collisions. <code>unordered_set</code> uses chaining, so each slot <code>S[i]</code> is more like a bucket, it is a linked-list of all items that hash to the same hash-code.</p>
-<div id="8349c378" class="cell" data-execution_count="2">
+<div id="fbf2fb8b" class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -512,7 +512,7 @@ window.Quarto = {
 </div>
 <p>The <code>H</code> in the diagram is the <em>hash-code</em>. It is <code>64</code>-bits. <code>V</code> is the actual value - the thing that we want to store. Because, each item lives in a separate node, different from the primary data-structure - the bucket array <code>S</code>, we say it has pointer-stability. No matter, what happens to the internals of the hash-table, the value doesn’t move, it lives at the same memory address. This is a property guaranteed by the standard. <span class="math inline">\(\phi\)</span> denotes <code>nullptr</code>; it is used to indicate the end of linked-lists. The green nodes are all in the same bucket chain.</p>
 <p>The above mental picture is ballpark correct. The actual picture is more like this:</p>
-<div id="a32886fe" class="cell" data-execution_count="3">
+<div id="14d581ce" class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -590,7 +590,7 @@ window.Quarto = {
 </div>
 </div>
 <p>If we zoom out and think for a bit, it makes more sense, why it is implemnented like this. Let’s rearrange the above picture.</p>
-<div id="79419c9b" class="cell" data-execution_count="4">
+<div id="c325949e" class="cell" data-execution_count="4">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -664,7 +664,7 @@ window.Quarto = {
 <section id="how-does-.findval-operate-on-this-table" class="level2">
 <h2 class="anchored" data-anchor-id="how-does-.findval-operate-on-this-table">How does <code>.find(val)</code> operate on this table?</h2>
 <p>We want to find the element highlighted in red; it happens to be the second element in the bucket chain.</p>
-<div id="9623b32a" class="cell" data-execution_count="5">
+<div id="2d67f025" class="cell" data-execution_count="5">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -735,7 +735,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We compute the <code>hash(val) % capacity()</code> to figure out the slot in the bucket array.</p>
-<div id="e276de2b" class="cell" data-execution_count="6">
+<div id="188df3c0" class="cell" data-execution_count="6">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -806,7 +806,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We follow that to the entry before the first entry in the green bucket chain.</p>
-<div id="39625ed6" class="cell" data-execution_count="7">
+<div id="b8dd486d" class="cell" data-execution_count="7">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -875,7 +875,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We always just skip this one. Then, we go to the first entry that’s actually there. We compare the computed hash <code>hash(val)</code> against the hash stored in the node. If that matches, we compare the value <code>V</code> against the value that we want.</p>
-<div id="cbed1fcb" class="cell" data-execution_count="8">
+<div id="33b4f613" class="cell" data-execution_count="8">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -944,7 +944,7 @@ window.Quarto = {
 </div>
 </div>
 <p>In our case, we jump to the next node, because it didn’t match. Now, we actually get to the one we want.</p>
-<div id="10cd8f31" class="cell" data-execution_count="9">
+<div id="678e08d3" class="cell" data-execution_count="9">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -1249,37 +1249,42 @@ window.Quarto = {
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb23" data-filename="absl/container/internal/hashtable_control_bytes.h" data-startfrom="505"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 504;"><span id="cb23-505"><a href="#cb23-505"></a><span class="kw">using</span> GroupFullEmptyOrDeleted <span class="op">=</span> GroupSse2Impl<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
+<p><code>GroupSse2Impl</code> is a wrapper over a <code>128</code>-bit vector(<code>16</code> things of size <code>8</code>-bits each).</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> GroupSse2Impl<span class="op">{</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="co">//...</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>  __m128i ctrl<span class="op">;</span></span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>We start by creating a <code>probe_seq&lt;Group::kWidth&gt;</code> object representing the probe sequence.</p>
 <div class="code-with-filename">
 <div class="code-with-filename-file">
 <pre><strong>absl/container/internal/raw_hash_set.h</strong></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24" data-filename="absl/container/internal/raw_hash_set.h" data-startfrom="1802"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 1801;"><span id="cb24-1802"><a href="#cb24-1802"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="dt">size_t</span> Width<span class="op">&gt;</span></span>
-<span id="cb24-1803"><a href="#cb24-1803"></a><span class="kw">class</span> probe_seq <span class="op">{</span></span>
-<span id="cb24-1804"><a href="#cb24-1804"></a> <span class="kw">public</span><span class="op">:</span></span>
-<span id="cb24-1805"><a href="#cb24-1805"></a>  <span class="co">// Creates a new probe sequence using `hash` as the initial value of the</span></span>
-<span id="cb24-1806"><a href="#cb24-1806"></a>  <span class="co">// sequence and `capacity` as the mask to apply to each value in the</span></span>
-<span id="cb24-1807"><a href="#cb24-1807"></a>  <span class="co">// progression.</span></span>
-<span id="cb24-1808"><a href="#cb24-1808"></a>  probe_seq<span class="op">(</span>ProbeCapacity capacity<span class="op">,</span> <span class="dt">size_t</span> hash<span class="op">)</span></span>
-<span id="cb24-1809"><a href="#cb24-1809"></a>      <span class="op">:</span> <span class="va">capacity_</span><span class="op">(</span>capacity<span class="op">.</span>capacity<span class="op">),</span> <span class="va">offset_</span><span class="op">(</span>hash <span class="op">&amp;</span> <span class="va">capacity_</span><span class="op">)</span> <span class="op">{}</span></span>
-<span id="cb24-1810"><a href="#cb24-1810"></a></span>
-<span id="cb24-1811"><a href="#cb24-1811"></a>  <span class="co">// The offset within the table, i.e., the value `p(i)` above.</span></span>
-<span id="cb24-1812"><a href="#cb24-1812"></a>  <span class="dt">size_t</span> offset<span class="op">()</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> <span class="va">offset_</span><span class="op">;</span> <span class="op">}</span></span>
-<span id="cb24-1813"><a href="#cb24-1813"></a>  <span class="dt">size_t</span> offset<span class="op">(</span><span class="dt">size_t</span> i<span class="op">)</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">(</span><span class="va">offset_</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">&amp;</span> <span class="va">capacity_</span><span class="op">;</span> <span class="op">}</span></span>
-<span id="cb24-1814"><a href="#cb24-1814"></a></span>
-<span id="cb24-1815"><a href="#cb24-1815"></a>  <span class="dt">void</span> next<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb24-1816"><a href="#cb24-1816"></a>    <span class="va">index_</span> <span class="op">+=</span> Width<span class="op">;</span></span>
-<span id="cb24-1817"><a href="#cb24-1817"></a>    <span class="va">offset_</span> <span class="op">+=</span> <span class="va">index_</span><span class="op">;</span></span>
-<span id="cb24-1818"><a href="#cb24-1818"></a>    <span class="va">offset_</span> <span class="op">&amp;=</span> <span class="va">capacity_</span><span class="op">;</span></span>
-<span id="cb24-1819"><a href="#cb24-1819"></a>  <span class="op">}</span></span>
-<span id="cb24-1820"><a href="#cb24-1820"></a>  <span class="co">// 0-based probe index, a multiple of `Width`.</span></span>
-<span id="cb24-1821"><a href="#cb24-1821"></a>  <span class="dt">size_t</span> index<span class="op">()</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> <span class="va">index_</span><span class="op">;</span> <span class="op">}</span></span>
-<span id="cb24-1822"><a href="#cb24-1822"></a></span>
-<span id="cb24-1823"><a href="#cb24-1823"></a> <span class="kw">private</span><span class="op">:</span></span>
-<span id="cb24-1824"><a href="#cb24-1824"></a>  <span class="dt">size_t</span> <span class="va">capacity_</span><span class="op">;</span></span>
-<span id="cb24-1825"><a href="#cb24-1825"></a>  <span class="dt">size_t</span> <span class="va">offset_</span><span class="op">;</span></span>
-<span id="cb24-1826"><a href="#cb24-1826"></a>  <span class="dt">size_t</span> <span class="va">index_</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb24-1827"><a href="#cb24-1827"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25" data-filename="absl/container/internal/raw_hash_set.h" data-startfrom="1802"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 1801;"><span id="cb25-1802"><a href="#cb25-1802"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="dt">size_t</span> Width<span class="op">&gt;</span></span>
+<span id="cb25-1803"><a href="#cb25-1803"></a><span class="kw">class</span> probe_seq <span class="op">{</span></span>
+<span id="cb25-1804"><a href="#cb25-1804"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb25-1805"><a href="#cb25-1805"></a>  <span class="co">// Creates a new probe sequence using `hash` as the initial value of the</span></span>
+<span id="cb25-1806"><a href="#cb25-1806"></a>  <span class="co">// sequence and `capacity` as the mask to apply to each value in the</span></span>
+<span id="cb25-1807"><a href="#cb25-1807"></a>  <span class="co">// progression.</span></span>
+<span id="cb25-1808"><a href="#cb25-1808"></a>  probe_seq<span class="op">(</span>ProbeCapacity capacity<span class="op">,</span> <span class="dt">size_t</span> hash<span class="op">)</span></span>
+<span id="cb25-1809"><a href="#cb25-1809"></a>      <span class="op">:</span> <span class="va">capacity_</span><span class="op">(</span>capacity<span class="op">.</span>capacity<span class="op">),</span> <span class="va">offset_</span><span class="op">(</span>hash <span class="op">&amp;</span> <span class="va">capacity_</span><span class="op">)</span> <span class="op">{}</span></span>
+<span id="cb25-1810"><a href="#cb25-1810"></a></span>
+<span id="cb25-1811"><a href="#cb25-1811"></a>  <span class="co">// The offset within the table, i.e., the value `p(i)` above.</span></span>
+<span id="cb25-1812"><a href="#cb25-1812"></a>  <span class="dt">size_t</span> offset<span class="op">()</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> <span class="va">offset_</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb25-1813"><a href="#cb25-1813"></a>  <span class="dt">size_t</span> offset<span class="op">(</span><span class="dt">size_t</span> i<span class="op">)</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">(</span><span class="va">offset_</span> <span class="op">+</span> i<span class="op">)</span> <span class="op">&amp;</span> <span class="va">capacity_</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb25-1814"><a href="#cb25-1814"></a></span>
+<span id="cb25-1815"><a href="#cb25-1815"></a>  <span class="dt">void</span> next<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb25-1816"><a href="#cb25-1816"></a>    <span class="va">index_</span> <span class="op">+=</span> Width<span class="op">;</span></span>
+<span id="cb25-1817"><a href="#cb25-1817"></a>    <span class="va">offset_</span> <span class="op">+=</span> <span class="va">index_</span><span class="op">;</span></span>
+<span id="cb25-1818"><a href="#cb25-1818"></a>    <span class="va">offset_</span> <span class="op">&amp;=</span> <span class="va">capacity_</span><span class="op">;</span></span>
+<span id="cb25-1819"><a href="#cb25-1819"></a>  <span class="op">}</span></span>
+<span id="cb25-1820"><a href="#cb25-1820"></a>  <span class="co">// 0-based probe index, a multiple of `Width`.</span></span>
+<span id="cb25-1821"><a href="#cb25-1821"></a>  <span class="dt">size_t</span> index<span class="op">()</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> <span class="va">index_</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb25-1822"><a href="#cb25-1822"></a></span>
+<span id="cb25-1823"><a href="#cb25-1823"></a> <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb25-1824"><a href="#cb25-1824"></a>  <span class="dt">size_t</span> <span class="va">capacity_</span><span class="op">;</span></span>
+<span id="cb25-1825"><a href="#cb25-1825"></a>  <span class="dt">size_t</span> <span class="va">offset_</span><span class="op">;</span></span>
+<span id="cb25-1826"><a href="#cb25-1826"></a>  <span class="dt">size_t</span> <span class="va">index_</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb25-1827"><a href="#cb25-1827"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>The first thing you do, is figure out what group you are in. So, you take the <code>H1(hash)</code>, modulo it with the <code>capacity_</code>. There’s an infinite <code>while</code> loop, that advances through the groups one at a time. You are trying to find groups that have matches. Advancing to the next group is done by calling <code>.next()</code> on the <code>probe_seq&lt;16&gt;</code> object.</p>
 <section id="the-groupmatchh2_t-hash-function" class="level3">
@@ -1288,45 +1293,56 @@ window.Quarto = {
 <div class="code-with-filename-file">
 <pre><strong>absl/container/internal/hashtable_control_bytes.h</strong></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25" data-filename="absl/container/internal/hashtable_control_bytes.h" data-startfrom="290"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 289;"><span id="cb25-290"><a href="#cb25-290"></a>  BitMaskType Match<span class="op">(</span><span class="dt">h2_t</span> hash<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
-<span id="cb25-291"><a href="#cb25-291"></a>    <span class="kw">auto</span> match <span class="op">=</span> _mm_set1_epi8<span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">char</span><span class="op">&gt;(</span>hash<span class="op">));</span></span>
-<span id="cb25-292"><a href="#cb25-292"></a>    <span class="cf">return</span> BitMaskType<span class="op">(</span>MoveMask<span class="op">(</span>_mm_cmpeq_epi8<span class="op">(</span>match<span class="op">,</span> ctrl<span class="op">)));</span></span>
-<span id="cb25-293"><a href="#cb25-293"></a>  <span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26" data-filename="absl/container/internal/hashtable_control_bytes.h" data-startfrom="290"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 289;"><span id="cb26-290"><a href="#cb26-290"></a>  BitMaskType Match<span class="op">(</span><span class="dt">h2_t</span> hash<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb26-291"><a href="#cb26-291"></a>    <span class="kw">auto</span> match <span class="op">=</span> _mm_set1_epi8<span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">char</span><span class="op">&gt;(</span>hash<span class="op">));</span></span>
+<span id="cb26-292"><a href="#cb26-292"></a>    <span class="cf">return</span> BitMaskType<span class="op">(</span>MoveMask<span class="op">(</span>_mm_cmpeq_epi8<span class="op">(</span>match<span class="op">,</span> ctrl<span class="op">)));</span></span>
+<span id="cb26-293"><a href="#cb26-293"></a>  <span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p><code>_mm_set1_epi8(h2)</code> will initialize a <code>128</code>-bit vector(that can hold <code>16</code> things each of size <code>8</code>-bits) with the <code>h2</code> hash.</p>
 <p><code>__mm_cmpeq_epi8(a,b)</code> component-wise compares two <code>128</code>-bit vectors(<code>16</code> control bytes) and produces a <code>128</code>-bit vector result. If any two corresponding components of <code>a</code> and <code>b</code> compare equal, the corresponding component in the result is set to <code>0xFF</code>.</p>
 <p>Consider the following example. <code>__m128i</code> is a 128-bit vector.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;emmintrin.h&gt;</span><span class="pp">  </span><span class="co">// SSE2</span></span>
-<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stdint.h&gt;</span></span>
-<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stdio.h&gt;</span></span>
-<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint8_t</span> ctrl<span class="op">[</span><span class="dv">16</span><span class="op">]</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a>        <span class="bn">0x7f</span><span class="op">,</span> <span class="bn">0xdf</span><span class="op">,</span> <span class="bn">0x96</span><span class="op">,</span> <span class="bn">0x32</span><span class="op">,</span> <span class="bn">0xf1</span><span class="op">,</span> <span class="bn">0xf8</span><span class="op">,</span> <span class="bn">0xeb</span><span class="op">,</span> <span class="bn">0x43</span><span class="op">,</span></span>
-<span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a>        <span class="bn">0x7f</span><span class="op">,</span> <span class="bn">0xdf</span><span class="op">,</span> <span class="bn">0x96</span><span class="op">,</span> <span class="bn">0x32</span><span class="op">,</span> <span class="bn">0xf1</span><span class="op">,</span> <span class="bn">0xf8</span><span class="op">,</span> <span class="bn">0xeb</span><span class="op">,</span> <span class="bn">0x43</span></span>
-<span id="cb26-10"><a href="#cb26-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
-<span id="cb26-11"><a href="#cb26-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint8_t</span> h2 <span class="op">=</span> <span class="bn">0x96</span><span class="op">;</span></span>
-<span id="cb26-12"><a href="#cb26-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb26-13"><a href="#cb26-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Load 16 bytes into a __m128i. </span></span>
-<span id="cb26-14"><a href="#cb26-14" aria-hidden="true" tabindex="-1"></a>    __m128i a <span class="op">=</span> _mm_loadu_si128<span class="op">((</span>__m128i <span class="at">const</span><span class="op">*)</span>ctrl<span class="op">);</span></span>
-<span id="cb26-15"><a href="#cb26-15" aria-hidden="true" tabindex="-1"></a>    __m128i b <span class="op">=</span> _mm_set1_epi8<span class="op">(</span>h2<span class="op">);</span></span>
-<span id="cb26-16"><a href="#cb26-16" aria-hidden="true" tabindex="-1"></a>    __m128i result <span class="op">=</span> _mm_cmpeq_epi8<span class="op">(</span>a<span class="op">,</span> b<span class="op">);</span></span>
-<span id="cb26-17"><a href="#cb26-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb26-18"><a href="#cb26-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint8_t</span> dst<span class="op">[</span><span class="dv">16</span><span class="op">];</span></span>
-<span id="cb26-19"><a href="#cb26-19" aria-hidden="true" tabindex="-1"></a>    _mm_storeu_si128<span class="op">((</span>__m128i<span class="op">*)</span>dst<span class="op">,</span> result<span class="op">);</span></span>
-<span id="cb26-20"><a href="#cb26-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb26-21"><a href="#cb26-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">16</span><span class="op">;</span> i<span class="op">++)</span> <span class="op">{</span></span>
-<span id="cb26-22"><a href="#cb26-22" aria-hidden="true" tabindex="-1"></a>        printf<span class="op">(</span><span class="st">"</span><span class="sc">%02x</span><span class="st"> "</span><span class="op">,</span> dst<span class="op">[</span>i<span class="op">]);</span></span>
-<span id="cb26-23"><a href="#cb26-23" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
-<span id="cb26-24"><a href="#cb26-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb26-25"><a href="#cb26-25" aria-hidden="true" tabindex="-1"></a>    <span class="co">// dst = {</span></span>
-<span id="cb26-26"><a href="#cb26-26" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00,</span></span>
-<span id="cb26-27"><a href="#cb26-27" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00,</span></span>
-<span id="cb26-28"><a href="#cb26-28" aria-hidden="true" tabindex="-1"></a>    <span class="co">//}</span></span>
-<span id="cb26-29"><a href="#cb26-29" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb26-30"><a href="#cb26-30" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27"><pre class="sourceCode cpp code-with-copy"><code class="sourceCode cpp"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;emmintrin.h&gt;</span><span class="pp">  </span><span class="co">// SSE2</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stdint.h&gt;</span></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stdio.h&gt;</span></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint8_t</span> ctrl<span class="op">[</span><span class="dv">16</span><span class="op">]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb27-8"><a href="#cb27-8" aria-hidden="true" tabindex="-1"></a>        <span class="bn">0x7f</span><span class="op">,</span> <span class="bn">0xdf</span><span class="op">,</span> <span class="bn">0x96</span><span class="op">,</span> <span class="bn">0x32</span><span class="op">,</span> <span class="bn">0xf1</span><span class="op">,</span> <span class="bn">0xf8</span><span class="op">,</span> <span class="bn">0xeb</span><span class="op">,</span> <span class="bn">0x43</span><span class="op">,</span></span>
+<span id="cb27-9"><a href="#cb27-9" aria-hidden="true" tabindex="-1"></a>        <span class="bn">0x7f</span><span class="op">,</span> <span class="bn">0xdf</span><span class="op">,</span> <span class="bn">0x96</span><span class="op">,</span> <span class="bn">0x32</span><span class="op">,</span> <span class="bn">0xf1</span><span class="op">,</span> <span class="bn">0xf8</span><span class="op">,</span> <span class="bn">0xeb</span><span class="op">,</span> <span class="bn">0x43</span></span>
+<span id="cb27-10"><a href="#cb27-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb27-11"><a href="#cb27-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint8_t</span> h2 <span class="op">=</span> <span class="bn">0x96</span><span class="op">;</span></span>
+<span id="cb27-12"><a href="#cb27-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-13"><a href="#cb27-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Load 16 bytes into a __m128i. </span></span>
+<span id="cb27-14"><a href="#cb27-14" aria-hidden="true" tabindex="-1"></a>    __m128i a <span class="op">=</span> _mm_loadu_si128<span class="op">((</span>__m128i <span class="at">const</span><span class="op">*)</span>ctrl<span class="op">);</span></span>
+<span id="cb27-15"><a href="#cb27-15" aria-hidden="true" tabindex="-1"></a>    __m128i b <span class="op">=</span> _mm_set1_epi8<span class="op">(</span>h2<span class="op">);</span></span>
+<span id="cb27-16"><a href="#cb27-16" aria-hidden="true" tabindex="-1"></a>    __m128i result <span class="op">=</span> _mm_cmpeq_epi8<span class="op">(</span>a<span class="op">,</span> b<span class="op">);</span></span>
+<span id="cb27-17"><a href="#cb27-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-18"><a href="#cb27-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint8_t</span> dst<span class="op">[</span><span class="dv">16</span><span class="op">];</span></span>
+<span id="cb27-19"><a href="#cb27-19" aria-hidden="true" tabindex="-1"></a>    _mm_storeu_si128<span class="op">((</span>__m128i<span class="op">*)</span>dst<span class="op">,</span> result<span class="op">);</span></span>
+<span id="cb27-20"><a href="#cb27-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-21"><a href="#cb27-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">16</span><span class="op">;</span> i<span class="op">++)</span> <span class="op">{</span></span>
+<span id="cb27-22"><a href="#cb27-22" aria-hidden="true" tabindex="-1"></a>        printf<span class="op">(</span><span class="st">"</span><span class="sc">%02x</span><span class="st"> "</span><span class="op">,</span> dst<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb27-23"><a href="#cb27-23" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb27-24"><a href="#cb27-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-25"><a href="#cb27-25" aria-hidden="true" tabindex="-1"></a>    <span class="co">// dst = {</span></span>
+<span id="cb27-26"><a href="#cb27-26" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00,</span></span>
+<span id="cb27-27"><a href="#cb27-27" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00,</span></span>
+<span id="cb27-28"><a href="#cb27-28" aria-hidden="true" tabindex="-1"></a>    <span class="co">//}</span></span>
+<span id="cb27-29"><a href="#cb27-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-30"><a href="#cb27-30" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><a href="https://godbolt.org/z/8PMfq8oj9">Compiler Explorer</a></p>
+<p><code>MoveMask</code> is a wrapper over <code>_mm_movemask_epi8(a)</code>.</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>absl/container/internal/hashtable_control_bytes.h</strong></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb28" data-filename="absl/container/internal/hashtable_control_bytes.h" data-startfrom="290"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 289;"><span id="cb28-290"><a href="#cb28-290"></a>  BitMaskType Match<span class="op">(</span><span class="dt">h2_t</span> hash<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb28-291"><a href="#cb28-291"></a>    <span class="kw">auto</span> match <span class="op">=</span> _mm_set1_epi8<span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">char</span><span class="op">&gt;(</span>hash<span class="op">));</span></span>
+<span id="cb28-292"><a href="#cb28-292"></a>    <span class="cf">return</span> BitMaskType<span class="op">(</span>MoveMask<span class="op">(</span>_mm_cmpeq_epi8<span class="op">(</span>match<span class="op">,</span> ctrl<span class="op">)));</span></span>
+<span id="cb28-293"><a href="#cb28-293"></a>  <span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>_mm_movemask_epi8</code> takes our <code>128</code>-bit thing and squishes it. It takes the high-bit of each byte and gives us a <code>16</code>-bit thing, that has <code>0</code>s where they didnt match and <code>1</code>s where they do match. This tell us which of our <code>16</code>-control bytes had the proper <code>h2(hash)</code>.</p>
 
 
 </section>
