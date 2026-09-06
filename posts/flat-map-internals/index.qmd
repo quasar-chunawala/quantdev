@@ -791,6 +791,8 @@ First, let's analyse the functions `LowestBitSet()`, `TrailingZeros()` and `Lead
 
 #### `NonIterableBitMask::LowestBitSet`
 
+To quickly understand `LowestBitSet()`, we go a couple of layers deeper.
+
 ```{.cpp include="./hashtable_control_bytes.h" start-line=89 end-line=91 code-line-numbers="true" filename="absl/container/internal/hashtable_control_bytes.h"}
 ```
 
@@ -798,5 +800,26 @@ First, let's analyse the functions `LowestBitSet()`, `TrailingZeros()` and `Lead
 
 ```{.cpp include="./hashtable_control_bytes.h" start-line=61 end-line=65 code-line-numbers="true" filename="absl/container/internal/hashtable_control_bytes.h"}
 ```
+
+The `countr_zero(T x)` is utility function defined in the `absl/numeric/bits.h` header.
+
+
+```{.cpp include="./bits.h" start-line=117 end-line=121 code-line-numbers="true" filename="absl/numeric/bits.h"}
+```
+
+Using SFINAE, the `countr_zero(T x)` is instantiated at compile-time, only if `T` is an unsigned type. `countr_zero(T x)` in turn calls `numeric_internal::CountTrailingZeres(x)`. 
+
+```{.cpp include="./numeric/internal/bits.h" start-line=351 end-line=365 code-line-numbers="true" filename="absl/numeric/internal/bits.h"}
+```
+
+This function first runs a bunch of compile-time `assert`s. `T` must be an unsigned type. [std::numeric_limits<T>::digits](https://en.cppreference.com/cpp/types/numeric_limits/digits) is the number of digits in std::numeric_limits<T>::radix base(`2` for fundamental types) that the type `T` can hold. So, for example, `std::numeric_limits<uint32_t>::digits` equals `32`. The function checks at compile-time if the number of digits that can be held by `T` is a power of `2`. 
+
+If `x == 0`, the number of trailing zeroes is just `std::numeric_limits<T>::digits`. Else, if `sizeof(T) <= sizeof(uint16_t)`, we branch to `CountTrailingZeroesNonzero16(static_cast<uint16_t>(x))`. Let's look at the definition of the `32`-bit version: `CountTrailingZeroesNonzero32(uint32_t x)`. 
+
+```{.cpp include="./numeric/internal/bits.h" start-line=284 end-line=304 code-line-numbers="true" filename="absl/numeric/internal/bits.h"}
+```
+
+First we check, if the compiler supports the intrinsic `__builtin_ctz`. Compiler intrinsics are functions, whose implementation is handled specially by the compiler. The standard way of checking this is querying `__has_builtin(__builtin_ctz)`. In the case, this intrinsic is not supported, we have a fall-back. `_MSC_VER` is a built-in preprocessor macro always defined in Microsoft Visual C++ compiler. So, if the compiler is MSVC, we use `_BitScanForward`. If none of the above conditions are true, we use the following algorithm. 
+
 
 

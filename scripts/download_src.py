@@ -62,6 +62,20 @@ FILES = [
         "path": "absl/container/internal/hashtable_control_bytes.h",
         "dest": "../posts/flat-map-internals/hashtable_control_bytes.h",
     },
+    {
+        "owner": "abseil",
+        "repo": "abseil-cpp",
+        "ref": "2c004366e983c5be8334ac1ea3d4420e8fbcbea7",
+        "path": "absl/numeric/bits.h",
+        "dest": "../posts/flat-map-internals/bits.h",
+    },
+    {
+        "owner": "abseil",
+        "repo": "abseil-cpp",
+        "ref": "2c004366e983c5be8334ac1ea3d4420e8fbcbea7",
+        "path": "absl/numeric/internal/bits.h",
+        "dest": "../posts/flat-map-internals/numeric/internal/bits.h",
+    },
     # Add more dicts here as needed.
 ]
 

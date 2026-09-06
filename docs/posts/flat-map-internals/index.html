@@ -433,14 +433,14 @@ window.Quarto = {
 <section id="introduction" class="level1">
 <h1>Introduction</h1>
 <p>We use hash-tables a lot in software programming and there has been a strong desire for a more space and run-time efficient representation of a <code>map</code> among C++ users. I recently watched Matt Kulukundis’ CppCon 2017 talk, <a href="https://www.youtube.com/watch?v=ncHmEUmJZf4">Designing a fast, efficient, cache-friendly hash Table, step by step</a>. In this blog-post, I would like to explore the implementation details of the abseil library’s <code>flat_hash_map</code> data-structure.</p>
-<div id="f6ffbb79" class="cell" data-execution_count="1">
+<div id="023bd07c" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>load_ext itikz</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </section>
 <section id="the-standard-librarys-unordered_set" class="level1">
 <h1>The standard library’s <code>unordered_set</code></h1>
 <p>Our starting point is the standard library’s implementation of a hash-table called the <code>unordered_set</code>. Here, we have a table(array) <code>S</code>, of size <span class="math inline">\(2^n\)</span>. The array elements <span class="math inline">\(S[0],\ldots,S[2^n - 1]\)</span> are called slots. A new element is inserted into the table by hashing it, to find the correct slot. The element is stored at <code>hash(item) % capacity()</code> index. Two elements with the same hash-code, would have to be stored at the same slot; so we need a way to resolve collisions. <code>unordered_set</code> uses chaining, so each slot <code>S[i]</code> is more like a bucket, it is a linked-list of all items that hash to the same hash-code.</p>
-<div id="b70bee42" class="cell" data-execution_count="2">
+<div id="50c16b95" class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -513,7 +513,7 @@ window.Quarto = {
 </div>
 <p>The <code>H</code> in the diagram is the <em>hash-code</em>. It is <code>64</code>-bits. <code>V</code> is the actual value - the thing that we want to store. Because, each item lives in a separate node, different from the primary data-structure - the bucket array <code>S</code>, we say it has pointer-stability. No matter, what happens to the internals of the hash-table, the value doesn’t move, it lives at the same memory address. This is a property guaranteed by the standard. <span class="math inline">\(\phi\)</span> denotes <code>nullptr</code>; it is used to indicate the end of linked-lists. The green nodes are all in the same bucket chain.</p>
 <p>The above mental picture is ballpark correct. The actual picture is more like this:</p>
-<div id="3deac437" class="cell" data-execution_count="3">
+<div id="551197e9" class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -591,7 +591,7 @@ window.Quarto = {
 </div>
 </div>
 <p>If we zoom out and think for a bit, it makes more sense, why it is implemnented like this. Let’s rearrange the above picture.</p>
-<div id="93706a0b" class="cell" data-execution_count="4">
+<div id="0391bcea" class="cell" data-execution_count="4">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -665,7 +665,7 @@ window.Quarto = {
 <section id="how-does-.findval-operate-on-this-table" class="level2">
 <h2 class="anchored" data-anchor-id="how-does-.findval-operate-on-this-table">How does <code>.find(val)</code> operate on this table?</h2>
 <p>We want to find the element highlighted in red; it happens to be the second element in the bucket chain.</p>
-<div id="7d528c3a" class="cell" data-execution_count="5">
+<div id="1a367da9" class="cell" data-execution_count="5">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -736,7 +736,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We compute the <code>hash(val) % capacity()</code> to figure out the slot in the bucket array.</p>
-<div id="f3d08c60" class="cell" data-execution_count="6">
+<div id="cb68fa5d" class="cell" data-execution_count="6">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -807,7 +807,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We follow that to the entry before the first entry in the green bucket chain.</p>
-<div id="8193807b" class="cell" data-execution_count="7">
+<div id="b9cec3a5" class="cell" data-execution_count="7">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -876,7 +876,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We always just skip this one. Then, we go to the first entry that’s actually there. We compare the computed hash <code>hash(val)</code> against the hash stored in the node. If that matches, we compare the value <code>V</code> against the value that we want.</p>
-<div id="c1396933" class="cell" data-execution_count="8">
+<div id="defcb662" class="cell" data-execution_count="8">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -945,7 +945,7 @@ window.Quarto = {
 </div>
 </div>
 <p>In our case, we jump to the next node, because it didn’t match. Now, we actually get to the one we want.</p>
-<div id="ec80380c" class="cell" data-execution_count="9">
+<div id="c28fa484" class="cell" data-execution_count="9">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -1438,6 +1438,7 @@ window.Quarto = {
 <p>First, let’s analyse the functions <code>LowestBitSet()</code>, <code>TrailingZeros()</code> and <code>LeadingZeros</code> in the <code>NonIterableBitMask</code> class.</p>
 <section id="noniterablebitmasklowestbitset" class="level4">
 <h4 class="anchored" data-anchor-id="noniterablebitmasklowestbitset"><code>NonIterableBitMask::LowestBitSet</code></h4>
+<p>To quickly understand <code>LowestBitSet()</code>, we go a couple of layers deeper.</p>
 <div class="code-with-filename">
 <div class="code-with-filename-file">
 <pre><strong>absl/container/internal/hashtable_control_bytes.h</strong></pre>
@@ -1457,6 +1458,67 @@ window.Quarto = {
 <span id="cb35-64"><a href="#cb35-64"></a>  <span class="cf">return</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">&gt;(</span>countr_zero<span class="op">(</span>x<span class="op">));</span></span>
 <span id="cb35-65"><a href="#cb35-65"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
+<p>The <code>countr_zero(T x)</code> is utility function defined in the <code>absl/numeric/bits.h</code> header.</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>absl/numeric/bits.h</strong></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb36" data-filename="absl/numeric/bits.h" data-startfrom="117"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 116;"><span id="cb36-117"><a href="#cb36-117"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">class</span> T<span class="op">&gt;</span></span>
+<span id="cb36-118"><a href="#cb36-118"></a>ABSL_INTERNAL_CONSTEXPR_CTZ <span class="kw">inline</span> <span class="bu">std::</span>enable_if_t<span class="op">&lt;</span><span class="bu">std::</span>is_unsigned_v<span class="op">&lt;</span>T<span class="op">&gt;,</span> <span class="dt">int</span><span class="op">&gt;</span></span>
+<span id="cb36-119"><a href="#cb36-119"></a>countr_zero<span class="op">(</span>T x<span class="op">)</span> <span class="kw">noexcept</span> <span class="op">{</span></span>
+<span id="cb36-120"><a href="#cb36-120"></a>  <span class="cf">return</span> numeric_internal<span class="op">::</span>CountTrailingZeroes<span class="op">(</span>x<span class="op">);</span></span>
+<span id="cb36-121"><a href="#cb36-121"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Using SFINAE, the <code>countr_zero(T x)</code> is instantiated at compile-time, only if <code>T</code> is an unsigned type. <code>countr_zero(T x)</code> in turn calls <code>numeric_internal::CountTrailingZeres(x)</code>.</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>absl/numeric/internal/bits.h</strong></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb37" data-filename="absl/numeric/internal/bits.h" data-startfrom="351"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 350;"><span id="cb37-351"><a href="#cb37-351"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">class</span> T<span class="op">&gt;</span></span>
+<span id="cb37-352"><a href="#cb37-352"></a>ABSL_ATTRIBUTE_ALWAYS_INLINE ABSL_INTERNAL_CONSTEXPR_CTZ <span class="kw">inline</span> <span class="dt">int</span></span>
+<span id="cb37-353"><a href="#cb37-353"></a>CountTrailingZeroes<span class="op">(</span>T x<span class="op">)</span> <span class="kw">noexcept</span> <span class="op">{</span></span>
+<span id="cb37-354"><a href="#cb37-354"></a>  <span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_unsigned_v<span class="op">&lt;</span>T<span class="op">&gt;,</span> <span class="st">"T must be unsigned"</span><span class="op">);</span></span>
+<span id="cb37-355"><a href="#cb37-355"></a>  <span class="kw">static_assert</span><span class="op">(</span>IsPowerOf2<span class="op">(</span><span class="bu">std::</span>numeric_limits<span class="op">&lt;</span>T<span class="op">&gt;::</span>digits<span class="op">),</span></span>
+<span id="cb37-356"><a href="#cb37-356"></a>                <span class="st">"T must have a power-of-2 size"</span><span class="op">);</span></span>
+<span id="cb37-357"><a href="#cb37-357"></a>  <span class="kw">static_assert</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)</span> <span class="op">&lt;=</span> <span class="kw">sizeof</span><span class="op">(</span><span class="dt">uint64_t</span><span class="op">),</span> <span class="st">"T too large"</span><span class="op">);</span></span>
+<span id="cb37-358"><a href="#cb37-358"></a>  <span class="cf">return</span> x <span class="op">==</span> <span class="dv">0</span> <span class="op">?</span> <span class="bu">std::</span>numeric_limits<span class="op">&lt;</span>T<span class="op">&gt;::</span>digits</span>
+<span id="cb37-359"><a href="#cb37-359"></a>                <span class="op">:</span> <span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)</span> <span class="op">&lt;=</span> <span class="kw">sizeof</span><span class="op">(</span><span class="dt">uint16_t</span><span class="op">)</span></span>
+<span id="cb37-360"><a href="#cb37-360"></a>                       <span class="op">?</span> CountTrailingZeroesNonzero16<span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">uint16_t</span><span class="op">&gt;(</span>x<span class="op">))</span></span>
+<span id="cb37-361"><a href="#cb37-361"></a>                       <span class="op">:</span> <span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>T<span class="op">)</span> <span class="op">&lt;=</span> <span class="kw">sizeof</span><span class="op">(</span><span class="dt">uint32_t</span><span class="op">)</span></span>
+<span id="cb37-362"><a href="#cb37-362"></a>                              <span class="op">?</span> CountTrailingZeroesNonzero32<span class="op">(</span></span>
+<span id="cb37-363"><a href="#cb37-363"></a>                                    <span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">&gt;(</span>x<span class="op">))</span></span>
+<span id="cb37-364"><a href="#cb37-364"></a>                              <span class="op">:</span> CountTrailingZeroesNonzero64<span class="op">(</span>x<span class="op">)));</span></span>
+<span id="cb37-365"><a href="#cb37-365"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>This function first runs a bunch of compile-time <code>assert</code>s. <code>T</code> must be an unsigned type. <a href="https://en.cppreference.com/cpp/types/numeric_limits/digits">std::numeric_limits<t>::digits</t></a> is the number of digits in std::numeric_limits<t>::radix base(<code>2</code> for fundamental types) that the type <code>T</code> can hold. So, for example, <code>std::numeric_limits&lt;uint32_t&gt;::digits</code> equals <code>32</code>. The function checks at compile-time if the number of digits that can be held by <code>T</code> is a power of <code>2</code>.</t></p>
+<p>If <code>x == 0</code>, the number of trailing zeroes is just <code>std::numeric_limits&lt;T&gt;::digits</code>. Else, if <code>sizeof(T) &lt;= sizeof(uint16_t)</code>, we branch to <code>CountTrailingZeroesNonzero16(static_cast&lt;uint16_t&gt;(x))</code>. Let’s look at the definition of the <code>32</code>-bit version: <code>CountTrailingZeroesNonzero32(uint32_t x)</code>.</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>absl/numeric/internal/bits.h</strong></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb38" data-filename="absl/numeric/internal/bits.h" data-startfrom="284"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 283;"><span id="cb38-284"><a href="#cb38-284"></a>ABSL_ATTRIBUTE_ALWAYS_INLINE ABSL_INTERNAL_CONSTEXPR_CTZ <span class="kw">inline</span> <span class="dt">int</span></span>
+<span id="cb38-285"><a href="#cb38-285"></a>CountTrailingZeroesNonzero32<span class="op">(</span><span class="dt">uint32_t</span> x<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb38-286"><a href="#cb38-286"></a><span class="pp">#if ABSL_NUMERIC_INTERNAL_HAVE_BUILTIN_OR_GCC(__builtin_ctz)</span></span>
+<span id="cb38-287"><a href="#cb38-287"></a>  <span class="kw">static_assert</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span><span class="dt">unsigned</span> <span class="dt">int</span><span class="op">)</span> <span class="op">==</span> <span class="kw">sizeof</span><span class="op">(</span>x<span class="op">),</span></span>
+<span id="cb38-288"><a href="#cb38-288"></a>                <span class="st">"__builtin_ctz does not take 32-bit arg"</span><span class="op">);</span></span>
+<span id="cb38-289"><a href="#cb38-289"></a>  <span class="cf">return</span> <span class="fu">__builtin_ctz</span><span class="op">(</span>x<span class="op">);</span></span>
+<span id="cb38-290"><a href="#cb38-290"></a><span class="pp">#elif defined(_MSC_VER) &amp;&amp; !defined(__clang__)</span></span>
+<span id="cb38-291"><a href="#cb38-291"></a>  <span class="dt">unsigned</span> <span class="dt">long</span> result <span class="op">=</span> <span class="dv">0</span><span class="op">;</span>  <span class="co">// </span><span class="al">NOLINT</span><span class="co">(runtime/int)</span></span>
+<span id="cb38-292"><a href="#cb38-292"></a>  _BitScanForward<span class="op">(&amp;</span>result<span class="op">,</span> x<span class="op">);</span></span>
+<span id="cb38-293"><a href="#cb38-293"></a>  <span class="cf">return</span> result<span class="op">;</span></span>
+<span id="cb38-294"><a href="#cb38-294"></a><span class="pp">#else</span></span>
+<span id="cb38-295"><a href="#cb38-295"></a>  <span class="dt">int</span> c <span class="op">=</span> <span class="dv">31</span><span class="op">;</span></span>
+<span id="cb38-296"><a href="#cb38-296"></a>  x <span class="op">&amp;=</span> <span class="op">~</span>x <span class="op">+</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb38-297"><a href="#cb38-297"></a>  <span class="cf">if</span> <span class="op">(</span>x <span class="op">&amp;</span> <span class="bn">0x0000FFFF</span><span class="op">)</span> c <span class="op">-=</span> <span class="dv">16</span><span class="op">;</span></span>
+<span id="cb38-298"><a href="#cb38-298"></a>  <span class="cf">if</span> <span class="op">(</span>x <span class="op">&amp;</span> <span class="bn">0x00FF00FF</span><span class="op">)</span> c <span class="op">-=</span> <span class="dv">8</span><span class="op">;</span></span>
+<span id="cb38-299"><a href="#cb38-299"></a>  <span class="cf">if</span> <span class="op">(</span>x <span class="op">&amp;</span> <span class="bn">0x0F0F0F0F</span><span class="op">)</span> c <span class="op">-=</span> <span class="dv">4</span><span class="op">;</span></span>
+<span id="cb38-300"><a href="#cb38-300"></a>  <span class="cf">if</span> <span class="op">(</span>x <span class="op">&amp;</span> <span class="bn">0x33333333</span><span class="op">)</span> c <span class="op">-=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb38-301"><a href="#cb38-301"></a>  <span class="cf">if</span> <span class="op">(</span>x <span class="op">&amp;</span> <span class="bn">0x55555555</span><span class="op">)</span> c <span class="op">-=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb38-302"><a href="#cb38-302"></a>  <span class="cf">return</span> c<span class="op">;</span></span>
+<span id="cb38-303"><a href="#cb38-303"></a><span class="pp">#endif</span></span>
+<span id="cb38-304"><a href="#cb38-304"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>First we check, if the compiler supports the intrinsic <code>__builtin_ctz</code>. Compiler intrinsics are functions, whose implementation is handled specially by the compiler. The standard way of checking this is querying <code>__has_builtin(__builtin_ctz)</code>. In the case, this intrinsic is not supported, we have a fall-back. <code>_MSC_VER</code> is a built-in preprocessor macro always defined in Microsoft Visual C++ compiler. So, if the compiler is MSVC, we use <code>_BitScanForward</code>. If none of the above conditions are true, we fall-back to the following algorithm.</p>
 
 
 </section>
