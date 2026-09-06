@@ -417,6 +417,7 @@ window.Quarto = {
   <li><a href="#how-does-.findkey-work-for-the-raw_hash_set" id="toc-how-does-.findkey-work-for-the-raw_hash_set" class="nav-link" data-scroll-target="#how-does-.findkey-work-for-the-raw_hash_set">How does <code>.find(key)</code> work for the <code>raw_hash_set</code>?</a>
   <ul class="collapse">
   <li><a href="#the-groupmatchh2_t-hash-function" id="toc-the-groupmatchh2_t-hash-function" class="nav-link" data-scroll-target="#the-groupmatchh2_t-hash-function">The <code>Group::match(h2_t hash)</code> function</a></li>
+  <li><a href="#the-bitmasktype" id="toc-the-bitmasktype" class="nav-link" data-scroll-target="#the-bitmasktype">The <code>BitMaskType</code></a></li>
   </ul></li>
   </ul>
 </nav>
@@ -432,14 +433,14 @@ window.Quarto = {
 <section id="introduction" class="level1">
 <h1>Introduction</h1>
 <p>We use hash-tables a lot in software programming and there has been a strong desire for a more space and run-time efficient representation of a <code>map</code> among C++ users. I recently watched Matt Kulukundis’ CppCon 2017 talk, <a href="https://www.youtube.com/watch?v=ncHmEUmJZf4">Designing a fast, efficient, cache-friendly hash Table, step by step</a>. In this blog-post, I would like to explore the implementation details of the abseil library’s <code>flat_hash_map</code> data-structure.</p>
-<div id="4add8fac" class="cell" data-execution_count="1">
+<div id="34596387" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>load_ext itikz</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </section>
 <section id="the-standard-librarys-unordered_set" class="level1">
 <h1>The standard library’s <code>unordered_set</code></h1>
 <p>Our starting point is the standard library’s implementation of a hash-table called the <code>unordered_set</code>. Here, we have a table(array) <code>S</code>, of size <span class="math inline">\(2^n\)</span>. The array elements <span class="math inline">\(S[0],\ldots,S[2^n - 1]\)</span> are called slots. A new element is inserted into the table by hashing it, to find the correct slot. The element is stored at <code>hash(item) % capacity()</code> index. Two elements with the same hash-code, would have to be stored at the same slot; so we need a way to resolve collisions. <code>unordered_set</code> uses chaining, so each slot <code>S[i]</code> is more like a bucket, it is a linked-list of all items that hash to the same hash-code.</p>
-<div id="7bd6143f" class="cell" data-execution_count="2">
+<div id="8873010a" class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -512,7 +513,7 @@ window.Quarto = {
 </div>
 <p>The <code>H</code> in the diagram is the <em>hash-code</em>. It is <code>64</code>-bits. <code>V</code> is the actual value - the thing that we want to store. Because, each item lives in a separate node, different from the primary data-structure - the bucket array <code>S</code>, we say it has pointer-stability. No matter, what happens to the internals of the hash-table, the value doesn’t move, it lives at the same memory address. This is a property guaranteed by the standard. <span class="math inline">\(\phi\)</span> denotes <code>nullptr</code>; it is used to indicate the end of linked-lists. The green nodes are all in the same bucket chain.</p>
 <p>The above mental picture is ballpark correct. The actual picture is more like this:</p>
-<div id="e899ed35" class="cell" data-execution_count="3">
+<div id="26db8cd1" class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -590,7 +591,7 @@ window.Quarto = {
 </div>
 </div>
 <p>If we zoom out and think for a bit, it makes more sense, why it is implemnented like this. Let’s rearrange the above picture.</p>
-<div id="4b906a79" class="cell" data-execution_count="4">
+<div id="d3d1508d" class="cell" data-execution_count="4">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -664,7 +665,7 @@ window.Quarto = {
 <section id="how-does-.findval-operate-on-this-table" class="level2">
 <h2 class="anchored" data-anchor-id="how-does-.findval-operate-on-this-table">How does <code>.find(val)</code> operate on this table?</h2>
 <p>We want to find the element highlighted in red; it happens to be the second element in the bucket chain.</p>
-<div id="cd16bb09" class="cell" data-execution_count="5">
+<div id="26540ab6" class="cell" data-execution_count="5">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -735,7 +736,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We compute the <code>hash(val) % capacity()</code> to figure out the slot in the bucket array.</p>
-<div id="53bf6bce" class="cell" data-execution_count="6">
+<div id="52bef2e0" class="cell" data-execution_count="6">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -806,7 +807,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We follow that to the entry before the first entry in the green bucket chain.</p>
-<div id="dd6cd460" class="cell" data-execution_count="7">
+<div id="e1f7fc1e" class="cell" data-execution_count="7">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -875,7 +876,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We always just skip this one. Then, we go to the first entry that’s actually there. We compare the computed hash <code>hash(val)</code> against the hash stored in the node. If that matches, we compare the value <code>V</code> against the value that we want.</p>
-<div id="3081e5df" class="cell" data-execution_count="8">
+<div id="e5a24aa9" class="cell" data-execution_count="8">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -944,7 +945,7 @@ window.Quarto = {
 </div>
 </div>
 <p>In our case, we jump to the next node, because it didn’t match. Now, we actually get to the one we want.</p>
-<div id="cecd0140" class="cell" data-execution_count="9">
+<div id="5cea5759" class="cell" data-execution_count="9">
 <details class="code-fold">
 <summary>Show the code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>itikz <span class="op">--</span>temp<span class="op">-</span><span class="bu">dir</span> <span class="op">--</span>tex<span class="op">-</span>packages<span class="op">=</span>tikz,color <span class="op">--</span>tikz<span class="op">-</span>libraries<span class="op">=</span>arrows.meta <span class="op">--</span>implicit<span class="op">-</span>standalone</span>
@@ -1362,6 +1363,84 @@ window.Quarto = {
 <span id="cb29-17"><a href="#cb29-17" aria-hidden="true" tabindex="-1"></a>    <span class="ot">assert</span><span class="op">(</span>result <span class="op">==</span> expected<span class="op">);</span></span>
 <span id="cb29-18"><a href="#cb29-18" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><a href="https://godbolt.org/z/Mb9a4853T">Compiler Explorer</a></p>
+<p>Therefore, <code>GroupSse2Impl::Match(h2)</code> tells us, which of our <code>16</code> control-bytes have the proper <code>h2</code> hash.</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>absl/container/internal/hashtable_control_bytes.h</strong></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb30" data-filename="absl/container/internal/hashtable_control_bytes.h" data-startfrom="290"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 289;"><span id="cb30-290"><a href="#cb30-290"></a>  BitMaskType Match<span class="op">(</span><span class="dt">h2_t</span> hash<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb30-291"><a href="#cb30-291"></a>    <span class="kw">auto</span> match <span class="op">=</span> _mm_set1_epi8<span class="op">(</span><span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">char</span><span class="op">&gt;(</span>hash<span class="op">));</span></span>
+<span id="cb30-292"><a href="#cb30-292"></a>    <span class="cf">return</span> BitMaskType<span class="op">(</span>MoveMask<span class="op">(</span>_mm_cmpeq_epi8<span class="op">(</span>match<span class="op">,</span> ctrl<span class="op">)));</span></span>
+<span id="cb30-293"><a href="#cb30-293"></a>  <span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="the-bitmasktype" class="level3">
+<h3 class="anchored" data-anchor-id="the-bitmasktype">The <code>BitMaskType</code></h3>
+<p>The <code>BitMaskType</code> is a type alias for <code>BitMask&lt;MaskInt, kWidth&gt;</code>. <code>BitMask&lt;T,SignificantBits, Shift, NullifyBitsOnIteration&gt;</code> is a strong type for working with bitsets.</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>absl/container/internal/hashtable_control_bytes.h</strong></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb31" data-filename="absl/container/internal/hashtable_control_bytes.h" data-startfrom="276"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 275;"><span id="cb31-276"><a href="#cb31-276"></a><span class="kw">struct</span> GroupSse2Impl <span class="op">{</span></span>
+<span id="cb31-277"><a href="#cb31-277"></a>  <span class="at">static</span> <span class="kw">constexpr</span> <span class="dt">size_t</span> kWidth <span class="op">=</span> <span class="dv">16</span><span class="op">;</span>  <span class="co">// the number of slots per group</span></span>
+<span id="cb31-278"><a href="#cb31-278"></a>  <span class="co">// There are only 16 bits, but using uint32_t instead of uint16_t allows for</span></span>
+<span id="cb31-279"><a href="#cb31-279"></a>  <span class="co">// better codegen. In particular, there is no blsr instruction for a 16 bit</span></span>
+<span id="cb31-280"><a href="#cb31-280"></a>  <span class="co">// register, but there is for a 32 bit register (used in BitMask::operator++).</span></span>
+<span id="cb31-281"><a href="#cb31-281"></a>  <span class="kw">using</span> MaskInt <span class="op">=</span> <span class="dt">uint32_t</span><span class="op">;</span></span>
+<span id="cb31-282"><a href="#cb31-282"></a>  <span class="kw">using</span> BitMaskType <span class="op">=</span> BitMask<span class="op">&lt;</span>MaskInt<span class="op">,</span> kWidth<span class="op">&gt;;</span></span>
+<span id="cb31-283"><a href="#cb31-283"></a>  <span class="kw">using</span> NonIterableBitMaskType <span class="op">=</span> NonIterableBitMask<span class="op">&lt;</span>MaskInt<span class="op">,</span> kWidth<span class="op">&gt;;</span></span>
+<span id="cb31-284"><a href="#cb31-284"></a></span>
+<span id="cb31-285"><a href="#cb31-285"></a>  <span class="kw">explicit</span> GroupSse2Impl<span class="op">(</span><span class="at">const</span> <span class="dt">ctrl_t</span><span class="op">*</span> pos<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb31-286"><a href="#cb31-286"></a>    ctrl <span class="op">=</span> _mm_loadu_si128<span class="op">(</span><span class="kw">reinterpret_cast</span><span class="op">&lt;</span><span class="at">const</span> __m128i<span class="op">*&gt;(</span>pos<span class="op">));</span></span>
+<span id="cb31-287"><a href="#cb31-287"></a>  <span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>As the comment in <code>GroupSse2Impl</code> struct reads, a group has <code>16</code> slots. The result of <code>Match</code> returns <code>16</code>-bits. But, using <code>uint32_t</code> to store the output of <code>Match</code> allows for better codegen.</p>
+<div class="code-with-filename">
+<div class="code-with-filename-file">
+<pre><strong>absl/container/internal/hashtable_control_bytes.h</strong></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb32" data-filename="absl/container/internal/hashtable_control_bytes.h" data-startfrom="123"><pre class="sourceCode numberSource cpp number-lines code-with-copy"><code class="sourceCode cpp" style="counter-reset: source-line 122;"><span id="cb32-123"><a href="#cb32-123"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">class</span> T<span class="op">,</span> <span class="dt">int</span> SignificantBits<span class="op">,</span> <span class="dt">int</span> Shift <span class="op">=</span> <span class="dv">0</span><span class="op">,</span></span>
+<span id="cb32-124"><a href="#cb32-124"></a>          <span class="dt">bool</span> NullifyBitsOnIteration <span class="op">=</span> <span class="kw">false</span><span class="op">&gt;</span></span>
+<span id="cb32-125"><a href="#cb32-125"></a><span class="kw">class</span> BitMask <span class="op">:</span> <span class="kw">public</span> NonIterableBitMask<span class="op">&lt;</span>T<span class="op">,</span> SignificantBits<span class="op">,</span> Shift<span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb32-126"><a href="#cb32-126"></a>  <span class="kw">using</span> Base <span class="op">=</span> NonIterableBitMask<span class="op">&lt;</span>T<span class="op">,</span> SignificantBits<span class="op">,</span> Shift<span class="op">&gt;;</span></span>
+<span id="cb32-127"><a href="#cb32-127"></a>  <span class="kw">static_assert</span><span class="op">(</span><span class="bu">std::</span>is_unsigned_v<span class="op">&lt;</span>T<span class="op">&gt;);</span></span>
+<span id="cb32-128"><a href="#cb32-128"></a>  <span class="kw">static_assert</span><span class="op">(</span>Shift <span class="op">==</span> <span class="dv">0</span> <span class="op">||</span> Shift <span class="op">==</span> <span class="dv">3</span><span class="op">);</span></span>
+<span id="cb32-129"><a href="#cb32-129"></a>  <span class="kw">static_assert</span><span class="op">(!</span>NullifyBitsOnIteration <span class="op">||</span> Shift <span class="op">==</span> <span class="dv">3</span><span class="op">);</span></span>
+<span id="cb32-130"><a href="#cb32-130"></a></span>
+<span id="cb32-131"><a href="#cb32-131"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb32-132"><a href="#cb32-132"></a>  <span class="kw">explicit</span> BitMask<span class="op">(</span>T mask<span class="op">)</span> <span class="op">:</span> Base<span class="op">(</span>mask<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb32-133"><a href="#cb32-133"></a>    <span class="cf">if</span> <span class="op">(</span>Shift <span class="op">==</span> <span class="dv">3</span> <span class="op">&amp;&amp;</span> <span class="op">!</span>NullifyBitsOnIteration<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb32-134"><a href="#cb32-134"></a>      ABSL_SWISSTABLE_ASSERT<span class="op">(</span><span class="kw">this</span><span class="op">-&gt;</span><span class="va">mask_</span> <span class="op">==</span> <span class="op">(</span><span class="kw">this</span><span class="op">-&gt;</span><span class="va">mask_</span> <span class="op">&amp;</span> kMsbs8Bytes<span class="op">));</span></span>
+<span id="cb32-135"><a href="#cb32-135"></a>    <span class="op">}</span></span>
+<span id="cb32-136"><a href="#cb32-136"></a>  <span class="op">}</span></span>
+<span id="cb32-137"><a href="#cb32-137"></a>  <span class="co">// BitMask is an iterator over the indices of its abstract bits.</span></span>
+<span id="cb32-138"><a href="#cb32-138"></a>  <span class="kw">using</span> <span class="dt">value_type</span> <span class="op">=</span> <span class="dt">int</span><span class="op">;</span></span>
+<span id="cb32-139"><a href="#cb32-139"></a>  <span class="kw">using</span> iterator <span class="op">=</span> BitMask<span class="op">;</span></span>
+<span id="cb32-140"><a href="#cb32-140"></a>  <span class="kw">using</span> const_iterator <span class="op">=</span> BitMask<span class="op">;</span></span>
+<span id="cb32-141"><a href="#cb32-141"></a></span>
+<span id="cb32-142"><a href="#cb32-142"></a>  BitMask<span class="op">&amp;</span> <span class="kw">operator</span><span class="op">++()</span> <span class="op">{</span></span>
+<span id="cb32-143"><a href="#cb32-143"></a>    <span class="cf">if</span> <span class="op">(</span>Shift <span class="op">==</span> <span class="dv">3</span> <span class="op">&amp;&amp;</span> NullifyBitsOnIteration<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb32-144"><a href="#cb32-144"></a>      <span class="kw">this</span><span class="op">-&gt;</span><span class="va">mask_</span> <span class="op">&amp;=</span> kMsbs8Bytes<span class="op">;</span></span>
+<span id="cb32-145"><a href="#cb32-145"></a>    <span class="op">}</span></span>
+<span id="cb32-146"><a href="#cb32-146"></a>    <span class="kw">this</span><span class="op">-&gt;</span><span class="va">mask_</span> <span class="op">&amp;=</span> <span class="op">(</span><span class="kw">this</span><span class="op">-&gt;</span><span class="va">mask_</span> <span class="op">-</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb32-147"><a href="#cb32-147"></a>    <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span></span>
+<span id="cb32-148"><a href="#cb32-148"></a>  <span class="op">}</span></span>
+<span id="cb32-149"><a href="#cb32-149"></a></span>
+<span id="cb32-150"><a href="#cb32-150"></a>  <span class="dt">uint32_t</span> <span class="kw">operator</span><span class="op">*()</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> Base<span class="op">::</span>LowestBitSet<span class="op">();</span> <span class="op">}</span></span>
+<span id="cb32-151"><a href="#cb32-151"></a></span>
+<span id="cb32-152"><a href="#cb32-152"></a>  BitMask begin<span class="op">()</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> <span class="op">*</span><span class="kw">this</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb32-153"><a href="#cb32-153"></a>  BitMask end<span class="op">()</span> <span class="at">const</span> <span class="op">{</span> <span class="cf">return</span> BitMask<span class="op">(</span><span class="dv">0</span><span class="op">);</span> <span class="op">}</span></span>
+<span id="cb32-154"><a href="#cb32-154"></a></span>
+<span id="cb32-155"><a href="#cb32-155"></a> <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb32-156"><a href="#cb32-156"></a>  <span class="kw">friend</span> <span class="dt">bool</span> <span class="kw">operator</span><span class="op">==(</span><span class="at">const</span> BitMask<span class="op">&amp;</span> a<span class="op">,</span> <span class="at">const</span> BitMask<span class="op">&amp;</span> b<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb32-157"><a href="#cb32-157"></a>    <span class="cf">return</span> a<span class="op">.</span><span class="va">mask_</span> <span class="op">==</span> b<span class="op">.</span><span class="va">mask_</span><span class="op">;</span></span>
+<span id="cb32-158"><a href="#cb32-158"></a>  <span class="op">}</span></span>
+<span id="cb32-159"><a href="#cb32-159"></a>  <span class="kw">friend</span> <span class="dt">bool</span> <span class="kw">operator</span><span class="op">!=(</span><span class="at">const</span> BitMask<span class="op">&amp;</span> a<span class="op">,</span> <span class="at">const</span> BitMask<span class="op">&amp;</span> b<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb32-160"><a href="#cb32-160"></a>    <span class="cf">return</span> a<span class="op">.</span><span class="va">mask_</span> <span class="op">!=</span> b<span class="op">.</span><span class="va">mask_</span><span class="op">;</span></span>
+<span id="cb32-161"><a href="#cb32-161"></a>  <span class="op">}</span></span>
+<span id="cb32-162"><a href="#cb32-162"></a><span class="op">};</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>T</code> controls the number of bits in the bitset.</p>
 
 
 </section>
