@@ -821,5 +821,30 @@ If `x == 0`, the number of trailing zeroes is just `std::numeric_limits<T>::digi
 
 First we check, if the compiler supports the intrinsic `__builtin_ctz`. Compiler intrinsics are functions, whose implementation is handled specially by the compiler. The standard way of checking this is querying `__has_builtin(__builtin_ctz)`. In the case, this intrinsic is not supported, we have a fall-back. `_MSC_VER` is a built-in preprocessor macro always defined in Microsoft Visual C++ compiler. So, if the compiler is MSVC, we use `_BitScanForward`. If none of the above conditions are true, we use the following algorithm. 
 
+Step 1. Since `x` is non-zero, the number of trailing zeroes can be atmost `31`.
+
+Step 2. Turn on the rightmost `1`-bit in a quad-word. Consider the following code snippet:
+
+```cpp
+#include <cstdint>
+#include <cassert>
+
+int main() {
+    const uint8_t x = 0b0101'1000;
+    const uint8_t neg_x = ~x;
+    static_assert(neg_x == 0b1010'0111);
+    const uint8_t neg_x_plus_one = neg_x + 1;
+    static_assert(neg_x_plus_one == 0b1010'1000);
+    const uint8_t y = x & (~x + 1);
+    static_assert(y == 0b0000'1000);
+}
+```
+[Compiler Explorer](https://godbolt.org/z/ErMa7dxxT)
+
+
+3. The rightmost `1`-bit lies in either the left double-word or right double-word. We apply the mask `0x0000FFFF` to determine which half it lies in. If it lies on the right, we can safely subtract `16` from the number of trailing zeroes. We apply the above logic recursively. Using binary search, we can find the index of the rightmost `1`-bit in $\log_2(32) \approx 5$ steps. 
+
+The index of the rightmost `1`-bit is *numerically equal* to the number of trailing zeroes.
+
 
 
