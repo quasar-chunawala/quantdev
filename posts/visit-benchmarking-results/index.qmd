@@ -123,7 +123,26 @@ NUMA:
   NUMA node0 CPU(s):         0-21
   ```
 
-In order to measure performance accurately and ensure that the results of benchmarking are consistent and reproducible, my setup was as follows:
+In order to measure performance accurately and ensure that the results of benchmarking are consistent and reproducible, I describe my setup below. Ideally when doing benchmarking, we try to disable all the potential sources of performance non-determinism in a system. 
+
+- *Disable turboboost*. Intel Turbo Boost is a feature that automatically raises the CPU operating frequency when demanding tasks are running. To disable turbo in Linux, do:
+
+```bash
+# Intel
+echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo
+# AMD
+echo 0 > /sys/devices/system/cpu/cpufreq/boost
+```
+
+- *Disable hyperthreading*. Modern CPU cores are often made in the simultaneous multithreading(SMT) manner. It means that in one physical core you have $2$ threads of simultaneous execution. Typically, the $2$ threads see different architectural state(process memory, control registers state, general purpose registers state), but in reality the execution resources are shared. That means, that some other process that is scheduled on the sibling thread might steal cache space from the workload you are measuring. This can be done programatically by turning down a sibling thread in each core:
+
+```bash
+echo 0 > /sys/devices/system/cpu/cpuX/online
+```
+
+The pair of CPU $N$ can be found in `/sys/devices/system/cpu/cpuN/topology/thread_siblings_list`.
+
+
 
 - *Disable CPU Performance scaling and lock the frequency*. CPU performance scaling enables the operating system to scale the CPU frequency up or down in order to save power or improve performance. Scaling can be done automatically with respect to the system load or be manually changed by userspace programs. The linux kernel offers CPU frequency scaling through the CPU Frequency subsystem which has $2$ layers:
     - Scaling governors implement algorithms to compute the desired CPU frequency, potentially based off the system's needs. 
@@ -135,19 +154,19 @@ In order to reliably benchmark the code, we do not want the CPU frequency to sca
 
 We can get the governor of all the CPU cores, by running:
 
-```shell
+```bash
 cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 I set all cores to `performance`. 
 
-```shell
+```bash
 sudo cpupower frequency-set --governor performance
 ```
 
 Since I plan to pin the benchmark run to a specific core, I will lock the frequency of that core.
 
-```shell
+```bash
 sudo cpupower --cpu 3 frequency-set -d 2.3GHz -u 2.3GHz
 ```
 
@@ -157,7 +176,7 @@ Run `cpupower -c all frequency-info | grep "current policy" -A1` to confirm that
     - `-f`: Use the `SCHED_FIFO` policy. Once a `SCHED_FIFO` process is running, the kernel will not preempt with another `SCHED_OTHER` process, it only yields the CPU when it blocks, finishes or a higher (or equal ) priority thread becomes runnable. 
     - `10`: The real-time priority.
 
-- *Pin the benchmark run to a specific core*. `taskset -c 3` can be used to pin the benchmark run to core-3.
+- *Set CPU affinity*. Processor affinity enables the binding of a process to a certain CPU core. In linux, one can do this with the `taskset` tool.
 
 # Benchmarking results
 

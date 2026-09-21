@@ -10340,7 +10340,35 @@ Caches (sum of all):
 NUMA:                        
   NUMA node(s):              1
   NUMA node0 CPU(s):         0-21</code></pre>
-<p>In order to measure performance accurately and ensure that the results of benchmarking are consistent and reproducible, my setup was as follows:</p>
+<p>In order to measure performance accurately and ensure that the results of benchmarking are consistent and reproducible, I describe my setup below. Ideally when doing benchmarking, we try to disable all the potential sources of performance non-determinism in a system.</p>
+<ul>
+<li><em>Disable turboboost</em>. Intel Turbo Boost is a feature that automatically raises the CPU operating frequency when demanding tasks are running. To disable turbo in Linux, do:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4" style="background: #f1f3f5;"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"># Intel</span></span>
+<span id="cb4-2"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">echo</span> 1 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> /sys/devices/system/cpu/intel_pstate/no_turbo</span>
+<span id="cb4-3"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;"># AMD</span></span>
+<span id="cb4-4"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">echo</span> 0 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> /sys/devices/system/cpu/cpufreq/boost</span></code></pre></div></div>
+<ul>
+<li><em>Disable hyperthreading</em>. Modern CPU cores are often made in the simultaneous multithreading(SMT) manner. It means that in one physical core you have <img src="https://latex.codecogs.com/png.latex?2"> threads of simultaneous execution. Typically, the <img src="https://latex.codecogs.com/png.latex?2"> threads see different architectural state(process memory, control registers state, general purpose registers state), but in reality the execution resources are shared. That means, that some other process that is scheduled on the sibling thread might steal cache space from the workload you are measuring. This can be done programatically by turning down a sibling thread in each core:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5" style="background: #f1f3f5;"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><span class="bu" style="color: null;
+background-color: null;
+font-style: inherit;">echo</span> 0 <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;</span> /sys/devices/system/cpu/cpuX/online</span></code></pre></div></div>
+<p>The pair of CPU <img src="https://latex.codecogs.com/png.latex?N"> can be found in <code>/sys/devices/system/cpu/cpuN/topology/thread_siblings_list</code>.</p>
 <ul>
 <li><em>Disable CPU Performance scaling and lock the frequency</em>. CPU performance scaling enables the operating system to scale the CPU frequency up or down in order to save power or improve performance. Scaling can be done automatically with respect to the system load or be manually changed by userspace programs. The linux kernel offers CPU frequency scaling through the CPU Frequency subsystem which has <img src="https://latex.codecogs.com/png.latex?2"> layers:
 <ul>
@@ -10351,11 +10379,27 @@ NUMA:
 <p>A default scaling driver and governor are selected, but user-space programs such as <code>cpupower</code> can be used to customize this configuration.</p>
 <p>In order to reliably benchmark the code, we do not want the CPU frequency to scale, mid-run.</p>
 <p>We can get the governor of all the CPU cores, by running:</p>
-<pre class="shell"><code>cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6" style="background: #f1f3f5;"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><span class="fu" style="color: #4758AB;
+background-color: null;
+font-style: inherit;">cat</span> /sys/devices/system/cpu/cpu<span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">*</span>/cpufreq/scaling_governor</span></code></pre></div></div>
 <p>I set all cores to <code>performance</code>.</p>
-<pre class="shell"><code>sudo cpupower frequency-set --governor performance</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7" style="background: #f1f3f5;"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><span class="fu" style="color: #4758AB;
+background-color: null;
+font-style: inherit;">sudo</span> cpupower frequency-set <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">--governor</span> performance</span></code></pre></div></div>
 <p>Since I plan to pin the benchmark run to a specific core, I will lock the frequency of that core.</p>
-<pre class="shell"><code>sudo cpupower --cpu 3 frequency-set -d 2.3GHz -u 2.3GHz</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8" style="background: #f1f3f5;"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><span class="fu" style="color: #4758AB;
+background-color: null;
+font-style: inherit;">sudo</span> cpupower <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">--cpu</span> 3 frequency-set <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">-d</span> 2.3GHz <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">-u</span> 2.3GHz</span></code></pre></div></div>
 <p>Run <code>cpupower -c all frequency-info | grep "current policy" -A1</code> to confirm that the frequency was indeed set.</p>
 <ul>
 <li><em>Set scheduling policy to <code>SCHED_FIFO</code></em>. <code>chrt</code> is used to set or report the scheduling policy and priority.
@@ -10363,7 +10407,7 @@ NUMA:
 <li><code>-f</code>: Use the <code>SCHED_FIFO</code> policy. Once a <code>SCHED_FIFO</code> process is running, the kernel will not preempt with another <code>SCHED_OTHER</code> process, it only yields the CPU when it blocks, finishes or a higher (or equal ) priority thread becomes runnable.</li>
 <li><code>10</code>: The real-time priority.</li>
 </ul></li>
-<li><em>Pin the benchmark run to a specific core</em>. <code>taskset -c 3</code> can be used to pin the benchmark run to core-3.</li>
+<li><em>Set CPU affinity</em>. Processor affinity enables the binding of a process to a certain CPU core. In linux, one can do this with the <code>taskset</code> tool.</li>
 </ul>
 </section>
 <section id="benchmarking-results" class="level1">
